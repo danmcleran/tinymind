@@ -8,3 +8,5 @@
 <p>See the <a href="https://github.com/danmcleran/tinymind/wiki">wiki pages</a> and tutorials which document how the code is designed as well as how to use the code within tinymind to instantiate and run neural networks as well as machine learning algorithms on virtually any device which has C++ compiler support.</p>
 <p>Dan McLeran</p>
 <p>danmcleran@gmail.com</p>
+</body>
+</html>
