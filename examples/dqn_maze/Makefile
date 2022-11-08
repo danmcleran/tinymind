@@ -14,4 +14,4 @@ debug :
 
 # Remove all object files
 clean:
-	rm *.o
+	rm -f *.o
