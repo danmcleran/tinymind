@@ -9,4 +9,4 @@ qlearn_unit_test: qlearn_unit_test.cpp ../../cpp/lookupTables.cpp
 
 # Remove all object files
 clean:
-	rm *.o
+	rm -f *.o
