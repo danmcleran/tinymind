@@ -26,6 +26,7 @@
 #include <cassert>
 #include <ctime>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 
 #include "qformat.hpp"
@@ -243,14 +244,6 @@ static void writeTableHeader(const string& path, char const* const preprocessorT
     outFile.close();
 }
 
-static void writeTableFooter(const string& path, char const* const preprocessorTag, uint64_t fixedBits, uint64_t fracBits)
-{
-    ofstream outFile;
-    outFile.open(path, ofstream::app);
-    outFile << "};" << endl;
-    outFile << "#endif // "  << "(defined(" << preprocessorTag << fixedBits << "_" << fracBits << "))" << endl << endl;
-}
-
 static void writeLutFileHeader(const string& path)
 {
     copyrightSpan_t span = getCurrentCopyright(path);
@@ -334,7 +327,6 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
 {
     const string spaces("    ");
     const double valueDelta = (static_cast<double>(1.0) / static_cast<double>(1 << ACTIVATION_DELTA_SHIFT));
-    const uint64_t one = fixedBits;
     double value = MIN_X_TABLE_VALUE;
     ofstream outFile;
     outFile.open(path, ofstream::app);
