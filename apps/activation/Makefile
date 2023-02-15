@@ -5,4 +5,5 @@ default :
 
 # Remove all object files
 clean:
+	rm -f activationTableGenerator
 	rm -f *.o
