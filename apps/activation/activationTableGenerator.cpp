@@ -376,7 +376,7 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
         }
 
         uint64_t leftShift = static_cast<T>(1ULL << fracBits);
-        num = activate * leftShift;
+        num = std::min(1.0d, (activate * leftShift));
 
         switch (std::numeric_limits<T>::digits)
         {
