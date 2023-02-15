@@ -325,7 +325,6 @@ static void writeTableSelector(string path, const activation_e activationType)
 template <typename T>
 static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBits, uint64_t fracBits, const activation_e activationType)
 {
-    const uint64_t leftShift = static_cast<T>(1ULL << fracBits);
     const string spaces("    ");
     const double valueDelta = (static_cast<double>(1.0) / static_cast<double>(1 << ACTIVATION_DELTA_SHIFT));
     double value = MIN_X_TABLE_VALUE;
@@ -343,17 +342,14 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
         if (tanhActivation == activationType)
         {
             activate = tanh(value);
-            num = (activate * leftShift);
         }
         else if (sigmoidActivation == activationType)
         {
             activate = sigmoid(value);
-            num = (activate * leftShift);
         }
         else if (expActivation == activationType)
         {
             activate = exp(value);
-            num = std::max(1.0d, (activate * leftShift));
         }
         else if (logActivation == activationType)
         {
@@ -365,12 +361,14 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
             {
                 activate = 0.0;
             }
-            num = (activate * leftShift);
         }
         else
         {
             assert(false);
         }
+
+        uint64_t leftShift = static_cast<T>(1ULL << fracBits);
+        num = std::min(1.0d, (activate * leftShift));
 
         switch (std::numeric_limits<T>::digits)
         {
