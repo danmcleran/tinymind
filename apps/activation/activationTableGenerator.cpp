@@ -26,6 +26,7 @@
 #include <cassert>
 #include <ctime>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 
 #include "qformat.hpp"
@@ -73,125 +74,23 @@ static double sigmoid(const double x)
     return result;
 }
 
-static copyrightSpan_t getCurrentCopyright(const string& path)
+static void writeFileCopyrightAndLicense(const string& path)
 {
-    copyrightSpan_t span = {0,0};
-    ifstream file;
-	char line[256] = {'\0'};
-    char startYear[5] = {0};
-    char endYear[5] = {0};
-    size_t len;
-    size_t pos;
-    int yearIndex = 0;
-
-    for(int i = 0;i < 10;++i)
-    {
-        file.open(path);
-        if(file.is_open())
-        {
-            break;
-        }
-    }
-
-    if(!file.is_open())
-    {
-        return span;
-    }
-
-    for(int i = 0;i < 4;++i)
-    {
-        file.getline(&line[0], 256); // Assumes the Copyright tag is in the 4th line
-    }
-
-    len = strlen(&line[0]);
-
-    for(pos = 0;pos < len;++pos)
-    {
-        if(isdigit(line[pos]))
-        {
-            startYear[yearIndex] = line[pos];
-            ++yearIndex;
-            if(yearIndex == 4)
-            {
-                break;
-            }
-        }
-    }
-
-    span.startYear = atoi(&startYear[0]);
-    yearIndex = 0;
-    ++pos;
-
-    for(;pos < len;++pos)
-    {
-        if(isdigit(line[pos]))
-        {
-            endYear[yearIndex] = line[pos];
-            ++yearIndex;
-            if(yearIndex == 4)
-            {
-                break;
-            }
-        }
-    }
-
-    span.endYear = atoi(&endYear[0]);
-    if(span.endYear <= span.startYear)
-    {
-        span.endYear = 0;
-    }
-
-    return span;
-}
-
-static void writeFileCopyrightAndLicense(const string& path, const copyrightSpan_t& span)
-{
-    time_t t = time(NULL);
-    tm* timePtr = localtime(&t);
-    const size_t currentYear = (1900 + timePtr->tm_year);
-
+    ifstream inFile("intel_copyright.txt");
     ofstream outFile(path);
-    outFile << "/**" << endl;
-    if((span.startYear == 0) && (span.endYear == 0))
+    char buffer[1024];
+
+    while(!inFile.eof())
     {
-        outFile << "* Copyright " << currentYear << " Intel Corporation All Rights Reserved." << endl;
+        inFile.getline(buffer, 1024);
+        outFile.write(buffer, strlen(buffer));
+        outFile << std::endl;
     }
-    else if((span.startYear != 0) && (span.endYear == 0))
-    {
-        if(currentYear == span.startYear)
-        {
-            outFile << "* Copyright " << currentYear << " Intel Corporation All Rights Reserved." << endl;
-        }
-        else
-        {
-            outFile << "* Copyright " << span.startYear << "-" << currentYear << " Intel Corporation All Rights Reserved." << endl;
-        }
-    }
-    else if((span.startYear != 0) && (span.endYear != 0))
-    {
-        outFile << "* Copyright " << span.startYear << "-" << currentYear << " Intel Corporation All Rights Reserved." << endl;
-    }
-    outFile << "*" << endl;
-    outFile << "* Permission is hereby granted, free of charge, to any person obtaining a copy" << endl;
-    outFile << "* of this software and associated documentation files (the \"Software\"), to deal" << endl;
-    outFile << "* in the Software without restriction, including without limitation the rights" << endl;
-    outFile << "* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell" << endl;
-    outFile << "* copies of the Software, and to permit persons to whom the Software is" << endl;
-    outFile << "* furnished to do so, subject to the following conditions:" << endl;
-    outFile << "*" << endl;
-    outFile << "* The above copyright notice and this permission notice shall be included in all" << endl;
-    outFile << "* copies or substantial portions of the Software." << endl;
-    outFile << "*" << endl;
-    outFile << "* THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR" << endl;
-    outFile << "* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY," << endl;
-    outFile << "* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE" << endl;
-    outFile << "* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER" << endl;
-    outFile << "* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM," << endl;
-    outFile << "* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE" << endl;
-    outFile << "* SOFTWARE." << endl;
-    outFile << "*/" << endl;
-    outFile << endl;
+    outFile << std::endl;
+
     outFile.flush();
+    outFile.close();
+    inFile.close();
 }
 
 static void writeNamespaceBegin(const string& path)
@@ -210,9 +109,7 @@ static void writeNamespaceEnd(const string& path)
 
 static void writeActivationFileHeader(const string& path)
 {
-    copyrightSpan_t span = getCurrentCopyright(path);
-
-    writeFileCopyrightAndLicense(path, span);
+    writeFileCopyrightAndLicense(path);
 
     ofstream outFile(path, ofstream::app);
     outFile << "#pragma once" << endl << endl;
@@ -220,9 +117,7 @@ static void writeActivationFileHeader(const string& path)
 
 static void writeFileHeader(const string& path)
 {
-    copyrightSpan_t span = getCurrentCopyright(path);
-
-    writeFileCopyrightAndLicense(path, span);
+    writeFileCopyrightAndLicense(path);
 
     ofstream outFile(path, ofstream::app);
     outFile << "#pragma once" << endl << endl;
@@ -243,19 +138,9 @@ static void writeTableHeader(const string& path, char const* const preprocessorT
     outFile.close();
 }
 
-static void writeTableFooter(const string& path, char const* const preprocessorTag, uint64_t fixedBits, uint64_t fracBits)
-{
-    ofstream outFile;
-    outFile.open(path, ofstream::app);
-    outFile << "};" << endl;
-    outFile << "#endif // "  << "(defined(" << preprocessorTag << fixedBits << "_" << fracBits << "))" << endl << endl;
-}
-
 static void writeLutFileHeader(const string& path)
 {
-    copyrightSpan_t span = getCurrentCopyright(path);
-
-    writeFileCopyrightAndLicense(path, span);
+    writeFileCopyrightAndLicense(path);
 
     ofstream outFile(path, ofstream::app);
     outFile << "#include <cstdint>" << endl << endl;
@@ -334,7 +219,6 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
 {
     const string spaces("    ");
     const double valueDelta = (static_cast<double>(1.0) / static_cast<double>(1 << ACTIVATION_DELTA_SHIFT));
-    const uint64_t one = fixedBits;
     double value = MIN_X_TABLE_VALUE;
     ofstream outFile;
     outFile.open(path, ofstream::app);
