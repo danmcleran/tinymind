@@ -180,9 +180,12 @@ namespace tinymind {
                 sum += result;
             }
 
-            for(size_t neuron = 0;neuron < numberOfNerons;++neuron)
+            if (sum != 0)
             {
-                results[neuron] /= sum;
+                for(size_t neuron = 0;neuron < numberOfNerons;++neuron)
+                {
+                    results[neuron] /= sum;
+                }
             }
         }
 
