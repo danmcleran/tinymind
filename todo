@@ -1,6 +1,0 @@
-Support depth > 1 for RNNs
-Q-format saturate policy. Currently only rollover is supported since it happens by default.
-Support different numbers of neurons in hidden layers. Currently all hidden layers must have the same number of neurons.
-Finish classifier implementation. See branch.
-Finish LSTM implementation. See branch.
-Support large integers (e.g. __int128 from GCC or boost::multiprecision).
