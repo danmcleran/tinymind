@@ -110,7 +110,7 @@ namespace tinymind {
     };
 
     template<>
-    struct FullWidthType<64, true>
+    struct FullWidthType<128, true>
     {
         typedef __uint128_t FractionalPartFieldType;
         typedef __int128_t  FixedPartFieldType;
