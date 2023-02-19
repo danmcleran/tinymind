@@ -99,7 +99,7 @@ namespace tinymind {
         typedef int64_t  FullWidthValueType;
     };
 
-#ifdef UINT128_MAX
+#ifdef __SIZEOF_INT128__
     template<>
     struct FullWidthType<128, false>
     {
@@ -117,18 +117,18 @@ namespace tinymind {
         typedef __uint128_t FullWidthFieldType;
         typedef __int128_t  FullWidthValueType;
     };
-#endif // UINT128_MAX
+#endif // __SIZEOF_INT128__
 
     template<unsigned NumBits, bool IsSigned>
     struct FullWidthFieldTypeChooser
     {
-#ifdef UINT128_MAX
+#ifdef __SIZEOF_INT128__
         static_assert(NumBits <= 128, "NumBits must be <= 128.");
         static constexpr unsigned Result = (NumBits <= 8) ? 8 : (NumBits <= 16) ? 16 : (NumBits <= 32) ? 32 : (NumBits <= 64) ? 64 : 128;
-#else // UINT128_MAX
+#else // __SIZEOF_INT128__
         static_assert(NumBits <= 64, "NumBits must be <= 64.");
         static constexpr unsigned Result = (NumBits <= 8) ? 8 : (NumBits <= 16) ? 16 : (NumBits <= 32) ? 32 : 64;
-#endif // UINT128_MAX
+#endif // __SIZEOF_INT128__
         typedef typename FullWidthType<Result, IsSigned>::FractionalPartFieldType FractionalPartFieldType;
         typedef typename FullWidthType<Result, IsSigned>::FixedPartFieldType      FixedPartFieldType;
         typedef typename FullWidthType<Result, IsSigned>::FullWidthFieldType      FullWidthFieldType;

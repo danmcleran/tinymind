@@ -63,7 +63,7 @@ namespace tinymind {
     template<typename T, unsigned NumberOfFixedBits, unsigned NumberOfFractionalBits, bool IsSigned>
     struct SignExtender
     {
-        static constexpr T SignBitMask = static_cast<T>(1 << (NumberOfFixedBits + NumberOfFractionalBits - 1));
+        static constexpr T SignBitMask = (static_cast<T>(1) << (NumberOfFixedBits + NumberOfFractionalBits - 1));
         static constexpr T SignExtensionBits = static_cast<T>((~(static_cast<size_t>(SignBitMask) - 1)) ^ SignBitMask);
 
         static void signExtend(T& value)
