@@ -679,6 +679,9 @@ BOOST_AUTO_TEST_CASE(test_case_division)
     Q16 = Q14 / Q15;
     BOOST_TEST(Q16.getValue() == Q14.getValue());
 
+    Q16 = Q14 / Q14;
+    BOOST_TEST(Q16.getValue() == Q14.getValue());
+
     Q16 = Q15 / Q14;
     BOOST_TEST(Q16.getValue() == Q14.getValue());
 
@@ -706,6 +709,9 @@ BOOST_AUTO_TEST_CASE(test_case_division)
 
     uQ2 = uQ1 / uQ4;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0x200) == uQ2.getValue());
+
+    Q2 = Q1 / Q1;
+    BOOST_TEST(static_cast<SignedQ8_8Type::FullWidthValueType>(0x100) == Q2.getValue());
 
     Q2 = Q0 / Q1;
     BOOST_TEST(static_cast<SignedQ8_8Type::FullWidthValueType>(0xff00) == Q2.getValue());
