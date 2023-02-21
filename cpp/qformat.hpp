@@ -386,18 +386,8 @@ namespace tinymind {
         QValue& operator/=(const int divisor)
         {
             const QValue other(static_cast<FixedPartFieldType>(divisor), 0);
-            DivisionResultFullWidthFieldType left;
-            DivisionResultFullWidthFieldType right;
 
-            left = static_cast<DivisionResultFullWidthFieldType>(mValue);
-            right = static_cast<DivisionResultFullWidthFieldType>(other.mValue);
-
-            SignExtender<DivisionResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
-            SignExtender<DivisionResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(right);
-
-            const FullWidthFieldType result = static_cast<FullWidthFieldType>((left << NumberOfFractionalBits) / right);
-
-            this->mValue = result;
+            (*this) /= other;
 
             return *this;
         }
