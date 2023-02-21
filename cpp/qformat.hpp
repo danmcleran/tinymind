@@ -369,6 +369,7 @@ namespace tinymind {
         {
             DivisionResultFullWidthFieldType left;
             DivisionResultFullWidthFieldType right;
+            DivisionResultFullWidthFieldType result;
 
             left = static_cast<DivisionResultFullWidthFieldType>(mValue);
             right = static_cast<DivisionResultFullWidthFieldType>(other.mValue);
@@ -376,9 +377,10 @@ namespace tinymind {
             SignExtender<DivisionResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
             SignExtender<DivisionResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(right);
 
-            const FullWidthFieldType result = static_cast<FullWidthFieldType>((left << NumberOfFractionalBits) / right);
+            left <<= NumberOfFractionalBits;
+            result = (left / right);
 
-            this->mValue = result;
+            this->mValue = static_cast<FullWidthFieldType>(result);
 
             return *this;
         }
