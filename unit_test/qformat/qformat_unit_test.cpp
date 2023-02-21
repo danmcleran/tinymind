@@ -657,6 +657,7 @@ BOOST_AUTO_TEST_CASE(test_case_division)
     SignedQ32_32Type Q14(-1, 0);
     SignedQ32_32Type Q15(1, 0);
     SignedQ32_32Type Q16;
+    SignedQ32_32Type Q17(2, 0);
 
     uQ11 = uQ10 / uQ8;
     BOOST_TEST(uQ11.getValue() == uQ10.getValue());
@@ -679,8 +680,11 @@ BOOST_AUTO_TEST_CASE(test_case_division)
     Q16 = Q14 / Q15;
     BOOST_TEST(Q16.getValue() == Q14.getValue());
 
-    // Q16 = Q14 / Q14;
-    // BOOST_TEST(Q16.getValue() == Q14.getValue());
+    Q16 = Q15 / Q13;
+    BOOST_TEST(Q16.getValue() == Q17.getValue());
+
+    Q16 = Q14 / Q14;
+    BOOST_TEST(Q16.getValue() == Q15.getValue());
 
     // Q16 = Q15 / Q14;
     // BOOST_TEST(Q16.getValue() == Q14.getValue());
