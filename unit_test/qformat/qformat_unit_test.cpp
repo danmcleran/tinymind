@@ -751,9 +751,6 @@ BOOST_AUTO_TEST_CASE(test_case_division)
     BOOST_TEST(Q23.getValue() == Q19.getValue());
 
     Q23 = Q20 / Q21;
-    BOOST_TEST(Q23.getValue() == Q19.getValue());
-
-    Q23 = Q20 / Q21;
     BOOST_TEST(Q23.getValue() == Q22.getValue());
 
     // Q26 = Q25 * Q23;
