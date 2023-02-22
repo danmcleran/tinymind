@@ -713,8 +713,9 @@ BOOST_AUTO_TEST_CASE(test_case_division)
     SignedQ24_40Type Q18(0, 0);
     SignedQ24_40Type Q19(-1, 0);
     SignedQ24_40Type Q20(1, 0);
-    SignedQ24_40Type Q21(0, (SignedQ24_40Type::MaxFractionalPartValue) >> 1);
-    SignedQ24_40Type Q22;
+    SignedQ24_40Type Q21(0, ((SignedQ24_40Type::MaxFractionalPartValue >> 1) + 1));
+    SignedQ24_40Type Q22(2,0);
+    SignedQ24_40Type Q23;
 
     uQ11 = uQ10 / uQ8;
     BOOST_TEST(uQ11.getValue() == uQ10.getValue());
@@ -746,8 +747,14 @@ BOOST_AUTO_TEST_CASE(test_case_division)
     Q16 = Q15 / Q14;
     BOOST_TEST(Q16.getValue() == Q14.getValue());
 
-    Q22 = Q20 / Q19;
-    BOOST_TEST(Q22.getValue() == Q19.getValue());
+    Q23 = Q20 / Q19;
+    BOOST_TEST(Q23.getValue() == Q19.getValue());
+
+    Q23 = Q20 / Q21;
+    BOOST_TEST(Q23.getValue() == Q19.getValue());
+
+    Q23 = Q20 / Q21;
+    BOOST_TEST(Q23.getValue() == Q22.getValue());
 
     // Q26 = Q25 * Q23;
     // BOOST_TEST(Q26.getValue() == Q23.getValue());
