@@ -346,21 +346,8 @@ namespace tinymind {
         QValue& operator*=(const int multiplicand)
         {
             const QValue other(static_cast<FixedPartFieldType>(multiplicand), 0);
-            MultiplicationResultFullWidthFieldType left;
-            MultiplicationResultFullWidthFieldType right;
-            MultiplicationResultFullWidthFieldType result;
 
-            left = static_cast<MultiplicationResultFullWidthFieldType>(mValue);
-            right = static_cast<MultiplicationResultFullWidthFieldType>(other.mValue);
-
-            SignExtender<MultiplicationResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
-            SignExtender<MultiplicationResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(right);
-
-            result = left * right;
-
-            result = RoundingPolicy::round(result);
-
-            this->mValue = static_cast<FullWidthFieldType>(result);
+            (*this) *= other;
 
             return *this;
         }
