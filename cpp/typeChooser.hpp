@@ -99,11 +99,34 @@ namespace tinymind {
         typedef int64_t  FullWidthValueType;
     };
 
+#ifdef __SIZEOF_INT128__
+    template<>
+    struct FullWidthType<128, false>
+    {
+        typedef __uint128_t FractionalPartFieldType;
+        typedef __uint128_t FixedPartFieldType;
+        typedef __uint128_t FullWidthFieldType;
+        typedef __uint128_t FullWidthValueType;
+    };
+
+    template<>
+    struct FullWidthType<128, true>
+    {
+        typedef __uint128_t FractionalPartFieldType;
+        typedef __int128_t  FixedPartFieldType;
+        typedef __uint128_t FullWidthFieldType;
+        typedef __int128_t  FullWidthValueType;
+    };
+#endif // __SIZEOF_INT128__
+
     template<unsigned NumBits, bool IsSigned>
     struct FullWidthFieldTypeChooser
     {
-        static_assert(NumBits <= 64, "NumBits must be <= 64.");
+#ifdef __SIZEOF_INT128__
+        static constexpr unsigned Result = (NumBits <= 8) ? 8 : (NumBits <= 16) ? 16 : (NumBits <= 32) ? 32 : (NumBits <= 64) ? 64 : 128;
+#else // __SIZEOF_INT128__
         static constexpr unsigned Result = (NumBits <= 8) ? 8 : (NumBits <= 16) ? 16 : (NumBits <= 32) ? 32 : 64;
+#endif // __SIZEOF_INT128__
         typedef typename FullWidthType<Result, IsSigned>::FractionalPartFieldType FractionalPartFieldType;
         typedef typename FullWidthType<Result, IsSigned>::FixedPartFieldType      FixedPartFieldType;
         typedef typename FullWidthType<Result, IsSigned>::FullWidthFieldType      FullWidthFieldType;

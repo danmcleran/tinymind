@@ -38,6 +38,11 @@ typedef tinymind::QValue<24, 8, false> UnsignedQ24_8Type;
 typedef tinymind::QValue<8, 24, true> SignedQ8_24Type;
 typedef tinymind::QValue<8, 24, false> UnsignedQ8_24Type;
 typedef tinymind::QValue<24, 8, false> UnsignedQ24_8Type;
+#ifdef __SIZEOF_INT128__
+typedef tinymind::QValue<32, 32, false> UnsignedQ32_32Type;
+typedef tinymind::QValue<32, 32, true> SignedQ32_32Type;
+typedef tinymind::QValue<24, 40, true> SignedQ24_40Type;
+#endif // __SIZEOF_INT128__
 
 typedef tinymind::QValue<8, 8, false> UnsignedTruncatingQType;
 
@@ -51,6 +56,14 @@ static_assert((((1ULL << 23) - 1) == SignedQ24_8Type::MaxFixedPartValue), "Incor
 static_assert((std::numeric_limits<uint8_t>::max() == SignedQ24_8Type::MaxFractionalPartValue), "Incorrect max fractional value.");
 static_assert(((std::numeric_limits<int8_t>::max() >> 1) == SignedQ7_9Type::MaxFixedPartValue), "Incorrect max fixed value.");
 static_assert((((1ULL << 9) - 1) == SignedQ7_9Type::MaxFractionalPartValue), "Incorrect max fractional value.");
+#ifdef __SIZEOF_INT128__
+static_assert((std::numeric_limits<uint32_t>::max() == UnsignedQ32_32Type::MaxFractionalPartValue), "Incorrect max fractional value.");
+static_assert((std::numeric_limits<uint32_t>::max() == SignedQ32_32Type::MaxFractionalPartValue), "Incorrect max fractional value.");
+static_assert((((1ULL << 40) - 1) == SignedQ24_40Type::MaxFractionalPartValue), "Incorrect max fractional value.");
+static_assert((std::numeric_limits<uint32_t>::max() == UnsignedQ32_32Type::MaxFractionalPartValue), "Incorrect max fractional value.");
+static_assert((std::numeric_limits<int32_t>::max() == SignedQ32_32Type::MaxFixedPartValue), "Incorrect max fixed value.");
+static_assert((((1ULL << 23) - 1) == SignedQ24_40Type::MaxFixedPartValue), "Incorrect max fixed value.");
+#endif // __SIZEOF_INT128__
 
 static_assert((std::numeric_limits<uint16_t>::max() == std::numeric_limits<typename UnsignedQ8_8Type::FixedPartFieldType>::max()), "Invalid type.");
 static_assert((std::numeric_limits<uint16_t>::max() == std::numeric_limits<typename UnsignedQ8_8Type::FractionalPartFieldType>::max()), "Invalid type.");
@@ -86,6 +99,23 @@ BOOST_AUTO_TEST_CASE(test_case_construction)
     UnsignedQ8_8Type uQ2(1, 0);
     SignedQ8_24Type Q9(-1, 0);
     SignedQ8_24Type Q10(1, 0);
+#ifdef __SIZEOF_INT128__
+    UnsignedQ32_32Type uQ3(0, 0);
+    SignedQ32_32Type Q11(-1, 0);
+    SignedQ24_40Type Q12(-1, 0);
+
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FixedPartFieldType>(0) == uQ3.getFixedPart());
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FractionalPartFieldType>(0) == uQ3.getFractionalPart());
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0) == uQ3.getValue());
+
+    BOOST_TEST(static_cast<SignedQ32_32Type::FixedPartFieldType>(-1) == Q11.getFixedPart());
+    BOOST_TEST(static_cast<SignedQ32_32Type::FractionalPartFieldType>(0) == Q11.getFractionalPart());
+    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0xFFFFFFFF00000000ULL) == Q11.getValue());
+
+    BOOST_TEST(static_cast<SignedQ24_40Type::FixedPartFieldType>(-1) == Q12.getFixedPart());
+    BOOST_TEST(static_cast<SignedQ24_40Type::FractionalPartFieldType>(0) == Q12.getFractionalPart());
+    BOOST_TEST(static_cast<SignedQ24_40Type::FullWidthValueType>(0xFFFFFF0000000000ULL) == Q12.getValue());
+#endif // __SIZEOF_INT128__
 
     BOOST_TEST(static_cast<SignedQ8_8Type::FixedPartFieldType>(0) == Q0.getFixedPart());
     BOOST_TEST(static_cast<SignedQ8_8Type::FractionalPartFieldType>(0) == Q0.getFractionalPart());
@@ -154,6 +184,65 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     SignedQ8_24Type Q11(1, 0);
     SignedQ8_24Type Q12(0x800000);
     SignedQ8_24Type Q13;
+#ifdef __SIZEOF_INT128__
+    UnsignedQ32_32Type uQ5(0, 0);
+    UnsignedQ32_32Type uQ6(0, 1);
+    UnsignedQ32_32Type uQ7(1, 1);
+    SignedQ32_32Type Q14(0, 0);
+    SignedQ32_32Type Q15(-1, 0);
+    SignedQ32_32Type Q16(1, 0);
+    SignedQ24_40Type Q17(0, 0);
+    SignedQ24_40Type Q18(-1, 0);
+    SignedQ24_40Type Q19(1, 0);
+
+    uQ5 += 0;
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0) == uQ5.getValue());
+
+    uQ5 += uQ5;
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0) == uQ5.getValue());
+
+    uQ5 += uQ6;
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(1) == uQ5.getValue());
+
+    uQ5 += 1;
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(2) == uQ5.getValue());
+
+    uQ5 += uQ7;
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0x100000003ULL) == uQ5.getValue());
+
+    Q14 += 0;
+    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0) == Q14.getValue());
+
+    Q14 += Q14;
+    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0) == Q14.getValue());
+
+    Q14 += Q15;
+    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0xFFFFFFFF00000000) == Q14.getValue());
+
+    Q14 += Q15;
+    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0xFFFFFFFE00000000) == Q14.getValue());
+
+    Q14 += Q16;
+    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0xFFFFFFFF00000000) == Q14.getValue());
+
+    Q14 = Q15 + Q16;
+    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0) == Q14.getValue());
+
+    Q17 += 0;
+    BOOST_TEST(static_cast<SignedQ24_40Type::FullWidthValueType>(0) == Q17.getValue());
+
+    Q17 += Q17;
+    BOOST_TEST(static_cast<SignedQ24_40Type::FullWidthValueType>(0) == Q17.getValue());
+
+    Q17 += Q18;
+    BOOST_TEST(Q17.getValue() == Q18.getValue());
+
+    Q17 += Q19;
+    BOOST_TEST(static_cast<SignedQ24_40Type::FullWidthValueType>(0) == Q17.getValue());
+
+    Q17 += Q19;
+    BOOST_TEST(Q17.getValue() == Q19.getValue());
+#endif // __SIZEOF_INT128__
 
     uQ0 += 0;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0) == uQ0.getValue());
@@ -249,6 +338,45 @@ BOOST_AUTO_TEST_CASE(test_case_subtraction)
     SignedQ8_24Type Q11(1, 0);
     SignedQ8_24Type Q12(0x800000);
     SignedQ8_24Type Q13;
+#ifdef __SIZEOF_INT128__
+    UnsignedQ32_32Type uQ4(1, 1);
+    UnsignedQ32_32Type uQ5(0, 1);
+    UnsignedQ32_32Type uQ6;
+    SignedQ32_32Type Q14(0, 0);
+    SignedQ32_32Type Q15(-1, 0);
+    SignedQ32_32Type Q16(1, 0);
+    SignedQ32_32Type Q17;
+    SignedQ24_40Type Q18(0, 0);
+    SignedQ24_40Type Q19(-1, 0);
+    SignedQ24_40Type Q20(1, 0);
+
+    uQ6 = uQ5 - uQ4;
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0xFFFFFFFF00000000ULL) == uQ6.getValue());
+
+    uQ6 = uQ4 - uQ5;
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0x100000000ULL) == uQ6.getValue());
+
+    uQ6 -= 1;
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0xFFFFFFFFULL) == uQ6.getValue());
+
+    uQ6 -= 1;
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0xFFFFFFFEULL) == uQ6.getValue());
+
+    uQ6 -= 0;
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0xFFFFFFFEULL) == uQ6.getValue());
+
+    Q15 -= 0;
+    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0xFFFFFFFF00000000ULL) == Q15.getValue());
+
+    Q14 -= Q15;
+    BOOST_TEST(Q16.getValue() == Q14.getValue());
+
+    Q18 -= 0;
+    BOOST_TEST(static_cast<SignedQ24_40Type::FullWidthValueType>(0) == Q18.getValue());
+
+    Q18 -= Q19;
+    BOOST_TEST(Q20.getValue() == Q18.getValue());
+#endif // __SIZEOF_INT128__
 
     uQ3 = uQ0 - uQ1;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0x100) == uQ3.getValue());
@@ -309,6 +437,40 @@ BOOST_AUTO_TEST_CASE(test_case_increment_decrement)
     SignedQ8_24Type Q11(1, 0);
     SignedQ8_24Type Q12(0x800000);
     SignedQ8_24Type Q13;
+#ifdef __SIZEOF_INT128__
+    UnsignedQ32_32Type uQ3(1, 0);
+    UnsignedQ32_32Type uQ4(0, 0);
+    SignedQ32_32Type Q14(0, 0);
+    SignedQ32_32Type Q15(-1, 0);
+    SignedQ32_32Type Q16(1, 0);
+    SignedQ24_40Type Q17(0, 0);
+    SignedQ24_40Type Q18(-1, 0);
+    SignedQ24_40Type Q19(1, 0);
+
+    ++uQ4;
+    BOOST_TEST(uQ4.getValue() == uQ3.getValue());
+
+    --uQ4;
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0) == uQ4.getValue());
+
+    --Q14;
+    BOOST_TEST(Q14.getValue() == Q15.getValue());
+
+    ++Q14;
+    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0) == Q14.getValue());
+
+    ++Q14;
+    BOOST_TEST(Q14.getValue() == Q16.getValue());
+
+    ++Q17;
+    BOOST_TEST(Q17.getValue() == Q19.getValue());
+
+    --Q17;
+    BOOST_TEST(static_cast<SignedQ24_40Type::FullWidthValueType>(0) == Q17.getValue());
+
+    --Q17;
+    BOOST_TEST(Q17.getValue() == Q18.getValue());
+#endif // __SIZEOF_INT128__
 
     --uQ0;
     BOOST_TEST(uQ2.getValue() == uQ0.getValue());
@@ -377,6 +539,72 @@ BOOST_AUTO_TEST_CASE(test_case_multiplication)
     SignedQ8_24Type Q19;
     SignedQ8_8Type Q20(-2, 0x94);
     SignedQ8_8Type Q21(0, 0x7F);
+#ifdef __SIZEOF_INT128__
+    UnsignedQ32_32Type uQ6(1, 0);
+    UnsignedQ32_32Type uQ7(2, 0);
+    UnsignedQ32_32Type uQ8(0, ((UINT32_MAX >> 1) + 1));
+    UnsignedQ32_32Type uQ9(0, 0);
+    UnsignedQ32_32Type uQ10;
+    UnsignedQ32_32Type uQ11(0, ((UINT32_MAX >> 2) + 1));
+    SignedQ32_32Type Q22(0, 0);
+    SignedQ32_32Type Q23(0, ((UINT32_MAX >> 1) + 1));
+    SignedQ32_32Type Q24(-1, 0);
+    SignedQ32_32Type Q25(1, 0);
+    SignedQ32_32Type Q26;
+    SignedQ24_40Type Q27(0, 0);
+    SignedQ24_40Type Q28(-1, 0);
+    SignedQ24_40Type Q29(1, 0);
+    SignedQ24_40Type Q30(0, (SignedQ24_40Type::MaxFractionalPartValue) >> 1);
+    SignedQ24_40Type Q31;
+
+    uQ10 = uQ6 * uQ6;
+    BOOST_TEST(uQ10.getValue() == uQ6.getValue());
+
+    uQ10 *= uQ7;
+    BOOST_TEST(uQ10.getValue() == uQ7.getValue());
+
+    uQ10 = uQ7 * uQ6;
+    BOOST_TEST(uQ10.getValue() == uQ7.getValue());
+
+    uQ10 = uQ6 * uQ8;
+    BOOST_TEST(uQ10.getValue() == uQ8.getValue());
+
+    uQ10 = uQ6 * uQ11;
+    BOOST_TEST(uQ10.getValue() == uQ11.getValue());
+
+    uQ10 = uQ8 * uQ8;
+    BOOST_TEST(uQ10.getValue() == uQ11.getValue());
+
+    uQ10 = uQ7 * uQ8;
+    BOOST_TEST(uQ10.getValue() == uQ6.getValue());
+
+    uQ10 = uQ7 * uQ9;
+    BOOST_TEST(uQ10.getValue() == uQ9.getValue());
+
+    Q26 = Q22 * Q22;
+    BOOST_TEST(Q26.getValue() == Q22.getValue());
+
+    Q26 = Q25 * Q23;
+    BOOST_TEST(Q26.getValue() == Q23.getValue());
+
+    Q26 = Q24 * Q25;
+    BOOST_TEST(Q26.getValue() == Q24.getValue());
+
+    Q26 *= Q24;
+    BOOST_TEST(Q26.getValue() == Q25.getValue());
+
+    Q31 = Q27 * Q27;
+    BOOST_TEST(Q31.getValue() == Q27.getValue());
+
+    Q31 = Q29 * Q30;
+    BOOST_TEST(Q31.getValue() == Q30.getValue());
+
+    Q31 = Q28 * Q29;
+    BOOST_TEST(Q31.getValue() == Q28.getValue());
+
+    Q31 = Q28 * Q28;
+    BOOST_TEST(Q31.getValue() == Q29.getValue());
+#endif // __SIZEOF_INT128__
 
     uQ2 = uQ0 * uQ1;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0x101) == uQ2.getValue());
@@ -469,6 +697,74 @@ BOOST_AUTO_TEST_CASE(test_case_division)
     SignedQ8_24Type Q9(1, 0);
     SignedQ8_24Type Q10(0x800000);
     SignedQ8_24Type Q11;
+#ifdef __SIZEOF_INT128__
+    UnsignedQ32_32Type uQ7(1, 0);
+    UnsignedQ32_32Type uQ8(2, 0);
+    UnsignedQ32_32Type uQ9(0, ((UINT32_MAX >> 1) + 1));
+    UnsignedQ32_32Type uQ10(0, 0);
+    UnsignedQ32_32Type uQ11;
+    UnsignedQ32_32Type uQ12(0, ((UINT32_MAX >> 2) + 1));
+    SignedQ32_32Type Q12(0, 0);
+    SignedQ32_32Type Q13(0, ((UINT32_MAX >> 1) + 1));
+    SignedQ32_32Type Q14(-1, 0);
+    SignedQ32_32Type Q15(1, 0);
+    SignedQ32_32Type Q16;
+    SignedQ32_32Type Q17(2, 0);
+    SignedQ24_40Type Q18(0, 0);
+    SignedQ24_40Type Q19(-1, 0);
+    SignedQ24_40Type Q20(1, 0);
+    SignedQ24_40Type Q21(0, ((SignedQ24_40Type::MaxFractionalPartValue >> 1) + 1));
+    SignedQ24_40Type Q22(2,0);
+    SignedQ24_40Type Q23;
+
+    uQ11 = uQ10 / uQ8;
+    BOOST_TEST(uQ11.getValue() == uQ10.getValue());
+
+    uQ11 = uQ7 / uQ8;
+    BOOST_TEST(uQ11.getValue() == uQ9.getValue());
+
+    uQ11 = uQ8 / uQ7;
+    BOOST_TEST(uQ11.getValue() == uQ8.getValue());
+
+    uQ11 = uQ12 / uQ9;
+    BOOST_TEST(uQ11.getValue() == uQ9.getValue());
+
+    uQ11 /= uQ9;
+    BOOST_TEST(uQ11.getValue() == uQ7.getValue());
+
+    Q16 = Q12 / Q15;
+    BOOST_TEST(Q16.getValue() == Q12.getValue());
+
+    Q16 = Q14 / Q15;
+    BOOST_TEST(Q16.getValue() == Q14.getValue());
+
+    Q16 = Q15 / Q13;
+    BOOST_TEST(Q16.getValue() == Q17.getValue());
+
+    Q16 = Q14 / Q14;
+    BOOST_TEST(Q16.getValue() == Q15.getValue());
+
+    Q16 = Q15 / Q14;
+    BOOST_TEST(Q16.getValue() == Q14.getValue());
+
+    Q23 = Q20 / Q19;
+    BOOST_TEST(Q23.getValue() == Q19.getValue());
+
+    Q23 = Q20 / Q21;
+    BOOST_TEST(Q23.getValue() == Q19.getValue());
+
+    Q23 = Q20 / Q21;
+    BOOST_TEST(Q23.getValue() == Q22.getValue());
+
+    // Q26 = Q25 * Q23;
+    // BOOST_TEST(Q26.getValue() == Q23.getValue());
+
+    // Q26 = Q24 * Q25;
+    // BOOST_TEST(Q26.getValue() == Q24.getValue());
+
+    // Q26 *= Q24;
+    // BOOST_TEST(Q26.getValue() == Q25.getValue());
+#endif // __SIZEOF_INT128__
 
     uQ2 = uQ0 / uQ1;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0x101) == uQ2.getValue());
@@ -484,6 +780,9 @@ BOOST_AUTO_TEST_CASE(test_case_division)
 
     uQ2 = uQ1 / uQ4;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0x200) == uQ2.getValue());
+
+    Q2 = Q1 / Q1;
+    BOOST_TEST(static_cast<SignedQ8_8Type::FullWidthValueType>(0x100) == Q2.getValue());
 
     Q2 = Q0 / Q1;
     BOOST_TEST(static_cast<SignedQ8_8Type::FullWidthValueType>(0xff00) == Q2.getValue());

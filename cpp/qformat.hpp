@@ -63,7 +63,7 @@ namespace tinymind {
     template<typename T, unsigned NumberOfFixedBits, unsigned NumberOfFractionalBits, bool IsSigned>
     struct SignExtender
     {
-        static constexpr T SignBitMask = static_cast<T>(1 << (NumberOfFixedBits + NumberOfFractionalBits - 1));
+        static constexpr T SignBitMask = (static_cast<T>(1) << (NumberOfFixedBits + NumberOfFractionalBits - 1));
         static constexpr T SignExtensionBits = static_cast<T>((~(static_cast<size_t>(SignBitMask) - 1)) ^ SignBitMask);
 
         static void signExtend(T& value)
@@ -167,14 +167,14 @@ namespace tinymind {
     struct MultiplicationResultFullWidthFieldTypeChooser
     {
         static constexpr unsigned FullWidthResult = FullWidthFieldTypeChooser<NumBits, IsSigned>::Result;
-        typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FullWidthValueType MultiplicationResultFullWidthFieldType;
+        typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FullWidthFieldType MultiplicationResultFullWidthFieldType;
     };
 
     template<unsigned NumBits, bool IsSigned>
-    struct DivisionResultFullWidthFieldTypeChooser
+    struct DivisionResultFullWidthValueTypeChooser
     {
         static constexpr unsigned FullWidthResult = FullWidthFieldTypeChooser<NumBits, IsSigned>::Result;
-        typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FullWidthValueType DivisionResultFullWidthFieldType;
+        typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FullWidthValueType DivisionResultFullWidthValueType;
     };
 
     template<unsigned NumFixedBits, unsigned NumFractionalBits, bool IsSigned>
@@ -185,7 +185,7 @@ namespace tinymind {
         typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FullWidthFieldType                                         FullWidthFieldType;
         typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FullWidthValueType                                         FullWidthValueType;
         typedef typename MultiplicationResultFullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::MultiplicationResultFullWidthFieldType MultiplicationResultFullWidthFieldType;
-        typedef typename DivisionResultFullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::DivisionResultFullWidthFieldType             DivisionResultFullWidthFieldType;
+        typedef typename DivisionResultFullWidthValueTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::DivisionResultFullWidthValueType             DivisionResultFullWidthValueType;
     };
 
     template<unsigned NumFixedBits, unsigned NumFractionalBits, bool IsSigned>
@@ -221,7 +221,7 @@ namespace tinymind {
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::FractionalPartFieldType                FractionalPartFieldType;
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::FullWidthFieldType                     FullWidthFieldType;
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::MultiplicationResultFullWidthFieldType MultiplicationResultFullWidthFieldType;
-        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::DivisionResultFullWidthFieldType       DivisionResultFullWidthFieldType;
+        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::DivisionResultFullWidthValueType       DivisionResultFullWidthValueType;
         typedef QValueRoundingPolicy<MultiplicationResultFullWidthFieldType, NumFractionalBits>                                RoundingPolicy;
 
         static constexpr unsigned                NumberOfFixedBits      = NumFixedBits;
@@ -367,18 +367,19 @@ namespace tinymind {
 
         QValue& operator/=(const QValue& other)
         {
-            DivisionResultFullWidthFieldType left;
-            DivisionResultFullWidthFieldType right;
+            DivisionResultFullWidthValueType left;
+            FullWidthValueType right;
+            DivisionResultFullWidthValueType result;
 
-            left = static_cast<DivisionResultFullWidthFieldType>(mValue);
-            right = static_cast<DivisionResultFullWidthFieldType>(other.mValue);
+            left = static_cast<DivisionResultFullWidthValueType>(mValue);
+            right = other.mValue;
 
-            SignExtender<DivisionResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
-            SignExtender<DivisionResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(right);
+            SignExtender<DivisionResultFullWidthValueType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
 
-            const FullWidthFieldType result = static_cast<FullWidthFieldType>((left << NumberOfFractionalBits) / right);
+            left <<= NumberOfFractionalBits;
+            result = (left / right);
 
-            this->mValue = result;
+            this->mValue = static_cast<FullWidthFieldType>(result);
 
             return *this;
         }
@@ -386,18 +387,8 @@ namespace tinymind {
         QValue& operator/=(const int divisor)
         {
             const QValue other(static_cast<FixedPartFieldType>(divisor), 0);
-            DivisionResultFullWidthFieldType left;
-            DivisionResultFullWidthFieldType right;
 
-            left = static_cast<DivisionResultFullWidthFieldType>(mValue);
-            right = static_cast<DivisionResultFullWidthFieldType>(other.mValue);
-
-            SignExtender<DivisionResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
-            SignExtender<DivisionResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(right);
-
-            const FullWidthFieldType result = static_cast<FullWidthFieldType>((left << NumberOfFractionalBits) / right);
-
-            this->mValue = result;
+            (*this) /= other;
 
             return *this;
         }
