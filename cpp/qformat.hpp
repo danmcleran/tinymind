@@ -470,6 +470,11 @@ namespace tinymind {
         };
 
         static_assert(((8 * sizeof(FullWidthFieldType)) >= (NumberOfFixedBits + NumberOfFractionalBits)), "Incorrect type choice for ValueType.");
+#ifdef __SIZEOF_INT128__
+        static_assert((NumberOfFixedBits + NumberOfFractionalBits) <= 64, "Capped at 64 bits to support 128 bits in division operation.");
+#else // __SIZEOF_INT128__
+        static_assert((NumberOfFixedBits + NumberOfFractionalBits) <= 32, "Capped at 32 bits to support 64 bits in division operation.");
+#endif // __SIZEOF_INT128__
     };
 
     template<typename QValueType>
