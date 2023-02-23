@@ -25,46 +25,46 @@
 #include "activation.hpp"
 
 namespace tinymind {
-    #if (defined(TINYMIND_USE_EXP_1_7))
+    #if TINYMIND_USE_EXP_1_7
     struct ExpValuesTableQ1_7
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_1_7))
-    #if (defined(TINYMIND_USE_EXP_2_6))
+    #endif // TINYMIND_USE_EXP_1_7
+    #if TINYMIND_USE_EXP_2_6
     struct ExpValuesTableQ2_6
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_2_6))
-    #if (defined(TINYMIND_USE_EXP_3_5))
+    #endif // TINYMIND_USE_EXP_2_6
+    #if TINYMIND_USE_EXP_3_5
     struct ExpValuesTableQ3_5
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_3_5))
-    #if (defined(TINYMIND_USE_EXP_4_4))
+    #endif // TINYMIND_USE_EXP_3_5
+    #if TINYMIND_USE_EXP_4_4
     struct ExpValuesTableQ4_4
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_4_4))
-    #if (defined(TINYMIND_USE_EXP_5_3))
+    #endif // TINYMIND_USE_EXP_4_4
+    #if TINYMIND_USE_EXP_5_3
     struct ExpValuesTableQ5_3
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_5_3))
-    #if (defined(TINYMIND_USE_EXP_6_2))
+    #endif // TINYMIND_USE_EXP_5_3
+    #if TINYMIND_USE_EXP_6_2
     struct ExpValuesTableQ6_2
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_6_2))
-    #if (defined(TINYMIND_USE_EXP_7_1))
+    #endif // TINYMIND_USE_EXP_6_2
+    #if TINYMIND_USE_EXP_7_1
     struct ExpValuesTableQ7_1
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_7_1))
+    #endif // TINYMIND_USE_EXP_7_1
 }

@@ -25,94 +25,94 @@
 #include "activation.hpp"
 
 namespace tinymind {
-    #if (defined(TINYMIND_USE_EXP_1_15))
+    #if TINYMIND_USE_EXP_1_15
     struct ExpValuesTableQ1_15
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_1_15))
-    #if (defined(TINYMIND_USE_EXP_2_14))
+    #endif // TINYMIND_USE_EXP_1_15
+    #if TINYMIND_USE_EXP_2_14
     struct ExpValuesTableQ2_14
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_2_14))
-    #if (defined(TINYMIND_USE_EXP_3_13))
+    #endif // TINYMIND_USE_EXP_2_14
+    #if TINYMIND_USE_EXP_3_13
     struct ExpValuesTableQ3_13
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_3_13))
-    #if (defined(TINYMIND_USE_EXP_4_12))
+    #endif // TINYMIND_USE_EXP_3_13
+    #if TINYMIND_USE_EXP_4_12
     struct ExpValuesTableQ4_12
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_4_12))
-    #if (defined(TINYMIND_USE_EXP_5_11))
+    #endif // TINYMIND_USE_EXP_4_12
+    #if TINYMIND_USE_EXP_5_11
     struct ExpValuesTableQ5_11
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_5_11))
-    #if (defined(TINYMIND_USE_EXP_6_10))
+    #endif // TINYMIND_USE_EXP_5_11
+    #if TINYMIND_USE_EXP_6_10
     struct ExpValuesTableQ6_10
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_6_10))
-    #if (defined(TINYMIND_USE_EXP_7_9))
+    #endif // TINYMIND_USE_EXP_6_10
+    #if TINYMIND_USE_EXP_7_9
     struct ExpValuesTableQ7_9
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_7_9))
-    #if (defined(TINYMIND_USE_EXP_8_8))
+    #endif // TINYMIND_USE_EXP_7_9
+    #if TINYMIND_USE_EXP_8_8
     struct ExpValuesTableQ8_8
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_8_8))
-    #if (defined(TINYMIND_USE_EXP_9_7))
+    #endif // TINYMIND_USE_EXP_8_8
+    #if TINYMIND_USE_EXP_9_7
     struct ExpValuesTableQ9_7
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_9_7))
-    #if (defined(TINYMIND_USE_EXP_10_6))
+    #endif // TINYMIND_USE_EXP_9_7
+    #if TINYMIND_USE_EXP_10_6
     struct ExpValuesTableQ10_6
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_10_6))
-    #if (defined(TINYMIND_USE_EXP_11_5))
+    #endif // TINYMIND_USE_EXP_10_6
+    #if TINYMIND_USE_EXP_11_5
     struct ExpValuesTableQ11_5
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_11_5))
-    #if (defined(TINYMIND_USE_EXP_12_4))
+    #endif // TINYMIND_USE_EXP_11_5
+    #if TINYMIND_USE_EXP_12_4
     struct ExpValuesTableQ12_4
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_12_4))
-    #if (defined(TINYMIND_USE_EXP_13_3))
+    #endif // TINYMIND_USE_EXP_12_4
+    #if TINYMIND_USE_EXP_13_3
     struct ExpValuesTableQ13_3
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_13_3))
-    #if (defined(TINYMIND_USE_EXP_14_2))
+    #endif // TINYMIND_USE_EXP_13_3
+    #if TINYMIND_USE_EXP_14_2
     struct ExpValuesTableQ14_2
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_14_2))
-    #if (defined(TINYMIND_USE_EXP_15_1))
+    #endif // TINYMIND_USE_EXP_14_2
+    #if TINYMIND_USE_EXP_15_1
     struct ExpValuesTableQ15_1
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_EXP_15_1))
+    #endif // TINYMIND_USE_EXP_15_1
 }

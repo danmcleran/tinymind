@@ -41,7 +41,7 @@
 #include "logValues64Bit.hpp"
 
 namespace tinymind {
-    #if (defined(TINYMIND_USE_TANH_1_7))
+    #if TINYMIND_USE_TANH_1_7
     const uint8_t TanhValuesTableQ1_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x81,
                 0x81,
@@ -140,8 +140,8 @@ namespace tinymind {
                 0x7F,
                 0x7F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_1_7))
-    #if (defined(TINYMIND_USE_TANH_2_6))
+    #endif // TINYMIND_USE_TANH_1_7
+    #if TINYMIND_USE_TANH_2_6
     const uint8_t TanhValuesTableQ2_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xC1,
                 0xC1,
@@ -240,8 +240,8 @@ namespace tinymind {
                 0x3F,
                 0x3F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_2_6))
-    #if (defined(TINYMIND_USE_TANH_3_5))
+    #endif // TINYMIND_USE_TANH_2_6
+    #if TINYMIND_USE_TANH_3_5
     const uint8_t TanhValuesTableQ3_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xE1,
                 0xE1,
@@ -340,8 +340,8 @@ namespace tinymind {
                 0x1F,
                 0x1F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_3_5))
-    #if (defined(TINYMIND_USE_TANH_4_4))
+    #endif // TINYMIND_USE_TANH_3_5
+    #if TINYMIND_USE_TANH_4_4
     const uint8_t TanhValuesTableQ4_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xF1,
                 0xF1,
@@ -440,8 +440,8 @@ namespace tinymind {
                 0xF,
                 0xF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_4_4))
-    #if (defined(TINYMIND_USE_TANH_5_3))
+    #endif // TINYMIND_USE_TANH_4_4
+    #if TINYMIND_USE_TANH_5_3
     const uint8_t TanhValuesTableQ5_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xF9,
                 0xF9,
@@ -540,8 +540,8 @@ namespace tinymind {
                 0x7,
                 0x7,
     };
-    #endif // (defined(TINYMIND_USE_TANH_5_3))
-    #if (defined(TINYMIND_USE_TANH_6_2))
+    #endif // TINYMIND_USE_TANH_5_3
+    #if TINYMIND_USE_TANH_6_2
     const uint8_t TanhValuesTableQ6_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFD,
                 0xFD,
@@ -640,8 +640,8 @@ namespace tinymind {
                 0x3,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_TANH_6_2))
-    #if (defined(TINYMIND_USE_TANH_7_1))
+    #endif // TINYMIND_USE_TANH_6_2
+    #if TINYMIND_USE_TANH_7_1
     const uint8_t TanhValuesTableQ7_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFF,
                 0xFF,
@@ -740,8 +740,8 @@ namespace tinymind {
                 0x1,
                 0x1,
     };
-    #endif // (defined(TINYMIND_USE_TANH_7_1))
-    #if (defined(TINYMIND_USE_TANH_1_15))
+    #endif // TINYMIND_USE_TANH_7_1
+    #if TINYMIND_USE_TANH_1_15
     const uint16_t TanhValuesTableQ1_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x8001,
                 0x8001,
@@ -840,8 +840,8 @@ namespace tinymind {
                 0x7FFF,
                 0x7FFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_1_15))
-    #if (defined(TINYMIND_USE_TANH_2_14))
+    #endif // TINYMIND_USE_TANH_1_15
+    #if TINYMIND_USE_TANH_2_14
     const uint16_t TanhValuesTableQ2_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xC001,
                 0xC001,
@@ -940,8 +940,8 @@ namespace tinymind {
                 0x3FFF,
                 0x3FFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_2_14))
-    #if (defined(TINYMIND_USE_TANH_3_13))
+    #endif // TINYMIND_USE_TANH_2_14
+    #if TINYMIND_USE_TANH_3_13
     const uint16_t TanhValuesTableQ3_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xE001,
                 0xE001,
@@ -1040,8 +1040,8 @@ namespace tinymind {
                 0x1FFF,
                 0x1FFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_3_13))
-    #if (defined(TINYMIND_USE_TANH_4_12))
+    #endif // TINYMIND_USE_TANH_3_13
+    #if TINYMIND_USE_TANH_4_12
     const uint16_t TanhValuesTableQ4_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xF001,
                 0xF001,
@@ -1140,8 +1140,8 @@ namespace tinymind {
                 0xFFF,
                 0xFFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_4_12))
-    #if (defined(TINYMIND_USE_TANH_5_11))
+    #endif // TINYMIND_USE_TANH_4_12
+    #if TINYMIND_USE_TANH_5_11
     const uint16_t TanhValuesTableQ5_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xF801,
                 0xF801,
@@ -1240,8 +1240,8 @@ namespace tinymind {
                 0x7FF,
                 0x7FF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_5_11))
-    #if (defined(TINYMIND_USE_TANH_6_10))
+    #endif // TINYMIND_USE_TANH_5_11
+    #if TINYMIND_USE_TANH_6_10
     const uint16_t TanhValuesTableQ6_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFC01,
                 0xFC01,
@@ -1340,8 +1340,8 @@ namespace tinymind {
                 0x3FF,
                 0x3FF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_6_10))
-    #if (defined(TINYMIND_USE_TANH_7_9))
+    #endif // TINYMIND_USE_TANH_6_10
+    #if TINYMIND_USE_TANH_7_9
     const uint16_t TanhValuesTableQ7_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFE01,
                 0xFE01,
@@ -1440,8 +1440,8 @@ namespace tinymind {
                 0x1FF,
                 0x1FF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_7_9))
-    #if (defined(TINYMIND_USE_TANH_8_8))
+    #endif // TINYMIND_USE_TANH_7_9
+    #if TINYMIND_USE_TANH_8_8
     const uint16_t TanhValuesTableQ8_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFF01,
                 0xFF01,
@@ -1540,8 +1540,8 @@ namespace tinymind {
                 0xFF,
                 0xFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_8_8))
-    #if (defined(TINYMIND_USE_TANH_9_7))
+    #endif // TINYMIND_USE_TANH_8_8
+    #if TINYMIND_USE_TANH_9_7
     const uint16_t TanhValuesTableQ9_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFF81,
                 0xFF81,
@@ -1640,8 +1640,8 @@ namespace tinymind {
                 0x7F,
                 0x7F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_9_7))
-    #if (defined(TINYMIND_USE_TANH_10_6))
+    #endif // TINYMIND_USE_TANH_9_7
+    #if TINYMIND_USE_TANH_10_6
     const uint16_t TanhValuesTableQ10_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFC1,
                 0xFFC1,
@@ -1740,8 +1740,8 @@ namespace tinymind {
                 0x3F,
                 0x3F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_10_6))
-    #if (defined(TINYMIND_USE_TANH_11_5))
+    #endif // TINYMIND_USE_TANH_10_6
+    #if TINYMIND_USE_TANH_11_5
     const uint16_t TanhValuesTableQ11_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFE1,
                 0xFFE1,
@@ -1840,8 +1840,8 @@ namespace tinymind {
                 0x1F,
                 0x1F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_11_5))
-    #if (defined(TINYMIND_USE_TANH_12_4))
+    #endif // TINYMIND_USE_TANH_11_5
+    #if TINYMIND_USE_TANH_12_4
     const uint16_t TanhValuesTableQ12_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFF1,
                 0xFFF1,
@@ -1940,8 +1940,8 @@ namespace tinymind {
                 0xF,
                 0xF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_12_4))
-    #if (defined(TINYMIND_USE_TANH_13_3))
+    #endif // TINYMIND_USE_TANH_12_4
+    #if TINYMIND_USE_TANH_13_3
     const uint16_t TanhValuesTableQ13_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFF9,
                 0xFFF9,
@@ -2040,8 +2040,8 @@ namespace tinymind {
                 0x7,
                 0x7,
     };
-    #endif // (defined(TINYMIND_USE_TANH_13_3))
-    #if (defined(TINYMIND_USE_TANH_14_2))
+    #endif // TINYMIND_USE_TANH_13_3
+    #if TINYMIND_USE_TANH_14_2
     const uint16_t TanhValuesTableQ14_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFD,
                 0xFFFD,
@@ -2140,8 +2140,8 @@ namespace tinymind {
                 0x3,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_TANH_14_2))
-    #if (defined(TINYMIND_USE_TANH_15_1))
+    #endif // TINYMIND_USE_TANH_14_2
+    #if TINYMIND_USE_TANH_15_1
     const uint16_t TanhValuesTableQ15_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFF,
                 0xFFFF,
@@ -2240,8 +2240,8 @@ namespace tinymind {
                 0x1,
                 0x1,
     };
-    #endif // (defined(TINYMIND_USE_TANH_15_1))
-    #if (defined(TINYMIND_USE_TANH_1_31))
+    #endif // TINYMIND_USE_TANH_15_1
+    #if TINYMIND_USE_TANH_1_31
     const uint32_t TanhValuesTableQ1_31::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x80006716,
                 0x8000845D,
@@ -2340,8 +2340,8 @@ namespace tinymind {
                 0x7FFF560C,
                 0x7FFF7BA3,
     };
-    #endif // (defined(TINYMIND_USE_TANH_1_31))
-    #if (defined(TINYMIND_USE_TANH_2_30))
+    #endif // TINYMIND_USE_TANH_1_31
+    #if TINYMIND_USE_TANH_2_30
     const uint32_t TanhValuesTableQ2_30::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xC000338B,
                 0xC000422F,
@@ -2440,8 +2440,8 @@ namespace tinymind {
                 0x3FFFAB06,
                 0x3FFFBDD1,
     };
-    #endif // (defined(TINYMIND_USE_TANH_2_30))
-    #if (defined(TINYMIND_USE_TANH_3_29))
+    #endif // TINYMIND_USE_TANH_2_30
+    #if TINYMIND_USE_TANH_3_29
     const uint32_t TanhValuesTableQ3_29::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xE00019C6,
                 0xE0002118,
@@ -2540,8 +2540,8 @@ namespace tinymind {
                 0x1FFFD583,
                 0x1FFFDEE8,
     };
-    #endif // (defined(TINYMIND_USE_TANH_3_29))
-    #if (defined(TINYMIND_USE_TANH_4_28))
+    #endif // TINYMIND_USE_TANH_3_29
+    #if TINYMIND_USE_TANH_4_28
     const uint32_t TanhValuesTableQ4_28::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xF0000CE3,
                 0xF000108C,
@@ -2640,8 +2640,8 @@ namespace tinymind {
                 0xFFFEAC1,
                 0xFFFEF74,
     };
-    #endif // (defined(TINYMIND_USE_TANH_4_28))
-    #if (defined(TINYMIND_USE_TANH_5_27))
+    #endif // TINYMIND_USE_TANH_4_28
+    #if TINYMIND_USE_TANH_5_27
     const uint32_t TanhValuesTableQ5_27::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xF8000672,
                 0xF8000846,
@@ -2740,8 +2740,8 @@ namespace tinymind {
                 0x7FFF560,
                 0x7FFF7BA,
     };
-    #endif // (defined(TINYMIND_USE_TANH_5_27))
-    #if (defined(TINYMIND_USE_TANH_6_26))
+    #endif // TINYMIND_USE_TANH_5_27
+    #if TINYMIND_USE_TANH_6_26
     const uint32_t TanhValuesTableQ6_26::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFC000339,
                 0xFC000423,
@@ -2840,8 +2840,8 @@ namespace tinymind {
                 0x3FFFAB0,
                 0x3FFFBDD,
     };
-    #endif // (defined(TINYMIND_USE_TANH_6_26))
-    #if (defined(TINYMIND_USE_TANH_7_25))
+    #endif // TINYMIND_USE_TANH_6_26
+    #if TINYMIND_USE_TANH_7_25
     const uint32_t TanhValuesTableQ7_25::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFE00019D,
                 0xFE000212,
@@ -2940,8 +2940,8 @@ namespace tinymind {
                 0x1FFFD58,
                 0x1FFFDEE,
     };
-    #endif // (defined(TINYMIND_USE_TANH_7_25))
-    #if (defined(TINYMIND_USE_TANH_8_24))
+    #endif // TINYMIND_USE_TANH_7_25
+    #if TINYMIND_USE_TANH_8_24
     const uint32_t TanhValuesTableQ8_24::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFF0000CF,
                 0xFF000109,
@@ -3040,8 +3040,8 @@ namespace tinymind {
                 0xFFFEAC,
                 0xFFFEF7,
     };
-    #endif // (defined(TINYMIND_USE_TANH_8_24))
-    #if (defined(TINYMIND_USE_TANH_9_23))
+    #endif // TINYMIND_USE_TANH_8_24
+    #if TINYMIND_USE_TANH_9_23
     const uint32_t TanhValuesTableQ9_23::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFF800068,
                 0xFF800085,
@@ -3140,8 +3140,8 @@ namespace tinymind {
                 0x7FFF56,
                 0x7FFF7B,
     };
-    #endif // (defined(TINYMIND_USE_TANH_9_23))
-    #if (defined(TINYMIND_USE_TANH_10_22))
+    #endif // TINYMIND_USE_TANH_9_23
+    #if TINYMIND_USE_TANH_10_22
     const uint32_t TanhValuesTableQ10_22::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFC00034,
                 0xFFC00043,
@@ -3240,8 +3240,8 @@ namespace tinymind {
                 0x3FFFAB,
                 0x3FFFBD,
     };
-    #endif // (defined(TINYMIND_USE_TANH_10_22))
-    #if (defined(TINYMIND_USE_TANH_11_21))
+    #endif // TINYMIND_USE_TANH_10_22
+    #if TINYMIND_USE_TANH_11_21
     const uint32_t TanhValuesTableQ11_21::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFE0001A,
                 0xFFE00022,
@@ -3340,8 +3340,8 @@ namespace tinymind {
                 0x1FFFD5,
                 0x1FFFDE,
     };
-    #endif // (defined(TINYMIND_USE_TANH_11_21))
-    #if (defined(TINYMIND_USE_TANH_12_20))
+    #endif // TINYMIND_USE_TANH_11_21
+    #if TINYMIND_USE_TANH_12_20
     const uint32_t TanhValuesTableQ12_20::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFF0000D,
                 0xFFF00011,
@@ -3440,8 +3440,8 @@ namespace tinymind {
                 0xFFFEA,
                 0xFFFEF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_12_20))
-    #if (defined(TINYMIND_USE_TANH_13_19))
+    #endif // TINYMIND_USE_TANH_12_20
+    #if TINYMIND_USE_TANH_13_19
     const uint32_t TanhValuesTableQ13_19::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFF80007,
                 0xFFF80009,
@@ -3540,8 +3540,8 @@ namespace tinymind {
                 0x7FFF5,
                 0x7FFF7,
     };
-    #endif // (defined(TINYMIND_USE_TANH_13_19))
-    #if (defined(TINYMIND_USE_TANH_14_18))
+    #endif // TINYMIND_USE_TANH_13_19
+    #if TINYMIND_USE_TANH_14_18
     const uint32_t TanhValuesTableQ14_18::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFC0004,
                 0xFFFC0005,
@@ -3640,8 +3640,8 @@ namespace tinymind {
                 0x3FFFA,
                 0x3FFFB,
     };
-    #endif // (defined(TINYMIND_USE_TANH_14_18))
-    #if (defined(TINYMIND_USE_TANH_15_17))
+    #endif // TINYMIND_USE_TANH_14_18
+    #if TINYMIND_USE_TANH_15_17
     const uint32_t TanhValuesTableQ15_17::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFE0002,
                 0xFFFE0003,
@@ -3740,8 +3740,8 @@ namespace tinymind {
                 0x1FFFD,
                 0x1FFFD,
     };
-    #endif // (defined(TINYMIND_USE_TANH_15_17))
-    #if (defined(TINYMIND_USE_TANH_16_16))
+    #endif // TINYMIND_USE_TANH_15_17
+    #if TINYMIND_USE_TANH_16_16
     const uint32_t TanhValuesTableQ16_16::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFF0001,
                 0xFFFF0002,
@@ -3840,8 +3840,8 @@ namespace tinymind {
                 0xFFFE,
                 0xFFFE,
     };
-    #endif // (defined(TINYMIND_USE_TANH_16_16))
-    #if (defined(TINYMIND_USE_TANH_17_15))
+    #endif // TINYMIND_USE_TANH_16_16
+    #if TINYMIND_USE_TANH_17_15
     const uint32_t TanhValuesTableQ17_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFF8001,
                 0xFFFF8001,
@@ -3940,8 +3940,8 @@ namespace tinymind {
                 0x7FFF,
                 0x7FFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_17_15))
-    #if (defined(TINYMIND_USE_TANH_18_14))
+    #endif // TINYMIND_USE_TANH_17_15
+    #if TINYMIND_USE_TANH_18_14
     const uint32_t TanhValuesTableQ18_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFC001,
                 0xFFFFC001,
@@ -4040,8 +4040,8 @@ namespace tinymind {
                 0x3FFF,
                 0x3FFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_18_14))
-    #if (defined(TINYMIND_USE_TANH_19_13))
+    #endif // TINYMIND_USE_TANH_18_14
+    #if TINYMIND_USE_TANH_19_13
     const uint32_t TanhValuesTableQ19_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFE001,
                 0xFFFFE001,
@@ -4140,8 +4140,8 @@ namespace tinymind {
                 0x1FFF,
                 0x1FFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_19_13))
-    #if (defined(TINYMIND_USE_TANH_20_12))
+    #endif // TINYMIND_USE_TANH_19_13
+    #if TINYMIND_USE_TANH_20_12
     const uint32_t TanhValuesTableQ20_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFF001,
                 0xFFFFF001,
@@ -4240,8 +4240,8 @@ namespace tinymind {
                 0xFFF,
                 0xFFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_20_12))
-    #if (defined(TINYMIND_USE_TANH_21_11))
+    #endif // TINYMIND_USE_TANH_20_12
+    #if TINYMIND_USE_TANH_21_11
     const uint32_t TanhValuesTableQ21_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFF801,
                 0xFFFFF801,
@@ -4340,8 +4340,8 @@ namespace tinymind {
                 0x7FF,
                 0x7FF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_21_11))
-    #if (defined(TINYMIND_USE_TANH_22_10))
+    #endif // TINYMIND_USE_TANH_21_11
+    #if TINYMIND_USE_TANH_22_10
     const uint32_t TanhValuesTableQ22_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFC01,
                 0xFFFFFC01,
@@ -4440,8 +4440,8 @@ namespace tinymind {
                 0x3FF,
                 0x3FF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_22_10))
-    #if (defined(TINYMIND_USE_TANH_23_9))
+    #endif // TINYMIND_USE_TANH_22_10
+    #if TINYMIND_USE_TANH_23_9
     const uint32_t TanhValuesTableQ23_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFE01,
                 0xFFFFFE01,
@@ -4540,8 +4540,8 @@ namespace tinymind {
                 0x1FF,
                 0x1FF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_23_9))
-    #if (defined(TINYMIND_USE_TANH_24_8))
+    #endif // TINYMIND_USE_TANH_23_9
+    #if TINYMIND_USE_TANH_24_8
     const uint32_t TanhValuesTableQ24_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFF01,
                 0xFFFFFF01,
@@ -4640,8 +4640,8 @@ namespace tinymind {
                 0xFF,
                 0xFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_24_8))
-    #if (defined(TINYMIND_USE_TANH_25_7))
+    #endif // TINYMIND_USE_TANH_24_8
+    #if TINYMIND_USE_TANH_25_7
     const uint32_t TanhValuesTableQ25_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFF81,
                 0xFFFFFF81,
@@ -4740,8 +4740,8 @@ namespace tinymind {
                 0x7F,
                 0x7F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_25_7))
-    #if (defined(TINYMIND_USE_TANH_26_6))
+    #endif // TINYMIND_USE_TANH_25_7
+    #if TINYMIND_USE_TANH_26_6
     const uint32_t TanhValuesTableQ26_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFC1,
                 0xFFFFFFC1,
@@ -4840,8 +4840,8 @@ namespace tinymind {
                 0x3F,
                 0x3F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_26_6))
-    #if (defined(TINYMIND_USE_TANH_27_5))
+    #endif // TINYMIND_USE_TANH_26_6
+    #if TINYMIND_USE_TANH_27_5
     const uint32_t TanhValuesTableQ27_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFE1,
                 0xFFFFFFE1,
@@ -4940,8 +4940,8 @@ namespace tinymind {
                 0x1F,
                 0x1F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_27_5))
-    #if (defined(TINYMIND_USE_TANH_28_4))
+    #endif // TINYMIND_USE_TANH_27_5
+    #if TINYMIND_USE_TANH_28_4
     const uint32_t TanhValuesTableQ28_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFF1,
                 0xFFFFFFF1,
@@ -5040,8 +5040,8 @@ namespace tinymind {
                 0xF,
                 0xF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_28_4))
-    #if (defined(TINYMIND_USE_TANH_29_3))
+    #endif // TINYMIND_USE_TANH_28_4
+    #if TINYMIND_USE_TANH_29_3
     const uint32_t TanhValuesTableQ29_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFF9,
                 0xFFFFFFF9,
@@ -5140,8 +5140,8 @@ namespace tinymind {
                 0x7,
                 0x7,
     };
-    #endif // (defined(TINYMIND_USE_TANH_29_3))
-    #if (defined(TINYMIND_USE_TANH_30_2))
+    #endif // TINYMIND_USE_TANH_29_3
+    #if TINYMIND_USE_TANH_30_2
     const uint32_t TanhValuesTableQ30_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFD,
                 0xFFFFFFFD,
@@ -5240,8 +5240,8 @@ namespace tinymind {
                 0x3,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_TANH_30_2))
-    #if (defined(TINYMIND_USE_TANH_31_1))
+    #endif // TINYMIND_USE_TANH_30_2
+    #if TINYMIND_USE_TANH_31_1
     const uint32_t TanhValuesTableQ31_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFF,
                 0xFFFFFFFF,
@@ -5340,8 +5340,8 @@ namespace tinymind {
                 0x1,
                 0x1,
     };
-    #endif // (defined(TINYMIND_USE_TANH_31_1))
-    #if (defined(TINYMIND_USE_TANH_1_63))
+    #endif // TINYMIND_USE_TANH_31_1
+    #if TINYMIND_USE_TANH_1_63
     const uint64_t TanhValuesTableQ1_63::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x80006715076B1000,
                 0x8000845C1FF2BC00,
@@ -5440,8 +5440,8 @@ namespace tinymind {
                 0x7FFF560C05209400,
                 0x7FFF7BA3E00D4400,
     };
-    #endif // (defined(TINYMIND_USE_TANH_1_63))
-    #if (defined(TINYMIND_USE_TANH_2_62))
+    #endif // TINYMIND_USE_TANH_1_63
+    #if TINYMIND_USE_TANH_2_62
     const uint64_t TanhValuesTableQ2_62::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xC000338A83B58800,
                 0xC000422E0FF95E00,
@@ -5540,8 +5540,8 @@ namespace tinymind {
                 0x3FFFAB0602904A00,
                 0x3FFFBDD1F006A200,
     };
-    #endif // (defined(TINYMIND_USE_TANH_2_62))
-    #if (defined(TINYMIND_USE_TANH_3_61))
+    #endif // TINYMIND_USE_TANH_2_62
+    #if TINYMIND_USE_TANH_3_61
     const uint64_t TanhValuesTableQ3_61::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xE00019C541DAC400,
                 0xE000211707FCAF00,
@@ -5640,8 +5640,8 @@ namespace tinymind {
                 0x1FFFD58301482500,
                 0x1FFFDEE8F8035100,
     };
-    #endif // (defined(TINYMIND_USE_TANH_3_61))
-    #if (defined(TINYMIND_USE_TANH_4_60))
+    #endif // TINYMIND_USE_TANH_3_61
+    #if TINYMIND_USE_TANH_4_60
     const uint64_t TanhValuesTableQ4_60::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xF0000CE2A0ED6200,
                 0xF000108B83FE5780,
@@ -5740,8 +5740,8 @@ namespace tinymind {
                 0xFFFEAC180A41280,
                 0xFFFEF747C01A880,
     };
-    #endif // (defined(TINYMIND_USE_TANH_4_60))
-    #if (defined(TINYMIND_USE_TANH_5_59))
+    #endif // TINYMIND_USE_TANH_4_60
+    #if TINYMIND_USE_TANH_5_59
     const uint64_t TanhValuesTableQ5_59::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xF80006715076B100,
                 0xF8000845C1FF2BC0,
@@ -5840,8 +5840,8 @@ namespace tinymind {
                 0x7FFF560C0520940,
                 0x7FFF7BA3E00D440,
     };
-    #endif // (defined(TINYMIND_USE_TANH_5_59))
-    #if (defined(TINYMIND_USE_TANH_6_58))
+    #endif // TINYMIND_USE_TANH_5_59
+    #if TINYMIND_USE_TANH_6_58
     const uint64_t TanhValuesTableQ6_58::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFC000338A83B5880,
                 0xFC000422E0FF95E0,
@@ -5940,8 +5940,8 @@ namespace tinymind {
                 0x3FFFAB0602904A0,
                 0x3FFFBDD1F006A20,
     };
-    #endif // (defined(TINYMIND_USE_TANH_6_58))
-    #if (defined(TINYMIND_USE_TANH_7_57))
+    #endif // TINYMIND_USE_TANH_6_58
+    #if TINYMIND_USE_TANH_7_57
     const uint64_t TanhValuesTableQ7_57::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFE00019C541DAC40,
                 0xFE000211707FCAF0,
@@ -6040,8 +6040,8 @@ namespace tinymind {
                 0x1FFFD5830148250,
                 0x1FFFDEE8F803510,
     };
-    #endif // (defined(TINYMIND_USE_TANH_7_57))
-    #if (defined(TINYMIND_USE_TANH_8_56))
+    #endif // TINYMIND_USE_TANH_7_57
+    #if TINYMIND_USE_TANH_8_56
     const uint64_t TanhValuesTableQ8_56::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFF0000CE2A0ED620,
                 0xFF000108B83FE578,
@@ -6140,8 +6140,8 @@ namespace tinymind {
                 0xFFFEAC180A4128,
                 0xFFFEF747C01A88,
     };
-    #endif // (defined(TINYMIND_USE_TANH_8_56))
-    #if (defined(TINYMIND_USE_TANH_9_55))
+    #endif // TINYMIND_USE_TANH_8_56
+    #if TINYMIND_USE_TANH_9_55
     const uint64_t TanhValuesTableQ9_55::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFF80006715076B10,
                 0xFF8000845C1FF2BC,
@@ -6240,8 +6240,8 @@ namespace tinymind {
                 0x7FFF560C052094,
                 0x7FFF7BA3E00D44,
     };
-    #endif // (defined(TINYMIND_USE_TANH_9_55))
-    #if (defined(TINYMIND_USE_TANH_10_54))
+    #endif // TINYMIND_USE_TANH_9_55
+    #if TINYMIND_USE_TANH_10_54
     const uint64_t TanhValuesTableQ10_54::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFC000338A83B588,
                 0xFFC000422E0FF95E,
@@ -6340,8 +6340,8 @@ namespace tinymind {
                 0x3FFFAB0602904A,
                 0x3FFFBDD1F006A2,
     };
-    #endif // (defined(TINYMIND_USE_TANH_10_54))
-    #if (defined(TINYMIND_USE_TANH_11_53))
+    #endif // TINYMIND_USE_TANH_10_54
+    #if TINYMIND_USE_TANH_11_53
     const uint64_t TanhValuesTableQ11_53::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFE00019C541DAC4,
                 0xFFE000211707FCAF,
@@ -6440,8 +6440,8 @@ namespace tinymind {
                 0x1FFFD583014825,
                 0x1FFFDEE8F80351,
     };
-    #endif // (defined(TINYMIND_USE_TANH_11_53))
-    #if (defined(TINYMIND_USE_TANH_12_52))
+    #endif // TINYMIND_USE_TANH_11_53
+    #if TINYMIND_USE_TANH_12_52
     const uint64_t TanhValuesTableQ12_52::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFF0000CE2A0ED62,
                 0xFFF000108B83FE58,
@@ -6540,8 +6540,8 @@ namespace tinymind {
                 0xFFFEAC180A412,
                 0xFFFEF747C01A8,
     };
-    #endif // (defined(TINYMIND_USE_TANH_12_52))
-    #if (defined(TINYMIND_USE_TANH_13_51))
+    #endif // TINYMIND_USE_TANH_12_52
+    #if TINYMIND_USE_TANH_13_51
     const uint64_t TanhValuesTableQ13_51::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFF80006715076B1,
                 0xFFF8000845C1FF2C,
@@ -6640,8 +6640,8 @@ namespace tinymind {
                 0x7FFF560C05209,
                 0x7FFF7BA3E00D4,
     };
-    #endif // (defined(TINYMIND_USE_TANH_13_51))
-    #if (defined(TINYMIND_USE_TANH_14_50))
+    #endif // TINYMIND_USE_TANH_13_51
+    #if TINYMIND_USE_TANH_14_50
     const uint64_t TanhValuesTableQ14_50::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFC000338A83B59,
                 0xFFFC000422E0FF96,
@@ -6740,8 +6740,8 @@ namespace tinymind {
                 0x3FFFAB0602904,
                 0x3FFFBDD1F006A,
     };
-    #endif // (defined(TINYMIND_USE_TANH_14_50))
-    #if (defined(TINYMIND_USE_TANH_15_49))
+    #endif // TINYMIND_USE_TANH_14_50
+    #if TINYMIND_USE_TANH_15_49
     const uint64_t TanhValuesTableQ15_49::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFE00019C541DAD,
                 0xFFFE000211707FCB,
@@ -6840,8 +6840,8 @@ namespace tinymind {
                 0x1FFFD58301482,
                 0x1FFFDEE8F8035,
     };
-    #endif // (defined(TINYMIND_USE_TANH_15_49))
-    #if (defined(TINYMIND_USE_TANH_16_48))
+    #endif // TINYMIND_USE_TANH_15_49
+    #if TINYMIND_USE_TANH_16_48
     const uint64_t TanhValuesTableQ16_48::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFF0000CE2A0ED7,
                 0xFFFF000108B83FE6,
@@ -6940,8 +6940,8 @@ namespace tinymind {
                 0xFFFEAC180A41,
                 0xFFFEF747C01A,
     };
-    #endif // (defined(TINYMIND_USE_TANH_16_48))
-    #if (defined(TINYMIND_USE_TANH_17_47))
+    #endif // TINYMIND_USE_TANH_16_48
+    #if TINYMIND_USE_TANH_17_47
     const uint64_t TanhValuesTableQ17_47::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFF80006715076C,
                 0xFFFF8000845C1FF3,
@@ -7040,8 +7040,8 @@ namespace tinymind {
                 0x7FFF560C0520,
                 0x7FFF7BA3E00D,
     };
-    #endif // (defined(TINYMIND_USE_TANH_17_47))
-    #if (defined(TINYMIND_USE_TANH_18_46))
+    #endif // TINYMIND_USE_TANH_17_47
+    #if TINYMIND_USE_TANH_18_46
     const uint64_t TanhValuesTableQ18_46::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFC000338A83B6,
                 0xFFFFC000422E0FFA,
@@ -7140,8 +7140,8 @@ namespace tinymind {
                 0x3FFFAB060290,
                 0x3FFFBDD1F006,
     };
-    #endif // (defined(TINYMIND_USE_TANH_18_46))
-    #if (defined(TINYMIND_USE_TANH_19_45))
+    #endif // TINYMIND_USE_TANH_18_46
+    #if TINYMIND_USE_TANH_19_45
     const uint64_t TanhValuesTableQ19_45::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFE00019C541DB,
                 0xFFFFE000211707FD,
@@ -7240,8 +7240,8 @@ namespace tinymind {
                 0x1FFFD5830148,
                 0x1FFFDEE8F803,
     };
-    #endif // (defined(TINYMIND_USE_TANH_19_45))
-    #if (defined(TINYMIND_USE_TANH_20_44))
+    #endif // TINYMIND_USE_TANH_19_45
+    #if TINYMIND_USE_TANH_20_44
     const uint64_t TanhValuesTableQ20_44::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFF0000CE2A0EE,
                 0xFFFFF000108B83FF,
@@ -7340,8 +7340,8 @@ namespace tinymind {
                 0xFFFEAC180A4,
                 0xFFFEF747C01,
     };
-    #endif // (defined(TINYMIND_USE_TANH_20_44))
-    #if (defined(TINYMIND_USE_TANH_21_43))
+    #endif // TINYMIND_USE_TANH_20_44
+    #if TINYMIND_USE_TANH_21_43
     const uint64_t TanhValuesTableQ21_43::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFF80006715077,
                 0xFFFFF8000845C200,
@@ -7440,8 +7440,8 @@ namespace tinymind {
                 0x7FFF560C052,
                 0x7FFF7BA3E00,
     };
-    #endif // (defined(TINYMIND_USE_TANH_21_43))
-    #if (defined(TINYMIND_USE_TANH_22_42))
+    #endif // TINYMIND_USE_TANH_21_43
+    #if TINYMIND_USE_TANH_22_42
     const uint64_t TanhValuesTableQ22_42::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFC000338A83C,
                 0xFFFFFC000422E100,
@@ -7540,8 +7540,8 @@ namespace tinymind {
                 0x3FFFAB06029,
                 0x3FFFBDD1F00,
     };
-    #endif // (defined(TINYMIND_USE_TANH_22_42))
-    #if (defined(TINYMIND_USE_TANH_23_41))
+    #endif // TINYMIND_USE_TANH_22_42
+    #if TINYMIND_USE_TANH_23_41
     const uint64_t TanhValuesTableQ23_41::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFE00019C541E,
                 0xFFFFFE0002117080,
@@ -7640,8 +7640,8 @@ namespace tinymind {
                 0x1FFFD583014,
                 0x1FFFDEE8F80,
     };
-    #endif // (defined(TINYMIND_USE_TANH_23_41))
-    #if (defined(TINYMIND_USE_TANH_24_40))
+    #endif // TINYMIND_USE_TANH_23_41
+    #if TINYMIND_USE_TANH_24_40
     const uint64_t TanhValuesTableQ24_40::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFF0000CE2A0F,
                 0xFFFFFF000108B840,
@@ -7740,8 +7740,8 @@ namespace tinymind {
                 0xFFFEAC180A,
                 0xFFFEF747C0,
     };
-    #endif // (defined(TINYMIND_USE_TANH_24_40))
-    #if (defined(TINYMIND_USE_TANH_25_39))
+    #endif // TINYMIND_USE_TANH_24_40
+    #if TINYMIND_USE_TANH_25_39
     const uint64_t TanhValuesTableQ25_39::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFF8000671508,
                 0xFFFFFF8000845C20,
@@ -7840,8 +7840,8 @@ namespace tinymind {
                 0x7FFF560C05,
                 0x7FFF7BA3E0,
     };
-    #endif // (defined(TINYMIND_USE_TANH_25_39))
-    #if (defined(TINYMIND_USE_TANH_26_38))
+    #endif // TINYMIND_USE_TANH_25_39
+    #if TINYMIND_USE_TANH_26_38
     const uint64_t TanhValuesTableQ26_38::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFC000338A84,
                 0xFFFFFFC000422E10,
@@ -7940,8 +7940,8 @@ namespace tinymind {
                 0x3FFFAB0602,
                 0x3FFFBDD1F0,
     };
-    #endif // (defined(TINYMIND_USE_TANH_26_38))
-    #if (defined(TINYMIND_USE_TANH_27_37))
+    #endif // TINYMIND_USE_TANH_26_38
+    #if TINYMIND_USE_TANH_27_37
     const uint64_t TanhValuesTableQ27_37::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFE00019C542,
                 0xFFFFFFE000211708,
@@ -8040,8 +8040,8 @@ namespace tinymind {
                 0x1FFFD58301,
                 0x1FFFDEE8F8,
     };
-    #endif // (defined(TINYMIND_USE_TANH_27_37))
-    #if (defined(TINYMIND_USE_TANH_28_36))
+    #endif // TINYMIND_USE_TANH_27_37
+    #if TINYMIND_USE_TANH_28_36
     const uint64_t TanhValuesTableQ28_36::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFF0000CE2A1,
                 0xFFFFFFF000108B84,
@@ -8140,8 +8140,8 @@ namespace tinymind {
                 0xFFFEAC180,
                 0xFFFEF747C,
     };
-    #endif // (defined(TINYMIND_USE_TANH_28_36))
-    #if (defined(TINYMIND_USE_TANH_29_35))
+    #endif // TINYMIND_USE_TANH_28_36
+    #if TINYMIND_USE_TANH_29_35
     const uint64_t TanhValuesTableQ29_35::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFF800067151,
                 0xFFFFFFF8000845C2,
@@ -8240,8 +8240,8 @@ namespace tinymind {
                 0x7FFF560C0,
                 0x7FFF7BA3E,
     };
-    #endif // (defined(TINYMIND_USE_TANH_29_35))
-    #if (defined(TINYMIND_USE_TANH_30_34))
+    #endif // TINYMIND_USE_TANH_29_35
+    #if TINYMIND_USE_TANH_30_34
     const uint64_t TanhValuesTableQ30_34::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFC000338A9,
                 0xFFFFFFFC000422E1,
@@ -8340,8 +8340,8 @@ namespace tinymind {
                 0x3FFFAB060,
                 0x3FFFBDD1F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_30_34))
-    #if (defined(TINYMIND_USE_TANH_31_33))
+    #endif // TINYMIND_USE_TANH_30_34
+    #if TINYMIND_USE_TANH_31_33
     const uint64_t TanhValuesTableQ31_33::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFE00019C55,
                 0xFFFFFFFE00021171,
@@ -8440,8 +8440,8 @@ namespace tinymind {
                 0x1FFFD5830,
                 0x1FFFDEE8F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_31_33))
-    #if (defined(TINYMIND_USE_TANH_32_32))
+    #endif // TINYMIND_USE_TANH_31_33
+    #if TINYMIND_USE_TANH_32_32
     const uint64_t TanhValuesTableQ32_32::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFF0000CE2B,
                 0xFFFFFFFF000108B9,
@@ -8540,8 +8540,8 @@ namespace tinymind {
                 0xFFFEAC18,
                 0xFFFEF747,
     };
-    #endif // (defined(TINYMIND_USE_TANH_32_32))
-    #if (defined(TINYMIND_USE_TANH_33_31))
+    #endif // TINYMIND_USE_TANH_32_32
+    #if TINYMIND_USE_TANH_33_31
     const uint64_t TanhValuesTableQ33_31::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFF80006716,
                 0xFFFFFFFF8000845D,
@@ -8640,8 +8640,8 @@ namespace tinymind {
                 0x7FFF560C,
                 0x7FFF7BA3,
     };
-    #endif // (defined(TINYMIND_USE_TANH_33_31))
-    #if (defined(TINYMIND_USE_TANH_34_30))
+    #endif // TINYMIND_USE_TANH_33_31
+    #if TINYMIND_USE_TANH_34_30
     const uint64_t TanhValuesTableQ34_30::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFC000338B,
                 0xFFFFFFFFC000422F,
@@ -8740,8 +8740,8 @@ namespace tinymind {
                 0x3FFFAB06,
                 0x3FFFBDD1,
     };
-    #endif // (defined(TINYMIND_USE_TANH_34_30))
-    #if (defined(TINYMIND_USE_TANH_35_29))
+    #endif // TINYMIND_USE_TANH_34_30
+    #if TINYMIND_USE_TANH_35_29
     const uint64_t TanhValuesTableQ35_29::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFE00019C6,
                 0xFFFFFFFFE0002118,
@@ -8840,8 +8840,8 @@ namespace tinymind {
                 0x1FFFD583,
                 0x1FFFDEE8,
     };
-    #endif // (defined(TINYMIND_USE_TANH_35_29))
-    #if (defined(TINYMIND_USE_TANH_36_28))
+    #endif // TINYMIND_USE_TANH_35_29
+    #if TINYMIND_USE_TANH_36_28
     const uint64_t TanhValuesTableQ36_28::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFF0000CE3,
                 0xFFFFFFFFF000108C,
@@ -8940,8 +8940,8 @@ namespace tinymind {
                 0xFFFEAC1,
                 0xFFFEF74,
     };
-    #endif // (defined(TINYMIND_USE_TANH_36_28))
-    #if (defined(TINYMIND_USE_TANH_37_27))
+    #endif // TINYMIND_USE_TANH_36_28
+    #if TINYMIND_USE_TANH_37_27
     const uint64_t TanhValuesTableQ37_27::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFF8000672,
                 0xFFFFFFFFF8000846,
@@ -9040,8 +9040,8 @@ namespace tinymind {
                 0x7FFF560,
                 0x7FFF7BA,
     };
-    #endif // (defined(TINYMIND_USE_TANH_37_27))
-    #if (defined(TINYMIND_USE_TANH_38_26))
+    #endif // TINYMIND_USE_TANH_37_27
+    #if TINYMIND_USE_TANH_38_26
     const uint64_t TanhValuesTableQ38_26::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFC000339,
                 0xFFFFFFFFFC000423,
@@ -9140,8 +9140,8 @@ namespace tinymind {
                 0x3FFFAB0,
                 0x3FFFBDD,
     };
-    #endif // (defined(TINYMIND_USE_TANH_38_26))
-    #if (defined(TINYMIND_USE_TANH_39_25))
+    #endif // TINYMIND_USE_TANH_38_26
+    #if TINYMIND_USE_TANH_39_25
     const uint64_t TanhValuesTableQ39_25::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFE00019D,
                 0xFFFFFFFFFE000212,
@@ -9240,8 +9240,8 @@ namespace tinymind {
                 0x1FFFD58,
                 0x1FFFDEE,
     };
-    #endif // (defined(TINYMIND_USE_TANH_39_25))
-    #if (defined(TINYMIND_USE_TANH_40_24))
+    #endif // TINYMIND_USE_TANH_39_25
+    #if TINYMIND_USE_TANH_40_24
     const uint64_t TanhValuesTableQ40_24::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFF0000CF,
                 0xFFFFFFFFFF000109,
@@ -9340,8 +9340,8 @@ namespace tinymind {
                 0xFFFEAC,
                 0xFFFEF7,
     };
-    #endif // (defined(TINYMIND_USE_TANH_40_24))
-    #if (defined(TINYMIND_USE_TANH_41_23))
+    #endif // TINYMIND_USE_TANH_40_24
+    #if TINYMIND_USE_TANH_41_23
     const uint64_t TanhValuesTableQ41_23::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFF800068,
                 0xFFFFFFFFFF800085,
@@ -9440,8 +9440,8 @@ namespace tinymind {
                 0x7FFF56,
                 0x7FFF7B,
     };
-    #endif // (defined(TINYMIND_USE_TANH_41_23))
-    #if (defined(TINYMIND_USE_TANH_42_22))
+    #endif // TINYMIND_USE_TANH_41_23
+    #if TINYMIND_USE_TANH_42_22
     const uint64_t TanhValuesTableQ42_22::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFC00034,
                 0xFFFFFFFFFFC00043,
@@ -9540,8 +9540,8 @@ namespace tinymind {
                 0x3FFFAB,
                 0x3FFFBD,
     };
-    #endif // (defined(TINYMIND_USE_TANH_42_22))
-    #if (defined(TINYMIND_USE_TANH_43_21))
+    #endif // TINYMIND_USE_TANH_42_22
+    #if TINYMIND_USE_TANH_43_21
     const uint64_t TanhValuesTableQ43_21::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFE0001A,
                 0xFFFFFFFFFFE00022,
@@ -9640,8 +9640,8 @@ namespace tinymind {
                 0x1FFFD5,
                 0x1FFFDE,
     };
-    #endif // (defined(TINYMIND_USE_TANH_43_21))
-    #if (defined(TINYMIND_USE_TANH_44_20))
+    #endif // TINYMIND_USE_TANH_43_21
+    #if TINYMIND_USE_TANH_44_20
     const uint64_t TanhValuesTableQ44_20::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFF0000D,
                 0xFFFFFFFFFFF00011,
@@ -9740,8 +9740,8 @@ namespace tinymind {
                 0xFFFEA,
                 0xFFFEF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_44_20))
-    #if (defined(TINYMIND_USE_TANH_45_19))
+    #endif // TINYMIND_USE_TANH_44_20
+    #if TINYMIND_USE_TANH_45_19
     const uint64_t TanhValuesTableQ45_19::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFF80007,
                 0xFFFFFFFFFFF80009,
@@ -9840,8 +9840,8 @@ namespace tinymind {
                 0x7FFF5,
                 0x7FFF7,
     };
-    #endif // (defined(TINYMIND_USE_TANH_45_19))
-    #if (defined(TINYMIND_USE_TANH_46_18))
+    #endif // TINYMIND_USE_TANH_45_19
+    #if TINYMIND_USE_TANH_46_18
     const uint64_t TanhValuesTableQ46_18::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFC0004,
                 0xFFFFFFFFFFFC0005,
@@ -9940,8 +9940,8 @@ namespace tinymind {
                 0x3FFFA,
                 0x3FFFB,
     };
-    #endif // (defined(TINYMIND_USE_TANH_46_18))
-    #if (defined(TINYMIND_USE_TANH_47_17))
+    #endif // TINYMIND_USE_TANH_46_18
+    #if TINYMIND_USE_TANH_47_17
     const uint64_t TanhValuesTableQ47_17::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFE0002,
                 0xFFFFFFFFFFFE0003,
@@ -10040,8 +10040,8 @@ namespace tinymind {
                 0x1FFFD,
                 0x1FFFD,
     };
-    #endif // (defined(TINYMIND_USE_TANH_47_17))
-    #if (defined(TINYMIND_USE_TANH_48_16))
+    #endif // TINYMIND_USE_TANH_47_17
+    #if TINYMIND_USE_TANH_48_16
     const uint64_t TanhValuesTableQ48_16::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFF0001,
                 0xFFFFFFFFFFFF0002,
@@ -10140,8 +10140,8 @@ namespace tinymind {
                 0xFFFE,
                 0xFFFE,
     };
-    #endif // (defined(TINYMIND_USE_TANH_48_16))
-    #if (defined(TINYMIND_USE_TANH_49_15))
+    #endif // TINYMIND_USE_TANH_48_16
+    #if TINYMIND_USE_TANH_49_15
     const uint64_t TanhValuesTableQ49_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFF8001,
                 0xFFFFFFFFFFFF8001,
@@ -10240,8 +10240,8 @@ namespace tinymind {
                 0x7FFF,
                 0x7FFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_49_15))
-    #if (defined(TINYMIND_USE_TANH_50_14))
+    #endif // TINYMIND_USE_TANH_49_15
+    #if TINYMIND_USE_TANH_50_14
     const uint64_t TanhValuesTableQ50_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFC001,
                 0xFFFFFFFFFFFFC001,
@@ -10340,8 +10340,8 @@ namespace tinymind {
                 0x3FFF,
                 0x3FFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_50_14))
-    #if (defined(TINYMIND_USE_TANH_51_13))
+    #endif // TINYMIND_USE_TANH_50_14
+    #if TINYMIND_USE_TANH_51_13
     const uint64_t TanhValuesTableQ51_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFE001,
                 0xFFFFFFFFFFFFE001,
@@ -10440,8 +10440,8 @@ namespace tinymind {
                 0x1FFF,
                 0x1FFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_51_13))
-    #if (defined(TINYMIND_USE_TANH_52_12))
+    #endif // TINYMIND_USE_TANH_51_13
+    #if TINYMIND_USE_TANH_52_12
     const uint64_t TanhValuesTableQ52_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFF001,
                 0xFFFFFFFFFFFFF001,
@@ -10540,8 +10540,8 @@ namespace tinymind {
                 0xFFF,
                 0xFFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_52_12))
-    #if (defined(TINYMIND_USE_TANH_53_11))
+    #endif // TINYMIND_USE_TANH_52_12
+    #if TINYMIND_USE_TANH_53_11
     const uint64_t TanhValuesTableQ53_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFF801,
                 0xFFFFFFFFFFFFF801,
@@ -10640,8 +10640,8 @@ namespace tinymind {
                 0x7FF,
                 0x7FF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_53_11))
-    #if (defined(TINYMIND_USE_TANH_54_10))
+    #endif // TINYMIND_USE_TANH_53_11
+    #if TINYMIND_USE_TANH_54_10
     const uint64_t TanhValuesTableQ54_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFFC01,
                 0xFFFFFFFFFFFFFC01,
@@ -10740,8 +10740,8 @@ namespace tinymind {
                 0x3FF,
                 0x3FF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_54_10))
-    #if (defined(TINYMIND_USE_TANH_55_9))
+    #endif // TINYMIND_USE_TANH_54_10
+    #if TINYMIND_USE_TANH_55_9
     const uint64_t TanhValuesTableQ55_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFFE01,
                 0xFFFFFFFFFFFFFE01,
@@ -10840,8 +10840,8 @@ namespace tinymind {
                 0x1FF,
                 0x1FF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_55_9))
-    #if (defined(TINYMIND_USE_TANH_56_8))
+    #endif // TINYMIND_USE_TANH_55_9
+    #if TINYMIND_USE_TANH_56_8
     const uint64_t TanhValuesTableQ56_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFFF01,
                 0xFFFFFFFFFFFFFF01,
@@ -10940,8 +10940,8 @@ namespace tinymind {
                 0xFF,
                 0xFF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_56_8))
-    #if (defined(TINYMIND_USE_TANH_57_7))
+    #endif // TINYMIND_USE_TANH_56_8
+    #if TINYMIND_USE_TANH_57_7
     const uint64_t TanhValuesTableQ57_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFFF81,
                 0xFFFFFFFFFFFFFF81,
@@ -11040,8 +11040,8 @@ namespace tinymind {
                 0x7F,
                 0x7F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_57_7))
-    #if (defined(TINYMIND_USE_TANH_58_6))
+    #endif // TINYMIND_USE_TANH_57_7
+    #if TINYMIND_USE_TANH_58_6
     const uint64_t TanhValuesTableQ58_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFFFC1,
                 0xFFFFFFFFFFFFFFC1,
@@ -11140,8 +11140,8 @@ namespace tinymind {
                 0x3F,
                 0x3F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_58_6))
-    #if (defined(TINYMIND_USE_TANH_59_5))
+    #endif // TINYMIND_USE_TANH_58_6
+    #if TINYMIND_USE_TANH_59_5
     const uint64_t TanhValuesTableQ59_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFFFE1,
                 0xFFFFFFFFFFFFFFE1,
@@ -11240,8 +11240,8 @@ namespace tinymind {
                 0x1F,
                 0x1F,
     };
-    #endif // (defined(TINYMIND_USE_TANH_59_5))
-    #if (defined(TINYMIND_USE_TANH_60_4))
+    #endif // TINYMIND_USE_TANH_59_5
+    #if TINYMIND_USE_TANH_60_4
     const uint64_t TanhValuesTableQ60_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFFFF1,
                 0xFFFFFFFFFFFFFFF1,
@@ -11340,8 +11340,8 @@ namespace tinymind {
                 0xF,
                 0xF,
     };
-    #endif // (defined(TINYMIND_USE_TANH_60_4))
-    #if (defined(TINYMIND_USE_TANH_61_3))
+    #endif // TINYMIND_USE_TANH_60_4
+    #if TINYMIND_USE_TANH_61_3
     const uint64_t TanhValuesTableQ61_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFFFF9,
                 0xFFFFFFFFFFFFFFF9,
@@ -11440,8 +11440,8 @@ namespace tinymind {
                 0x7,
                 0x7,
     };
-    #endif // (defined(TINYMIND_USE_TANH_61_3))
-    #if (defined(TINYMIND_USE_TANH_62_2))
+    #endif // TINYMIND_USE_TANH_61_3
+    #if TINYMIND_USE_TANH_62_2
     const uint64_t TanhValuesTableQ62_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFFFFD,
                 0xFFFFFFFFFFFFFFFD,
@@ -11540,8 +11540,8 @@ namespace tinymind {
                 0x3,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_TANH_62_2))
-    #if (defined(TINYMIND_USE_TANH_63_1))
+    #endif // TINYMIND_USE_TANH_62_2
+    #if TINYMIND_USE_TANH_63_1
     const uint64_t TanhValuesTableQ63_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xFFFFFFFFFFFFFFFF,
                 0xFFFFFFFFFFFFFFFF,
@@ -11640,8 +11640,8 @@ namespace tinymind {
                 0x1,
                 0x1,
     };
-    #endif // (defined(TINYMIND_USE_TANH_63_1))
-    #if (defined(TINYMIND_USE_SIGMOID_1_7))
+    #endif // TINYMIND_USE_TANH_63_1
+    #if TINYMIND_USE_SIGMOID_1_7
     const uint8_t SigmoidValuesTableQ1_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -11740,8 +11740,8 @@ namespace tinymind {
                 0x7F,
                 0x7F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_1_7))
-    #if (defined(TINYMIND_USE_SIGMOID_2_6))
+    #endif // TINYMIND_USE_SIGMOID_1_7
+    #if TINYMIND_USE_SIGMOID_2_6
     const uint8_t SigmoidValuesTableQ2_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -11840,8 +11840,8 @@ namespace tinymind {
                 0x3F,
                 0x3F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_2_6))
-    #if (defined(TINYMIND_USE_SIGMOID_3_5))
+    #endif // TINYMIND_USE_SIGMOID_2_6
+    #if TINYMIND_USE_SIGMOID_3_5
     const uint8_t SigmoidValuesTableQ3_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -11940,8 +11940,8 @@ namespace tinymind {
                 0x1F,
                 0x1F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_3_5))
-    #if (defined(TINYMIND_USE_SIGMOID_4_4))
+    #endif // TINYMIND_USE_SIGMOID_3_5
+    #if TINYMIND_USE_SIGMOID_4_4
     const uint8_t SigmoidValuesTableQ4_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -12040,8 +12040,8 @@ namespace tinymind {
                 0xF,
                 0xF,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_4_4))
-    #if (defined(TINYMIND_USE_SIGMOID_5_3))
+    #endif // TINYMIND_USE_SIGMOID_4_4
+    #if TINYMIND_USE_SIGMOID_5_3
     const uint8_t SigmoidValuesTableQ5_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -12140,8 +12140,8 @@ namespace tinymind {
                 0x7,
                 0x7,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_5_3))
-    #if (defined(TINYMIND_USE_SIGMOID_6_2))
+    #endif // TINYMIND_USE_SIGMOID_5_3
+    #if TINYMIND_USE_SIGMOID_6_2
     const uint8_t SigmoidValuesTableQ6_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -12240,8 +12240,8 @@ namespace tinymind {
                 0x3,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_6_2))
-    #if (defined(TINYMIND_USE_SIGMOID_7_1))
+    #endif // TINYMIND_USE_SIGMOID_6_2
+    #if TINYMIND_USE_SIGMOID_7_1
     const uint8_t SigmoidValuesTableQ7_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -12340,8 +12340,8 @@ namespace tinymind {
                 0x1,
                 0x1,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_7_1))
-    #if (defined(TINYMIND_USE_SIGMOID_1_15))
+    #endif // TINYMIND_USE_SIGMOID_7_1
+    #if TINYMIND_USE_SIGMOID_1_15
     const uint16_t SigmoidValuesTableQ1_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x51,
                 0x5B,
@@ -12440,8 +12440,8 @@ namespace tinymind {
                 0x7F98,
                 0x7FA4,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_1_15))
-    #if (defined(TINYMIND_USE_SIGMOID_2_14))
+    #endif // TINYMIND_USE_SIGMOID_1_15
+    #if TINYMIND_USE_SIGMOID_2_14
     const uint16_t SigmoidValuesTableQ2_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x28,
                 0x2D,
@@ -12540,8 +12540,8 @@ namespace tinymind {
                 0x3FCC,
                 0x3FD2,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_2_14))
-    #if (defined(TINYMIND_USE_SIGMOID_3_13))
+    #endif // TINYMIND_USE_SIGMOID_2_14
+    #if TINYMIND_USE_SIGMOID_3_13
     const uint16_t SigmoidValuesTableQ3_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14,
                 0x16,
@@ -12640,8 +12640,8 @@ namespace tinymind {
                 0x1FE6,
                 0x1FE9,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_3_13))
-    #if (defined(TINYMIND_USE_SIGMOID_4_12))
+    #endif // TINYMIND_USE_SIGMOID_3_13
+    #if TINYMIND_USE_SIGMOID_4_12
     const uint16_t SigmoidValuesTableQ4_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA,
                 0xB,
@@ -12740,8 +12740,8 @@ namespace tinymind {
                 0xFF3,
                 0xFF4,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_4_12))
-    #if (defined(TINYMIND_USE_SIGMOID_5_11))
+    #endif // TINYMIND_USE_SIGMOID_4_12
+    #if TINYMIND_USE_SIGMOID_5_11
     const uint16_t SigmoidValuesTableQ5_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5,
                 0x5,
@@ -12840,8 +12840,8 @@ namespace tinymind {
                 0x7F9,
                 0x7FA,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_5_11))
-    #if (defined(TINYMIND_USE_SIGMOID_6_10))
+    #endif // TINYMIND_USE_SIGMOID_5_11
+    #if TINYMIND_USE_SIGMOID_6_10
     const uint16_t SigmoidValuesTableQ6_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2,
                 0x2,
@@ -12940,8 +12940,8 @@ namespace tinymind {
                 0x3FC,
                 0x3FD,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_6_10))
-    #if (defined(TINYMIND_USE_SIGMOID_7_9))
+    #endif // TINYMIND_USE_SIGMOID_6_10
+    #if TINYMIND_USE_SIGMOID_7_9
     const uint16_t SigmoidValuesTableQ7_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x1,
                 0x1,
@@ -13040,8 +13040,8 @@ namespace tinymind {
                 0x1FE,
                 0x1FE,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_7_9))
-    #if (defined(TINYMIND_USE_SIGMOID_8_8))
+    #endif // TINYMIND_USE_SIGMOID_7_9
+    #if TINYMIND_USE_SIGMOID_8_8
     const uint16_t SigmoidValuesTableQ8_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -13140,8 +13140,8 @@ namespace tinymind {
                 0xFF,
                 0xFF,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_8_8))
-    #if (defined(TINYMIND_USE_SIGMOID_9_7))
+    #endif // TINYMIND_USE_SIGMOID_8_8
+    #if TINYMIND_USE_SIGMOID_9_7
     const uint16_t SigmoidValuesTableQ9_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -13240,8 +13240,8 @@ namespace tinymind {
                 0x7F,
                 0x7F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_9_7))
-    #if (defined(TINYMIND_USE_SIGMOID_10_6))
+    #endif // TINYMIND_USE_SIGMOID_9_7
+    #if TINYMIND_USE_SIGMOID_10_6
     const uint16_t SigmoidValuesTableQ10_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -13340,8 +13340,8 @@ namespace tinymind {
                 0x3F,
                 0x3F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_10_6))
-    #if (defined(TINYMIND_USE_SIGMOID_11_5))
+    #endif // TINYMIND_USE_SIGMOID_10_6
+    #if TINYMIND_USE_SIGMOID_11_5
     const uint16_t SigmoidValuesTableQ11_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -13440,8 +13440,8 @@ namespace tinymind {
                 0x1F,
                 0x1F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_11_5))
-    #if (defined(TINYMIND_USE_SIGMOID_12_4))
+    #endif // TINYMIND_USE_SIGMOID_11_5
+    #if TINYMIND_USE_SIGMOID_12_4
     const uint16_t SigmoidValuesTableQ12_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -13540,8 +13540,8 @@ namespace tinymind {
                 0xF,
                 0xF,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_12_4))
-    #if (defined(TINYMIND_USE_SIGMOID_13_3))
+    #endif // TINYMIND_USE_SIGMOID_12_4
+    #if TINYMIND_USE_SIGMOID_13_3
     const uint16_t SigmoidValuesTableQ13_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -13640,8 +13640,8 @@ namespace tinymind {
                 0x7,
                 0x7,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_13_3))
-    #if (defined(TINYMIND_USE_SIGMOID_14_2))
+    #endif // TINYMIND_USE_SIGMOID_13_3
+    #if TINYMIND_USE_SIGMOID_14_2
     const uint16_t SigmoidValuesTableQ14_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -13740,8 +13740,8 @@ namespace tinymind {
                 0x3,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_14_2))
-    #if (defined(TINYMIND_USE_SIGMOID_15_1))
+    #endif // TINYMIND_USE_SIGMOID_14_2
+    #if TINYMIND_USE_SIGMOID_15_1
     const uint16_t SigmoidValuesTableQ15_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -13840,8 +13840,8 @@ namespace tinymind {
                 0x1,
                 0x1,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_15_1))
-    #if (defined(TINYMIND_USE_SIGMOID_1_31))
+    #endif // TINYMIND_USE_SIGMOID_15_1
+    #if TINYMIND_USE_SIGMOID_1_31
     const uint32_t SigmoidValuesTableQ1_31::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105DD,
                 0x5BC7E0,
@@ -13940,8 +13940,8 @@ namespace tinymind {
                 0x7F98099B,
                 0x7FA4381F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_1_31))
-    #if (defined(TINYMIND_USE_SIGMOID_2_30))
+    #endif // TINYMIND_USE_SIGMOID_1_31
+    #if TINYMIND_USE_SIGMOID_2_30
     const uint32_t SigmoidValuesTableQ2_30::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882EE,
                 0x2DE3F0,
@@ -14040,8 +14040,8 @@ namespace tinymind {
                 0x3FCC04CD,
                 0x3FD21C0F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_2_30))
-    #if (defined(TINYMIND_USE_SIGMOID_3_29))
+    #endif // TINYMIND_USE_SIGMOID_2_30
+    #if TINYMIND_USE_SIGMOID_3_29
     const uint32_t SigmoidValuesTableQ3_29::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144177,
                 0x16F1F8,
@@ -14140,8 +14140,8 @@ namespace tinymind {
                 0x1FE60266,
                 0x1FE90E07,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_3_29))
-    #if (defined(TINYMIND_USE_SIGMOID_4_28))
+    #endif // TINYMIND_USE_SIGMOID_3_29
+    #if TINYMIND_USE_SIGMOID_4_28
     const uint32_t SigmoidValuesTableQ4_28::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20BB,
                 0xB78FC,
@@ -14240,8 +14240,8 @@ namespace tinymind {
                 0xFF30133,
                 0xFF48703,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_4_28))
-    #if (defined(TINYMIND_USE_SIGMOID_5_27))
+    #endif // TINYMIND_USE_SIGMOID_4_28
+    #if TINYMIND_USE_SIGMOID_5_27
     const uint32_t SigmoidValuesTableQ5_27::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105D,
                 0x5BC7E,
@@ -14340,8 +14340,8 @@ namespace tinymind {
                 0x7F98099,
                 0x7FA4381,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_5_27))
-    #if (defined(TINYMIND_USE_SIGMOID_6_26))
+    #endif // TINYMIND_USE_SIGMOID_5_27
+    #if TINYMIND_USE_SIGMOID_6_26
     const uint32_t SigmoidValuesTableQ6_26::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882E,
                 0x2DE3F,
@@ -14440,8 +14440,8 @@ namespace tinymind {
                 0x3FCC04C,
                 0x3FD21C0,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_6_26))
-    #if (defined(TINYMIND_USE_SIGMOID_7_25))
+    #endif // TINYMIND_USE_SIGMOID_6_26
+    #if TINYMIND_USE_SIGMOID_7_25
     const uint32_t SigmoidValuesTableQ7_25::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14417,
                 0x16F1F,
@@ -14540,8 +14540,8 @@ namespace tinymind {
                 0x1FE6026,
                 0x1FE90E0,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_7_25))
-    #if (defined(TINYMIND_USE_SIGMOID_8_24))
+    #endif // TINYMIND_USE_SIGMOID_7_25
+    #if TINYMIND_USE_SIGMOID_8_24
     const uint32_t SigmoidValuesTableQ8_24::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20B,
                 0xB78F,
@@ -14640,8 +14640,8 @@ namespace tinymind {
                 0xFF3013,
                 0xFF4870,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_8_24))
-    #if (defined(TINYMIND_USE_SIGMOID_9_23))
+    #endif // TINYMIND_USE_SIGMOID_8_24
+    #if TINYMIND_USE_SIGMOID_9_23
     const uint32_t SigmoidValuesTableQ9_23::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105,
                 0x5BC7,
@@ -14740,8 +14740,8 @@ namespace tinymind {
                 0x7F9809,
                 0x7FA438,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_9_23))
-    #if (defined(TINYMIND_USE_SIGMOID_10_22))
+    #endif // TINYMIND_USE_SIGMOID_9_23
+    #if TINYMIND_USE_SIGMOID_10_22
     const uint32_t SigmoidValuesTableQ10_22::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882,
                 0x2DE3,
@@ -14840,8 +14840,8 @@ namespace tinymind {
                 0x3FCC04,
                 0x3FD21C,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_10_22))
-    #if (defined(TINYMIND_USE_SIGMOID_11_21))
+    #endif // TINYMIND_USE_SIGMOID_10_22
+    #if TINYMIND_USE_SIGMOID_11_21
     const uint32_t SigmoidValuesTableQ11_21::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x1441,
                 0x16F1,
@@ -14940,8 +14940,8 @@ namespace tinymind {
                 0x1FE602,
                 0x1FE90E,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_11_21))
-    #if (defined(TINYMIND_USE_SIGMOID_12_20))
+    #endif // TINYMIND_USE_SIGMOID_11_21
+    #if TINYMIND_USE_SIGMOID_12_20
     const uint32_t SigmoidValuesTableQ12_20::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20,
                 0xB78,
@@ -15040,8 +15040,8 @@ namespace tinymind {
                 0xFF301,
                 0xFF487,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_12_20))
-    #if (defined(TINYMIND_USE_SIGMOID_13_19))
+    #endif // TINYMIND_USE_SIGMOID_12_20
+    #if TINYMIND_USE_SIGMOID_13_19
     const uint32_t SigmoidValuesTableQ13_19::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x510,
                 0x5BC,
@@ -15140,8 +15140,8 @@ namespace tinymind {
                 0x7F980,
                 0x7FA43,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_13_19))
-    #if (defined(TINYMIND_USE_SIGMOID_14_18))
+    #endif // TINYMIND_USE_SIGMOID_13_19
+    #if TINYMIND_USE_SIGMOID_14_18
     const uint32_t SigmoidValuesTableQ14_18::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x288,
                 0x2DE,
@@ -15240,8 +15240,8 @@ namespace tinymind {
                 0x3FCC0,
                 0x3FD21,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_14_18))
-    #if (defined(TINYMIND_USE_SIGMOID_15_17))
+    #endif // TINYMIND_USE_SIGMOID_14_18
+    #if TINYMIND_USE_SIGMOID_15_17
     const uint32_t SigmoidValuesTableQ15_17::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144,
                 0x16F,
@@ -15340,8 +15340,8 @@ namespace tinymind {
                 0x1FE60,
                 0x1FE90,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_15_17))
-    #if (defined(TINYMIND_USE_SIGMOID_16_16))
+    #endif // TINYMIND_USE_SIGMOID_15_17
+    #if TINYMIND_USE_SIGMOID_16_16
     const uint32_t SigmoidValuesTableQ16_16::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2,
                 0xB7,
@@ -15440,8 +15440,8 @@ namespace tinymind {
                 0xFF30,
                 0xFF48,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_16_16))
-    #if (defined(TINYMIND_USE_SIGMOID_17_15))
+    #endif // TINYMIND_USE_SIGMOID_16_16
+    #if TINYMIND_USE_SIGMOID_17_15
     const uint32_t SigmoidValuesTableQ17_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x51,
                 0x5B,
@@ -15540,8 +15540,8 @@ namespace tinymind {
                 0x7F98,
                 0x7FA4,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_17_15))
-    #if (defined(TINYMIND_USE_SIGMOID_18_14))
+    #endif // TINYMIND_USE_SIGMOID_17_15
+    #if TINYMIND_USE_SIGMOID_18_14
     const uint32_t SigmoidValuesTableQ18_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x28,
                 0x2D,
@@ -15640,8 +15640,8 @@ namespace tinymind {
                 0x3FCC,
                 0x3FD2,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_18_14))
-    #if (defined(TINYMIND_USE_SIGMOID_19_13))
+    #endif // TINYMIND_USE_SIGMOID_18_14
+    #if TINYMIND_USE_SIGMOID_19_13
     const uint32_t SigmoidValuesTableQ19_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14,
                 0x16,
@@ -15740,8 +15740,8 @@ namespace tinymind {
                 0x1FE6,
                 0x1FE9,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_19_13))
-    #if (defined(TINYMIND_USE_SIGMOID_20_12))
+    #endif // TINYMIND_USE_SIGMOID_19_13
+    #if TINYMIND_USE_SIGMOID_20_12
     const uint32_t SigmoidValuesTableQ20_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA,
                 0xB,
@@ -15840,8 +15840,8 @@ namespace tinymind {
                 0xFF3,
                 0xFF4,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_20_12))
-    #if (defined(TINYMIND_USE_SIGMOID_21_11))
+    #endif // TINYMIND_USE_SIGMOID_20_12
+    #if TINYMIND_USE_SIGMOID_21_11
     const uint32_t SigmoidValuesTableQ21_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5,
                 0x5,
@@ -15940,8 +15940,8 @@ namespace tinymind {
                 0x7F9,
                 0x7FA,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_21_11))
-    #if (defined(TINYMIND_USE_SIGMOID_22_10))
+    #endif // TINYMIND_USE_SIGMOID_21_11
+    #if TINYMIND_USE_SIGMOID_22_10
     const uint32_t SigmoidValuesTableQ22_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2,
                 0x2,
@@ -16040,8 +16040,8 @@ namespace tinymind {
                 0x3FC,
                 0x3FD,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_22_10))
-    #if (defined(TINYMIND_USE_SIGMOID_23_9))
+    #endif // TINYMIND_USE_SIGMOID_22_10
+    #if TINYMIND_USE_SIGMOID_23_9
     const uint32_t SigmoidValuesTableQ23_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x1,
                 0x1,
@@ -16140,8 +16140,8 @@ namespace tinymind {
                 0x1FE,
                 0x1FE,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_23_9))
-    #if (defined(TINYMIND_USE_SIGMOID_24_8))
+    #endif // TINYMIND_USE_SIGMOID_23_9
+    #if TINYMIND_USE_SIGMOID_24_8
     const uint32_t SigmoidValuesTableQ24_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -16240,8 +16240,8 @@ namespace tinymind {
                 0xFF,
                 0xFF,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_24_8))
-    #if (defined(TINYMIND_USE_SIGMOID_25_7))
+    #endif // TINYMIND_USE_SIGMOID_24_8
+    #if TINYMIND_USE_SIGMOID_25_7
     const uint32_t SigmoidValuesTableQ25_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -16340,8 +16340,8 @@ namespace tinymind {
                 0x7F,
                 0x7F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_25_7))
-    #if (defined(TINYMIND_USE_SIGMOID_26_6))
+    #endif // TINYMIND_USE_SIGMOID_25_7
+    #if TINYMIND_USE_SIGMOID_26_6
     const uint32_t SigmoidValuesTableQ26_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -16440,8 +16440,8 @@ namespace tinymind {
                 0x3F,
                 0x3F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_26_6))
-    #if (defined(TINYMIND_USE_SIGMOID_27_5))
+    #endif // TINYMIND_USE_SIGMOID_26_6
+    #if TINYMIND_USE_SIGMOID_27_5
     const uint32_t SigmoidValuesTableQ27_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -16540,8 +16540,8 @@ namespace tinymind {
                 0x1F,
                 0x1F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_27_5))
-    #if (defined(TINYMIND_USE_SIGMOID_28_4))
+    #endif // TINYMIND_USE_SIGMOID_27_5
+    #if TINYMIND_USE_SIGMOID_28_4
     const uint32_t SigmoidValuesTableQ28_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -16640,8 +16640,8 @@ namespace tinymind {
                 0xF,
                 0xF,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_28_4))
-    #if (defined(TINYMIND_USE_SIGMOID_29_3))
+    #endif // TINYMIND_USE_SIGMOID_28_4
+    #if TINYMIND_USE_SIGMOID_29_3
     const uint32_t SigmoidValuesTableQ29_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -16740,8 +16740,8 @@ namespace tinymind {
                 0x7,
                 0x7,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_29_3))
-    #if (defined(TINYMIND_USE_SIGMOID_30_2))
+    #endif // TINYMIND_USE_SIGMOID_29_3
+    #if TINYMIND_USE_SIGMOID_30_2
     const uint32_t SigmoidValuesTableQ30_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -16840,8 +16840,8 @@ namespace tinymind {
                 0x3,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_30_2))
-    #if (defined(TINYMIND_USE_SIGMOID_31_1))
+    #endif // TINYMIND_USE_SIGMOID_30_2
+    #if TINYMIND_USE_SIGMOID_31_1
     const uint32_t SigmoidValuesTableQ31_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -16940,8 +16940,8 @@ namespace tinymind {
                 0x1,
                 0x1,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_31_1))
-    #if (defined(TINYMIND_USE_SIGMOID_1_63))
+    #endif // TINYMIND_USE_SIGMOID_31_1
+    #if TINYMIND_USE_SIGMOID_1_63
     const uint64_t SigmoidValuesTableQ1_63::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105DDCBEA0040,
                 0x5BC7E0DC734FE8,
@@ -17040,8 +17040,8 @@ namespace tinymind {
                 0x7F98099B79B89800,
                 0x7FA4381F238CB000,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_1_63))
-    #if (defined(TINYMIND_USE_SIGMOID_2_62))
+    #endif // TINYMIND_USE_SIGMOID_1_63
+    #if TINYMIND_USE_SIGMOID_2_62
     const uint64_t SigmoidValuesTableQ2_62::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882EEE5F50020,
                 0x2DE3F06E39A7F4,
@@ -17140,8 +17140,8 @@ namespace tinymind {
                 0x3FCC04CDBCDC4C00,
                 0x3FD21C0F91C65800,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_2_62))
-    #if (defined(TINYMIND_USE_SIGMOID_3_61))
+    #endif // TINYMIND_USE_SIGMOID_2_62
+    #if TINYMIND_USE_SIGMOID_3_61
     const uint64_t SigmoidValuesTableQ3_61::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14417772FA8010,
                 0x16F1F8371CD3FA,
@@ -17240,8 +17240,8 @@ namespace tinymind {
                 0x1FE60266DE6E2600,
                 0x1FE90E07C8E32C00,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_3_61))
-    #if (defined(TINYMIND_USE_SIGMOID_4_60))
+    #endif // TINYMIND_USE_SIGMOID_3_61
+    #if TINYMIND_USE_SIGMOID_4_60
     const uint64_t SigmoidValuesTableQ4_60::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20BBB97D4008,
                 0xB78FC1B8E69FD,
@@ -17340,8 +17340,8 @@ namespace tinymind {
                 0xFF301336F371300,
                 0xFF48703E4719600,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_4_60))
-    #if (defined(TINYMIND_USE_SIGMOID_5_59))
+    #endif // TINYMIND_USE_SIGMOID_4_60
+    #if TINYMIND_USE_SIGMOID_5_59
     const uint64_t SigmoidValuesTableQ5_59::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105DDCBEA004,
                 0x5BC7E0DC734FE,
@@ -17440,8 +17440,8 @@ namespace tinymind {
                 0x7F98099B79B8980,
                 0x7FA4381F238CB00,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_5_59))
-    #if (defined(TINYMIND_USE_SIGMOID_6_58))
+    #endif // TINYMIND_USE_SIGMOID_5_59
+    #if TINYMIND_USE_SIGMOID_6_58
     const uint64_t SigmoidValuesTableQ6_58::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882EEE5F5002,
                 0x2DE3F06E39A7F,
@@ -17540,8 +17540,8 @@ namespace tinymind {
                 0x3FCC04CDBCDC4C0,
                 0x3FD21C0F91C6580,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_6_58))
-    #if (defined(TINYMIND_USE_SIGMOID_7_57))
+    #endif // TINYMIND_USE_SIGMOID_6_58
+    #if TINYMIND_USE_SIGMOID_7_57
     const uint64_t SigmoidValuesTableQ7_57::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14417772FA801,
                 0x16F1F8371CD3F,
@@ -17640,8 +17640,8 @@ namespace tinymind {
                 0x1FE60266DE6E260,
                 0x1FE90E07C8E32C0,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_7_57))
-    #if (defined(TINYMIND_USE_SIGMOID_8_56))
+    #endif // TINYMIND_USE_SIGMOID_7_57
+    #if TINYMIND_USE_SIGMOID_8_56
     const uint64_t SigmoidValuesTableQ8_56::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20BBB97D400,
                 0xB78FC1B8E69F,
@@ -17740,8 +17740,8 @@ namespace tinymind {
                 0xFF301336F37130,
                 0xFF48703E471960,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_8_56))
-    #if (defined(TINYMIND_USE_SIGMOID_9_55))
+    #endif // TINYMIND_USE_SIGMOID_8_56
+    #if TINYMIND_USE_SIGMOID_9_55
     const uint64_t SigmoidValuesTableQ9_55::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105DDCBEA00,
                 0x5BC7E0DC734F,
@@ -17840,8 +17840,8 @@ namespace tinymind {
                 0x7F98099B79B898,
                 0x7FA4381F238CB0,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_9_55))
-    #if (defined(TINYMIND_USE_SIGMOID_10_54))
+    #endif // TINYMIND_USE_SIGMOID_9_55
+    #if TINYMIND_USE_SIGMOID_10_54
     const uint64_t SigmoidValuesTableQ10_54::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882EEE5F500,
                 0x2DE3F06E39A7,
@@ -17940,8 +17940,8 @@ namespace tinymind {
                 0x3FCC04CDBCDC4C,
                 0x3FD21C0F91C658,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_10_54))
-    #if (defined(TINYMIND_USE_SIGMOID_11_53))
+    #endif // TINYMIND_USE_SIGMOID_10_54
+    #if TINYMIND_USE_SIGMOID_11_53
     const uint64_t SigmoidValuesTableQ11_53::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14417772FA80,
                 0x16F1F8371CD3,
@@ -18040,8 +18040,8 @@ namespace tinymind {
                 0x1FE60266DE6E26,
                 0x1FE90E07C8E32C,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_11_53))
-    #if (defined(TINYMIND_USE_SIGMOID_12_52))
+    #endif // TINYMIND_USE_SIGMOID_11_53
+    #if TINYMIND_USE_SIGMOID_12_52
     const uint64_t SigmoidValuesTableQ12_52::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20BBB97D40,
                 0xB78FC1B8E69,
@@ -18140,8 +18140,8 @@ namespace tinymind {
                 0xFF301336F3713,
                 0xFF48703E47196,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_12_52))
-    #if (defined(TINYMIND_USE_SIGMOID_13_51))
+    #endif // TINYMIND_USE_SIGMOID_12_52
+    #if TINYMIND_USE_SIGMOID_13_51
     const uint64_t SigmoidValuesTableQ13_51::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105DDCBEA0,
                 0x5BC7E0DC734,
@@ -18240,8 +18240,8 @@ namespace tinymind {
                 0x7F98099B79B89,
                 0x7FA4381F238CB,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_13_51))
-    #if (defined(TINYMIND_USE_SIGMOID_14_50))
+    #endif // TINYMIND_USE_SIGMOID_13_51
+    #if TINYMIND_USE_SIGMOID_14_50
     const uint64_t SigmoidValuesTableQ14_50::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882EEE5F50,
                 0x2DE3F06E39A,
@@ -18340,8 +18340,8 @@ namespace tinymind {
                 0x3FCC04CDBCDC4,
                 0x3FD21C0F91C65,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_14_50))
-    #if (defined(TINYMIND_USE_SIGMOID_15_49))
+    #endif // TINYMIND_USE_SIGMOID_14_50
+    #if TINYMIND_USE_SIGMOID_15_49
     const uint64_t SigmoidValuesTableQ15_49::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14417772FA8,
                 0x16F1F8371CD,
@@ -18440,8 +18440,8 @@ namespace tinymind {
                 0x1FE60266DE6E2,
                 0x1FE90E07C8E32,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_15_49))
-    #if (defined(TINYMIND_USE_SIGMOID_16_48))
+    #endif // TINYMIND_USE_SIGMOID_15_49
+    #if TINYMIND_USE_SIGMOID_16_48
     const uint64_t SigmoidValuesTableQ16_48::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20BBB97D4,
                 0xB78FC1B8E6,
@@ -18540,8 +18540,8 @@ namespace tinymind {
                 0xFF301336F371,
                 0xFF48703E4719,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_16_48))
-    #if (defined(TINYMIND_USE_SIGMOID_17_47))
+    #endif // TINYMIND_USE_SIGMOID_16_48
+    #if TINYMIND_USE_SIGMOID_17_47
     const uint64_t SigmoidValuesTableQ17_47::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105DDCBEA,
                 0x5BC7E0DC73,
@@ -18640,8 +18640,8 @@ namespace tinymind {
                 0x7F98099B79B8,
                 0x7FA4381F238C,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_17_47))
-    #if (defined(TINYMIND_USE_SIGMOID_18_46))
+    #endif // TINYMIND_USE_SIGMOID_17_47
+    #if TINYMIND_USE_SIGMOID_18_46
     const uint64_t SigmoidValuesTableQ18_46::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882EEE5F5,
                 0x2DE3F06E39,
@@ -18740,8 +18740,8 @@ namespace tinymind {
                 0x3FCC04CDBCDC,
                 0x3FD21C0F91C6,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_18_46))
-    #if (defined(TINYMIND_USE_SIGMOID_19_45))
+    #endif // TINYMIND_USE_SIGMOID_18_46
+    #if TINYMIND_USE_SIGMOID_19_45
     const uint64_t SigmoidValuesTableQ19_45::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14417772FA,
                 0x16F1F8371C,
@@ -18840,8 +18840,8 @@ namespace tinymind {
                 0x1FE60266DE6E,
                 0x1FE90E07C8E3,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_19_45))
-    #if (defined(TINYMIND_USE_SIGMOID_20_44))
+    #endif // TINYMIND_USE_SIGMOID_19_45
+    #if TINYMIND_USE_SIGMOID_20_44
     const uint64_t SigmoidValuesTableQ20_44::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20BBB97D,
                 0xB78FC1B8E,
@@ -18940,8 +18940,8 @@ namespace tinymind {
                 0xFF301336F37,
                 0xFF48703E471,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_20_44))
-    #if (defined(TINYMIND_USE_SIGMOID_21_43))
+    #endif // TINYMIND_USE_SIGMOID_20_44
+    #if TINYMIND_USE_SIGMOID_21_43
     const uint64_t SigmoidValuesTableQ21_43::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105DDCBE,
                 0x5BC7E0DC7,
@@ -19040,8 +19040,8 @@ namespace tinymind {
                 0x7F98099B79B,
                 0x7FA4381F238,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_21_43))
-    #if (defined(TINYMIND_USE_SIGMOID_22_42))
+    #endif // TINYMIND_USE_SIGMOID_21_43
+    #if TINYMIND_USE_SIGMOID_22_42
     const uint64_t SigmoidValuesTableQ22_42::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882EEE5F,
                 0x2DE3F06E3,
@@ -19140,8 +19140,8 @@ namespace tinymind {
                 0x3FCC04CDBCD,
                 0x3FD21C0F91C,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_22_42))
-    #if (defined(TINYMIND_USE_SIGMOID_23_41))
+    #endif // TINYMIND_USE_SIGMOID_22_42
+    #if TINYMIND_USE_SIGMOID_23_41
     const uint64_t SigmoidValuesTableQ23_41::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14417772F,
                 0x16F1F8371,
@@ -19240,8 +19240,8 @@ namespace tinymind {
                 0x1FE60266DE6,
                 0x1FE90E07C8E,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_23_41))
-    #if (defined(TINYMIND_USE_SIGMOID_24_40))
+    #endif // TINYMIND_USE_SIGMOID_23_41
+    #if TINYMIND_USE_SIGMOID_24_40
     const uint64_t SigmoidValuesTableQ24_40::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20BBB97,
                 0xB78FC1B8,
@@ -19340,8 +19340,8 @@ namespace tinymind {
                 0xFF301336F3,
                 0xFF48703E47,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_24_40))
-    #if (defined(TINYMIND_USE_SIGMOID_25_39))
+    #endif // TINYMIND_USE_SIGMOID_24_40
+    #if TINYMIND_USE_SIGMOID_25_39
     const uint64_t SigmoidValuesTableQ25_39::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105DDCB,
                 0x5BC7E0DC,
@@ -19440,8 +19440,8 @@ namespace tinymind {
                 0x7F98099B79,
                 0x7FA4381F23,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_25_39))
-    #if (defined(TINYMIND_USE_SIGMOID_26_38))
+    #endif // TINYMIND_USE_SIGMOID_25_39
+    #if TINYMIND_USE_SIGMOID_26_38
     const uint64_t SigmoidValuesTableQ26_38::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882EEE5,
                 0x2DE3F06E,
@@ -19540,8 +19540,8 @@ namespace tinymind {
                 0x3FCC04CDBC,
                 0x3FD21C0F91,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_26_38))
-    #if (defined(TINYMIND_USE_SIGMOID_27_37))
+    #endif // TINYMIND_USE_SIGMOID_26_38
+    #if TINYMIND_USE_SIGMOID_27_37
     const uint64_t SigmoidValuesTableQ27_37::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14417772,
                 0x16F1F837,
@@ -19640,8 +19640,8 @@ namespace tinymind {
                 0x1FE60266DE,
                 0x1FE90E07C8,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_27_37))
-    #if (defined(TINYMIND_USE_SIGMOID_28_36))
+    #endif // TINYMIND_USE_SIGMOID_27_37
+    #if TINYMIND_USE_SIGMOID_28_36
     const uint64_t SigmoidValuesTableQ28_36::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20BBB9,
                 0xB78FC1B,
@@ -19740,8 +19740,8 @@ namespace tinymind {
                 0xFF301336F,
                 0xFF48703E4,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_28_36))
-    #if (defined(TINYMIND_USE_SIGMOID_29_35))
+    #endif // TINYMIND_USE_SIGMOID_28_36
+    #if TINYMIND_USE_SIGMOID_29_35
     const uint64_t SigmoidValuesTableQ29_35::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105DDC,
                 0x5BC7E0D,
@@ -19840,8 +19840,8 @@ namespace tinymind {
                 0x7F98099B7,
                 0x7FA4381F2,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_29_35))
-    #if (defined(TINYMIND_USE_SIGMOID_30_34))
+    #endif // TINYMIND_USE_SIGMOID_29_35
+    #if TINYMIND_USE_SIGMOID_30_34
     const uint64_t SigmoidValuesTableQ30_34::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882EEE,
                 0x2DE3F06,
@@ -19940,8 +19940,8 @@ namespace tinymind {
                 0x3FCC04CDB,
                 0x3FD21C0F9,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_30_34))
-    #if (defined(TINYMIND_USE_SIGMOID_31_33))
+    #endif // TINYMIND_USE_SIGMOID_30_34
+    #if TINYMIND_USE_SIGMOID_31_33
     const uint64_t SigmoidValuesTableQ31_33::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x1441777,
                 0x16F1F83,
@@ -20040,8 +20040,8 @@ namespace tinymind {
                 0x1FE60266D,
                 0x1FE90E07C,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_31_33))
-    #if (defined(TINYMIND_USE_SIGMOID_32_32))
+    #endif // TINYMIND_USE_SIGMOID_31_33
+    #if TINYMIND_USE_SIGMOID_32_32
     const uint64_t SigmoidValuesTableQ32_32::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20BBB,
                 0xB78FC1,
@@ -20140,8 +20140,8 @@ namespace tinymind {
                 0xFF301336,
                 0xFF48703E,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_32_32))
-    #if (defined(TINYMIND_USE_SIGMOID_33_31))
+    #endif // TINYMIND_USE_SIGMOID_32_32
+    #if TINYMIND_USE_SIGMOID_33_31
     const uint64_t SigmoidValuesTableQ33_31::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105DD,
                 0x5BC7E0,
@@ -20240,8 +20240,8 @@ namespace tinymind {
                 0x7F98099B,
                 0x7FA4381F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_33_31))
-    #if (defined(TINYMIND_USE_SIGMOID_34_30))
+    #endif // TINYMIND_USE_SIGMOID_33_31
+    #if TINYMIND_USE_SIGMOID_34_30
     const uint64_t SigmoidValuesTableQ34_30::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882EE,
                 0x2DE3F0,
@@ -20340,8 +20340,8 @@ namespace tinymind {
                 0x3FCC04CD,
                 0x3FD21C0F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_34_30))
-    #if (defined(TINYMIND_USE_SIGMOID_35_29))
+    #endif // TINYMIND_USE_SIGMOID_34_30
+    #if TINYMIND_USE_SIGMOID_35_29
     const uint64_t SigmoidValuesTableQ35_29::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144177,
                 0x16F1F8,
@@ -20440,8 +20440,8 @@ namespace tinymind {
                 0x1FE60266,
                 0x1FE90E07,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_35_29))
-    #if (defined(TINYMIND_USE_SIGMOID_36_28))
+    #endif // TINYMIND_USE_SIGMOID_35_29
+    #if TINYMIND_USE_SIGMOID_36_28
     const uint64_t SigmoidValuesTableQ36_28::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20BB,
                 0xB78FC,
@@ -20540,8 +20540,8 @@ namespace tinymind {
                 0xFF30133,
                 0xFF48703,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_36_28))
-    #if (defined(TINYMIND_USE_SIGMOID_37_27))
+    #endif // TINYMIND_USE_SIGMOID_36_28
+    #if TINYMIND_USE_SIGMOID_37_27
     const uint64_t SigmoidValuesTableQ37_27::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105D,
                 0x5BC7E,
@@ -20640,8 +20640,8 @@ namespace tinymind {
                 0x7F98099,
                 0x7FA4381,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_37_27))
-    #if (defined(TINYMIND_USE_SIGMOID_38_26))
+    #endif // TINYMIND_USE_SIGMOID_37_27
+    #if TINYMIND_USE_SIGMOID_38_26
     const uint64_t SigmoidValuesTableQ38_26::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882E,
                 0x2DE3F,
@@ -20740,8 +20740,8 @@ namespace tinymind {
                 0x3FCC04C,
                 0x3FD21C0,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_38_26))
-    #if (defined(TINYMIND_USE_SIGMOID_39_25))
+    #endif // TINYMIND_USE_SIGMOID_38_26
+    #if TINYMIND_USE_SIGMOID_39_25
     const uint64_t SigmoidValuesTableQ39_25::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14417,
                 0x16F1F,
@@ -20840,8 +20840,8 @@ namespace tinymind {
                 0x1FE6026,
                 0x1FE90E0,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_39_25))
-    #if (defined(TINYMIND_USE_SIGMOID_40_24))
+    #endif // TINYMIND_USE_SIGMOID_39_25
+    #if TINYMIND_USE_SIGMOID_40_24
     const uint64_t SigmoidValuesTableQ40_24::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20B,
                 0xB78F,
@@ -20940,8 +20940,8 @@ namespace tinymind {
                 0xFF3013,
                 0xFF4870,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_40_24))
-    #if (defined(TINYMIND_USE_SIGMOID_41_23))
+    #endif // TINYMIND_USE_SIGMOID_40_24
+    #if TINYMIND_USE_SIGMOID_41_23
     const uint64_t SigmoidValuesTableQ41_23::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5105,
                 0x5BC7,
@@ -21040,8 +21040,8 @@ namespace tinymind {
                 0x7F9809,
                 0x7FA438,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_41_23))
-    #if (defined(TINYMIND_USE_SIGMOID_42_22))
+    #endif // TINYMIND_USE_SIGMOID_41_23
+    #if TINYMIND_USE_SIGMOID_42_22
     const uint64_t SigmoidValuesTableQ42_22::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2882,
                 0x2DE3,
@@ -21140,8 +21140,8 @@ namespace tinymind {
                 0x3FCC04,
                 0x3FD21C,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_42_22))
-    #if (defined(TINYMIND_USE_SIGMOID_43_21))
+    #endif // TINYMIND_USE_SIGMOID_42_22
+    #if TINYMIND_USE_SIGMOID_43_21
     const uint64_t SigmoidValuesTableQ43_21::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x1441,
                 0x16F1,
@@ -21240,8 +21240,8 @@ namespace tinymind {
                 0x1FE602,
                 0x1FE90E,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_43_21))
-    #if (defined(TINYMIND_USE_SIGMOID_44_20))
+    #endif // TINYMIND_USE_SIGMOID_43_21
+    #if TINYMIND_USE_SIGMOID_44_20
     const uint64_t SigmoidValuesTableQ44_20::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA20,
                 0xB78,
@@ -21340,8 +21340,8 @@ namespace tinymind {
                 0xFF301,
                 0xFF487,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_44_20))
-    #if (defined(TINYMIND_USE_SIGMOID_45_19))
+    #endif // TINYMIND_USE_SIGMOID_44_20
+    #if TINYMIND_USE_SIGMOID_45_19
     const uint64_t SigmoidValuesTableQ45_19::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x510,
                 0x5BC,
@@ -21440,8 +21440,8 @@ namespace tinymind {
                 0x7F980,
                 0x7FA43,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_45_19))
-    #if (defined(TINYMIND_USE_SIGMOID_46_18))
+    #endif // TINYMIND_USE_SIGMOID_45_19
+    #if TINYMIND_USE_SIGMOID_46_18
     const uint64_t SigmoidValuesTableQ46_18::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x288,
                 0x2DE,
@@ -21540,8 +21540,8 @@ namespace tinymind {
                 0x3FCC0,
                 0x3FD21,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_46_18))
-    #if (defined(TINYMIND_USE_SIGMOID_47_17))
+    #endif // TINYMIND_USE_SIGMOID_46_18
+    #if TINYMIND_USE_SIGMOID_47_17
     const uint64_t SigmoidValuesTableQ47_17::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144,
                 0x16F,
@@ -21640,8 +21640,8 @@ namespace tinymind {
                 0x1FE60,
                 0x1FE90,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_47_17))
-    #if (defined(TINYMIND_USE_SIGMOID_48_16))
+    #endif // TINYMIND_USE_SIGMOID_47_17
+    #if TINYMIND_USE_SIGMOID_48_16
     const uint64_t SigmoidValuesTableQ48_16::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2,
                 0xB7,
@@ -21740,8 +21740,8 @@ namespace tinymind {
                 0xFF30,
                 0xFF48,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_48_16))
-    #if (defined(TINYMIND_USE_SIGMOID_49_15))
+    #endif // TINYMIND_USE_SIGMOID_48_16
+    #if TINYMIND_USE_SIGMOID_49_15
     const uint64_t SigmoidValuesTableQ49_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x51,
                 0x5B,
@@ -21840,8 +21840,8 @@ namespace tinymind {
                 0x7F98,
                 0x7FA4,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_49_15))
-    #if (defined(TINYMIND_USE_SIGMOID_50_14))
+    #endif // TINYMIND_USE_SIGMOID_49_15
+    #if TINYMIND_USE_SIGMOID_50_14
     const uint64_t SigmoidValuesTableQ50_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x28,
                 0x2D,
@@ -21940,8 +21940,8 @@ namespace tinymind {
                 0x3FCC,
                 0x3FD2,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_50_14))
-    #if (defined(TINYMIND_USE_SIGMOID_51_13))
+    #endif // TINYMIND_USE_SIGMOID_50_14
+    #if TINYMIND_USE_SIGMOID_51_13
     const uint64_t SigmoidValuesTableQ51_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14,
                 0x16,
@@ -22040,8 +22040,8 @@ namespace tinymind {
                 0x1FE6,
                 0x1FE9,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_51_13))
-    #if (defined(TINYMIND_USE_SIGMOID_52_12))
+    #endif // TINYMIND_USE_SIGMOID_51_13
+    #if TINYMIND_USE_SIGMOID_52_12
     const uint64_t SigmoidValuesTableQ52_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA,
                 0xB,
@@ -22140,8 +22140,8 @@ namespace tinymind {
                 0xFF3,
                 0xFF4,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_52_12))
-    #if (defined(TINYMIND_USE_SIGMOID_53_11))
+    #endif // TINYMIND_USE_SIGMOID_52_12
+    #if TINYMIND_USE_SIGMOID_53_11
     const uint64_t SigmoidValuesTableQ53_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5,
                 0x5,
@@ -22240,8 +22240,8 @@ namespace tinymind {
                 0x7F9,
                 0x7FA,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_53_11))
-    #if (defined(TINYMIND_USE_SIGMOID_54_10))
+    #endif // TINYMIND_USE_SIGMOID_53_11
+    #if TINYMIND_USE_SIGMOID_54_10
     const uint64_t SigmoidValuesTableQ54_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2,
                 0x2,
@@ -22340,8 +22340,8 @@ namespace tinymind {
                 0x3FC,
                 0x3FD,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_54_10))
-    #if (defined(TINYMIND_USE_SIGMOID_55_9))
+    #endif // TINYMIND_USE_SIGMOID_54_10
+    #if TINYMIND_USE_SIGMOID_55_9
     const uint64_t SigmoidValuesTableQ55_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x1,
                 0x1,
@@ -22440,8 +22440,8 @@ namespace tinymind {
                 0x1FE,
                 0x1FE,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_55_9))
-    #if (defined(TINYMIND_USE_SIGMOID_56_8))
+    #endif // TINYMIND_USE_SIGMOID_55_9
+    #if TINYMIND_USE_SIGMOID_56_8
     const uint64_t SigmoidValuesTableQ56_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -22540,8 +22540,8 @@ namespace tinymind {
                 0xFF,
                 0xFF,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_56_8))
-    #if (defined(TINYMIND_USE_SIGMOID_57_7))
+    #endif // TINYMIND_USE_SIGMOID_56_8
+    #if TINYMIND_USE_SIGMOID_57_7
     const uint64_t SigmoidValuesTableQ57_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -22640,8 +22640,8 @@ namespace tinymind {
                 0x7F,
                 0x7F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_57_7))
-    #if (defined(TINYMIND_USE_SIGMOID_58_6))
+    #endif // TINYMIND_USE_SIGMOID_57_7
+    #if TINYMIND_USE_SIGMOID_58_6
     const uint64_t SigmoidValuesTableQ58_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -22740,8 +22740,8 @@ namespace tinymind {
                 0x3F,
                 0x3F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_58_6))
-    #if (defined(TINYMIND_USE_SIGMOID_59_5))
+    #endif // TINYMIND_USE_SIGMOID_58_6
+    #if TINYMIND_USE_SIGMOID_59_5
     const uint64_t SigmoidValuesTableQ59_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -22840,8 +22840,8 @@ namespace tinymind {
                 0x1F,
                 0x1F,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_59_5))
-    #if (defined(TINYMIND_USE_SIGMOID_60_4))
+    #endif // TINYMIND_USE_SIGMOID_59_5
+    #if TINYMIND_USE_SIGMOID_60_4
     const uint64_t SigmoidValuesTableQ60_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -22940,8 +22940,8 @@ namespace tinymind {
                 0xF,
                 0xF,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_60_4))
-    #if (defined(TINYMIND_USE_SIGMOID_61_3))
+    #endif // TINYMIND_USE_SIGMOID_60_4
+    #if TINYMIND_USE_SIGMOID_61_3
     const uint64_t SigmoidValuesTableQ61_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -23040,8 +23040,8 @@ namespace tinymind {
                 0x7,
                 0x7,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_61_3))
-    #if (defined(TINYMIND_USE_SIGMOID_62_2))
+    #endif // TINYMIND_USE_SIGMOID_61_3
+    #if TINYMIND_USE_SIGMOID_62_2
     const uint64_t SigmoidValuesTableQ62_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -23140,8 +23140,8 @@ namespace tinymind {
                 0x3,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_62_2))
-    #if (defined(TINYMIND_USE_SIGMOID_63_1))
+    #endif // TINYMIND_USE_SIGMOID_62_2
+    #if TINYMIND_USE_SIGMOID_63_1
     const uint64_t SigmoidValuesTableQ63_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -23240,8 +23240,8 @@ namespace tinymind {
                 0x1,
                 0x1,
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_63_1))
-    #if (defined(TINYMIND_USE_EXP_1_7))
+    #endif // TINYMIND_USE_SIGMOID_63_1
+    #if TINYMIND_USE_EXP_1_7
     const uint8_t ExpValuesTableQ1_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -23340,8 +23340,8 @@ namespace tinymind {
                 0x18,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_EXP_1_7))
-    #if (defined(TINYMIND_USE_EXP_2_6))
+    #endif // TINYMIND_USE_EXP_1_7
+    #if TINYMIND_USE_EXP_2_6
     const uint8_t ExpValuesTableQ2_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -23440,8 +23440,8 @@ namespace tinymind {
                 0x8C,
                 0x1,
     };
-    #endif // (defined(TINYMIND_USE_EXP_2_6))
-    #if (defined(TINYMIND_USE_EXP_3_5))
+    #endif // TINYMIND_USE_EXP_2_6
+    #if TINYMIND_USE_EXP_3_5
     const uint8_t ExpValuesTableQ3_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -23540,8 +23540,8 @@ namespace tinymind {
                 0x46,
                 0x80,
     };
-    #endif // (defined(TINYMIND_USE_EXP_3_5))
-    #if (defined(TINYMIND_USE_EXP_4_4))
+    #endif // TINYMIND_USE_EXP_3_5
+    #if TINYMIND_USE_EXP_4_4
     const uint8_t ExpValuesTableQ4_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -23640,8 +23640,8 @@ namespace tinymind {
                 0xA3,
                 0x40,
     };
-    #endif // (defined(TINYMIND_USE_EXP_4_4))
-    #if (defined(TINYMIND_USE_EXP_5_3))
+    #endif // TINYMIND_USE_EXP_4_4
+    #if TINYMIND_USE_EXP_5_3
     const uint8_t ExpValuesTableQ5_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -23740,8 +23740,8 @@ namespace tinymind {
                 0xD1,
                 0x20,
     };
-    #endif // (defined(TINYMIND_USE_EXP_5_3))
-    #if (defined(TINYMIND_USE_EXP_6_2))
+    #endif // TINYMIND_USE_EXP_5_3
+    #if TINYMIND_USE_EXP_6_2
     const uint8_t ExpValuesTableQ6_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -23840,8 +23840,8 @@ namespace tinymind {
                 0xE8,
                 0x90,
     };
-    #endif // (defined(TINYMIND_USE_EXP_6_2))
-    #if (defined(TINYMIND_USE_EXP_7_1))
+    #endif // TINYMIND_USE_EXP_6_2
+    #if TINYMIND_USE_EXP_7_1
     const uint8_t ExpValuesTableQ7_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -23940,8 +23940,8 @@ namespace tinymind {
                 0x74,
                 0xC8,
     };
-    #endif // (defined(TINYMIND_USE_EXP_7_1))
-    #if (defined(TINYMIND_USE_EXP_1_15))
+    #endif // TINYMIND_USE_EXP_7_1
+    #if TINYMIND_USE_EXP_1_15
     const uint16_t ExpValuesTableQ1_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x51,
                 0x5C,
@@ -24040,8 +24040,8 @@ namespace tinymind {
                 0x1867,
                 0x328,
     };
-    #endif // (defined(TINYMIND_USE_EXP_1_15))
-    #if (defined(TINYMIND_USE_EXP_2_14))
+    #endif // TINYMIND_USE_EXP_1_15
+    #if TINYMIND_USE_EXP_2_14
     const uint16_t ExpValuesTableQ2_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x28,
                 0x2E,
@@ -24140,8 +24140,8 @@ namespace tinymind {
                 0x8C33,
                 0x194,
     };
-    #endif // (defined(TINYMIND_USE_EXP_2_14))
-    #if (defined(TINYMIND_USE_EXP_3_13))
+    #endif // TINYMIND_USE_EXP_2_14
+    #if TINYMIND_USE_EXP_3_13
     const uint16_t ExpValuesTableQ3_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14,
                 0x17,
@@ -24240,8 +24240,8 @@ namespace tinymind {
                 0x4619,
                 0x80CA,
     };
-    #endif // (defined(TINYMIND_USE_EXP_3_13))
-    #if (defined(TINYMIND_USE_EXP_4_12))
+    #endif // TINYMIND_USE_EXP_3_13
+    #if TINYMIND_USE_EXP_4_12
     const uint16_t ExpValuesTableQ4_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA,
                 0xB,
@@ -24340,8 +24340,8 @@ namespace tinymind {
                 0xA30C,
                 0x4065,
     };
-    #endif // (defined(TINYMIND_USE_EXP_4_12))
-    #if (defined(TINYMIND_USE_EXP_5_11))
+    #endif // TINYMIND_USE_EXP_4_12
+    #if TINYMIND_USE_EXP_5_11
     const uint16_t ExpValuesTableQ5_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5,
                 0x5,
@@ -24440,8 +24440,8 @@ namespace tinymind {
                 0xD186,
                 0x2032,
     };
-    #endif // (defined(TINYMIND_USE_EXP_5_11))
-    #if (defined(TINYMIND_USE_EXP_6_10))
+    #endif // TINYMIND_USE_EXP_5_11
+    #if TINYMIND_USE_EXP_6_10
     const uint16_t ExpValuesTableQ6_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2,
                 0x2,
@@ -24540,8 +24540,8 @@ namespace tinymind {
                 0xE8C3,
                 0x9019,
     };
-    #endif // (defined(TINYMIND_USE_EXP_6_10))
-    #if (defined(TINYMIND_USE_EXP_7_9))
+    #endif // TINYMIND_USE_EXP_6_10
+    #if TINYMIND_USE_EXP_7_9
     const uint16_t ExpValuesTableQ7_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x1,
                 0x1,
@@ -24640,8 +24640,8 @@ namespace tinymind {
                 0x7461,
                 0xC80C,
     };
-    #endif // (defined(TINYMIND_USE_EXP_7_9))
-    #if (defined(TINYMIND_USE_EXP_8_8))
+    #endif // TINYMIND_USE_EXP_7_9
+    #if TINYMIND_USE_EXP_8_8
     const uint16_t ExpValuesTableQ8_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -24740,8 +24740,8 @@ namespace tinymind {
                 0x3A30,
                 0x6406,
     };
-    #endif // (defined(TINYMIND_USE_EXP_8_8))
-    #if (defined(TINYMIND_USE_EXP_9_7))
+    #endif // TINYMIND_USE_EXP_8_8
+    #if TINYMIND_USE_EXP_9_7
     const uint16_t ExpValuesTableQ9_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -24840,8 +24840,8 @@ namespace tinymind {
                 0x9D18,
                 0xB203,
     };
-    #endif // (defined(TINYMIND_USE_EXP_9_7))
-    #if (defined(TINYMIND_USE_EXP_10_6))
+    #endif // TINYMIND_USE_EXP_9_7
+    #if TINYMIND_USE_EXP_10_6
     const uint16_t ExpValuesTableQ10_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -24940,8 +24940,8 @@ namespace tinymind {
                 0x4E8C,
                 0x5901,
     };
-    #endif // (defined(TINYMIND_USE_EXP_10_6))
-    #if (defined(TINYMIND_USE_EXP_11_5))
+    #endif // TINYMIND_USE_EXP_10_6
+    #if TINYMIND_USE_EXP_11_5
     const uint16_t ExpValuesTableQ11_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -25040,8 +25040,8 @@ namespace tinymind {
                 0x2746,
                 0x2C80,
     };
-    #endif // (defined(TINYMIND_USE_EXP_11_5))
-    #if (defined(TINYMIND_USE_EXP_12_4))
+    #endif // TINYMIND_USE_EXP_11_5
+    #if TINYMIND_USE_EXP_12_4
     const uint16_t ExpValuesTableQ12_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -25140,8 +25140,8 @@ namespace tinymind {
                 0x13A3,
                 0x1640,
     };
-    #endif // (defined(TINYMIND_USE_EXP_12_4))
-    #if (defined(TINYMIND_USE_EXP_13_3))
+    #endif // TINYMIND_USE_EXP_12_4
+    #if TINYMIND_USE_EXP_13_3
     const uint16_t ExpValuesTableQ13_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -25240,8 +25240,8 @@ namespace tinymind {
                 0x9D1,
                 0xB20,
     };
-    #endif // (defined(TINYMIND_USE_EXP_13_3))
-    #if (defined(TINYMIND_USE_EXP_14_2))
+    #endif // TINYMIND_USE_EXP_13_3
+    #if TINYMIND_USE_EXP_14_2
     const uint16_t ExpValuesTableQ14_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -25340,8 +25340,8 @@ namespace tinymind {
                 0x4E8,
                 0x590,
     };
-    #endif // (defined(TINYMIND_USE_EXP_14_2))
-    #if (defined(TINYMIND_USE_EXP_15_1))
+    #endif // TINYMIND_USE_EXP_14_2
+    #if TINYMIND_USE_EXP_15_1
     const uint16_t ExpValuesTableQ15_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -25440,8 +25440,8 @@ namespace tinymind {
                 0x274,
                 0x2C8,
     };
-    #endif // (defined(TINYMIND_USE_EXP_15_1))
-    #if (defined(TINYMIND_USE_EXP_1_31))
+    #endif // TINYMIND_USE_EXP_15_1
+    #if TINYMIND_USE_EXP_1_31
     const uint32_t ExpValuesTableQ1_31::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x513947,
                 0x5C09DF,
@@ -25540,8 +25540,8 @@ namespace tinymind {
                 0x18678E65,
                 0x32814B3,
     };
-    #endif // (defined(TINYMIND_USE_EXP_1_31))
-    #if (defined(TINYMIND_USE_EXP_2_30))
+    #endif // TINYMIND_USE_EXP_1_31
+    #if TINYMIND_USE_EXP_2_30
     const uint32_t ExpValuesTableQ2_30::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289CA3,
                 0x2E04EF,
@@ -25640,8 +25640,8 @@ namespace tinymind {
                 0x8C33C732,
                 0x1940A59,
     };
-    #endif // (defined(TINYMIND_USE_EXP_2_30))
-    #if (defined(TINYMIND_USE_EXP_3_29))
+    #endif // TINYMIND_USE_EXP_2_30
+    #if TINYMIND_USE_EXP_3_29
     const uint32_t ExpValuesTableQ3_29::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E51,
                 0x170277,
@@ -25740,8 +25740,8 @@ namespace tinymind {
                 0x4619E399,
                 0x80CA052C,
     };
-    #endif // (defined(TINYMIND_USE_EXP_3_29))
-    #if (defined(TINYMIND_USE_EXP_4_28))
+    #endif // TINYMIND_USE_EXP_3_29
+    #if TINYMIND_USE_EXP_4_28
     const uint32_t ExpValuesTableQ4_28::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2728,
                 0xB813B,
@@ -25840,8 +25840,8 @@ namespace tinymind {
                 0xA30CF1CC,
                 0x40650296,
     };
-    #endif // (defined(TINYMIND_USE_EXP_4_28))
-    #if (defined(TINYMIND_USE_EXP_5_27))
+    #endif // TINYMIND_USE_EXP_4_28
+    #if TINYMIND_USE_EXP_5_27
     const uint32_t ExpValuesTableQ5_27::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x51394,
                 0x5C09D,
@@ -25940,8 +25940,8 @@ namespace tinymind {
                 0xD18678E6,
                 0x2032814B,
     };
-    #endif // (defined(TINYMIND_USE_EXP_5_27))
-    #if (defined(TINYMIND_USE_EXP_6_26))
+    #endif // TINYMIND_USE_EXP_5_27
+    #if TINYMIND_USE_EXP_6_26
     const uint32_t ExpValuesTableQ6_26::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289CA,
                 0x2E04E,
@@ -26040,8 +26040,8 @@ namespace tinymind {
                 0xE8C33C73,
                 0x901940A5,
     };
-    #endif // (defined(TINYMIND_USE_EXP_6_26))
-    #if (defined(TINYMIND_USE_EXP_7_25))
+    #endif // TINYMIND_USE_EXP_6_26
+    #if TINYMIND_USE_EXP_7_25
     const uint32_t ExpValuesTableQ7_25::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E5,
                 0x17027,
@@ -26140,8 +26140,8 @@ namespace tinymind {
                 0x74619E39,
                 0xC80CA052,
     };
-    #endif // (defined(TINYMIND_USE_EXP_7_25))
-    #if (defined(TINYMIND_USE_EXP_8_24))
+    #endif // TINYMIND_USE_EXP_7_25
+    #if TINYMIND_USE_EXP_8_24
     const uint32_t ExpValuesTableQ8_24::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA272,
                 0xB813,
@@ -26240,8 +26240,8 @@ namespace tinymind {
                 0x3A30CF1C,
                 0x64065029,
     };
-    #endif // (defined(TINYMIND_USE_EXP_8_24))
-    #if (defined(TINYMIND_USE_EXP_9_23))
+    #endif // TINYMIND_USE_EXP_8_24
+    #if TINYMIND_USE_EXP_9_23
     const uint32_t ExpValuesTableQ9_23::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5139,
                 0x5C09,
@@ -26340,8 +26340,8 @@ namespace tinymind {
                 0x9D18678E,
                 0xB2032814,
     };
-    #endif // (defined(TINYMIND_USE_EXP_9_23))
-    #if (defined(TINYMIND_USE_EXP_10_22))
+    #endif // TINYMIND_USE_EXP_9_23
+    #if TINYMIND_USE_EXP_10_22
     const uint32_t ExpValuesTableQ10_22::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289C,
                 0x2E04,
@@ -26440,8 +26440,8 @@ namespace tinymind {
                 0x4E8C33C7,
                 0x5901940A,
     };
-    #endif // (defined(TINYMIND_USE_EXP_10_22))
-    #if (defined(TINYMIND_USE_EXP_11_21))
+    #endif // TINYMIND_USE_EXP_10_22
+    #if TINYMIND_USE_EXP_11_21
     const uint32_t ExpValuesTableQ11_21::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E,
                 0x1702,
@@ -26540,8 +26540,8 @@ namespace tinymind {
                 0x274619E3,
                 0x2C80CA05,
     };
-    #endif // (defined(TINYMIND_USE_EXP_11_21))
-    #if (defined(TINYMIND_USE_EXP_12_20))
+    #endif // TINYMIND_USE_EXP_11_21
+    #if TINYMIND_USE_EXP_12_20
     const uint32_t ExpValuesTableQ12_20::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA27,
                 0xB81,
@@ -26640,8 +26640,8 @@ namespace tinymind {
                 0x13A30CF1,
                 0x16406502,
     };
-    #endif // (defined(TINYMIND_USE_EXP_12_20))
-    #if (defined(TINYMIND_USE_EXP_13_19))
+    #endif // TINYMIND_USE_EXP_12_20
+    #if TINYMIND_USE_EXP_13_19
     const uint32_t ExpValuesTableQ13_19::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x513,
                 0x5C0,
@@ -26740,8 +26740,8 @@ namespace tinymind {
                 0x9D18678,
                 0xB203281,
     };
-    #endif // (defined(TINYMIND_USE_EXP_13_19))
-    #if (defined(TINYMIND_USE_EXP_14_18))
+    #endif // TINYMIND_USE_EXP_13_19
+    #if TINYMIND_USE_EXP_14_18
     const uint32_t ExpValuesTableQ14_18::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289,
                 0x2E0,
@@ -26840,8 +26840,8 @@ namespace tinymind {
                 0x4E8C33C,
                 0x5901940,
     };
-    #endif // (defined(TINYMIND_USE_EXP_14_18))
-    #if (defined(TINYMIND_USE_EXP_15_17))
+    #endif // TINYMIND_USE_EXP_14_18
+    #if TINYMIND_USE_EXP_15_17
     const uint32_t ExpValuesTableQ15_17::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144,
                 0x170,
@@ -26940,8 +26940,8 @@ namespace tinymind {
                 0x274619E,
                 0x2C80CA0,
     };
-    #endif // (defined(TINYMIND_USE_EXP_15_17))
-    #if (defined(TINYMIND_USE_EXP_16_16))
+    #endif // TINYMIND_USE_EXP_15_17
+    #if TINYMIND_USE_EXP_16_16
     const uint32_t ExpValuesTableQ16_16::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2,
                 0xB8,
@@ -27040,8 +27040,8 @@ namespace tinymind {
                 0x13A30CF,
                 0x1640650,
     };
-    #endif // (defined(TINYMIND_USE_EXP_16_16))
-    #if (defined(TINYMIND_USE_EXP_17_15))
+    #endif // TINYMIND_USE_EXP_16_16
+    #if TINYMIND_USE_EXP_17_15
     const uint32_t ExpValuesTableQ17_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x51,
                 0x5C,
@@ -27140,8 +27140,8 @@ namespace tinymind {
                 0x9D1867,
                 0xB20328,
     };
-    #endif // (defined(TINYMIND_USE_EXP_17_15))
-    #if (defined(TINYMIND_USE_EXP_18_14))
+    #endif // TINYMIND_USE_EXP_17_15
+    #if TINYMIND_USE_EXP_18_14
     const uint32_t ExpValuesTableQ18_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x28,
                 0x2E,
@@ -27240,8 +27240,8 @@ namespace tinymind {
                 0x4E8C33,
                 0x590194,
     };
-    #endif // (defined(TINYMIND_USE_EXP_18_14))
-    #if (defined(TINYMIND_USE_EXP_19_13))
+    #endif // TINYMIND_USE_EXP_18_14
+    #if TINYMIND_USE_EXP_19_13
     const uint32_t ExpValuesTableQ19_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14,
                 0x17,
@@ -27340,8 +27340,8 @@ namespace tinymind {
                 0x274619,
                 0x2C80CA,
     };
-    #endif // (defined(TINYMIND_USE_EXP_19_13))
-    #if (defined(TINYMIND_USE_EXP_20_12))
+    #endif // TINYMIND_USE_EXP_19_13
+    #if TINYMIND_USE_EXP_20_12
     const uint32_t ExpValuesTableQ20_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA,
                 0xB,
@@ -27440,8 +27440,8 @@ namespace tinymind {
                 0x13A30C,
                 0x164065,
     };
-    #endif // (defined(TINYMIND_USE_EXP_20_12))
-    #if (defined(TINYMIND_USE_EXP_21_11))
+    #endif // TINYMIND_USE_EXP_20_12
+    #if TINYMIND_USE_EXP_21_11
     const uint32_t ExpValuesTableQ21_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5,
                 0x5,
@@ -27540,8 +27540,8 @@ namespace tinymind {
                 0x9D186,
                 0xB2032,
     };
-    #endif // (defined(TINYMIND_USE_EXP_21_11))
-    #if (defined(TINYMIND_USE_EXP_22_10))
+    #endif // TINYMIND_USE_EXP_21_11
+    #if TINYMIND_USE_EXP_22_10
     const uint32_t ExpValuesTableQ22_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2,
                 0x2,
@@ -27640,8 +27640,8 @@ namespace tinymind {
                 0x4E8C3,
                 0x59019,
     };
-    #endif // (defined(TINYMIND_USE_EXP_22_10))
-    #if (defined(TINYMIND_USE_EXP_23_9))
+    #endif // TINYMIND_USE_EXP_22_10
+    #if TINYMIND_USE_EXP_23_9
     const uint32_t ExpValuesTableQ23_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x1,
                 0x1,
@@ -27740,8 +27740,8 @@ namespace tinymind {
                 0x27461,
                 0x2C80C,
     };
-    #endif // (defined(TINYMIND_USE_EXP_23_9))
-    #if (defined(TINYMIND_USE_EXP_24_8))
+    #endif // TINYMIND_USE_EXP_23_9
+    #if TINYMIND_USE_EXP_24_8
     const uint32_t ExpValuesTableQ24_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -27840,8 +27840,8 @@ namespace tinymind {
                 0x13A30,
                 0x16406,
     };
-    #endif // (defined(TINYMIND_USE_EXP_24_8))
-    #if (defined(TINYMIND_USE_EXP_25_7))
+    #endif // TINYMIND_USE_EXP_24_8
+    #if TINYMIND_USE_EXP_25_7
     const uint32_t ExpValuesTableQ25_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -27940,8 +27940,8 @@ namespace tinymind {
                 0x9D18,
                 0xB203,
     };
-    #endif // (defined(TINYMIND_USE_EXP_25_7))
-    #if (defined(TINYMIND_USE_EXP_26_6))
+    #endif // TINYMIND_USE_EXP_25_7
+    #if TINYMIND_USE_EXP_26_6
     const uint32_t ExpValuesTableQ26_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -28040,8 +28040,8 @@ namespace tinymind {
                 0x4E8C,
                 0x5901,
     };
-    #endif // (defined(TINYMIND_USE_EXP_26_6))
-    #if (defined(TINYMIND_USE_EXP_27_5))
+    #endif // TINYMIND_USE_EXP_26_6
+    #if TINYMIND_USE_EXP_27_5
     const uint32_t ExpValuesTableQ27_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -28140,8 +28140,8 @@ namespace tinymind {
                 0x2746,
                 0x2C80,
     };
-    #endif // (defined(TINYMIND_USE_EXP_27_5))
-    #if (defined(TINYMIND_USE_EXP_28_4))
+    #endif // TINYMIND_USE_EXP_27_5
+    #if TINYMIND_USE_EXP_28_4
     const uint32_t ExpValuesTableQ28_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -28240,8 +28240,8 @@ namespace tinymind {
                 0x13A3,
                 0x1640,
     };
-    #endif // (defined(TINYMIND_USE_EXP_28_4))
-    #if (defined(TINYMIND_USE_EXP_29_3))
+    #endif // TINYMIND_USE_EXP_28_4
+    #if TINYMIND_USE_EXP_29_3
     const uint32_t ExpValuesTableQ29_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -28340,8 +28340,8 @@ namespace tinymind {
                 0x9D1,
                 0xB20,
     };
-    #endif // (defined(TINYMIND_USE_EXP_29_3))
-    #if (defined(TINYMIND_USE_EXP_30_2))
+    #endif // TINYMIND_USE_EXP_29_3
+    #if TINYMIND_USE_EXP_30_2
     const uint32_t ExpValuesTableQ30_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -28440,8 +28440,8 @@ namespace tinymind {
                 0x4E8,
                 0x590,
     };
-    #endif // (defined(TINYMIND_USE_EXP_30_2))
-    #if (defined(TINYMIND_USE_EXP_31_1))
+    #endif // TINYMIND_USE_EXP_30_2
+    #if TINYMIND_USE_EXP_31_1
     const uint32_t ExpValuesTableQ31_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -28540,8 +28540,8 @@ namespace tinymind {
                 0x274,
                 0x2C8,
     };
-    #endif // (defined(TINYMIND_USE_EXP_31_1))
-    #if (defined(TINYMIND_USE_EXP_1_63))
+    #endif // TINYMIND_USE_EXP_31_1
+    #if TINYMIND_USE_EXP_1_63
     const uint64_t ExpValuesTableQ1_63::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x513947C44F5358,
                 0x5C09DF9A748C18,
@@ -28640,8 +28640,8 @@ namespace tinymind {
                 0x0,
                 0x0,
     };
-    #endif // (defined(TINYMIND_USE_EXP_1_63))
-    #if (defined(TINYMIND_USE_EXP_2_62))
+    #endif // TINYMIND_USE_EXP_1_63
+    #if TINYMIND_USE_EXP_2_62
     const uint64_t ExpValuesTableQ2_62::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289CA3E227A9AC,
                 0x2E04EFCD3A460C,
@@ -28740,8 +28740,8 @@ namespace tinymind {
                 0x0,
                 0x0,
     };
-    #endif // (defined(TINYMIND_USE_EXP_2_62))
-    #if (defined(TINYMIND_USE_EXP_3_61))
+    #endif // TINYMIND_USE_EXP_2_62
+    #if TINYMIND_USE_EXP_3_61
     const uint64_t ExpValuesTableQ3_61::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E51F113D4D6,
                 0x170277E69D2306,
@@ -28840,8 +28840,8 @@ namespace tinymind {
                 0x0,
                 0x0,
     };
-    #endif // (defined(TINYMIND_USE_EXP_3_61))
-    #if (defined(TINYMIND_USE_EXP_4_60))
+    #endif // TINYMIND_USE_EXP_3_61
+    #if TINYMIND_USE_EXP_4_60
     const uint64_t ExpValuesTableQ4_60::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2728F889EA6B,
                 0xB813BF34E9183,
@@ -28940,8 +28940,8 @@ namespace tinymind {
                 0x0,
                 0x0,
     };
-    #endif // (defined(TINYMIND_USE_EXP_4_60))
-    #if (defined(TINYMIND_USE_EXP_5_59))
+    #endif // TINYMIND_USE_EXP_4_60
+    #if TINYMIND_USE_EXP_5_59
     const uint64_t ExpValuesTableQ5_59::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x513947C44F535,
                 0x5C09DF9A748C1,
@@ -29040,8 +29040,8 @@ namespace tinymind {
                 0x0,
                 0x0,
     };
-    #endif // (defined(TINYMIND_USE_EXP_5_59))
-    #if (defined(TINYMIND_USE_EXP_6_58))
+    #endif // TINYMIND_USE_EXP_5_59
+    #if TINYMIND_USE_EXP_6_58
     const uint64_t ExpValuesTableQ6_58::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289CA3E227A9A,
                 0x2E04EFCD3A460,
@@ -29140,8 +29140,8 @@ namespace tinymind {
                 0x0,
                 0x0,
     };
-    #endif // (defined(TINYMIND_USE_EXP_6_58))
-    #if (defined(TINYMIND_USE_EXP_7_57))
+    #endif // TINYMIND_USE_EXP_6_58
+    #if TINYMIND_USE_EXP_7_57
     const uint64_t ExpValuesTableQ7_57::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E51F113D4D,
                 0x170277E69D230,
@@ -29240,8 +29240,8 @@ namespace tinymind {
                 0x0,
                 0x0,
     };
-    #endif // (defined(TINYMIND_USE_EXP_7_57))
-    #if (defined(TINYMIND_USE_EXP_8_56))
+    #endif // TINYMIND_USE_EXP_7_57
+    #if TINYMIND_USE_EXP_8_56
     const uint64_t ExpValuesTableQ8_56::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2728F889EA6,
                 0xB813BF34E918,
@@ -29340,8 +29340,8 @@ namespace tinymind {
                 0x0,
                 0x0,
     };
-    #endif // (defined(TINYMIND_USE_EXP_8_56))
-    #if (defined(TINYMIND_USE_EXP_9_55))
+    #endif // TINYMIND_USE_EXP_8_56
+    #if TINYMIND_USE_EXP_9_55
     const uint64_t ExpValuesTableQ9_55::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x513947C44F53,
                 0x5C09DF9A748C,
@@ -29440,8 +29440,8 @@ namespace tinymind {
                 0x9D18678E65D9F000,
                 0xB2032814B33F3000,
     };
-    #endif // (defined(TINYMIND_USE_EXP_9_55))
-    #if (defined(TINYMIND_USE_EXP_10_54))
+    #endif // TINYMIND_USE_EXP_9_55
+    #if TINYMIND_USE_EXP_10_54
     const uint64_t ExpValuesTableQ10_54::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289CA3E227A9,
                 0x2E04EFCD3A46,
@@ -29540,8 +29540,8 @@ namespace tinymind {
                 0x4E8C33C732ECF800,
                 0x5901940A599F9800,
     };
-    #endif // (defined(TINYMIND_USE_EXP_10_54))
-    #if (defined(TINYMIND_USE_EXP_11_53))
+    #endif // TINYMIND_USE_EXP_10_54
+    #if TINYMIND_USE_EXP_11_53
     const uint64_t ExpValuesTableQ11_53::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E51F113D4,
                 0x170277E69D23,
@@ -29640,8 +29640,8 @@ namespace tinymind {
                 0x274619E399767C00,
                 0x2C80CA052CCFCC00,
     };
-    #endif // (defined(TINYMIND_USE_EXP_11_53))
-    #if (defined(TINYMIND_USE_EXP_12_52))
+    #endif // TINYMIND_USE_EXP_11_53
+    #if TINYMIND_USE_EXP_12_52
     const uint64_t ExpValuesTableQ12_52::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2728F889EA,
                 0xB813BF34E91,
@@ -29740,8 +29740,8 @@ namespace tinymind {
                 0x13A30CF1CCBB3E00,
                 0x164065029667E600,
     };
-    #endif // (defined(TINYMIND_USE_EXP_12_52))
-    #if (defined(TINYMIND_USE_EXP_13_51))
+    #endif // TINYMIND_USE_EXP_12_52
+    #if TINYMIND_USE_EXP_13_51
     const uint64_t ExpValuesTableQ13_51::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x513947C44F5,
                 0x5C09DF9A748,
@@ -29840,8 +29840,8 @@ namespace tinymind {
                 0x9D18678E65D9F00,
                 0xB2032814B33F300,
     };
-    #endif // (defined(TINYMIND_USE_EXP_13_51))
-    #if (defined(TINYMIND_USE_EXP_14_50))
+    #endif // TINYMIND_USE_EXP_13_51
+    #if TINYMIND_USE_EXP_14_50
     const uint64_t ExpValuesTableQ14_50::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289CA3E227A,
                 0x2E04EFCD3A4,
@@ -29940,8 +29940,8 @@ namespace tinymind {
                 0x4E8C33C732ECF80,
                 0x5901940A599F980,
     };
-    #endif // (defined(TINYMIND_USE_EXP_14_50))
-    #if (defined(TINYMIND_USE_EXP_15_49))
+    #endif // TINYMIND_USE_EXP_14_50
+    #if TINYMIND_USE_EXP_15_49
     const uint64_t ExpValuesTableQ15_49::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E51F113D,
                 0x170277E69D2,
@@ -30040,8 +30040,8 @@ namespace tinymind {
                 0x274619E399767C0,
                 0x2C80CA052CCFCC0,
     };
-    #endif // (defined(TINYMIND_USE_EXP_15_49))
-    #if (defined(TINYMIND_USE_EXP_16_48))
+    #endif // TINYMIND_USE_EXP_15_49
+    #if TINYMIND_USE_EXP_16_48
     const uint64_t ExpValuesTableQ16_48::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2728F889E,
                 0xB813BF34E9,
@@ -30140,8 +30140,8 @@ namespace tinymind {
                 0x13A30CF1CCBB3E0,
                 0x164065029667E60,
     };
-    #endif // (defined(TINYMIND_USE_EXP_16_48))
-    #if (defined(TINYMIND_USE_EXP_17_47))
+    #endif // TINYMIND_USE_EXP_16_48
+    #if TINYMIND_USE_EXP_17_47
     const uint64_t ExpValuesTableQ17_47::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x513947C44F,
                 0x5C09DF9A74,
@@ -30240,8 +30240,8 @@ namespace tinymind {
                 0x9D18678E65D9F0,
                 0xB2032814B33F30,
     };
-    #endif // (defined(TINYMIND_USE_EXP_17_47))
-    #if (defined(TINYMIND_USE_EXP_18_46))
+    #endif // TINYMIND_USE_EXP_17_47
+    #if TINYMIND_USE_EXP_18_46
     const uint64_t ExpValuesTableQ18_46::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289CA3E227,
                 0x2E04EFCD3A,
@@ -30340,8 +30340,8 @@ namespace tinymind {
                 0x4E8C33C732ECF8,
                 0x5901940A599F98,
     };
-    #endif // (defined(TINYMIND_USE_EXP_18_46))
-    #if (defined(TINYMIND_USE_EXP_19_45))
+    #endif // TINYMIND_USE_EXP_18_46
+    #if TINYMIND_USE_EXP_19_45
     const uint64_t ExpValuesTableQ19_45::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E51F113,
                 0x170277E69D,
@@ -30440,8 +30440,8 @@ namespace tinymind {
                 0x274619E399767C,
                 0x2C80CA052CCFCC,
     };
-    #endif // (defined(TINYMIND_USE_EXP_19_45))
-    #if (defined(TINYMIND_USE_EXP_20_44))
+    #endif // TINYMIND_USE_EXP_19_45
+    #if TINYMIND_USE_EXP_20_44
     const uint64_t ExpValuesTableQ20_44::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2728F889,
                 0xB813BF34E,
@@ -30540,8 +30540,8 @@ namespace tinymind {
                 0x13A30CF1CCBB3E,
                 0x164065029667E6,
     };
-    #endif // (defined(TINYMIND_USE_EXP_20_44))
-    #if (defined(TINYMIND_USE_EXP_21_43))
+    #endif // TINYMIND_USE_EXP_20_44
+    #if TINYMIND_USE_EXP_21_43
     const uint64_t ExpValuesTableQ21_43::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x513947C44,
                 0x5C09DF9A7,
@@ -30640,8 +30640,8 @@ namespace tinymind {
                 0x9D18678E65D9F,
                 0xB2032814B33F3,
     };
-    #endif // (defined(TINYMIND_USE_EXP_21_43))
-    #if (defined(TINYMIND_USE_EXP_22_42))
+    #endif // TINYMIND_USE_EXP_21_43
+    #if TINYMIND_USE_EXP_22_42
     const uint64_t ExpValuesTableQ22_42::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289CA3E22,
                 0x2E04EFCD3,
@@ -30740,8 +30740,8 @@ namespace tinymind {
                 0x4E8C33C732ECF,
                 0x5901940A599F9,
     };
-    #endif // (defined(TINYMIND_USE_EXP_22_42))
-    #if (defined(TINYMIND_USE_EXP_23_41))
+    #endif // TINYMIND_USE_EXP_22_42
+    #if TINYMIND_USE_EXP_23_41
     const uint64_t ExpValuesTableQ23_41::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E51F11,
                 0x170277E69,
@@ -30840,8 +30840,8 @@ namespace tinymind {
                 0x274619E399767,
                 0x2C80CA052CCFC,
     };
-    #endif // (defined(TINYMIND_USE_EXP_23_41))
-    #if (defined(TINYMIND_USE_EXP_24_40))
+    #endif // TINYMIND_USE_EXP_23_41
+    #if TINYMIND_USE_EXP_24_40
     const uint64_t ExpValuesTableQ24_40::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2728F88,
                 0xB813BF34,
@@ -30940,8 +30940,8 @@ namespace tinymind {
                 0x13A30CF1CCBB3,
                 0x164065029667E,
     };
-    #endif // (defined(TINYMIND_USE_EXP_24_40))
-    #if (defined(TINYMIND_USE_EXP_25_39))
+    #endif // TINYMIND_USE_EXP_24_40
+    #if TINYMIND_USE_EXP_25_39
     const uint64_t ExpValuesTableQ25_39::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x513947C4,
                 0x5C09DF9A,
@@ -31040,8 +31040,8 @@ namespace tinymind {
                 0x9D18678E65D9,
                 0xB2032814B33F,
     };
-    #endif // (defined(TINYMIND_USE_EXP_25_39))
-    #if (defined(TINYMIND_USE_EXP_26_38))
+    #endif // TINYMIND_USE_EXP_25_39
+    #if TINYMIND_USE_EXP_26_38
     const uint64_t ExpValuesTableQ26_38::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289CA3E2,
                 0x2E04EFCD,
@@ -31140,8 +31140,8 @@ namespace tinymind {
                 0x4E8C33C732EC,
                 0x5901940A599F,
     };
-    #endif // (defined(TINYMIND_USE_EXP_26_38))
-    #if (defined(TINYMIND_USE_EXP_27_37))
+    #endif // TINYMIND_USE_EXP_26_38
+    #if TINYMIND_USE_EXP_27_37
     const uint64_t ExpValuesTableQ27_37::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E51F1,
                 0x170277E6,
@@ -31240,8 +31240,8 @@ namespace tinymind {
                 0x274619E39976,
                 0x2C80CA052CCF,
     };
-    #endif // (defined(TINYMIND_USE_EXP_27_37))
-    #if (defined(TINYMIND_USE_EXP_28_36))
+    #endif // TINYMIND_USE_EXP_27_37
+    #if TINYMIND_USE_EXP_28_36
     const uint64_t ExpValuesTableQ28_36::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2728F8,
                 0xB813BF3,
@@ -31340,8 +31340,8 @@ namespace tinymind {
                 0x13A30CF1CCBB,
                 0x164065029667,
     };
-    #endif // (defined(TINYMIND_USE_EXP_28_36))
-    #if (defined(TINYMIND_USE_EXP_29_35))
+    #endif // TINYMIND_USE_EXP_28_36
+    #if TINYMIND_USE_EXP_29_35
     const uint64_t ExpValuesTableQ29_35::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x513947C,
                 0x5C09DF9,
@@ -31440,8 +31440,8 @@ namespace tinymind {
                 0x9D18678E65D,
                 0xB2032814B33,
     };
-    #endif // (defined(TINYMIND_USE_EXP_29_35))
-    #if (defined(TINYMIND_USE_EXP_30_34))
+    #endif // TINYMIND_USE_EXP_29_35
+    #if TINYMIND_USE_EXP_30_34
     const uint64_t ExpValuesTableQ30_34::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289CA3E,
                 0x2E04EFC,
@@ -31540,8 +31540,8 @@ namespace tinymind {
                 0x4E8C33C732E,
                 0x5901940A599,
     };
-    #endif // (defined(TINYMIND_USE_EXP_30_34))
-    #if (defined(TINYMIND_USE_EXP_31_33))
+    #endif // TINYMIND_USE_EXP_30_34
+    #if TINYMIND_USE_EXP_31_33
     const uint64_t ExpValuesTableQ31_33::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E51F,
                 0x170277E,
@@ -31640,8 +31640,8 @@ namespace tinymind {
                 0x274619E3997,
                 0x2C80CA052CC,
     };
-    #endif // (defined(TINYMIND_USE_EXP_31_33))
-    #if (defined(TINYMIND_USE_EXP_32_32))
+    #endif // TINYMIND_USE_EXP_31_33
+    #if TINYMIND_USE_EXP_32_32
     const uint64_t ExpValuesTableQ32_32::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2728F,
                 0xB813BF,
@@ -31740,8 +31740,8 @@ namespace tinymind {
                 0x13A30CF1CCB,
                 0x16406502966,
     };
-    #endif // (defined(TINYMIND_USE_EXP_32_32))
-    #if (defined(TINYMIND_USE_EXP_33_31))
+    #endif // TINYMIND_USE_EXP_32_32
+    #if TINYMIND_USE_EXP_33_31
     const uint64_t ExpValuesTableQ33_31::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x513947,
                 0x5C09DF,
@@ -31840,8 +31840,8 @@ namespace tinymind {
                 0x9D18678E65,
                 0xB2032814B3,
     };
-    #endif // (defined(TINYMIND_USE_EXP_33_31))
-    #if (defined(TINYMIND_USE_EXP_34_30))
+    #endif // TINYMIND_USE_EXP_33_31
+    #if TINYMIND_USE_EXP_34_30
     const uint64_t ExpValuesTableQ34_30::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289CA3,
                 0x2E04EF,
@@ -31940,8 +31940,8 @@ namespace tinymind {
                 0x4E8C33C732,
                 0x5901940A59,
     };
-    #endif // (defined(TINYMIND_USE_EXP_34_30))
-    #if (defined(TINYMIND_USE_EXP_35_29))
+    #endif // TINYMIND_USE_EXP_34_30
+    #if TINYMIND_USE_EXP_35_29
     const uint64_t ExpValuesTableQ35_29::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E51,
                 0x170277,
@@ -32040,8 +32040,8 @@ namespace tinymind {
                 0x274619E399,
                 0x2C80CA052C,
     };
-    #endif // (defined(TINYMIND_USE_EXP_35_29))
-    #if (defined(TINYMIND_USE_EXP_36_28))
+    #endif // TINYMIND_USE_EXP_35_29
+    #if TINYMIND_USE_EXP_36_28
     const uint64_t ExpValuesTableQ36_28::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2728,
                 0xB813B,
@@ -32140,8 +32140,8 @@ namespace tinymind {
                 0x13A30CF1CC,
                 0x1640650296,
     };
-    #endif // (defined(TINYMIND_USE_EXP_36_28))
-    #if (defined(TINYMIND_USE_EXP_37_27))
+    #endif // TINYMIND_USE_EXP_36_28
+    #if TINYMIND_USE_EXP_37_27
     const uint64_t ExpValuesTableQ37_27::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x51394,
                 0x5C09D,
@@ -32240,8 +32240,8 @@ namespace tinymind {
                 0x9D18678E6,
                 0xB2032814B,
     };
-    #endif // (defined(TINYMIND_USE_EXP_37_27))
-    #if (defined(TINYMIND_USE_EXP_38_26))
+    #endif // TINYMIND_USE_EXP_37_27
+    #if TINYMIND_USE_EXP_38_26
     const uint64_t ExpValuesTableQ38_26::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289CA,
                 0x2E04E,
@@ -32340,8 +32340,8 @@ namespace tinymind {
                 0x4E8C33C73,
                 0x5901940A5,
     };
-    #endif // (defined(TINYMIND_USE_EXP_38_26))
-    #if (defined(TINYMIND_USE_EXP_39_25))
+    #endif // TINYMIND_USE_EXP_38_26
+    #if TINYMIND_USE_EXP_39_25
     const uint64_t ExpValuesTableQ39_25::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E5,
                 0x17027,
@@ -32440,8 +32440,8 @@ namespace tinymind {
                 0x274619E39,
                 0x2C80CA052,
     };
-    #endif // (defined(TINYMIND_USE_EXP_39_25))
-    #if (defined(TINYMIND_USE_EXP_40_24))
+    #endif // TINYMIND_USE_EXP_39_25
+    #if TINYMIND_USE_EXP_40_24
     const uint64_t ExpValuesTableQ40_24::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA272,
                 0xB813,
@@ -32540,8 +32540,8 @@ namespace tinymind {
                 0x13A30CF1C,
                 0x164065029,
     };
-    #endif // (defined(TINYMIND_USE_EXP_40_24))
-    #if (defined(TINYMIND_USE_EXP_41_23))
+    #endif // TINYMIND_USE_EXP_40_24
+    #if TINYMIND_USE_EXP_41_23
     const uint64_t ExpValuesTableQ41_23::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5139,
                 0x5C09,
@@ -32640,8 +32640,8 @@ namespace tinymind {
                 0x9D18678E,
                 0xB2032814,
     };
-    #endif // (defined(TINYMIND_USE_EXP_41_23))
-    #if (defined(TINYMIND_USE_EXP_42_22))
+    #endif // TINYMIND_USE_EXP_41_23
+    #if TINYMIND_USE_EXP_42_22
     const uint64_t ExpValuesTableQ42_22::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289C,
                 0x2E04,
@@ -32740,8 +32740,8 @@ namespace tinymind {
                 0x4E8C33C7,
                 0x5901940A,
     };
-    #endif // (defined(TINYMIND_USE_EXP_42_22))
-    #if (defined(TINYMIND_USE_EXP_43_21))
+    #endif // TINYMIND_USE_EXP_42_22
+    #if TINYMIND_USE_EXP_43_21
     const uint64_t ExpValuesTableQ43_21::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144E,
                 0x1702,
@@ -32840,8 +32840,8 @@ namespace tinymind {
                 0x274619E3,
                 0x2C80CA05,
     };
-    #endif // (defined(TINYMIND_USE_EXP_43_21))
-    #if (defined(TINYMIND_USE_EXP_44_20))
+    #endif // TINYMIND_USE_EXP_43_21
+    #if TINYMIND_USE_EXP_44_20
     const uint64_t ExpValuesTableQ44_20::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA27,
                 0xB81,
@@ -32940,8 +32940,8 @@ namespace tinymind {
                 0x13A30CF1,
                 0x16406502,
     };
-    #endif // (defined(TINYMIND_USE_EXP_44_20))
-    #if (defined(TINYMIND_USE_EXP_45_19))
+    #endif // TINYMIND_USE_EXP_44_20
+    #if TINYMIND_USE_EXP_45_19
     const uint64_t ExpValuesTableQ45_19::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x513,
                 0x5C0,
@@ -33040,8 +33040,8 @@ namespace tinymind {
                 0x9D18678,
                 0xB203281,
     };
-    #endif // (defined(TINYMIND_USE_EXP_45_19))
-    #if (defined(TINYMIND_USE_EXP_46_18))
+    #endif // TINYMIND_USE_EXP_45_19
+    #if TINYMIND_USE_EXP_46_18
     const uint64_t ExpValuesTableQ46_18::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x289,
                 0x2E0,
@@ -33140,8 +33140,8 @@ namespace tinymind {
                 0x4E8C33C,
                 0x5901940,
     };
-    #endif // (defined(TINYMIND_USE_EXP_46_18))
-    #if (defined(TINYMIND_USE_EXP_47_17))
+    #endif // TINYMIND_USE_EXP_46_18
+    #if TINYMIND_USE_EXP_47_17
     const uint64_t ExpValuesTableQ47_17::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x144,
                 0x170,
@@ -33240,8 +33240,8 @@ namespace tinymind {
                 0x274619E,
                 0x2C80CA0,
     };
-    #endif // (defined(TINYMIND_USE_EXP_47_17))
-    #if (defined(TINYMIND_USE_EXP_48_16))
+    #endif // TINYMIND_USE_EXP_47_17
+    #if TINYMIND_USE_EXP_48_16
     const uint64_t ExpValuesTableQ48_16::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA2,
                 0xB8,
@@ -33340,8 +33340,8 @@ namespace tinymind {
                 0x13A30CF,
                 0x1640650,
     };
-    #endif // (defined(TINYMIND_USE_EXP_48_16))
-    #if (defined(TINYMIND_USE_EXP_49_15))
+    #endif // TINYMIND_USE_EXP_48_16
+    #if TINYMIND_USE_EXP_49_15
     const uint64_t ExpValuesTableQ49_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x51,
                 0x5C,
@@ -33440,8 +33440,8 @@ namespace tinymind {
                 0x9D1867,
                 0xB20328,
     };
-    #endif // (defined(TINYMIND_USE_EXP_49_15))
-    #if (defined(TINYMIND_USE_EXP_50_14))
+    #endif // TINYMIND_USE_EXP_49_15
+    #if TINYMIND_USE_EXP_50_14
     const uint64_t ExpValuesTableQ50_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x28,
                 0x2E,
@@ -33540,8 +33540,8 @@ namespace tinymind {
                 0x4E8C33,
                 0x590194,
     };
-    #endif // (defined(TINYMIND_USE_EXP_50_14))
-    #if (defined(TINYMIND_USE_EXP_51_13))
+    #endif // TINYMIND_USE_EXP_50_14
+    #if TINYMIND_USE_EXP_51_13
     const uint64_t ExpValuesTableQ51_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x14,
                 0x17,
@@ -33640,8 +33640,8 @@ namespace tinymind {
                 0x274619,
                 0x2C80CA,
     };
-    #endif // (defined(TINYMIND_USE_EXP_51_13))
-    #if (defined(TINYMIND_USE_EXP_52_12))
+    #endif // TINYMIND_USE_EXP_51_13
+    #if TINYMIND_USE_EXP_52_12
     const uint64_t ExpValuesTableQ52_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0xA,
                 0xB,
@@ -33740,8 +33740,8 @@ namespace tinymind {
                 0x13A30C,
                 0x164065,
     };
-    #endif // (defined(TINYMIND_USE_EXP_52_12))
-    #if (defined(TINYMIND_USE_EXP_53_11))
+    #endif // TINYMIND_USE_EXP_52_12
+    #if TINYMIND_USE_EXP_53_11
     const uint64_t ExpValuesTableQ53_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x5,
                 0x5,
@@ -33840,8 +33840,8 @@ namespace tinymind {
                 0x9D186,
                 0xB2032,
     };
-    #endif // (defined(TINYMIND_USE_EXP_53_11))
-    #if (defined(TINYMIND_USE_EXP_54_10))
+    #endif // TINYMIND_USE_EXP_53_11
+    #if TINYMIND_USE_EXP_54_10
     const uint64_t ExpValuesTableQ54_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x2,
                 0x2,
@@ -33940,8 +33940,8 @@ namespace tinymind {
                 0x4E8C3,
                 0x59019,
     };
-    #endif // (defined(TINYMIND_USE_EXP_54_10))
-    #if (defined(TINYMIND_USE_EXP_55_9))
+    #endif // TINYMIND_USE_EXP_54_10
+    #if TINYMIND_USE_EXP_55_9
     const uint64_t ExpValuesTableQ55_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x1,
                 0x1,
@@ -34040,8 +34040,8 @@ namespace tinymind {
                 0x27461,
                 0x2C80C,
     };
-    #endif // (defined(TINYMIND_USE_EXP_55_9))
-    #if (defined(TINYMIND_USE_EXP_56_8))
+    #endif // TINYMIND_USE_EXP_55_9
+    #if TINYMIND_USE_EXP_56_8
     const uint64_t ExpValuesTableQ56_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -34140,8 +34140,8 @@ namespace tinymind {
                 0x13A30,
                 0x16406,
     };
-    #endif // (defined(TINYMIND_USE_EXP_56_8))
-    #if (defined(TINYMIND_USE_EXP_57_7))
+    #endif // TINYMIND_USE_EXP_56_8
+    #if TINYMIND_USE_EXP_57_7
     const uint64_t ExpValuesTableQ57_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -34240,8 +34240,8 @@ namespace tinymind {
                 0x9D18,
                 0xB203,
     };
-    #endif // (defined(TINYMIND_USE_EXP_57_7))
-    #if (defined(TINYMIND_USE_EXP_58_6))
+    #endif // TINYMIND_USE_EXP_57_7
+    #if TINYMIND_USE_EXP_58_6
     const uint64_t ExpValuesTableQ58_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -34340,8 +34340,8 @@ namespace tinymind {
                 0x4E8C,
                 0x5901,
     };
-    #endif // (defined(TINYMIND_USE_EXP_58_6))
-    #if (defined(TINYMIND_USE_EXP_59_5))
+    #endif // TINYMIND_USE_EXP_58_6
+    #if TINYMIND_USE_EXP_59_5
     const uint64_t ExpValuesTableQ59_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -34440,8 +34440,8 @@ namespace tinymind {
                 0x2746,
                 0x2C80,
     };
-    #endif // (defined(TINYMIND_USE_EXP_59_5))
-    #if (defined(TINYMIND_USE_EXP_60_4))
+    #endif // TINYMIND_USE_EXP_59_5
+    #if TINYMIND_USE_EXP_60_4
     const uint64_t ExpValuesTableQ60_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -34540,8 +34540,8 @@ namespace tinymind {
                 0x13A3,
                 0x1640,
     };
-    #endif // (defined(TINYMIND_USE_EXP_60_4))
-    #if (defined(TINYMIND_USE_EXP_61_3))
+    #endif // TINYMIND_USE_EXP_60_4
+    #if TINYMIND_USE_EXP_61_3
     const uint64_t ExpValuesTableQ61_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -34640,8 +34640,8 @@ namespace tinymind {
                 0x9D1,
                 0xB20,
     };
-    #endif // (defined(TINYMIND_USE_EXP_61_3))
-    #if (defined(TINYMIND_USE_EXP_62_2))
+    #endif // TINYMIND_USE_EXP_61_3
+    #if TINYMIND_USE_EXP_62_2
     const uint64_t ExpValuesTableQ62_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -34740,8 +34740,8 @@ namespace tinymind {
                 0x4E8,
                 0x590,
     };
-    #endif // (defined(TINYMIND_USE_EXP_62_2))
-    #if (defined(TINYMIND_USE_EXP_63_1))
+    #endif // TINYMIND_USE_EXP_62_2
+    #if TINYMIND_USE_EXP_63_1
     const uint64_t ExpValuesTableQ63_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -34840,8 +34840,8 @@ namespace tinymind {
                 0x274,
                 0x2C8,
     };
-    #endif // (defined(TINYMIND_USE_EXP_63_1))
-    #if (defined(TINYMIND_USE_LOG_1_7))
+    #endif // TINYMIND_USE_EXP_63_1
+    #if TINYMIND_USE_LOG_1_7
     const uint8_t LogValuesTableQ1_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -34940,8 +34940,8 @@ namespace tinymind {
                 0xDF,
                 0xE2,
     };
-    #endif // (defined(TINYMIND_USE_LOG_1_7))
-    #if (defined(TINYMIND_USE_LOG_2_6))
+    #endif // TINYMIND_USE_LOG_1_7
+    #if TINYMIND_USE_LOG_2_6
     const uint8_t LogValuesTableQ2_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -35040,8 +35040,8 @@ namespace tinymind {
                 0x6F,
                 0x71,
     };
-    #endif // (defined(TINYMIND_USE_LOG_2_6))
-    #if (defined(TINYMIND_USE_LOG_3_5))
+    #endif // TINYMIND_USE_LOG_2_6
+    #if TINYMIND_USE_LOG_3_5
     const uint8_t LogValuesTableQ3_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -35140,8 +35140,8 @@ namespace tinymind {
                 0x37,
                 0x38,
     };
-    #endif // (defined(TINYMIND_USE_LOG_3_5))
-    #if (defined(TINYMIND_USE_LOG_4_4))
+    #endif // TINYMIND_USE_LOG_3_5
+    #if TINYMIND_USE_LOG_4_4
     const uint8_t LogValuesTableQ4_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -35240,8 +35240,8 @@ namespace tinymind {
                 0x1B,
                 0x1C,
     };
-    #endif // (defined(TINYMIND_USE_LOG_4_4))
-    #if (defined(TINYMIND_USE_LOG_5_3))
+    #endif // TINYMIND_USE_LOG_4_4
+    #if TINYMIND_USE_LOG_5_3
     const uint8_t LogValuesTableQ5_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -35340,8 +35340,8 @@ namespace tinymind {
                 0xD,
                 0xE,
     };
-    #endif // (defined(TINYMIND_USE_LOG_5_3))
-    #if (defined(TINYMIND_USE_LOG_6_2))
+    #endif // TINYMIND_USE_LOG_5_3
+    #if TINYMIND_USE_LOG_6_2
     const uint8_t LogValuesTableQ6_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -35440,8 +35440,8 @@ namespace tinymind {
                 0x6,
                 0x7,
     };
-    #endif // (defined(TINYMIND_USE_LOG_6_2))
-    #if (defined(TINYMIND_USE_LOG_7_1))
+    #endif // TINYMIND_USE_LOG_6_2
+    #if TINYMIND_USE_LOG_7_1
     const uint8_t LogValuesTableQ7_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -35540,8 +35540,8 @@ namespace tinymind {
                 0x3,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_LOG_7_1))
-    #if (defined(TINYMIND_USE_LOG_1_15))
+    #endif // TINYMIND_USE_LOG_7_1
+    #if TINYMIND_USE_LOG_1_15
     const uint16_t LogValuesTableQ1_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -35640,8 +35640,8 @@ namespace tinymind {
                 0xDFE5,
                 0xE2A6,
     };
-    #endif // (defined(TINYMIND_USE_LOG_1_15))
-    #if (defined(TINYMIND_USE_LOG_2_14))
+    #endif // TINYMIND_USE_LOG_1_15
+    #if TINYMIND_USE_LOG_2_14
     const uint16_t LogValuesTableQ2_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -35740,8 +35740,8 @@ namespace tinymind {
                 0x6FF2,
                 0x7153,
     };
-    #endif // (defined(TINYMIND_USE_LOG_2_14))
-    #if (defined(TINYMIND_USE_LOG_3_13))
+    #endif // TINYMIND_USE_LOG_2_14
+    #if TINYMIND_USE_LOG_3_13
     const uint16_t LogValuesTableQ3_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -35840,8 +35840,8 @@ namespace tinymind {
                 0x37F9,
                 0x38A9,
     };
-    #endif // (defined(TINYMIND_USE_LOG_3_13))
-    #if (defined(TINYMIND_USE_LOG_4_12))
+    #endif // TINYMIND_USE_LOG_3_13
+    #if TINYMIND_USE_LOG_4_12
     const uint16_t LogValuesTableQ4_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -35940,8 +35940,8 @@ namespace tinymind {
                 0x1BFC,
                 0x1C54,
     };
-    #endif // (defined(TINYMIND_USE_LOG_4_12))
-    #if (defined(TINYMIND_USE_LOG_5_11))
+    #endif // TINYMIND_USE_LOG_4_12
+    #if TINYMIND_USE_LOG_5_11
     const uint16_t LogValuesTableQ5_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -36040,8 +36040,8 @@ namespace tinymind {
                 0xDFE,
                 0xE2A,
     };
-    #endif // (defined(TINYMIND_USE_LOG_5_11))
-    #if (defined(TINYMIND_USE_LOG_6_10))
+    #endif // TINYMIND_USE_LOG_5_11
+    #if TINYMIND_USE_LOG_6_10
     const uint16_t LogValuesTableQ6_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -36140,8 +36140,8 @@ namespace tinymind {
                 0x6FF,
                 0x715,
     };
-    #endif // (defined(TINYMIND_USE_LOG_6_10))
-    #if (defined(TINYMIND_USE_LOG_7_9))
+    #endif // TINYMIND_USE_LOG_6_10
+    #if TINYMIND_USE_LOG_7_9
     const uint16_t LogValuesTableQ7_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -36240,8 +36240,8 @@ namespace tinymind {
                 0x37F,
                 0x38A,
     };
-    #endif // (defined(TINYMIND_USE_LOG_7_9))
-    #if (defined(TINYMIND_USE_LOG_8_8))
+    #endif // TINYMIND_USE_LOG_7_9
+    #if TINYMIND_USE_LOG_8_8
     const uint16_t LogValuesTableQ8_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -36340,8 +36340,8 @@ namespace tinymind {
                 0x1BF,
                 0x1C5,
     };
-    #endif // (defined(TINYMIND_USE_LOG_8_8))
-    #if (defined(TINYMIND_USE_LOG_9_7))
+    #endif // TINYMIND_USE_LOG_8_8
+    #if TINYMIND_USE_LOG_9_7
     const uint16_t LogValuesTableQ9_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -36440,8 +36440,8 @@ namespace tinymind {
                 0xDF,
                 0xE2,
     };
-    #endif // (defined(TINYMIND_USE_LOG_9_7))
-    #if (defined(TINYMIND_USE_LOG_10_6))
+    #endif // TINYMIND_USE_LOG_9_7
+    #if TINYMIND_USE_LOG_10_6
     const uint16_t LogValuesTableQ10_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -36540,8 +36540,8 @@ namespace tinymind {
                 0x6F,
                 0x71,
     };
-    #endif // (defined(TINYMIND_USE_LOG_10_6))
-    #if (defined(TINYMIND_USE_LOG_11_5))
+    #endif // TINYMIND_USE_LOG_10_6
+    #if TINYMIND_USE_LOG_11_5
     const uint16_t LogValuesTableQ11_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -36640,8 +36640,8 @@ namespace tinymind {
                 0x37,
                 0x38,
     };
-    #endif // (defined(TINYMIND_USE_LOG_11_5))
-    #if (defined(TINYMIND_USE_LOG_12_4))
+    #endif // TINYMIND_USE_LOG_11_5
+    #if TINYMIND_USE_LOG_12_4
     const uint16_t LogValuesTableQ12_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -36740,8 +36740,8 @@ namespace tinymind {
                 0x1B,
                 0x1C,
     };
-    #endif // (defined(TINYMIND_USE_LOG_12_4))
-    #if (defined(TINYMIND_USE_LOG_13_3))
+    #endif // TINYMIND_USE_LOG_12_4
+    #if TINYMIND_USE_LOG_13_3
     const uint16_t LogValuesTableQ13_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -36840,8 +36840,8 @@ namespace tinymind {
                 0xD,
                 0xE,
     };
-    #endif // (defined(TINYMIND_USE_LOG_13_3))
-    #if (defined(TINYMIND_USE_LOG_14_2))
+    #endif // TINYMIND_USE_LOG_13_3
+    #if TINYMIND_USE_LOG_14_2
     const uint16_t LogValuesTableQ14_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -36940,8 +36940,8 @@ namespace tinymind {
                 0x6,
                 0x7,
     };
-    #endif // (defined(TINYMIND_USE_LOG_14_2))
-    #if (defined(TINYMIND_USE_LOG_15_1))
+    #endif // TINYMIND_USE_LOG_14_2
+    #if TINYMIND_USE_LOG_15_1
     const uint16_t LogValuesTableQ15_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -37040,8 +37040,8 @@ namespace tinymind {
                 0x3,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_LOG_15_1))
-    #if (defined(TINYMIND_USE_LOG_1_31))
+    #endif // TINYMIND_USE_LOG_15_1
+    #if TINYMIND_USE_LOG_1_31
     const uint32_t LogValuesTableQ1_31::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -37140,8 +37140,8 @@ namespace tinymind {
                 0xDFE5C7E5,
                 0xE2A67F05,
     };
-    #endif // (defined(TINYMIND_USE_LOG_1_31))
-    #if (defined(TINYMIND_USE_LOG_2_30))
+    #endif // TINYMIND_USE_LOG_1_31
+    #if TINYMIND_USE_LOG_2_30
     const uint32_t LogValuesTableQ2_30::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -37240,8 +37240,8 @@ namespace tinymind {
                 0x6FF2E3F2,
                 0x71533F82,
     };
-    #endif // (defined(TINYMIND_USE_LOG_2_30))
-    #if (defined(TINYMIND_USE_LOG_3_29))
+    #endif // TINYMIND_USE_LOG_2_30
+    #if TINYMIND_USE_LOG_3_29
     const uint32_t LogValuesTableQ3_29::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -37340,8 +37340,8 @@ namespace tinymind {
                 0x37F971F9,
                 0x38A99FC1,
     };
-    #endif // (defined(TINYMIND_USE_LOG_3_29))
-    #if (defined(TINYMIND_USE_LOG_4_28))
+    #endif // TINYMIND_USE_LOG_3_29
+    #if TINYMIND_USE_LOG_4_28
     const uint32_t LogValuesTableQ4_28::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -37440,8 +37440,8 @@ namespace tinymind {
                 0x1BFCB8FC,
                 0x1C54CFE0,
     };
-    #endif // (defined(TINYMIND_USE_LOG_4_28))
-    #if (defined(TINYMIND_USE_LOG_5_27))
+    #endif // TINYMIND_USE_LOG_4_28
+    #if TINYMIND_USE_LOG_5_27
     const uint32_t LogValuesTableQ5_27::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -37540,8 +37540,8 @@ namespace tinymind {
                 0xDFE5C7E,
                 0xE2A67F0,
     };
-    #endif // (defined(TINYMIND_USE_LOG_5_27))
-    #if (defined(TINYMIND_USE_LOG_6_26))
+    #endif // TINYMIND_USE_LOG_5_27
+    #if TINYMIND_USE_LOG_6_26
     const uint32_t LogValuesTableQ6_26::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -37640,8 +37640,8 @@ namespace tinymind {
                 0x6FF2E3F,
                 0x71533F8,
     };
-    #endif // (defined(TINYMIND_USE_LOG_6_26))
-    #if (defined(TINYMIND_USE_LOG_7_25))
+    #endif // TINYMIND_USE_LOG_6_26
+    #if TINYMIND_USE_LOG_7_25
     const uint32_t LogValuesTableQ7_25::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -37740,8 +37740,8 @@ namespace tinymind {
                 0x37F971F,
                 0x38A99FC,
     };
-    #endif // (defined(TINYMIND_USE_LOG_7_25))
-    #if (defined(TINYMIND_USE_LOG_8_24))
+    #endif // TINYMIND_USE_LOG_7_25
+    #if TINYMIND_USE_LOG_8_24
     const uint32_t LogValuesTableQ8_24::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -37840,8 +37840,8 @@ namespace tinymind {
                 0x1BFCB8F,
                 0x1C54CFE,
     };
-    #endif // (defined(TINYMIND_USE_LOG_8_24))
-    #if (defined(TINYMIND_USE_LOG_9_23))
+    #endif // TINYMIND_USE_LOG_8_24
+    #if TINYMIND_USE_LOG_9_23
     const uint32_t LogValuesTableQ9_23::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -37940,8 +37940,8 @@ namespace tinymind {
                 0xDFE5C7,
                 0xE2A67F,
     };
-    #endif // (defined(TINYMIND_USE_LOG_9_23))
-    #if (defined(TINYMIND_USE_LOG_10_22))
+    #endif // TINYMIND_USE_LOG_9_23
+    #if TINYMIND_USE_LOG_10_22
     const uint32_t LogValuesTableQ10_22::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -38040,8 +38040,8 @@ namespace tinymind {
                 0x6FF2E3,
                 0x71533F,
     };
-    #endif // (defined(TINYMIND_USE_LOG_10_22))
-    #if (defined(TINYMIND_USE_LOG_11_21))
+    #endif // TINYMIND_USE_LOG_10_22
+    #if TINYMIND_USE_LOG_11_21
     const uint32_t LogValuesTableQ11_21::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -38140,8 +38140,8 @@ namespace tinymind {
                 0x37F971,
                 0x38A99F,
     };
-    #endif // (defined(TINYMIND_USE_LOG_11_21))
-    #if (defined(TINYMIND_USE_LOG_12_20))
+    #endif // TINYMIND_USE_LOG_11_21
+    #if TINYMIND_USE_LOG_12_20
     const uint32_t LogValuesTableQ12_20::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -38240,8 +38240,8 @@ namespace tinymind {
                 0x1BFCB8,
                 0x1C54CF,
     };
-    #endif // (defined(TINYMIND_USE_LOG_12_20))
-    #if (defined(TINYMIND_USE_LOG_13_19))
+    #endif // TINYMIND_USE_LOG_12_20
+    #if TINYMIND_USE_LOG_13_19
     const uint32_t LogValuesTableQ13_19::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -38340,8 +38340,8 @@ namespace tinymind {
                 0xDFE5C,
                 0xE2A67,
     };
-    #endif // (defined(TINYMIND_USE_LOG_13_19))
-    #if (defined(TINYMIND_USE_LOG_14_18))
+    #endif // TINYMIND_USE_LOG_13_19
+    #if TINYMIND_USE_LOG_14_18
     const uint32_t LogValuesTableQ14_18::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -38440,8 +38440,8 @@ namespace tinymind {
                 0x6FF2E,
                 0x71533,
     };
-    #endif // (defined(TINYMIND_USE_LOG_14_18))
-    #if (defined(TINYMIND_USE_LOG_15_17))
+    #endif // TINYMIND_USE_LOG_14_18
+    #if TINYMIND_USE_LOG_15_17
     const uint32_t LogValuesTableQ15_17::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -38540,8 +38540,8 @@ namespace tinymind {
                 0x37F97,
                 0x38A99,
     };
-    #endif // (defined(TINYMIND_USE_LOG_15_17))
-    #if (defined(TINYMIND_USE_LOG_16_16))
+    #endif // TINYMIND_USE_LOG_15_17
+    #if TINYMIND_USE_LOG_16_16
     const uint32_t LogValuesTableQ16_16::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -38640,8 +38640,8 @@ namespace tinymind {
                 0x1BFCB,
                 0x1C54C,
     };
-    #endif // (defined(TINYMIND_USE_LOG_16_16))
-    #if (defined(TINYMIND_USE_LOG_17_15))
+    #endif // TINYMIND_USE_LOG_16_16
+    #if TINYMIND_USE_LOG_17_15
     const uint32_t LogValuesTableQ17_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -38740,8 +38740,8 @@ namespace tinymind {
                 0xDFE5,
                 0xE2A6,
     };
-    #endif // (defined(TINYMIND_USE_LOG_17_15))
-    #if (defined(TINYMIND_USE_LOG_18_14))
+    #endif // TINYMIND_USE_LOG_17_15
+    #if TINYMIND_USE_LOG_18_14
     const uint32_t LogValuesTableQ18_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -38840,8 +38840,8 @@ namespace tinymind {
                 0x6FF2,
                 0x7153,
     };
-    #endif // (defined(TINYMIND_USE_LOG_18_14))
-    #if (defined(TINYMIND_USE_LOG_19_13))
+    #endif // TINYMIND_USE_LOG_18_14
+    #if TINYMIND_USE_LOG_19_13
     const uint32_t LogValuesTableQ19_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -38940,8 +38940,8 @@ namespace tinymind {
                 0x37F9,
                 0x38A9,
     };
-    #endif // (defined(TINYMIND_USE_LOG_19_13))
-    #if (defined(TINYMIND_USE_LOG_20_12))
+    #endif // TINYMIND_USE_LOG_19_13
+    #if TINYMIND_USE_LOG_20_12
     const uint32_t LogValuesTableQ20_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -39040,8 +39040,8 @@ namespace tinymind {
                 0x1BFC,
                 0x1C54,
     };
-    #endif // (defined(TINYMIND_USE_LOG_20_12))
-    #if (defined(TINYMIND_USE_LOG_21_11))
+    #endif // TINYMIND_USE_LOG_20_12
+    #if TINYMIND_USE_LOG_21_11
     const uint32_t LogValuesTableQ21_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -39140,8 +39140,8 @@ namespace tinymind {
                 0xDFE,
                 0xE2A,
     };
-    #endif // (defined(TINYMIND_USE_LOG_21_11))
-    #if (defined(TINYMIND_USE_LOG_22_10))
+    #endif // TINYMIND_USE_LOG_21_11
+    #if TINYMIND_USE_LOG_22_10
     const uint32_t LogValuesTableQ22_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -39240,8 +39240,8 @@ namespace tinymind {
                 0x6FF,
                 0x715,
     };
-    #endif // (defined(TINYMIND_USE_LOG_22_10))
-    #if (defined(TINYMIND_USE_LOG_23_9))
+    #endif // TINYMIND_USE_LOG_22_10
+    #if TINYMIND_USE_LOG_23_9
     const uint32_t LogValuesTableQ23_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -39340,8 +39340,8 @@ namespace tinymind {
                 0x37F,
                 0x38A,
     };
-    #endif // (defined(TINYMIND_USE_LOG_23_9))
-    #if (defined(TINYMIND_USE_LOG_24_8))
+    #endif // TINYMIND_USE_LOG_23_9
+    #if TINYMIND_USE_LOG_24_8
     const uint32_t LogValuesTableQ24_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -39440,8 +39440,8 @@ namespace tinymind {
                 0x1BF,
                 0x1C5,
     };
-    #endif // (defined(TINYMIND_USE_LOG_24_8))
-    #if (defined(TINYMIND_USE_LOG_25_7))
+    #endif // TINYMIND_USE_LOG_24_8
+    #if TINYMIND_USE_LOG_25_7
     const uint32_t LogValuesTableQ25_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -39540,8 +39540,8 @@ namespace tinymind {
                 0xDF,
                 0xE2,
     };
-    #endif // (defined(TINYMIND_USE_LOG_25_7))
-    #if (defined(TINYMIND_USE_LOG_26_6))
+    #endif // TINYMIND_USE_LOG_25_7
+    #if TINYMIND_USE_LOG_26_6
     const uint32_t LogValuesTableQ26_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -39640,8 +39640,8 @@ namespace tinymind {
                 0x6F,
                 0x71,
     };
-    #endif // (defined(TINYMIND_USE_LOG_26_6))
-    #if (defined(TINYMIND_USE_LOG_27_5))
+    #endif // TINYMIND_USE_LOG_26_6
+    #if TINYMIND_USE_LOG_27_5
     const uint32_t LogValuesTableQ27_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -39740,8 +39740,8 @@ namespace tinymind {
                 0x37,
                 0x38,
     };
-    #endif // (defined(TINYMIND_USE_LOG_27_5))
-    #if (defined(TINYMIND_USE_LOG_28_4))
+    #endif // TINYMIND_USE_LOG_27_5
+    #if TINYMIND_USE_LOG_28_4
     const uint32_t LogValuesTableQ28_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -39840,8 +39840,8 @@ namespace tinymind {
                 0x1B,
                 0x1C,
     };
-    #endif // (defined(TINYMIND_USE_LOG_28_4))
-    #if (defined(TINYMIND_USE_LOG_29_3))
+    #endif // TINYMIND_USE_LOG_28_4
+    #if TINYMIND_USE_LOG_29_3
     const uint32_t LogValuesTableQ29_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -39940,8 +39940,8 @@ namespace tinymind {
                 0xD,
                 0xE,
     };
-    #endif // (defined(TINYMIND_USE_LOG_29_3))
-    #if (defined(TINYMIND_USE_LOG_30_2))
+    #endif // TINYMIND_USE_LOG_29_3
+    #if TINYMIND_USE_LOG_30_2
     const uint32_t LogValuesTableQ30_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -40040,8 +40040,8 @@ namespace tinymind {
                 0x6,
                 0x7,
     };
-    #endif // (defined(TINYMIND_USE_LOG_30_2))
-    #if (defined(TINYMIND_USE_LOG_31_1))
+    #endif // TINYMIND_USE_LOG_30_2
+    #if TINYMIND_USE_LOG_31_1
     const uint32_t LogValuesTableQ31_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -40140,8 +40140,8 @@ namespace tinymind {
                 0x3,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_LOG_31_1))
-    #if (defined(TINYMIND_USE_LOG_1_63))
+    #endif // TINYMIND_USE_LOG_31_1
+    #if TINYMIND_USE_LOG_1_63
     const uint64_t LogValuesTableQ1_63::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -40240,8 +40240,8 @@ namespace tinymind {
                 0xDFE5C7E5496F8800,
                 0xE2A67F0554543000,
     };
-    #endif // (defined(TINYMIND_USE_LOG_1_63))
-    #if (defined(TINYMIND_USE_LOG_2_62))
+    #endif // TINYMIND_USE_LOG_1_63
+    #if TINYMIND_USE_LOG_2_62
     const uint64_t LogValuesTableQ2_62::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -40340,8 +40340,8 @@ namespace tinymind {
                 0x6FF2E3F2A4B7C400,
                 0x71533F82AA2A1800,
     };
-    #endif // (defined(TINYMIND_USE_LOG_2_62))
-    #if (defined(TINYMIND_USE_LOG_3_61))
+    #endif // TINYMIND_USE_LOG_2_62
+    #if TINYMIND_USE_LOG_3_61
     const uint64_t LogValuesTableQ3_61::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -40440,8 +40440,8 @@ namespace tinymind {
                 0x37F971F9525BE200,
                 0x38A99FC155150C00,
     };
-    #endif // (defined(TINYMIND_USE_LOG_3_61))
-    #if (defined(TINYMIND_USE_LOG_4_60))
+    #endif // TINYMIND_USE_LOG_3_61
+    #if TINYMIND_USE_LOG_4_60
     const uint64_t LogValuesTableQ4_60::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -40540,8 +40540,8 @@ namespace tinymind {
                 0x1BFCB8FCA92DF100,
                 0x1C54CFE0AA8A8600,
     };
-    #endif // (defined(TINYMIND_USE_LOG_4_60))
-    #if (defined(TINYMIND_USE_LOG_5_59))
+    #endif // TINYMIND_USE_LOG_4_60
+    #if TINYMIND_USE_LOG_5_59
     const uint64_t LogValuesTableQ5_59::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -40640,8 +40640,8 @@ namespace tinymind {
                 0xDFE5C7E5496F880,
                 0xE2A67F055454300,
     };
-    #endif // (defined(TINYMIND_USE_LOG_5_59))
-    #if (defined(TINYMIND_USE_LOG_6_58))
+    #endif // TINYMIND_USE_LOG_5_59
+    #if TINYMIND_USE_LOG_6_58
     const uint64_t LogValuesTableQ6_58::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -40740,8 +40740,8 @@ namespace tinymind {
                 0x6FF2E3F2A4B7C40,
                 0x71533F82AA2A180,
     };
-    #endif // (defined(TINYMIND_USE_LOG_6_58))
-    #if (defined(TINYMIND_USE_LOG_7_57))
+    #endif // TINYMIND_USE_LOG_6_58
+    #if TINYMIND_USE_LOG_7_57
     const uint64_t LogValuesTableQ7_57::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -40840,8 +40840,8 @@ namespace tinymind {
                 0x37F971F9525BE20,
                 0x38A99FC155150C0,
     };
-    #endif // (defined(TINYMIND_USE_LOG_7_57))
-    #if (defined(TINYMIND_USE_LOG_8_56))
+    #endif // TINYMIND_USE_LOG_7_57
+    #if TINYMIND_USE_LOG_8_56
     const uint64_t LogValuesTableQ8_56::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -40940,8 +40940,8 @@ namespace tinymind {
                 0x1BFCB8FCA92DF10,
                 0x1C54CFE0AA8A860,
     };
-    #endif // (defined(TINYMIND_USE_LOG_8_56))
-    #if (defined(TINYMIND_USE_LOG_9_55))
+    #endif // TINYMIND_USE_LOG_8_56
+    #if TINYMIND_USE_LOG_9_55
     const uint64_t LogValuesTableQ9_55::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -41040,8 +41040,8 @@ namespace tinymind {
                 0xDFE5C7E5496F88,
                 0xE2A67F05545430,
     };
-    #endif // (defined(TINYMIND_USE_LOG_9_55))
-    #if (defined(TINYMIND_USE_LOG_10_54))
+    #endif // TINYMIND_USE_LOG_9_55
+    #if TINYMIND_USE_LOG_10_54
     const uint64_t LogValuesTableQ10_54::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -41140,8 +41140,8 @@ namespace tinymind {
                 0x6FF2E3F2A4B7C4,
                 0x71533F82AA2A18,
     };
-    #endif // (defined(TINYMIND_USE_LOG_10_54))
-    #if (defined(TINYMIND_USE_LOG_11_53))
+    #endif // TINYMIND_USE_LOG_10_54
+    #if TINYMIND_USE_LOG_11_53
     const uint64_t LogValuesTableQ11_53::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -41240,8 +41240,8 @@ namespace tinymind {
                 0x37F971F9525BE2,
                 0x38A99FC155150C,
     };
-    #endif // (defined(TINYMIND_USE_LOG_11_53))
-    #if (defined(TINYMIND_USE_LOG_12_52))
+    #endif // TINYMIND_USE_LOG_11_53
+    #if TINYMIND_USE_LOG_12_52
     const uint64_t LogValuesTableQ12_52::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -41340,8 +41340,8 @@ namespace tinymind {
                 0x1BFCB8FCA92DF1,
                 0x1C54CFE0AA8A86,
     };
-    #endif // (defined(TINYMIND_USE_LOG_12_52))
-    #if (defined(TINYMIND_USE_LOG_13_51))
+    #endif // TINYMIND_USE_LOG_12_52
+    #if TINYMIND_USE_LOG_13_51
     const uint64_t LogValuesTableQ13_51::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -41440,8 +41440,8 @@ namespace tinymind {
                 0xDFE5C7E5496F8,
                 0xE2A67F0554543,
     };
-    #endif // (defined(TINYMIND_USE_LOG_13_51))
-    #if (defined(TINYMIND_USE_LOG_14_50))
+    #endif // TINYMIND_USE_LOG_13_51
+    #if TINYMIND_USE_LOG_14_50
     const uint64_t LogValuesTableQ14_50::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -41540,8 +41540,8 @@ namespace tinymind {
                 0x6FF2E3F2A4B7C,
                 0x71533F82AA2A1,
     };
-    #endif // (defined(TINYMIND_USE_LOG_14_50))
-    #if (defined(TINYMIND_USE_LOG_15_49))
+    #endif // TINYMIND_USE_LOG_14_50
+    #if TINYMIND_USE_LOG_15_49
     const uint64_t LogValuesTableQ15_49::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -41640,8 +41640,8 @@ namespace tinymind {
                 0x37F971F9525BE,
                 0x38A99FC155150,
     };
-    #endif // (defined(TINYMIND_USE_LOG_15_49))
-    #if (defined(TINYMIND_USE_LOG_16_48))
+    #endif // TINYMIND_USE_LOG_15_49
+    #if TINYMIND_USE_LOG_16_48
     const uint64_t LogValuesTableQ16_48::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -41740,8 +41740,8 @@ namespace tinymind {
                 0x1BFCB8FCA92DF,
                 0x1C54CFE0AA8A8,
     };
-    #endif // (defined(TINYMIND_USE_LOG_16_48))
-    #if (defined(TINYMIND_USE_LOG_17_47))
+    #endif // TINYMIND_USE_LOG_16_48
+    #if TINYMIND_USE_LOG_17_47
     const uint64_t LogValuesTableQ17_47::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -41840,8 +41840,8 @@ namespace tinymind {
                 0xDFE5C7E5496F,
                 0xE2A67F055454,
     };
-    #endif // (defined(TINYMIND_USE_LOG_17_47))
-    #if (defined(TINYMIND_USE_LOG_18_46))
+    #endif // TINYMIND_USE_LOG_17_47
+    #if TINYMIND_USE_LOG_18_46
     const uint64_t LogValuesTableQ18_46::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -41940,8 +41940,8 @@ namespace tinymind {
                 0x6FF2E3F2A4B7,
                 0x71533F82AA2A,
     };
-    #endif // (defined(TINYMIND_USE_LOG_18_46))
-    #if (defined(TINYMIND_USE_LOG_19_45))
+    #endif // TINYMIND_USE_LOG_18_46
+    #if TINYMIND_USE_LOG_19_45
     const uint64_t LogValuesTableQ19_45::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -42040,8 +42040,8 @@ namespace tinymind {
                 0x37F971F9525B,
                 0x38A99FC15515,
     };
-    #endif // (defined(TINYMIND_USE_LOG_19_45))
-    #if (defined(TINYMIND_USE_LOG_20_44))
+    #endif // TINYMIND_USE_LOG_19_45
+    #if TINYMIND_USE_LOG_20_44
     const uint64_t LogValuesTableQ20_44::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -42140,8 +42140,8 @@ namespace tinymind {
                 0x1BFCB8FCA92D,
                 0x1C54CFE0AA8A,
     };
-    #endif // (defined(TINYMIND_USE_LOG_20_44))
-    #if (defined(TINYMIND_USE_LOG_21_43))
+    #endif // TINYMIND_USE_LOG_20_44
+    #if TINYMIND_USE_LOG_21_43
     const uint64_t LogValuesTableQ21_43::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -42240,8 +42240,8 @@ namespace tinymind {
                 0xDFE5C7E5496,
                 0xE2A67F05545,
     };
-    #endif // (defined(TINYMIND_USE_LOG_21_43))
-    #if (defined(TINYMIND_USE_LOG_22_42))
+    #endif // TINYMIND_USE_LOG_21_43
+    #if TINYMIND_USE_LOG_22_42
     const uint64_t LogValuesTableQ22_42::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -42340,8 +42340,8 @@ namespace tinymind {
                 0x6FF2E3F2A4B,
                 0x71533F82AA2,
     };
-    #endif // (defined(TINYMIND_USE_LOG_22_42))
-    #if (defined(TINYMIND_USE_LOG_23_41))
+    #endif // TINYMIND_USE_LOG_22_42
+    #if TINYMIND_USE_LOG_23_41
     const uint64_t LogValuesTableQ23_41::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -42440,8 +42440,8 @@ namespace tinymind {
                 0x37F971F9525,
                 0x38A99FC1551,
     };
-    #endif // (defined(TINYMIND_USE_LOG_23_41))
-    #if (defined(TINYMIND_USE_LOG_24_40))
+    #endif // TINYMIND_USE_LOG_23_41
+    #if TINYMIND_USE_LOG_24_40
     const uint64_t LogValuesTableQ24_40::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -42540,8 +42540,8 @@ namespace tinymind {
                 0x1BFCB8FCA92,
                 0x1C54CFE0AA8,
     };
-    #endif // (defined(TINYMIND_USE_LOG_24_40))
-    #if (defined(TINYMIND_USE_LOG_25_39))
+    #endif // TINYMIND_USE_LOG_24_40
+    #if TINYMIND_USE_LOG_25_39
     const uint64_t LogValuesTableQ25_39::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -42640,8 +42640,8 @@ namespace tinymind {
                 0xDFE5C7E549,
                 0xE2A67F0554,
     };
-    #endif // (defined(TINYMIND_USE_LOG_25_39))
-    #if (defined(TINYMIND_USE_LOG_26_38))
+    #endif // TINYMIND_USE_LOG_25_39
+    #if TINYMIND_USE_LOG_26_38
     const uint64_t LogValuesTableQ26_38::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -42740,8 +42740,8 @@ namespace tinymind {
                 0x6FF2E3F2A4,
                 0x71533F82AA,
     };
-    #endif // (defined(TINYMIND_USE_LOG_26_38))
-    #if (defined(TINYMIND_USE_LOG_27_37))
+    #endif // TINYMIND_USE_LOG_26_38
+    #if TINYMIND_USE_LOG_27_37
     const uint64_t LogValuesTableQ27_37::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -42840,8 +42840,8 @@ namespace tinymind {
                 0x37F971F952,
                 0x38A99FC155,
     };
-    #endif // (defined(TINYMIND_USE_LOG_27_37))
-    #if (defined(TINYMIND_USE_LOG_28_36))
+    #endif // TINYMIND_USE_LOG_27_37
+    #if TINYMIND_USE_LOG_28_36
     const uint64_t LogValuesTableQ28_36::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -42940,8 +42940,8 @@ namespace tinymind {
                 0x1BFCB8FCA9,
                 0x1C54CFE0AA,
     };
-    #endif // (defined(TINYMIND_USE_LOG_28_36))
-    #if (defined(TINYMIND_USE_LOG_29_35))
+    #endif // TINYMIND_USE_LOG_28_36
+    #if TINYMIND_USE_LOG_29_35
     const uint64_t LogValuesTableQ29_35::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -43040,8 +43040,8 @@ namespace tinymind {
                 0xDFE5C7E54,
                 0xE2A67F055,
     };
-    #endif // (defined(TINYMIND_USE_LOG_29_35))
-    #if (defined(TINYMIND_USE_LOG_30_34))
+    #endif // TINYMIND_USE_LOG_29_35
+    #if TINYMIND_USE_LOG_30_34
     const uint64_t LogValuesTableQ30_34::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -43140,8 +43140,8 @@ namespace tinymind {
                 0x6FF2E3F2A,
                 0x71533F82A,
     };
-    #endif // (defined(TINYMIND_USE_LOG_30_34))
-    #if (defined(TINYMIND_USE_LOG_31_33))
+    #endif // TINYMIND_USE_LOG_30_34
+    #if TINYMIND_USE_LOG_31_33
     const uint64_t LogValuesTableQ31_33::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -43240,8 +43240,8 @@ namespace tinymind {
                 0x37F971F95,
                 0x38A99FC15,
     };
-    #endif // (defined(TINYMIND_USE_LOG_31_33))
-    #if (defined(TINYMIND_USE_LOG_32_32))
+    #endif // TINYMIND_USE_LOG_31_33
+    #if TINYMIND_USE_LOG_32_32
     const uint64_t LogValuesTableQ32_32::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -43340,8 +43340,8 @@ namespace tinymind {
                 0x1BFCB8FCA,
                 0x1C54CFE0A,
     };
-    #endif // (defined(TINYMIND_USE_LOG_32_32))
-    #if (defined(TINYMIND_USE_LOG_33_31))
+    #endif // TINYMIND_USE_LOG_32_32
+    #if TINYMIND_USE_LOG_33_31
     const uint64_t LogValuesTableQ33_31::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -43440,8 +43440,8 @@ namespace tinymind {
                 0xDFE5C7E5,
                 0xE2A67F05,
     };
-    #endif // (defined(TINYMIND_USE_LOG_33_31))
-    #if (defined(TINYMIND_USE_LOG_34_30))
+    #endif // TINYMIND_USE_LOG_33_31
+    #if TINYMIND_USE_LOG_34_30
     const uint64_t LogValuesTableQ34_30::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -43540,8 +43540,8 @@ namespace tinymind {
                 0x6FF2E3F2,
                 0x71533F82,
     };
-    #endif // (defined(TINYMIND_USE_LOG_34_30))
-    #if (defined(TINYMIND_USE_LOG_35_29))
+    #endif // TINYMIND_USE_LOG_34_30
+    #if TINYMIND_USE_LOG_35_29
     const uint64_t LogValuesTableQ35_29::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -43640,8 +43640,8 @@ namespace tinymind {
                 0x37F971F9,
                 0x38A99FC1,
     };
-    #endif // (defined(TINYMIND_USE_LOG_35_29))
-    #if (defined(TINYMIND_USE_LOG_36_28))
+    #endif // TINYMIND_USE_LOG_35_29
+    #if TINYMIND_USE_LOG_36_28
     const uint64_t LogValuesTableQ36_28::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -43740,8 +43740,8 @@ namespace tinymind {
                 0x1BFCB8FC,
                 0x1C54CFE0,
     };
-    #endif // (defined(TINYMIND_USE_LOG_36_28))
-    #if (defined(TINYMIND_USE_LOG_37_27))
+    #endif // TINYMIND_USE_LOG_36_28
+    #if TINYMIND_USE_LOG_37_27
     const uint64_t LogValuesTableQ37_27::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -43840,8 +43840,8 @@ namespace tinymind {
                 0xDFE5C7E,
                 0xE2A67F0,
     };
-    #endif // (defined(TINYMIND_USE_LOG_37_27))
-    #if (defined(TINYMIND_USE_LOG_38_26))
+    #endif // TINYMIND_USE_LOG_37_27
+    #if TINYMIND_USE_LOG_38_26
     const uint64_t LogValuesTableQ38_26::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -43940,8 +43940,8 @@ namespace tinymind {
                 0x6FF2E3F,
                 0x71533F8,
     };
-    #endif // (defined(TINYMIND_USE_LOG_38_26))
-    #if (defined(TINYMIND_USE_LOG_39_25))
+    #endif // TINYMIND_USE_LOG_38_26
+    #if TINYMIND_USE_LOG_39_25
     const uint64_t LogValuesTableQ39_25::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -44040,8 +44040,8 @@ namespace tinymind {
                 0x37F971F,
                 0x38A99FC,
     };
-    #endif // (defined(TINYMIND_USE_LOG_39_25))
-    #if (defined(TINYMIND_USE_LOG_40_24))
+    #endif // TINYMIND_USE_LOG_39_25
+    #if TINYMIND_USE_LOG_40_24
     const uint64_t LogValuesTableQ40_24::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -44140,8 +44140,8 @@ namespace tinymind {
                 0x1BFCB8F,
                 0x1C54CFE,
     };
-    #endif // (defined(TINYMIND_USE_LOG_40_24))
-    #if (defined(TINYMIND_USE_LOG_41_23))
+    #endif // TINYMIND_USE_LOG_40_24
+    #if TINYMIND_USE_LOG_41_23
     const uint64_t LogValuesTableQ41_23::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -44240,8 +44240,8 @@ namespace tinymind {
                 0xDFE5C7,
                 0xE2A67F,
     };
-    #endif // (defined(TINYMIND_USE_LOG_41_23))
-    #if (defined(TINYMIND_USE_LOG_42_22))
+    #endif // TINYMIND_USE_LOG_41_23
+    #if TINYMIND_USE_LOG_42_22
     const uint64_t LogValuesTableQ42_22::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -44340,8 +44340,8 @@ namespace tinymind {
                 0x6FF2E3,
                 0x71533F,
     };
-    #endif // (defined(TINYMIND_USE_LOG_42_22))
-    #if (defined(TINYMIND_USE_LOG_43_21))
+    #endif // TINYMIND_USE_LOG_42_22
+    #if TINYMIND_USE_LOG_43_21
     const uint64_t LogValuesTableQ43_21::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -44440,8 +44440,8 @@ namespace tinymind {
                 0x37F971,
                 0x38A99F,
     };
-    #endif // (defined(TINYMIND_USE_LOG_43_21))
-    #if (defined(TINYMIND_USE_LOG_44_20))
+    #endif // TINYMIND_USE_LOG_43_21
+    #if TINYMIND_USE_LOG_44_20
     const uint64_t LogValuesTableQ44_20::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -44540,8 +44540,8 @@ namespace tinymind {
                 0x1BFCB8,
                 0x1C54CF,
     };
-    #endif // (defined(TINYMIND_USE_LOG_44_20))
-    #if (defined(TINYMIND_USE_LOG_45_19))
+    #endif // TINYMIND_USE_LOG_44_20
+    #if TINYMIND_USE_LOG_45_19
     const uint64_t LogValuesTableQ45_19::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -44640,8 +44640,8 @@ namespace tinymind {
                 0xDFE5C,
                 0xE2A67,
     };
-    #endif // (defined(TINYMIND_USE_LOG_45_19))
-    #if (defined(TINYMIND_USE_LOG_46_18))
+    #endif // TINYMIND_USE_LOG_45_19
+    #if TINYMIND_USE_LOG_46_18
     const uint64_t LogValuesTableQ46_18::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -44740,8 +44740,8 @@ namespace tinymind {
                 0x6FF2E,
                 0x71533,
     };
-    #endif // (defined(TINYMIND_USE_LOG_46_18))
-    #if (defined(TINYMIND_USE_LOG_47_17))
+    #endif // TINYMIND_USE_LOG_46_18
+    #if TINYMIND_USE_LOG_47_17
     const uint64_t LogValuesTableQ47_17::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -44840,8 +44840,8 @@ namespace tinymind {
                 0x37F97,
                 0x38A99,
     };
-    #endif // (defined(TINYMIND_USE_LOG_47_17))
-    #if (defined(TINYMIND_USE_LOG_48_16))
+    #endif // TINYMIND_USE_LOG_47_17
+    #if TINYMIND_USE_LOG_48_16
     const uint64_t LogValuesTableQ48_16::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -44940,8 +44940,8 @@ namespace tinymind {
                 0x1BFCB,
                 0x1C54C,
     };
-    #endif // (defined(TINYMIND_USE_LOG_48_16))
-    #if (defined(TINYMIND_USE_LOG_49_15))
+    #endif // TINYMIND_USE_LOG_48_16
+    #if TINYMIND_USE_LOG_49_15
     const uint64_t LogValuesTableQ49_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -45040,8 +45040,8 @@ namespace tinymind {
                 0xDFE5,
                 0xE2A6,
     };
-    #endif // (defined(TINYMIND_USE_LOG_49_15))
-    #if (defined(TINYMIND_USE_LOG_50_14))
+    #endif // TINYMIND_USE_LOG_49_15
+    #if TINYMIND_USE_LOG_50_14
     const uint64_t LogValuesTableQ50_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -45140,8 +45140,8 @@ namespace tinymind {
                 0x6FF2,
                 0x7153,
     };
-    #endif // (defined(TINYMIND_USE_LOG_50_14))
-    #if (defined(TINYMIND_USE_LOG_51_13))
+    #endif // TINYMIND_USE_LOG_50_14
+    #if TINYMIND_USE_LOG_51_13
     const uint64_t LogValuesTableQ51_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -45240,8 +45240,8 @@ namespace tinymind {
                 0x37F9,
                 0x38A9,
     };
-    #endif // (defined(TINYMIND_USE_LOG_51_13))
-    #if (defined(TINYMIND_USE_LOG_52_12))
+    #endif // TINYMIND_USE_LOG_51_13
+    #if TINYMIND_USE_LOG_52_12
     const uint64_t LogValuesTableQ52_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -45340,8 +45340,8 @@ namespace tinymind {
                 0x1BFC,
                 0x1C54,
     };
-    #endif // (defined(TINYMIND_USE_LOG_52_12))
-    #if (defined(TINYMIND_USE_LOG_53_11))
+    #endif // TINYMIND_USE_LOG_52_12
+    #if TINYMIND_USE_LOG_53_11
     const uint64_t LogValuesTableQ53_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -45440,8 +45440,8 @@ namespace tinymind {
                 0xDFE,
                 0xE2A,
     };
-    #endif // (defined(TINYMIND_USE_LOG_53_11))
-    #if (defined(TINYMIND_USE_LOG_54_10))
+    #endif // TINYMIND_USE_LOG_53_11
+    #if TINYMIND_USE_LOG_54_10
     const uint64_t LogValuesTableQ54_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -45540,8 +45540,8 @@ namespace tinymind {
                 0x6FF,
                 0x715,
     };
-    #endif // (defined(TINYMIND_USE_LOG_54_10))
-    #if (defined(TINYMIND_USE_LOG_55_9))
+    #endif // TINYMIND_USE_LOG_54_10
+    #if TINYMIND_USE_LOG_55_9
     const uint64_t LogValuesTableQ55_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -45640,8 +45640,8 @@ namespace tinymind {
                 0x37F,
                 0x38A,
     };
-    #endif // (defined(TINYMIND_USE_LOG_55_9))
-    #if (defined(TINYMIND_USE_LOG_56_8))
+    #endif // TINYMIND_USE_LOG_55_9
+    #if TINYMIND_USE_LOG_56_8
     const uint64_t LogValuesTableQ56_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -45740,8 +45740,8 @@ namespace tinymind {
                 0x1BF,
                 0x1C5,
     };
-    #endif // (defined(TINYMIND_USE_LOG_56_8))
-    #if (defined(TINYMIND_USE_LOG_57_7))
+    #endif // TINYMIND_USE_LOG_56_8
+    #if TINYMIND_USE_LOG_57_7
     const uint64_t LogValuesTableQ57_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -45840,8 +45840,8 @@ namespace tinymind {
                 0xDF,
                 0xE2,
     };
-    #endif // (defined(TINYMIND_USE_LOG_57_7))
-    #if (defined(TINYMIND_USE_LOG_58_6))
+    #endif // TINYMIND_USE_LOG_57_7
+    #if TINYMIND_USE_LOG_58_6
     const uint64_t LogValuesTableQ58_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -45940,8 +45940,8 @@ namespace tinymind {
                 0x6F,
                 0x71,
     };
-    #endif // (defined(TINYMIND_USE_LOG_58_6))
-    #if (defined(TINYMIND_USE_LOG_59_5))
+    #endif // TINYMIND_USE_LOG_58_6
+    #if TINYMIND_USE_LOG_59_5
     const uint64_t LogValuesTableQ59_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -46040,8 +46040,8 @@ namespace tinymind {
                 0x37,
                 0x38,
     };
-    #endif // (defined(TINYMIND_USE_LOG_59_5))
-    #if (defined(TINYMIND_USE_LOG_60_4))
+    #endif // TINYMIND_USE_LOG_59_5
+    #if TINYMIND_USE_LOG_60_4
     const uint64_t LogValuesTableQ60_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -46140,8 +46140,8 @@ namespace tinymind {
                 0x1B,
                 0x1C,
     };
-    #endif // (defined(TINYMIND_USE_LOG_60_4))
-    #if (defined(TINYMIND_USE_LOG_61_3))
+    #endif // TINYMIND_USE_LOG_60_4
+    #if TINYMIND_USE_LOG_61_3
     const uint64_t LogValuesTableQ61_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -46240,8 +46240,8 @@ namespace tinymind {
                 0xD,
                 0xE,
     };
-    #endif // (defined(TINYMIND_USE_LOG_61_3))
-    #if (defined(TINYMIND_USE_LOG_62_2))
+    #endif // TINYMIND_USE_LOG_61_3
+    #if TINYMIND_USE_LOG_62_2
     const uint64_t LogValuesTableQ62_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -46340,8 +46340,8 @@ namespace tinymind {
                 0x6,
                 0x7,
     };
-    #endif // (defined(TINYMIND_USE_LOG_62_2))
-    #if (defined(TINYMIND_USE_LOG_63_1))
+    #endif // TINYMIND_USE_LOG_62_2
+    #if TINYMIND_USE_LOG_63_1
     const uint64_t LogValuesTableQ63_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
                 0x0,
                 0x0,
@@ -46440,5 +46440,5 @@ namespace tinymind {
                 0x3,
                 0x3,
     };
-    #endif // (defined(TINYMIND_USE_LOG_63_1))
+    #endif // TINYMIND_USE_LOG_63_1
 }

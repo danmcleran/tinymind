@@ -25,46 +25,46 @@
 #include "activation.hpp"
 
 namespace tinymind {
-    #if (defined(TINYMIND_USE_SIGMOID_1_7))
+    #if TINYMIND_USE_SIGMOID_1_7
     struct SigmoidValuesTableQ1_7
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_1_7))
-    #if (defined(TINYMIND_USE_SIGMOID_2_6))
+    #endif // TINYMIND_USE_SIGMOID_1_7
+    #if TINYMIND_USE_SIGMOID_2_6
     struct SigmoidValuesTableQ2_6
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_2_6))
-    #if (defined(TINYMIND_USE_SIGMOID_3_5))
+    #endif // TINYMIND_USE_SIGMOID_2_6
+    #if TINYMIND_USE_SIGMOID_3_5
     struct SigmoidValuesTableQ3_5
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_3_5))
-    #if (defined(TINYMIND_USE_SIGMOID_4_4))
+    #endif // TINYMIND_USE_SIGMOID_3_5
+    #if TINYMIND_USE_SIGMOID_4_4
     struct SigmoidValuesTableQ4_4
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_4_4))
-    #if (defined(TINYMIND_USE_SIGMOID_5_3))
+    #endif // TINYMIND_USE_SIGMOID_4_4
+    #if TINYMIND_USE_SIGMOID_5_3
     struct SigmoidValuesTableQ5_3
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_5_3))
-    #if (defined(TINYMIND_USE_SIGMOID_6_2))
+    #endif // TINYMIND_USE_SIGMOID_5_3
+    #if TINYMIND_USE_SIGMOID_6_2
     struct SigmoidValuesTableQ6_2
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_6_2))
-    #if (defined(TINYMIND_USE_SIGMOID_7_1))
+    #endif // TINYMIND_USE_SIGMOID_6_2
+    #if TINYMIND_USE_SIGMOID_7_1
     struct SigmoidValuesTableQ7_1
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_7_1))
+    #endif // TINYMIND_USE_SIGMOID_7_1
 }

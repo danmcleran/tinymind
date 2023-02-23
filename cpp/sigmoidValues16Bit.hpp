@@ -25,94 +25,94 @@
 #include "activation.hpp"
 
 namespace tinymind {
-    #if (defined(TINYMIND_USE_SIGMOID_1_15))
+    #if TINYMIND_USE_SIGMOID_1_15
     struct SigmoidValuesTableQ1_15
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_1_15))
-    #if (defined(TINYMIND_USE_SIGMOID_2_14))
+    #endif // TINYMIND_USE_SIGMOID_1_15
+    #if TINYMIND_USE_SIGMOID_2_14
     struct SigmoidValuesTableQ2_14
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_2_14))
-    #if (defined(TINYMIND_USE_SIGMOID_3_13))
+    #endif // TINYMIND_USE_SIGMOID_2_14
+    #if TINYMIND_USE_SIGMOID_3_13
     struct SigmoidValuesTableQ3_13
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_3_13))
-    #if (defined(TINYMIND_USE_SIGMOID_4_12))
+    #endif // TINYMIND_USE_SIGMOID_3_13
+    #if TINYMIND_USE_SIGMOID_4_12
     struct SigmoidValuesTableQ4_12
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_4_12))
-    #if (defined(TINYMIND_USE_SIGMOID_5_11))
+    #endif // TINYMIND_USE_SIGMOID_4_12
+    #if TINYMIND_USE_SIGMOID_5_11
     struct SigmoidValuesTableQ5_11
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_5_11))
-    #if (defined(TINYMIND_USE_SIGMOID_6_10))
+    #endif // TINYMIND_USE_SIGMOID_5_11
+    #if TINYMIND_USE_SIGMOID_6_10
     struct SigmoidValuesTableQ6_10
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_6_10))
-    #if (defined(TINYMIND_USE_SIGMOID_7_9))
+    #endif // TINYMIND_USE_SIGMOID_6_10
+    #if TINYMIND_USE_SIGMOID_7_9
     struct SigmoidValuesTableQ7_9
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_7_9))
-    #if (defined(TINYMIND_USE_SIGMOID_8_8))
+    #endif // TINYMIND_USE_SIGMOID_7_9
+    #if TINYMIND_USE_SIGMOID_8_8
     struct SigmoidValuesTableQ8_8
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_8_8))
-    #if (defined(TINYMIND_USE_SIGMOID_9_7))
+    #endif // TINYMIND_USE_SIGMOID_8_8
+    #if TINYMIND_USE_SIGMOID_9_7
     struct SigmoidValuesTableQ9_7
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_9_7))
-    #if (defined(TINYMIND_USE_SIGMOID_10_6))
+    #endif // TINYMIND_USE_SIGMOID_9_7
+    #if TINYMIND_USE_SIGMOID_10_6
     struct SigmoidValuesTableQ10_6
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_10_6))
-    #if (defined(TINYMIND_USE_SIGMOID_11_5))
+    #endif // TINYMIND_USE_SIGMOID_10_6
+    #if TINYMIND_USE_SIGMOID_11_5
     struct SigmoidValuesTableQ11_5
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_11_5))
-    #if (defined(TINYMIND_USE_SIGMOID_12_4))
+    #endif // TINYMIND_USE_SIGMOID_11_5
+    #if TINYMIND_USE_SIGMOID_12_4
     struct SigmoidValuesTableQ12_4
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_12_4))
-    #if (defined(TINYMIND_USE_SIGMOID_13_3))
+    #endif // TINYMIND_USE_SIGMOID_12_4
+    #if TINYMIND_USE_SIGMOID_13_3
     struct SigmoidValuesTableQ13_3
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_13_3))
-    #if (defined(TINYMIND_USE_SIGMOID_14_2))
+    #endif // TINYMIND_USE_SIGMOID_13_3
+    #if TINYMIND_USE_SIGMOID_14_2
     struct SigmoidValuesTableQ14_2
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_14_2))
-    #if (defined(TINYMIND_USE_SIGMOID_15_1))
+    #endif // TINYMIND_USE_SIGMOID_14_2
+    #if TINYMIND_USE_SIGMOID_15_1
     struct SigmoidValuesTableQ15_1
     {
         static const uint16_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_SIGMOID_15_1))
+    #endif // TINYMIND_USE_SIGMOID_15_1
 }
