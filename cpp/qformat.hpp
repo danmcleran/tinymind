@@ -400,13 +400,13 @@ namespace tinymind {
             return (mValue.getValue() != value);
         }
 
-#ifdef ENABLE_OSTREAMS
+#ifdef TINYMIND_ENABLE_OSTREAMS
         friend std::ostream& operator<<(std::ostream& os, const QValue& value)
         {
             os << value.getValue();
             return os;
         }
-#endif // ENABLE_OSTREAMS
+#endif // TINYMIND_ENABLE_OSTREAMS
         template<typename OtherQValueType>
         void convertFromOtherQValueType(const OtherQValueType& other)
         {
