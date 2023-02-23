@@ -25,190 +25,190 @@
 #include "activation.hpp"
 
 namespace tinymind {
-    #if (defined(TINYMIND_USE_TANH_1_31))
+    #if TINYMIND_USE_TANH_1_31
     struct TanhValuesTableQ1_31
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_1_31))
-    #if (defined(TINYMIND_USE_TANH_2_30))
+    #endif // TINYMIND_USE_TANH_1_31
+    #if TINYMIND_USE_TANH_2_30
     struct TanhValuesTableQ2_30
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_2_30))
-    #if (defined(TINYMIND_USE_TANH_3_29))
+    #endif // TINYMIND_USE_TANH_2_30
+    #if TINYMIND_USE_TANH_3_29
     struct TanhValuesTableQ3_29
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_3_29))
-    #if (defined(TINYMIND_USE_TANH_4_28))
+    #endif // TINYMIND_USE_TANH_3_29
+    #if TINYMIND_USE_TANH_4_28
     struct TanhValuesTableQ4_28
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_4_28))
-    #if (defined(TINYMIND_USE_TANH_5_27))
+    #endif // TINYMIND_USE_TANH_4_28
+    #if TINYMIND_USE_TANH_5_27
     struct TanhValuesTableQ5_27
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_5_27))
-    #if (defined(TINYMIND_USE_TANH_6_26))
+    #endif // TINYMIND_USE_TANH_5_27
+    #if TINYMIND_USE_TANH_6_26
     struct TanhValuesTableQ6_26
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_6_26))
-    #if (defined(TINYMIND_USE_TANH_7_25))
+    #endif // TINYMIND_USE_TANH_6_26
+    #if TINYMIND_USE_TANH_7_25
     struct TanhValuesTableQ7_25
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_7_25))
-    #if (defined(TINYMIND_USE_TANH_8_24))
+    #endif // TINYMIND_USE_TANH_7_25
+    #if TINYMIND_USE_TANH_8_24
     struct TanhValuesTableQ8_24
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_8_24))
-    #if (defined(TINYMIND_USE_TANH_9_23))
+    #endif // TINYMIND_USE_TANH_8_24
+    #if TINYMIND_USE_TANH_9_23
     struct TanhValuesTableQ9_23
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_9_23))
-    #if (defined(TINYMIND_USE_TANH_10_22))
+    #endif // TINYMIND_USE_TANH_9_23
+    #if TINYMIND_USE_TANH_10_22
     struct TanhValuesTableQ10_22
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_10_22))
-    #if (defined(TINYMIND_USE_TANH_11_21))
+    #endif // TINYMIND_USE_TANH_10_22
+    #if TINYMIND_USE_TANH_11_21
     struct TanhValuesTableQ11_21
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_11_21))
-    #if (defined(TINYMIND_USE_TANH_12_20))
+    #endif // TINYMIND_USE_TANH_11_21
+    #if TINYMIND_USE_TANH_12_20
     struct TanhValuesTableQ12_20
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_12_20))
-    #if (defined(TINYMIND_USE_TANH_13_19))
+    #endif // TINYMIND_USE_TANH_12_20
+    #if TINYMIND_USE_TANH_13_19
     struct TanhValuesTableQ13_19
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_13_19))
-    #if (defined(TINYMIND_USE_TANH_14_18))
+    #endif // TINYMIND_USE_TANH_13_19
+    #if TINYMIND_USE_TANH_14_18
     struct TanhValuesTableQ14_18
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_14_18))
-    #if (defined(TINYMIND_USE_TANH_15_17))
+    #endif // TINYMIND_USE_TANH_14_18
+    #if TINYMIND_USE_TANH_15_17
     struct TanhValuesTableQ15_17
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_15_17))
-    #if (defined(TINYMIND_USE_TANH_16_16))
+    #endif // TINYMIND_USE_TANH_15_17
+    #if TINYMIND_USE_TANH_16_16
     struct TanhValuesTableQ16_16
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_16_16))
-    #if (defined(TINYMIND_USE_TANH_17_15))
+    #endif // TINYMIND_USE_TANH_16_16
+    #if TINYMIND_USE_TANH_17_15
     struct TanhValuesTableQ17_15
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_17_15))
-    #if (defined(TINYMIND_USE_TANH_18_14))
+    #endif // TINYMIND_USE_TANH_17_15
+    #if TINYMIND_USE_TANH_18_14
     struct TanhValuesTableQ18_14
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_18_14))
-    #if (defined(TINYMIND_USE_TANH_19_13))
+    #endif // TINYMIND_USE_TANH_18_14
+    #if TINYMIND_USE_TANH_19_13
     struct TanhValuesTableQ19_13
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_19_13))
-    #if (defined(TINYMIND_USE_TANH_20_12))
+    #endif // TINYMIND_USE_TANH_19_13
+    #if TINYMIND_USE_TANH_20_12
     struct TanhValuesTableQ20_12
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_20_12))
-    #if (defined(TINYMIND_USE_TANH_21_11))
+    #endif // TINYMIND_USE_TANH_20_12
+    #if TINYMIND_USE_TANH_21_11
     struct TanhValuesTableQ21_11
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_21_11))
-    #if (defined(TINYMIND_USE_TANH_22_10))
+    #endif // TINYMIND_USE_TANH_21_11
+    #if TINYMIND_USE_TANH_22_10
     struct TanhValuesTableQ22_10
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_22_10))
-    #if (defined(TINYMIND_USE_TANH_23_9))
+    #endif // TINYMIND_USE_TANH_22_10
+    #if TINYMIND_USE_TANH_23_9
     struct TanhValuesTableQ23_9
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_23_9))
-    #if (defined(TINYMIND_USE_TANH_24_8))
+    #endif // TINYMIND_USE_TANH_23_9
+    #if TINYMIND_USE_TANH_24_8
     struct TanhValuesTableQ24_8
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_24_8))
-    #if (defined(TINYMIND_USE_TANH_25_7))
+    #endif // TINYMIND_USE_TANH_24_8
+    #if TINYMIND_USE_TANH_25_7
     struct TanhValuesTableQ25_7
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_25_7))
-    #if (defined(TINYMIND_USE_TANH_26_6))
+    #endif // TINYMIND_USE_TANH_25_7
+    #if TINYMIND_USE_TANH_26_6
     struct TanhValuesTableQ26_6
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_26_6))
-    #if (defined(TINYMIND_USE_TANH_27_5))
+    #endif // TINYMIND_USE_TANH_26_6
+    #if TINYMIND_USE_TANH_27_5
     struct TanhValuesTableQ27_5
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_27_5))
-    #if (defined(TINYMIND_USE_TANH_28_4))
+    #endif // TINYMIND_USE_TANH_27_5
+    #if TINYMIND_USE_TANH_28_4
     struct TanhValuesTableQ28_4
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_28_4))
-    #if (defined(TINYMIND_USE_TANH_29_3))
+    #endif // TINYMIND_USE_TANH_28_4
+    #if TINYMIND_USE_TANH_29_3
     struct TanhValuesTableQ29_3
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_29_3))
-    #if (defined(TINYMIND_USE_TANH_30_2))
+    #endif // TINYMIND_USE_TANH_29_3
+    #if TINYMIND_USE_TANH_30_2
     struct TanhValuesTableQ30_2
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_30_2))
-    #if (defined(TINYMIND_USE_TANH_31_1))
+    #endif // TINYMIND_USE_TANH_30_2
+    #if TINYMIND_USE_TANH_31_1
     struct TanhValuesTableQ31_1
     {
         static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_31_1))
+    #endif // TINYMIND_USE_TANH_31_1
 }

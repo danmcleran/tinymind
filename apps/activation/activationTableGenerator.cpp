@@ -129,12 +129,12 @@ static void writeTableHeader(const string& path, char const* const preprocessorT
     const string spaces("    ");
     ofstream outFile;
     outFile.open(path, ofstream::app);
-    outFile << spaces << "#if (defined(" << activationTags[activationType] << fixedBits << "_" << fracBits << "))" << endl;
+    outFile << spaces << "#if " << preprocessorTag << fixedBits << "_" << fracBits << endl;
     outFile << spaces << "struct " << structPrefixes[activationType] << "ValuesTableQ" << fixedBits << "_" << fracBits << endl;
     outFile << spaces << "{" << endl;
     outFile << spaces << "    static const uint" << totalBits << "_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];" << endl;
     outFile << spaces << "};" << endl;
-    outFile << spaces << "#endif // "  << "(defined(" << preprocessorTag << fixedBits << "_" << fracBits << "))" << endl;
+    outFile << spaces << "#endif // "  << preprocessorTag << fixedBits << "_" << fracBits << endl;
     outFile.close();
 }
 
@@ -192,13 +192,13 @@ static void writeTableSelectorCases(const string& path, const int fixedBits, con
     const string spaces("    ");
     ofstream outFile;
     outFile.open(path, ofstream::app);
-    outFile << spaces << "#if (defined(" << activationTags[activationType] << fixedBits << "_" << fracBits << "))" << endl;
+    outFile << spaces << "#if " << activationTags[activationType] << fixedBits << "_" << fracBits << endl;
     outFile << spaces << "template<>" << endl;
     outFile << spaces << "struct " << structPrefixes[activationType] << "TableValueSize<"<< fixedBits << ", " << fracBits << ", true>\n";
     outFile << spaces << "{" << endl;
     outFile << spaces << "    typedef " << structPrefixes[activationType] << "ValuesTableQ" << fixedBits << "_" << fracBits << " " << structPrefixes[activationType] << "TableType;\n";
     outFile << spaces << "};" << endl;
-    outFile << spaces << "#endif // "  << "(defined(" << activationTags[activationType] << fixedBits << "_" << fracBits << "))" << endl << endl;
+    outFile << spaces << "#endif // "  << activationTags[activationType] << fixedBits << "_" << fracBits << endl << endl;
 }
 
 static void writeTableSelector(string path, const activation_e activationType)
@@ -226,7 +226,7 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
     double num;
 
     outFile << std::dec;
-    outFile << spaces << "#if (defined(" << activationTags[activationType] << fixedBits << "_" << fracBits << "))" << endl;
+    outFile << spaces << "#if " << activationTags[activationType] << fixedBits << "_" << fracBits << endl;
     outFile << spaces << "const uint" << totalBits << "_t " << structPrefixes[activationType] << "ValuesTableQ" << fixedBits << "_" << fracBits << "::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {" << endl;
 
     for (int i = 0; i < NUMBER_OF_ACTIVATION_TABLE_VALUES; ++i)
@@ -288,7 +288,7 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
 
     outFile << std::dec;
     outFile << spaces << "};" << endl;
-    outFile << spaces << "#endif // "  << "(defined(" << activationTags[activationType] << fixedBits << "_" << fracBits << "))" << endl;
+    outFile << spaces << "#endif // "  << activationTags[activationType] << fixedBits << "_" << fracBits << endl;
 }
 
 static void generateLut(const string& path, const activation_e activationType)

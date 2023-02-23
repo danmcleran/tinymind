@@ -400,7 +400,7 @@ namespace tinymind {
             return (mValue.getValue() != value);
         }
 
-#ifdef TINYMIND_ENABLE_OSTREAMS
+#if TINYMIND_ENABLE_OSTREAMS
         friend std::ostream& operator<<(std::ostream& os, const QValue& value)
         {
             os << value.getValue();

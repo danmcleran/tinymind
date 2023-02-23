@@ -25,46 +25,46 @@
 #include "activation.hpp"
 
 namespace tinymind {
-    #if (defined(TINYMIND_USE_LOG_1_7))
+    #if TINYMIND_USE_LOG_1_7
     struct LogValuesTableQ1_7
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_LOG_1_7))
-    #if (defined(TINYMIND_USE_LOG_2_6))
+    #endif // TINYMIND_USE_LOG_1_7
+    #if TINYMIND_USE_LOG_2_6
     struct LogValuesTableQ2_6
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_LOG_2_6))
-    #if (defined(TINYMIND_USE_LOG_3_5))
+    #endif // TINYMIND_USE_LOG_2_6
+    #if TINYMIND_USE_LOG_3_5
     struct LogValuesTableQ3_5
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_LOG_3_5))
-    #if (defined(TINYMIND_USE_LOG_4_4))
+    #endif // TINYMIND_USE_LOG_3_5
+    #if TINYMIND_USE_LOG_4_4
     struct LogValuesTableQ4_4
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_LOG_4_4))
-    #if (defined(TINYMIND_USE_LOG_5_3))
+    #endif // TINYMIND_USE_LOG_4_4
+    #if TINYMIND_USE_LOG_5_3
     struct LogValuesTableQ5_3
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_LOG_5_3))
-    #if (defined(TINYMIND_USE_LOG_6_2))
+    #endif // TINYMIND_USE_LOG_5_3
+    #if TINYMIND_USE_LOG_6_2
     struct LogValuesTableQ6_2
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_LOG_6_2))
-    #if (defined(TINYMIND_USE_LOG_7_1))
+    #endif // TINYMIND_USE_LOG_6_2
+    #if TINYMIND_USE_LOG_7_1
     struct LogValuesTableQ7_1
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_LOG_7_1))
+    #endif // TINYMIND_USE_LOG_7_1
 }

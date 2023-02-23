@@ -25,46 +25,46 @@
 #include "activation.hpp"
 
 namespace tinymind {
-    #if (defined(TINYMIND_USE_TANH_1_7))
+    #if TINYMIND_USE_TANH_1_7
     struct TanhValuesTableQ1_7
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_1_7))
-    #if (defined(TINYMIND_USE_TANH_2_6))
+    #endif // TINYMIND_USE_TANH_1_7
+    #if TINYMIND_USE_TANH_2_6
     struct TanhValuesTableQ2_6
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_2_6))
-    #if (defined(TINYMIND_USE_TANH_3_5))
+    #endif // TINYMIND_USE_TANH_2_6
+    #if TINYMIND_USE_TANH_3_5
     struct TanhValuesTableQ3_5
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_3_5))
-    #if (defined(TINYMIND_USE_TANH_4_4))
+    #endif // TINYMIND_USE_TANH_3_5
+    #if TINYMIND_USE_TANH_4_4
     struct TanhValuesTableQ4_4
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_4_4))
-    #if (defined(TINYMIND_USE_TANH_5_3))
+    #endif // TINYMIND_USE_TANH_4_4
+    #if TINYMIND_USE_TANH_5_3
     struct TanhValuesTableQ5_3
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_5_3))
-    #if (defined(TINYMIND_USE_TANH_6_2))
+    #endif // TINYMIND_USE_TANH_5_3
+    #if TINYMIND_USE_TANH_6_2
     struct TanhValuesTableQ6_2
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_6_2))
-    #if (defined(TINYMIND_USE_TANH_7_1))
+    #endif // TINYMIND_USE_TANH_6_2
+    #if TINYMIND_USE_TANH_7_1
     struct TanhValuesTableQ7_1
     {
         static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
     };
-    #endif // (defined(TINYMIND_USE_TANH_7_1))
+    #endif // TINYMIND_USE_TANH_7_1
 }
