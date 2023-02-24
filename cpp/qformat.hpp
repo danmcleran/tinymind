@@ -213,7 +213,39 @@ namespace tinymind {
         static constexpr FixedPartFieldType MaxFractionalPartValue = ((FractionalPartFieldType )((1ULL << NumFractionalBits) - 1));
     };
 
-    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned, template<typename, unsigned> class QValueRoundingPolicy = TruncatePolicy>
+    class NoSaturatePolicy
+    {
+    public:
+        template<typename QValueType>
+        static typename QValueType::FullWidthFieldType add(const QValueType& lhs, const QValueType& rhs)
+        {
+            typedef typename QValueType::FullWidthFieldType FullWidthFieldType;
+            FullWidthFieldType left(lhs.getValue());
+            FullWidthFieldType right(rhs.getValue());
+            FullWidthFieldType sum;
+
+            sum = left + right;
+
+            return sum;
+        }
+    };
+
+    class SaturatePolicy
+    {
+    public:
+        template<typename QValueType>
+        static typename QValueType::FullWidthFieldType add(const QValueType& lhs, const QValueType& rhs)
+        {
+            static constexpr typename QValueType::FixedPartFieldType      MaxFixedPartValue      = QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumFractionalBits, QValueType::IsSigned>::MaxFixedPartValue;
+            static constexpr typename QValueType::FractionalPartFieldType MaxFractionalPartValue = QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumFractionalBits, QValueType::IsSigned>::MaxFractionalPartValue;
+        }
+    };
+
+    template<   unsigned NumFixedBits,
+                unsigned NumFractionalBits,
+                bool QValueIsSigned,
+                template<typename, unsigned> class QValueRoundingPolicy = TruncatePolicy,
+                class SaturatePolicy = NoSaturatePolicy>
     struct QValue
     {
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::FullWidthValueType                     FullWidthValueType;
@@ -268,7 +300,7 @@ namespace tinymind {
 
         QValue& operator+=(const QValue& other)
         {
-            mValue += other.mValue;
+            mValue = SaturatePolicy::add(*this, other);
 
             return *this;
         }
