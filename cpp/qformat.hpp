@@ -228,6 +228,19 @@ namespace tinymind {
 
             return sum;
         }
+
+        template<typename QValueType>
+        static typename QValueType::FullWidthFieldType add(const QValueType& lhs, const typename QValueType::FullWidthFieldType rhs)
+        {
+            typedef typename QValueType::FullWidthFieldType FullWidthFieldType;
+            FullWidthFieldType left(lhs.getValue());
+            FullWidthFieldType right(rhs);
+            FullWidthFieldType sum;
+
+            sum = left + right;
+
+            return sum;
+        }
     };
 
     class SaturatePolicy
@@ -236,8 +249,27 @@ namespace tinymind {
         template<typename QValueType>
         static typename QValueType::FullWidthFieldType add(const QValueType& lhs, const QValueType& rhs)
         {
-            static constexpr typename QValueType::FixedPartFieldType      MaxFixedPartValue      = QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumFractionalBits, QValueType::IsSigned>::MaxFixedPartValue;
-            static constexpr typename QValueType::FractionalPartFieldType MaxFractionalPartValue = QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumFractionalBits, QValueType::IsSigned>::MaxFractionalPartValue;
+            typedef typename QValueType::FullWidthFieldType FullWidthFieldType;
+            FullWidthFieldType left(lhs.getValue());
+            FullWidthFieldType right(rhs.getValue());
+            FullWidthFieldType sum;
+
+            sum = left + right;
+
+            return sum;
+        }
+
+        template<typename QValueType>
+        static typename QValueType::FullWidthFieldType add(const QValueType& lhs, const typename QValueType::FullWidthFieldType rhs)
+        {
+            typedef typename QValueType::FullWidthFieldType FullWidthFieldType;
+            FullWidthFieldType left(lhs.getValue());
+            FullWidthFieldType right(rhs);
+            FullWidthFieldType sum;
+
+            sum = left + right;
+
+            return sum;
         }
     };
 
@@ -307,7 +339,7 @@ namespace tinymind {
 
         QValue& operator+=(const FullWidthFieldType& value)
         {
-            mValue += value;
+            mValue = SaturatePolicy::add(*this, value);
 
             return *this;
         }
