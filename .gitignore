@@ -1,3 +1,4 @@
 unit_test/qformat/output
 unit_test/qlearn/output
 unit_test/nn/output
+apps/activation/output
