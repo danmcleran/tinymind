@@ -8,4 +8,4 @@ qformat_unit_test: qformat_unit_test.cpp
 
 # Remove all object files
 clean:
-	rm -f *.o
+	rm -f ./output/*
