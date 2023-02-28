@@ -3,10 +3,10 @@
 # Tell the code to compile the Q16.16 tanh activation function LUT
 qlearn_unit_test: qlearn_unit_test.cpp ../../cpp/lookupTables.cpp
 #	Make an output dir to hold the executable
-	mkdir -p ~/qlearn
+	mkdir -p ./output
 #	Build the unit tests
-	g++ -g -Wall -o ~/qlearn/qlearn_unit_test qlearn_unit_test.cpp ../../cpp/lookupTables.cpp -DTINYMIND_ENABLE_OSTREAMS=1 -I../../cpp -I../../apps/include -DTINYMIND_USE_TANH_16_16=1 -I${BOOST_HOME}
+	g++ -g -Wall -o ./output/qlearn_unit_test qlearn_unit_test.cpp ../../cpp/lookupTables.cpp -DTINYMIND_ENABLE_OSTREAMS=1 -I../../cpp -I../../include -DTINYMIND_USE_TANH_16_16=1 -I${BOOST_HOME}
 
 # Remove all object files
 clean:
-	rm -f *.o
+	rm -f ./output/*

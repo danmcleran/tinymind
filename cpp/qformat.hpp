@@ -199,8 +199,8 @@ namespace tinymind {
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, false>::FixedPartFieldType      FixedPartFieldType;
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, false>::FractionalPartFieldType FractionalPartFieldType;
 
-        static constexpr FixedPartFieldType MaxFixedPartValue      = ((FixedPartFieldType)((1ULL << NumFixedBits) - 1));
-        static constexpr FixedPartFieldType MaxFractionalPartValue = ((FractionalPartFieldType )((1ULL << NumFractionalBits) - 1));
+        static constexpr FixedPartFieldType MaxFixedPartValue      = (static_cast<FixedPartFieldType>((1ULL << NumFixedBits) - 1));
+        static constexpr FixedPartFieldType MaxFractionalPartValue = (static_cast<FractionalPartFieldType>((1ULL << NumFractionalBits) - 1));
     };
 
     template<unsigned NumFixedBits, unsigned NumFractionalBits>
@@ -209,8 +209,8 @@ namespace tinymind {
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, true>::FixedPartFieldType      FixedPartFieldType;
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, true>::FractionalPartFieldType FractionalPartFieldType;
 
-        static constexpr FixedPartFieldType MaxFixedPartValue      = ((FixedPartFieldType)((1ULL << (NumFixedBits - 1)) - 1));
-        static constexpr FixedPartFieldType MaxFractionalPartValue = ((FractionalPartFieldType )((1ULL << NumFractionalBits) - 1));
+        static constexpr FixedPartFieldType MaxFixedPartValue      = (static_cast<FixedPartFieldType>((1ULL << (NumFixedBits - 1)) - 1));
+        static constexpr FixedPartFieldType MaxFractionalPartValue = (static_cast<FractionalPartFieldType>((1ULL << NumFractionalBits) - 1));
     };
 
     class NoSaturatePolicy
