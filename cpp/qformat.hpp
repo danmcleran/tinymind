@@ -242,6 +242,23 @@ namespace tinymind {
             return sum;
         }
 
+        template<typename QValueType, typename OtherQValueType>
+        static void convertFromOtherQValueType(QValueType& value, const OtherQValueType& other)
+        {
+            typedef typename QValueType::FixedPartFieldType FixedPartFieldType;
+            typedef typename QValueType::FractionalPartFieldType FractionalPartFieldType;
+            typedef typename ShiftPolicy<
+                                        typename OtherQValueType::FractionalPartFieldType,
+                                        FractionalPartFieldType,
+                                        OtherQValueType::NumberOfFractionalBits,
+                                        QValueType::NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
+
+            const FixedPartFieldType fixedPart = static_cast<FixedPartFieldType>(other.getFixedPart());
+            const FractionalPartFieldType fractionalPart = ShiftPolicyType::shift(other.getFractionalPart());
+
+            value.setValue(fixedPart, fractionalPart);
+        }
+
         template<typename QValueType>
         static void decrement(QValueType& value)
         {
@@ -547,13 +564,7 @@ namespace tinymind {
         template<typename OtherQValueType>
         void convertFromOtherQValueType(const OtherQValueType& other)
         {
-            typedef typename ShiftPolicy<
-                                        typename OtherQValueType::FractionalPartFieldType,
-                                        FractionalPartFieldType,
-                                        OtherQValueType::NumberOfFractionalBits,
-                                        NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
-            mFixedPart = static_cast<FixedPartFieldType>(other.getFixedPart());
-            mFractionalPart = ShiftPolicyType::shift(other.getFractionalPart());
+            SaturatePolicy::convertFromOtherQValueType(*this, other);
         }
 
         FixedPartFieldType getFixedPart() const
