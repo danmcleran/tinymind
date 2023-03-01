@@ -38,6 +38,7 @@ typedef tinymind::QValue<24, 8, false> UnsignedQ24_8Type;
 typedef tinymind::QValue<8, 24, true> SignedQ8_24Type;
 typedef tinymind::QValue<8, 24, false> UnsignedQ8_24Type;
 typedef tinymind::QValue<24, 8, false> UnsignedQ24_8Type;
+typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy, tinymind::QValueSaturatePolicy> SignedSatQ8_8Type;
 #ifdef __SIZEOF_INT128__
 typedef tinymind::QValue<32, 32, false> UnsignedQ32_32Type;
 typedef tinymind::QValue<32, 32, true> SignedQ32_32Type;
@@ -52,6 +53,8 @@ static_assert((((1ULL << 24) - 1) == UnsignedQ24_8Type::MaxFixedPartValue), "Inc
 static_assert((std::numeric_limits<uint8_t>::max() == UnsignedQ24_8Type::MaxFractionalPartValue), "Incorrect max fractional value.");
 static_assert((std::numeric_limits<int8_t>::max() == SignedQ8_8Type::MaxFixedPartValue), "Incorrect fixed max value.");
 static_assert((std::numeric_limits<uint8_t>::max() == SignedQ8_8Type::MaxFractionalPartValue), "Incorrect max fractional value.");
+static_assert((std::numeric_limits<int8_t>::max() == SignedSatQ8_8Type::MaxFixedPartValue), "Incorrect fixed max value.");
+static_assert((std::numeric_limits<uint8_t>::max() == SignedSatQ8_8Type::MaxFractionalPartValue), "Incorrect max fractional value.");
 static_assert((((1ULL << 23) - 1) == SignedQ24_8Type::MaxFixedPartValue), "Incorrect max fixed value.");
 static_assert((std::numeric_limits<uint8_t>::max() == SignedQ24_8Type::MaxFractionalPartValue), "Incorrect max fractional value.");
 static_assert(((std::numeric_limits<int8_t>::max() >> 1) == SignedQ7_9Type::MaxFixedPartValue), "Incorrect max fixed value.");
@@ -103,6 +106,7 @@ BOOST_AUTO_TEST_CASE(test_case_construction)
     UnsignedQ32_32Type uQ3(0, 0);
     SignedQ32_32Type Q11(-1, 0);
     SignedQ24_40Type Q12(-1, 0);
+    SignedSatQ8_8Type Q13(0, 0);
 
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FixedPartFieldType>(0) == uQ3.getFixedPart());
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FractionalPartFieldType>(0) == uQ3.getFractionalPart());
@@ -120,6 +124,10 @@ BOOST_AUTO_TEST_CASE(test_case_construction)
     BOOST_TEST(static_cast<SignedQ8_8Type::FixedPartFieldType>(0) == Q0.getFixedPart());
     BOOST_TEST(static_cast<SignedQ8_8Type::FractionalPartFieldType>(0) == Q0.getFractionalPart());
     BOOST_TEST(static_cast<SignedQ8_8Type::FullWidthValueType>(0) == Q0.getValue());
+
+    BOOST_TEST(static_cast<SignedSatQ8_8Type::FixedPartFieldType>(0) == Q13.getFixedPart());
+    BOOST_TEST(static_cast<SignedSatQ8_8Type::FractionalPartFieldType>(0) == Q13.getFractionalPart());
+    BOOST_TEST(static_cast<SignedSatQ8_8Type::FullWidthValueType>(0) == Q13.getValue());
 
     BOOST_TEST(static_cast<SignedQ8_8Type::FixedPartFieldType>(0) == Q1.getFixedPart());
     BOOST_TEST(static_cast<SignedQ8_8Type::FractionalPartFieldType>(0) == Q1.getFractionalPart());
@@ -194,6 +202,9 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     SignedQ24_40Type Q17(0, 0);
     SignedQ24_40Type Q18(-1, 0);
     SignedQ24_40Type Q19(1, 0);
+    SignedSatQ8_8Type Q20(0, 0);
+    SignedSatQ8_8Type Q21(128, 0);
+    SignedSatQ8_8Type Q22(128, 0);
 
     uQ5 += 0;
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0) == uQ5.getValue());
@@ -321,6 +332,9 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
 
     Q13 = Q11 + 1;
     BOOST_TEST(static_cast<SignedQ8_24Type::FullWidthValueType>(0x2000000) == Q13.getValue());
+
+    Q20 = Q21 + Q22;
+    // BOOST_TEST(SignedSatQ8_8Type::MaxFixedPartValue == Q20.getFixedPart());
 }
 
 BOOST_AUTO_TEST_CASE(test_case_subtraction)
