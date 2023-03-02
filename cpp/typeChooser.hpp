@@ -132,11 +132,4 @@ namespace tinymind {
         typedef typename FullWidthType<Result, IsSigned>::FullWidthFieldType      FullWidthFieldType;
         typedef typename FullWidthType<Result, IsSigned>::FullWidthValueType      FullWidthValueType;
     };
-
-    // Meant to be overloaded by client code not using tinymind Q format value types
-    template<typename ValueType>
-    struct FullWidthFieldTypeShim
-    {
-        typedef typename ValueType::FullWidthFieldType FullWidthFieldType;
-    };
 }

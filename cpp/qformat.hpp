@@ -217,7 +217,7 @@ namespace tinymind {
         static constexpr FractionalPartFieldType MaxFractionalPartValue = (static_cast<FractionalPartFieldType>((1ULL << NumFractionalBits) - 1));
         static constexpr FullWidthFieldType MinFullWidthValue           = 0;
         static constexpr FullWidthFieldType MaxFullWidthField           = ((MaxFixedPartValue << NumFractionalBits) | MaxFractionalPartValue);
-        static constexpr FullWidthValueType MaxFullWidthValue           = static_cast<FullWidthValueType>(MaxFullWidthField);
+        static constexpr FullWidthValueType MaxFullWidthValue           = (static_cast<FullWidthValueType>(MaxFullWidthField));
     };
 
     template<unsigned NumFixedBits, unsigned NumFractionalBits>
@@ -232,41 +232,42 @@ namespace tinymind {
         static constexpr FixedPartFieldType MinFixedPartValue           = (static_cast<FixedPartFieldType>((1ULL << NumFixedBits) - 1));
         static constexpr FractionalPartFieldType MaxFractionalPartValue = (static_cast<FractionalPartFieldType>((1ULL << NumFractionalBits) - 1));
         static constexpr FullWidthFieldType MinFullWidthField           = ((MinFixedPartValue << NumFractionalBits) | MaxFractionalPartValue);
-        static constexpr FullWidthValueType MinFullWidthValue           = static_cast<FullWidthValueType>(MinFullWidthField);
+        static constexpr FullWidthValueType MinFullWidthValue           = (static_cast<FullWidthValueType>(MinFullWidthField));
         static constexpr FullWidthFieldType MaxFullWidthField           = ((MaxFixedPartValue << NumFractionalBits) | MaxFractionalPartValue);
-        static constexpr FullWidthValueType MaxFullWidthValue           = static_cast<FullWidthValueType>(MaxFullWidthField);
+        static constexpr FullWidthValueType MaxFullWidthValue           = (static_cast<FullWidthValueType>(MaxFullWidthField));
     };
 
     class NoSaturatePolicy
     {
     public:
-        template<unsigned OtherNumberOfFractionalBits, typename QValueType, typename OtherFixedPartFieldType, typename OtherFractionalPartFieldType>
-        static void convertFromOtherQValueType(QValueType& value, const OtherFixedPartFieldType otherFixedPart, const OtherFractionalPartFieldType otherFractionalPart)
+        template<typename QValueType, typename OtherQValueType>
+        static void convertFromOtherQValueType(QValueType& value, const OtherQValueType& otherValue)
         {
             typedef typename QValueType::FixedPartFieldType FixedPartFieldType;
             typedef typename QValueType::FractionalPartFieldType FractionalPartFieldType;
+            typedef typename OtherQValueType::FixedPartFieldType OtherFixedPartFieldType;
             typedef typename ShiftPolicy<   OtherFixedPartFieldType,
                                             FractionalPartFieldType,
-                                            OtherNumberOfFractionalBits,
+                                            OtherQValueType::NumberOfFractionalBits,
                                             QValueType::NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
 
-            const FixedPartFieldType fixedPart = static_cast<FixedPartFieldType>(otherFixedPart);
-            const FractionalPartFieldType fractionalPart = ShiftPolicyType::shift(otherFractionalPart);
+            const FixedPartFieldType fixedPart = static_cast<FixedPartFieldType>(otherValue.getFixedPart());
+            const FractionalPartFieldType fractionalPart = ShiftPolicyType::shift(otherValue.getFractionalPart());
 
             value.setValue(fixedPart, fractionalPart);
         }
 
-        template<typename QValueType>
-        static typename QValueType::FullWidthFieldType add(const QValueType& lhs, const QValueType& rhs)
+        template<typename SaturateCheckValueType, typename QValueType>
+        static void add(QValueType& value, const QValueType& other)
         {
-            typedef typename QValueType::FullWidthFieldType FullWidthFieldType;
-            FullWidthFieldType left(lhs.getValue());
-            FullWidthFieldType right(rhs.getValue());
-            FullWidthFieldType sum;
+            typedef typename QValueType::FullWidthValueType FullWidthValueType;
+            FullWidthValueType left(value.getValue());
+            FullWidthValueType right(other.getValue());
+            FullWidthValueType sum;
 
             sum = left + right;
 
-            return sum;
+            value.setValue(sum);
         }
 
         template<typename QValueType>
@@ -351,58 +352,52 @@ namespace tinymind {
     class SaturateMinMaxPolicy
     {
     public:
-        template<unsigned OtherNumberOfFractionalBits, typename QValueType, typename OtherFixedPartFieldType, typename OtherFractionalPartFieldType>
-        static void convertFromOtherQValueType(QValueType& value, const OtherFixedPartFieldType otherFixedPart, const OtherFractionalPartFieldType otherFractionalPart)
+        template<typename QValueType, typename OtherQValueType>
+        static void convertFromOtherQValueType(QValueType& value, const OtherQValueType& otherValue)
         {
             typedef typename QValueType::FixedPartFieldType FixedPartFieldType;
             typedef typename QValueType::FractionalPartFieldType FractionalPartFieldType;
+            typedef typename OtherQValueType::FixedPartFieldType OtherFixedPartFieldType;
             typedef typename ShiftPolicy<   OtherFixedPartFieldType,
                                             FractionalPartFieldType,
-                                            OtherNumberOfFractionalBits,
+                                            OtherQValueType::NumberOfFractionalBits,
                                             QValueType::NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
 
-            FixedPartFieldType fixedPart;
-            FractionalPartFieldType fractionalPart;
-
-            if (otherFixedPart > QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::MaxFixedPartValue)
+            if (otherValue.getValue() > static_cast<typename OtherQValueType::FullWidthValueType>(QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::MaxFullWidthValue))
             {
-                fixedPart = static_cast<FixedPartFieldType>(QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::MaxFixedPartValue);
-                fractionalPart = 0;
+                value.setValue(QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::MaxFullWidthValue);
             }
             else
             {
-                fixedPart = static_cast<FixedPartFieldType>(otherFixedPart);
-                fractionalPart = ShiftPolicyType::shift(otherFractionalPart);
-            }
+                FixedPartFieldType fixedPart;
+                FractionalPartFieldType fractionalPart;
 
-            value.setValue(fixedPart, fractionalPart);
+                fixedPart = static_cast<FixedPartFieldType>(otherValue.getFixedPart());
+                fractionalPart = ShiftPolicyType::shift(otherValue.getFractionalPart());
+                value.setValue(fixedPart, fractionalPart);
+            }
         }
 
-        template<typename QValueType>
-        static typename QValueType::FullWidthFieldType add(const QValueType& lhs, const QValueType& rhs)
+        template<typename SaturateCheckValueType, typename QValueType>
+        static void add(QValueType& value, const QValueType& other)
         {
-            typedef typename QTypeChooser<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::SaturateCheckFixedPartFieldType SaturateCheckFixedPartFieldType;
-            typedef typename QTypeChooser<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::SaturateCheckFractionalPartFieldType SaturateCheckFractionalPartFieldType;
-            typedef typename QTypeChooser<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::SaturateCheckFullWidthValueType SaturateCheckFullWidthValueType;
-            constexpr unsigned FRAC_MASK = ((1 << (QValueType::NumberOfFractionalBits << 1)) - 1);
-            SaturateCheckFixedPartFieldType leftFixed(lhs.getFixedPart());
-            SaturateCheckFractionalPartFieldType leftFractional(lhs.getFractionalPart());
-            SaturateCheckFullWidthValueType left((static_cast<SaturateCheckFullWidthValueType>(leftFixed) << (QValueType::NumberOfFractionalBits << 1) | leftFractional));
-            SaturateCheckFullWidthValueType rightFixed(rhs.getFixedPart());
-            SaturateCheckFullWidthValueType rightFractional(rhs.getFractionalPart());
-            SaturateCheckFullWidthValueType right((static_cast<SaturateCheckFullWidthValueType>(rightFixed) << (QValueType::NumberOfFractionalBits << 1) | rightFractional));
-            QValueType result;
+            typedef typename SaturateCheckValueType::FullWidthValueType SaturateCheckFullWidthValueType;
             SaturateCheckFullWidthValueType sum;
-            SaturateCheckFixedPartFieldType fixedPart;
-            SaturateCheckFractionalPartFieldType fracPart;
+            SaturateCheckValueType satLeft;
+            SaturateCheckValueType satRight;
+            SaturateCheckValueType satCheck;
+
+            convertFromOtherQValueType(satLeft, value);
+            convertFromOtherQValueType(satRight, other);
+
+            SaturateCheckFullWidthValueType left(satLeft.getValue());
+            SaturateCheckFullWidthValueType right(satRight.getValue());
 
             sum = left + right;
-            fixedPart = (sum >> (QValueType::NumberOfFractionalBits << 1));
-            fracPart = (sum & FRAC_MASK);
 
-            convertFromOtherQValueType<(QValueType::NumberOfFractionalBits << 1)>(result, fixedPart, fracPart);
+            satCheck.setValue(sum);
 
-            return static_cast<typename QValueType::FullWidthFieldType>(result.getValue());
+            convertFromOtherQValueType(value, satCheck);
         }
 
         template<typename QValueType>
@@ -500,6 +495,7 @@ namespace tinymind {
         typedef QValueRoundingPolicy<MultiplicationResultFullWidthFieldType, NumFractionalBits>                                RoundingPolicy;
         typedef QValueSaturatePolicy                                                                                           SaturatePolicy;
         typedef QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy>            QValueType;
+        typedef QValue<(NumFixedBits << 1), (NumFractionalBits << 1), QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy> SaturateCheckQValueType;
 
         static constexpr unsigned                NumberOfFixedBits      = NumFixedBits;
         static constexpr unsigned                NumberOfFractionalBits = NumFractionalBits;
@@ -545,7 +541,7 @@ namespace tinymind {
 
         QValue& operator+=(const QValue& other)
         {
-            mValue = QValueSaturatePolicy::add(*this, other);
+            QValueSaturatePolicy::template add<SaturateCheckQValueType>(*this, other);
 
             return *this;
         }
@@ -554,7 +550,7 @@ namespace tinymind {
         {
             const QValue other(value);
 
-            mValue = QValueSaturatePolicy::add(*this, other);
+            QValueSaturatePolicy::template add<SaturateCheckQValueType>(*this, other);
 
             return *this;
         }
@@ -673,7 +669,7 @@ namespace tinymind {
         template<typename OtherQValueType>
         void convertFromOtherQValueType(const OtherQValueType& other)
         {
-            QValueSaturatePolicy::template convertFromOtherQValueType<OtherQValueType::NumberOfFractionalBits>(*this, other.getFixedPart(), other.getFractionalPart());
+            QValueSaturatePolicy::convertFromOtherQValueType(*this, other);
         }
 
         FixedPartFieldType getFixedPart() const
@@ -693,7 +689,7 @@ namespace tinymind {
 
         void setValue(const FullWidthValueType& value)
         {
-            mValue = value;
+            mValue = static_cast<FullWidthFieldType>(value);
         }
 
         void setValue(const FixedPartFieldType& fixedPart, const FractionalPartFieldType& fractionalPart)
