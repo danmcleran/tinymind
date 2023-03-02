@@ -38,7 +38,7 @@ typedef tinymind::QValue<24, 8, false> UnsignedQ24_8Type;
 typedef tinymind::QValue<8, 24, true> SignedQ8_24Type;
 typedef tinymind::QValue<8, 24, false> UnsignedQ8_24Type;
 typedef tinymind::QValue<24, 8, false> UnsignedQ24_8Type;
-typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy, tinymind::QValueSaturatePolicy> SignedSatQ8_8Type;
+typedef tinymind::QValue<8, 8, true, tinymind::TruncatePolicy, tinymind::SaturateMinMaxPolicy> SignedSatQ8_8Type;
 #ifdef __SIZEOF_INT128__
 typedef tinymind::QValue<32, 32, false> UnsignedQ32_32Type;
 typedef tinymind::QValue<32, 32, true> SignedQ32_32Type;
@@ -102,11 +102,11 @@ BOOST_AUTO_TEST_CASE(test_case_construction)
     UnsignedQ8_8Type uQ2(1, 0);
     SignedQ8_24Type Q9(-1, 0);
     SignedQ8_24Type Q10(1, 0);
+    SignedSatQ8_8Type Q13(0, 0);
 #ifdef __SIZEOF_INT128__
     UnsignedQ32_32Type uQ3(0, 0);
     SignedQ32_32Type Q11(-1, 0);
     SignedQ24_40Type Q12(-1, 0);
-    SignedSatQ8_8Type Q13(0, 0);
 
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FixedPartFieldType>(0) == uQ3.getFixedPart());
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FractionalPartFieldType>(0) == uQ3.getFractionalPart());
@@ -192,6 +192,12 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     SignedQ8_24Type Q11(1, 0);
     SignedQ8_24Type Q12(0x800000);
     SignedQ8_24Type Q13;
+    SignedQ8_8Type Q20;
+    SignedQ8_8Type Q21(128, 0);
+    SignedQ8_8Type Q22(128, 0);
+    SignedSatQ8_8Type Q23(0, 0);
+    SignedSatQ8_8Type Q24(128, 0);
+    SignedSatQ8_8Type Q25(128, 0);
 #ifdef __SIZEOF_INT128__
     UnsignedQ32_32Type uQ5(0, 0);
     UnsignedQ32_32Type uQ6(0, 1);
@@ -202,9 +208,6 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     SignedQ24_40Type Q17(0, 0);
     SignedQ24_40Type Q18(-1, 0);
     SignedQ24_40Type Q19(1, 0);
-    SignedSatQ8_8Type Q20(0, 0);
-    SignedSatQ8_8Type Q21(128, 0);
-    SignedSatQ8_8Type Q22(128, 0);
 
     uQ5 += 0;
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0) == uQ5.getValue());
@@ -333,8 +336,14 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     Q13 = Q11 + 1;
     BOOST_TEST(static_cast<SignedQ8_24Type::FullWidthValueType>(0x2000000) == Q13.getValue());
 
+    // No saturate policy is the default, should wrap around to 0 on overflow
     Q20 = Q21 + Q22;
-    // BOOST_TEST(SignedSatQ8_8Type::MaxFixedPartValue == Q20.getFixedPart());
+    BOOST_TEST(Q20.getValue() == static_cast<SignedQ8_8Type::FullWidthValueType>(0x0));
+
+    // Saturate policy should peg at the max value rather than overflow to 0
+    constexpr typename SignedSatQ8_8Type::FixedPartFieldType maxFixed = SignedSatQ8_8Type::MaxFixedPartValue;
+    Q23 = Q24 + Q25;
+    BOOST_TEST(maxFixed == Q23.getFixedPart());
 }
 
 BOOST_AUTO_TEST_CASE(test_case_subtraction)
