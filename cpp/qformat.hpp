@@ -164,21 +164,23 @@ namespace tinymind {
     };
 
     template<unsigned NumBits, bool IsSigned>
-    struct SaturateCheckFullWidthValueTypeChooser
+    struct SaturateCheckResultTypeChooser
     {
         static constexpr unsigned FullWidthResult = FullWidthFieldTypeChooser<NumBits, IsSigned>::Result;
+        typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FixedPartFieldType SaturateCheckFixedPartFieldType;
+        typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FixedPartFieldType SaturateCheckFractionalPartFieldType;
         typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FullWidthValueType SaturateCheckFullWidthValueType;
     };
 
     template<unsigned NumBits, bool IsSigned>
-    struct MultiplicationResultFullWidthFieldTypeChooser
+    struct MultiplicationResultTypeChooser
     {
         static constexpr unsigned FullWidthResult = FullWidthFieldTypeChooser<NumBits, IsSigned>::Result;
         typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FullWidthFieldType MultiplicationResultFullWidthFieldType;
     };
 
     template<unsigned NumBits, bool IsSigned>
-    struct DivisionResultFullWidthValueTypeChooser
+    struct DivisionResultTypeChooser
     {
         static constexpr unsigned FullWidthResult = FullWidthFieldTypeChooser<NumBits, IsSigned>::Result;
         typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FullWidthValueType DivisionResultFullWidthValueType;
@@ -187,13 +189,15 @@ namespace tinymind {
     template<unsigned NumFixedBits, unsigned NumFractionalBits, bool IsSigned>
     struct QTypeChooser
     {
-        typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FixedPartFieldType                                         FixedPartFieldType;
-        typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FractionalPartFieldType                                    FractionalPartFieldType;
-        typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FullWidthFieldType                                         FullWidthFieldType;
-        typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FullWidthValueType                                         FullWidthValueType;
-        typedef typename MultiplicationResultFullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::MultiplicationResultFullWidthFieldType MultiplicationResultFullWidthFieldType;
-        typedef typename DivisionResultFullWidthValueTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::DivisionResultFullWidthValueType             DivisionResultFullWidthValueType;
-        typedef typename SaturateCheckFullWidthValueTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::SaturateCheckFullWidthValueType               SaturateCheckFullWidthValueType;
+        typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FixedPartFieldType                           FixedPartFieldType;
+        typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FractionalPartFieldType                      FractionalPartFieldType;
+        typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FullWidthFieldType                           FullWidthFieldType;
+        typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FullWidthValueType                           FullWidthValueType;
+        typedef typename MultiplicationResultTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::MultiplicationResultFullWidthFieldType MultiplicationResultFullWidthFieldType;
+        typedef typename DivisionResultTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::DivisionResultFullWidthValueType             DivisionResultFullWidthValueType;
+        typedef typename SaturateCheckResultTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::SaturateCheckFixedPartFieldType         SaturateCheckFixedPartFieldType;
+        typedef typename SaturateCheckResultTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::SaturateCheckFractionalPartFieldType    SaturateCheckFractionalPartFieldType;
+        typedef typename SaturateCheckResultTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::SaturateCheckFullWidthValueType         SaturateCheckFullWidthValueType;
     };
 
     template<unsigned NumFixedBits, unsigned NumFractionalBits, bool IsSigned>
@@ -241,11 +245,10 @@ namespace tinymind {
         {
             typedef typename QValueType::FixedPartFieldType FixedPartFieldType;
             typedef typename QValueType::FractionalPartFieldType FractionalPartFieldType;
-            typedef typename ShiftPolicy<
-                                        OtherFixedPartFieldType,
-                                        FractionalPartFieldType,
-                                        OtherNumberOfFractionalBits,
-                                        QValueType::NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
+            typedef typename ShiftPolicy<   OtherFixedPartFieldType,
+                                            FractionalPartFieldType,
+                                            OtherNumberOfFractionalBits,
+                                            QValueType::NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
 
             const FixedPartFieldType fixedPart = static_cast<FixedPartFieldType>(otherFixedPart);
             const FractionalPartFieldType fractionalPart = ShiftPolicyType::shift(otherFractionalPart);
@@ -353,14 +356,24 @@ namespace tinymind {
         {
             typedef typename QValueType::FixedPartFieldType FixedPartFieldType;
             typedef typename QValueType::FractionalPartFieldType FractionalPartFieldType;
-            typedef typename ShiftPolicy<
-                                        OtherFixedPartFieldType,
-                                        FractionalPartFieldType,
-                                        OtherNumberOfFractionalBits,
-                                        QValueType::NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
+            typedef typename ShiftPolicy<   OtherFixedPartFieldType,
+                                            FractionalPartFieldType,
+                                            OtherNumberOfFractionalBits,
+                                            QValueType::NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
 
-            const FixedPartFieldType fixedPart = static_cast<FixedPartFieldType>(otherFixedPart);
-            const FractionalPartFieldType fractionalPart = ShiftPolicyType::shift(otherFractionalPart);
+            FixedPartFieldType fixedPart;
+            FractionalPartFieldType fractionalPart;
+
+            if (otherFixedPart > QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::MaxFixedPartValue)
+            {
+                fixedPart = static_cast<FixedPartFieldType>(QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::MaxFixedPartValue);
+                fractionalPart = 0;
+            }
+            else
+            {
+                fixedPart = static_cast<FixedPartFieldType>(otherFixedPart);
+                fractionalPart = ShiftPolicyType::shift(otherFractionalPart);
+            }
 
             value.setValue(fixedPart, fractionalPart);
         }
@@ -368,14 +381,28 @@ namespace tinymind {
         template<typename QValueType>
         static typename QValueType::FullWidthFieldType add(const QValueType& lhs, const QValueType& rhs)
         {
-            typedef typename QValueType::FullWidthFieldType FullWidthFieldType;
-            FullWidthFieldType left(lhs.getValue());
-            FullWidthFieldType right(rhs.getValue());
-            FullWidthFieldType sum;
+            typedef typename QTypeChooser<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::SaturateCheckFixedPartFieldType SaturateCheckFixedPartFieldType;
+            typedef typename QTypeChooser<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::SaturateCheckFractionalPartFieldType SaturateCheckFractionalPartFieldType;
+            typedef typename QTypeChooser<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::SaturateCheckFullWidthValueType SaturateCheckFullWidthValueType;
+            constexpr unsigned FRAC_MASK = ((1 << (QValueType::NumberOfFractionalBits << 1)) - 1);
+            SaturateCheckFixedPartFieldType leftFixed(lhs.getFixedPart());
+            SaturateCheckFractionalPartFieldType leftFractional(lhs.getFractionalPart());
+            SaturateCheckFullWidthValueType left((static_cast<SaturateCheckFullWidthValueType>(leftFixed) << (QValueType::NumberOfFractionalBits << 1) | leftFractional));
+            SaturateCheckFullWidthValueType rightFixed(rhs.getFixedPart());
+            SaturateCheckFullWidthValueType rightFractional(rhs.getFractionalPart());
+            SaturateCheckFullWidthValueType right((static_cast<SaturateCheckFullWidthValueType>(rightFixed) << (QValueType::NumberOfFractionalBits << 1) | rightFractional));
+            QValueType result;
+            SaturateCheckFullWidthValueType sum;
+            SaturateCheckFixedPartFieldType fixedPart;
+            SaturateCheckFractionalPartFieldType fracPart;
 
             sum = left + right;
+            fixedPart = (sum >> (QValueType::NumberOfFractionalBits << 1));
+            fracPart = (sum & FRAC_MASK);
 
-            return sum;
+            convertFromOtherQValueType<(QValueType::NumberOfFractionalBits << 1)>(result, fixedPart, fracPart);
+
+            return static_cast<typename QValueType::FullWidthFieldType>(result.getValue());
         }
 
         template<typename QValueType>

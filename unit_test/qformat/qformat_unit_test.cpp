@@ -196,8 +196,8 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     SignedQ8_8Type Q21(128, 0);
     SignedQ8_8Type Q22(128, 0);
     SignedSatQ8_8Type Q23(0, 0);
-    SignedSatQ8_8Type Q24(128, 0);
-    SignedSatQ8_8Type Q25(128, 0);
+    SignedSatQ8_8Type Q24(127, 0);
+    SignedSatQ8_8Type Q25(127, 0);
 #ifdef __SIZEOF_INT128__
     UnsignedQ32_32Type uQ5(0, 0);
     UnsignedQ32_32Type uQ6(0, 1);
