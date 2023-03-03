@@ -192,12 +192,18 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     SignedQ8_24Type Q11(1, 0);
     SignedQ8_24Type Q12(0x800000);
     SignedQ8_24Type Q13;
+    constexpr typename SignedQ8_8Type::FixedPartFieldType MAX_S_8_8_FIXED_PART = SignedQ8_8Type::MaxFixedPartValue;
+    constexpr typename SignedQ8_8Type::FractionalPartFieldType MAX_S_8_8_FRAC_PART = SignedQ8_8Type::MaxFractionalPartValue;
+    constexpr typename SignedSatQ8_8Type::FixedPartFieldType MAX_S_SAT_8_8_FIXED_PART = SignedSatQ8_8Type::MaxFixedPartValue;
+    constexpr typename SignedSatQ8_8Type::FractionalPartFieldType MAX_S_SAT_8_8_FRAC_PART = SignedSatQ8_8Type::MaxFractionalPartValue;
+    constexpr typename SignedSatQ8_8Type::FullWidthValueType MAX_S_SAT_8_8_VALUE = SignedSatQ8_8Type::MaxFullWidthValue;
     SignedQ8_8Type Q20;
-    SignedQ8_8Type Q21(128, 0);
-    SignedQ8_8Type Q22(128, 0);
-    SignedSatQ8_8Type Q23(0, 0);
-    SignedSatQ8_8Type Q24(127, 0);
-    SignedSatQ8_8Type Q25(127, 0);
+    SignedQ8_8Type Q21(MAX_S_8_8_FIXED_PART, MAX_S_8_8_FRAC_PART);
+    SignedQ8_8Type Q22(0, 1);
+    SignedQ8_8Type Q23(1, 0);
+    SignedSatQ8_8Type Q24;
+    SignedSatQ8_8Type Q25(MAX_S_SAT_8_8_FIXED_PART, MAX_S_SAT_8_8_FRAC_PART);
+    SignedSatQ8_8Type Q26(0, 1);
 #ifdef __SIZEOF_INT128__
     UnsignedQ32_32Type uQ5(0, 0);
     UnsignedQ32_32Type uQ6(0, 1);
@@ -336,14 +342,13 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     Q13 = Q11 + 1;
     BOOST_TEST(static_cast<SignedQ8_24Type::FullWidthValueType>(0x2000000) == Q13.getValue());
 
-    // No saturate policy is the default, should wrap around to 0 on overflow
+    // No saturate policy is the default, should wrap around on overflow
     Q20 = Q21 + Q22;
-    BOOST_TEST(Q20.getValue() == static_cast<SignedQ8_8Type::FullWidthValueType>(0x0));
+    BOOST_TEST(Q20.getValue() == static_cast<SignedQ8_8Type::FullWidthValueType>(0x8000));
 
-    // Saturate policy should peg at the max value rather than overflow to 0
-    constexpr typename SignedSatQ8_8Type::FixedPartFieldType maxFixed = SignedSatQ8_8Type::MaxFixedPartValue;
-    Q23 = Q24 + Q25;
-    BOOST_TEST(maxFixed == Q23.getFixedPart());
+    // Saturate policy should peg at the max value rather than overflow
+    Q24 = Q25 + Q26;
+    BOOST_TEST(MAX_S_SAT_8_8_VALUE == Q24.getValue());
 }
 
 BOOST_AUTO_TEST_CASE(test_case_subtraction)

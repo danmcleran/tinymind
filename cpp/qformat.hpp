@@ -357,21 +357,22 @@ namespace tinymind {
         {
             typedef typename QValueType::FixedPartFieldType FixedPartFieldType;
             typedef typename QValueType::FractionalPartFieldType FractionalPartFieldType;
+            typedef typename QValueType::FullWidthValueType FullWidthValueType;
             typedef typename OtherQValueType::FixedPartFieldType OtherFixedPartFieldType;
             typedef typename ShiftPolicy<   OtherFixedPartFieldType,
                                             FractionalPartFieldType,
                                             OtherQValueType::NumberOfFractionalBits,
                                             QValueType::NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
+            constexpr FullWidthValueType MAX_VALUE = QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::MaxFullWidthValue;
+            FixedPartFieldType fixedPart;
+            FractionalPartFieldType fractionalPart;
 
-            if (otherValue.getValue() > static_cast<typename OtherQValueType::FullWidthValueType>(QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::MaxFullWidthValue))
+            if (otherValue.getValue() > MAX_VALUE)
             {
-                value.setValue(QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::MaxFullWidthValue);
+                value.setValue(MAX_VALUE);
             }
             else
             {
-                FixedPartFieldType fixedPart;
-                FractionalPartFieldType fractionalPart;
-
                 fixedPart = static_cast<FixedPartFieldType>(otherValue.getFixedPart());
                 fractionalPart = ShiftPolicyType::shift(otherValue.getFractionalPart());
                 value.setValue(fixedPart, fractionalPart);
@@ -502,6 +503,7 @@ namespace tinymind {
         static constexpr bool                    IsSigned               = QValueIsSigned;
         static constexpr FixedPartFieldType      MaxFixedPartValue      = QValueMaxCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MaxFixedPartValue;
         static constexpr FractionalPartFieldType MaxFractionalPartValue = QValueMaxCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MaxFractionalPartValue;
+        static constexpr FullWidthValueType      MaxFullWidthValue      = QValueMaxCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MaxFullWidthValue;
 
         QValue() : mValue(0)
         {
