@@ -364,9 +364,14 @@ namespace tinymind {
                                             OtherQValueType::NumberOfFractionalBits,
                                             QValueType::NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
             constexpr FullWidthValueType MAX_VALUE = QValueType::MaxFullWidthValue;
+            constexpr FullWidthValueType MIN_VALUE = QValueType::MinFullWidthValue;
             if (otherValue.getValue() > MAX_VALUE)
             {
                 value.setValue(MAX_VALUE);
+            }
+            else if (otherValue.getValue() < MIN_VALUE)
+            {
+                value.setValue(MIN_VALUE);
             }
             else
             {
@@ -504,6 +509,7 @@ namespace tinymind {
         static constexpr FixedPartFieldType      MaxFixedPartValue      = QValueMaxCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MaxFixedPartValue;
         static constexpr FractionalPartFieldType MaxFractionalPartValue = QValueMaxCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MaxFractionalPartValue;
         static constexpr FullWidthValueType      MaxFullWidthValue      = QValueMaxCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MaxFullWidthValue;
+        static constexpr FullWidthValueType      MinFullWidthValue      = QValueMaxCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MinFullWidthValue;
 
         QValue() : mValue(0)
         {
