@@ -349,6 +349,32 @@ namespace tinymind {
         }
     };
 
+    template<typename QValueType, bool IsSigned>
+    struct SaturateMinChecker
+    {
+    };
+
+    template<typename QValueType>
+    struct SaturateMinChecker<QValueType, true>
+    {
+        typedef typename QValueType::FullWidthValueType FullWidthValueType;
+        static bool isLessThanMin(const FullWidthValueType value)
+        {
+            constexpr FullWidthValueType MIN_VALUE = QValueType::MinFullWidthValue;
+            return (value < MIN_VALUE);
+        }
+    };
+
+    template<typename QValueType>
+    struct SaturateMinChecker<QValueType, false>
+    {
+        typedef typename QValueType::FullWidthValueType FullWidthValueType;
+        static bool isLessThanMin(const FullWidthValueType value)
+        {
+            return false;
+        }
+    };
+
     class SaturateMinMaxPolicy
     {
     public:
@@ -363,13 +389,14 @@ namespace tinymind {
                                             FractionalPartFieldType,
                                             OtherQValueType::NumberOfFractionalBits,
                                             QValueType::NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
+            typedef SaturateMinChecker<QValueType, QValueType::IsSigned> SaturateMinCheckerType;
             constexpr FullWidthValueType MAX_VALUE = QValueType::MaxFullWidthValue;
             constexpr FullWidthValueType MIN_VALUE = QValueType::MinFullWidthValue;
             if (otherValue.getValue() > MAX_VALUE)
             {
                 value.setValue(MAX_VALUE);
             }
-            else if (otherValue.getValue() < MIN_VALUE)
+            else if (SaturateMinCheckerType::isLessThanMin(otherValue.getValue()))
             {
                 value.setValue(MIN_VALUE);
             }
