@@ -363,16 +363,16 @@ namespace tinymind {
                                             FractionalPartFieldType,
                                             OtherQValueType::NumberOfFractionalBits,
                                             QValueType::NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
-            constexpr FullWidthValueType MAX_VALUE = QValueMaxCalculator<QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::MaxFullWidthValue;
-            FixedPartFieldType fixedPart;
-            FractionalPartFieldType fractionalPart;
-
+            constexpr FullWidthValueType MAX_VALUE = QValueType::MaxFullWidthValue;
             if (otherValue.getValue() > MAX_VALUE)
             {
                 value.setValue(MAX_VALUE);
             }
             else
             {
+                FixedPartFieldType fixedPart;
+                FractionalPartFieldType fractionalPart;
+
                 fixedPart = static_cast<FixedPartFieldType>(otherValue.getFixedPart());
                 fractionalPart = ShiftPolicyType::shift(otherValue.getFractionalPart());
                 value.setValue(fixedPart, fractionalPart);
