@@ -397,6 +397,7 @@ BOOST_AUTO_TEST_CASE(test_case_sat_addition)
     constexpr typename SignedSatQ8_8Type::FixedPartFieldType MAX_S_SAT_8_8_FIXED_PART = SignedSatQ8_8Type::MaxFixedPartValue;
     constexpr typename SignedSatQ8_8Type::FractionalPartFieldType MAX_S_SAT_8_8_FRAC_PART = SignedSatQ8_8Type::MaxFractionalPartValue;
     constexpr typename SignedSatQ8_8Type::FullWidthValueType MAX_S_SAT_8_8_VALUE = SignedSatQ8_8Type::MaxFullWidthValue;
+    constexpr typename SignedSatQ8_8Type::FullWidthValueType MIN_S_SAT_8_8_VALUE = SignedSatQ8_8Type::MinFullWidthValue;
     SignedQ8_8Type Q0;
     SignedQ8_8Type Q1(MAX_S_8_8_FIXED_PART, MAX_S_8_8_FRAC_PART);
     SignedQ8_8Type Q2(1, 0);
@@ -418,6 +419,7 @@ BOOST_AUTO_TEST_CASE(test_case_sat_addition)
     constexpr typename SignedSatQ32_32Type::FixedPartFieldType MAX_S_SAT_32_32_FIXED_PART = SignedSatQ32_32Type::MaxFixedPartValue;
     constexpr typename SignedSatQ32_32Type::FractionalPartFieldType MAX_S_SAT_32_32_FRAC_PART = SignedSatQ32_32Type::MaxFractionalPartValue;
     constexpr typename SignedSatQ32_32Type::FullWidthValueType MAX_S_SAT_32_32_VALUE = SignedSatQ32_32Type::MaxFullWidthValue;
+    constexpr typename SignedSatQ32_32Type::FullWidthValueType MIN_S_SAT_32_32_VALUE = SignedSatQ32_32Type::MinFullWidthValue;
     UnsignedQ32_32Type uQ10;
     UnsignedQ32_32Type uQ11(MAX_32_32_FIXED_PART, 0);
     UnsignedQ32_32Type uQ12(1, 0);
@@ -438,6 +440,34 @@ BOOST_AUTO_TEST_CASE(test_case_sat_addition)
     SignedSatQ32_32Type Q17(1, 0);
     SignedSatQ32_32Type Q18(MAX_S_SAT_32_32_FIXED_PART, MAX_S_SAT_32_32_FRAC_PART);
     SignedSatQ32_32Type Q19(0, 1);
+
+    uQ10 = (uQ11 + uQ12);
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0) == uQ10.getValue());
+
+    uQ10 = (uQ13 + uQ14);
+    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0) == uQ10.getValue());
+
+    uQ15 = (uQ16 + uQ17);
+    BOOST_TEST(MAX_SAT_32_32_VALUE == uQ15.getValue());
+
+    uQ15 = (uQ18 + uQ19);
+    BOOST_TEST(MAX_SAT_32_32_VALUE == uQ15.getValue());
+
+    Q10 = (Q11 + Q12);
+    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0x80000000FFFFFFFF) == Q10.getValue());
+
+    Q10 = (Q13 + Q14);
+    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0x8000000000000000) == Q10.getValue());
+
+    Q15 = (Q16 + Q17);
+    BOOST_TEST(MAX_S_SAT_32_32_VALUE == Q15.getValue());
+
+    Q15 = (Q18 + Q19);
+    BOOST_TEST(MAX_S_SAT_32_32_VALUE == Q15.getValue());
+
+    Q15.setValue(MIN_S_SAT_32_32_VALUE);
+    Q15 += Q15;
+    BOOST_TEST(MIN_S_SAT_32_32_VALUE == Q15.getValue());
 #endif // __SIZEOF_INT128__
 
     uQ0 = (uQ1 + uQ2);
@@ -452,18 +482,6 @@ BOOST_AUTO_TEST_CASE(test_case_sat_addition)
     uQ5 = (uQ8 + uQ9);
     BOOST_TEST(MAX_8_8_VALUE == uQ5.getValue());
 
-    uQ10 = (uQ11 + uQ12);
-    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0) == uQ10.getValue());
-
-    uQ10 = (uQ13 + uQ14);
-    BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0) == uQ10.getValue());
-
-    uQ15 = (uQ16 + uQ17);
-    BOOST_TEST(MAX_SAT_32_32_VALUE == uQ15.getValue());
-
-    uQ15 = (uQ18 + uQ19);
-    BOOST_TEST(MAX_SAT_32_32_VALUE == uQ15.getValue());
-
     Q0 = (Q1 + Q2);
     BOOST_TEST(static_cast<SignedQ8_8Type::FullWidthValueType>(0x80FF) == Q0.getValue());
 
@@ -476,17 +494,9 @@ BOOST_AUTO_TEST_CASE(test_case_sat_addition)
     Q5 = (Q8 + Q9);
     BOOST_TEST(MAX_S_SAT_8_8_VALUE == Q5.getValue());
 
-    Q10 = (Q11 + Q12);
-    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0x80000000FFFFFFFF) == Q10.getValue());
-
-    Q10 = (Q13 + Q14);
-    BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0x8000000000000000) == Q10.getValue());
-
-    Q15 = (Q16 + Q17);
-    BOOST_TEST(MAX_S_SAT_32_32_VALUE == Q15.getValue());
-
-    Q15 = (Q18 + Q19);
-    BOOST_TEST(MAX_S_SAT_32_32_VALUE == Q15.getValue());
+    Q5.setValue(MIN_S_SAT_8_8_VALUE);
+    Q5 += Q5;
+    BOOST_TEST(MIN_S_SAT_8_8_VALUE == Q5.getValue());
 }
 
 BOOST_AUTO_TEST_CASE(test_case_subtraction)
