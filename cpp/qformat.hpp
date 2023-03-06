@@ -213,8 +213,8 @@ namespace tinymind {
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, false>::FullWidthFieldType      FullWidthFieldType;
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, false>::FullWidthValueType      FullWidthValueType;
 
-        static constexpr FixedPartFieldType MaxFixedPartValue           = (static_cast<FixedPartFieldType>((1ULL << NumFixedBits) - 1));
-        static constexpr FractionalPartFieldType MaxFractionalPartValue = (static_cast<FractionalPartFieldType>((1ULL << NumFractionalBits) - 1));
+        static constexpr FixedPartFieldType MaxFixedPartValue           = (static_cast<FixedPartFieldType>((static_cast<FractionalPartFieldType>(1) << NumFixedBits) - 1));
+        static constexpr FractionalPartFieldType MaxFractionalPartValue = (static_cast<FractionalPartFieldType>((static_cast<FractionalPartFieldType>(1) << NumFractionalBits) - 1));
         static constexpr FullWidthFieldType MinFullWidthValue           = 0;
         static constexpr FullWidthFieldType MaxFullWidthField           = ((MaxFixedPartValue << NumFractionalBits) | MaxFractionalPartValue);
         static constexpr FullWidthValueType MaxFullWidthValue           = (static_cast<FullWidthValueType>(MaxFullWidthField));
@@ -228,9 +228,9 @@ namespace tinymind {
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, false>::FullWidthFieldType     FullWidthFieldType;
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, false>::FullWidthValueType     FullWidthValueType;
 
-        static constexpr FixedPartFieldType MaxFixedPartValue           = (static_cast<FixedPartFieldType>((1ULL << (NumFixedBits - 1)) - 1));
-        static constexpr FixedPartFieldType MinFixedPartValue           = (static_cast<FixedPartFieldType>((1ULL << NumFixedBits) - 1));
-        static constexpr FractionalPartFieldType MaxFractionalPartValue = (static_cast<FractionalPartFieldType>((1ULL << NumFractionalBits) - 1));
+        static constexpr FixedPartFieldType MaxFixedPartValue           = (static_cast<FixedPartFieldType>((static_cast<FixedPartFieldType>(1) << (NumFixedBits - 1)) - 1));
+        static constexpr FixedPartFieldType MinFixedPartValue           = (static_cast<FixedPartFieldType>((static_cast<FixedPartFieldType>(1) << NumFixedBits) - 1));
+        static constexpr FractionalPartFieldType MaxFractionalPartValue = (static_cast<FractionalPartFieldType>((static_cast<FractionalPartFieldType>(1) << NumFractionalBits) - 1));
         static constexpr FullWidthFieldType MinFullWidthField           = ((MinFixedPartValue << NumFractionalBits) | MaxFractionalPartValue);
         static constexpr FullWidthValueType MinFullWidthValue           = (static_cast<FullWidthValueType>(MinFullWidthField));
         static constexpr FullWidthFieldType MaxFullWidthField           = ((MaxFixedPartValue << NumFractionalBits) | MaxFractionalPartValue);
@@ -746,9 +746,9 @@ namespace tinymind {
 
         static_assert(((8 * sizeof(FullWidthFieldType)) >= (NumberOfFixedBits + NumberOfFractionalBits)), "Incorrect type choice for ValueType.");
 #ifdef __SIZEOF_INT128__
-        static_assert((NumberOfFixedBits + NumberOfFractionalBits) <= 64, "Capped at 64 bits to support 128 bits in division operation.");
+        static_assert((NumberOfFixedBits + NumberOfFractionalBits) <= 128, "Capped at 64 bits to support 128 bits in division operation.");
 #else // __SIZEOF_INT128__
-        static_assert((NumberOfFixedBits + NumberOfFractionalBits) <= 32, "Capped at 32 bits to support 64 bits in division operation.");
+        static_assert((NumberOfFixedBits + NumberOfFractionalBits) <= 64, "Capped at 32 bits to support 64 bits in division operation.");
 #endif // __SIZEOF_INT128__
     };
 
