@@ -270,7 +270,7 @@ namespace tinymind {
             value.setValue(sum);
         }
 
-        template<typename QValueType>
+        template<typename SaturateCheckValueType, typename QValueType>
         static void decrement(QValueType& value)
         {
             typedef typename QValueType::FixedPartFieldType FixedPartFieldType;
@@ -283,8 +283,8 @@ namespace tinymind {
             value.setValue(fixedPart, fractionalPart);
         }
 
-        template<typename QValueType>
-        static typename QValueType::DivisionResultFullWidthValueType divide(const QValueType& lhs, const QValueType& rhs)
+        template<typename SaturateCheckValueType, typename QValueType>
+        static void divide(QValueType& value, const QValueType& other)
         {
             typedef typename QValueType::DivisionResultFullWidthValueType DivisionResultFullWidthValueType;
             typedef typename QValueType::FullWidthValueType FullWidthValueType ;
@@ -292,18 +292,18 @@ namespace tinymind {
             FullWidthValueType right;
             DivisionResultFullWidthValueType result;
 
-            left = static_cast<DivisionResultFullWidthValueType>(lhs.getValue());
-            right = rhs.getValue();
+            left = static_cast<DivisionResultFullWidthValueType>(value.getValue());
+            right = other.getValue();
 
             SignExtender<DivisionResultFullWidthValueType, QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::signExtend(left);
 
             left <<= QValueType::NumberOfFractionalBits;
             result = (left / right);
 
-            return result;
+            value.setValue(result);
         }
 
-        template<typename QValueType>
+        template<typename SaturateCheckValueType, typename QValueType>
         static void increment(QValueType& value)
         {
             typedef typename QValueType::FixedPartFieldType FixedPartFieldType;
@@ -316,13 +316,13 @@ namespace tinymind {
             value.setValue(fixedPart, fractionalPart);
         }
 
-        template<typename QValueType>
-        static typename QValueType::MultiplicationResultFullWidthFieldType multiply(const QValueType& lhs, const QValueType& rhs)
+        template<typename SaturateCheckValueType, typename QValueType>
+        static void multiply(QValueType& value, const QValueType& other)
         {
             typedef typename QValueType::MultiplicationResultFullWidthFieldType MultiplicationResultFullWidthFieldType;
             typedef typename QValueType::RoundingPolicy RoundingPolicy;
-            MultiplicationResultFullWidthFieldType left = static_cast<MultiplicationResultFullWidthFieldType>(lhs.getValue());
-            MultiplicationResultFullWidthFieldType right = static_cast<MultiplicationResultFullWidthFieldType>(rhs.getValue());
+            MultiplicationResultFullWidthFieldType left = static_cast<MultiplicationResultFullWidthFieldType>(value.getValue());
+            MultiplicationResultFullWidthFieldType right = static_cast<MultiplicationResultFullWidthFieldType>(other.getValue());
             MultiplicationResultFullWidthFieldType result;
 
             SignExtender<MultiplicationResultFullWidthFieldType, QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::signExtend(left);
@@ -332,20 +332,20 @@ namespace tinymind {
 
             result = RoundingPolicy::round(result);
 
-            return result;
+            value.setValue(result);
         }
 
-        template<typename QValueType>
-        static typename QValueType::FullWidthFieldType subtract(const QValueType& lhs, const QValueType& rhs)
+        template<typename SaturateCheckValueType, typename QValueType>
+        static void subtract(QValueType& value, const QValueType& other)
         {
-            typedef typename QValueType::FullWidthFieldType FullWidthFieldType;
-            FullWidthFieldType left(lhs.getValue());
-            FullWidthFieldType right(rhs.getValue());
-            FullWidthFieldType sum;
+            typedef typename QValueType::FullWidthValueType FullWidthValueType;
+            FullWidthValueType left(value.getValue());
+            FullWidthValueType right(other.getValue());
+            FullWidthValueType sum;
 
             sum = left - right;
 
-            return sum;
+            value.setValue(sum);
         }
     };
 
@@ -433,60 +433,70 @@ namespace tinymind {
             convertFromOtherQValueType(value, satCheck);
         }
 
-        template<typename QValueType>
+        template<typename SaturateCheckValueType, typename QValueType>
         static void decrement(QValueType& value)
         {
-            typedef typename QValueType::FixedPartFieldType FixedPartFieldType;
-            typedef typename QValueType::FractionalPartFieldType FractionalPartFieldType;
-            FixedPartFieldType fixedPart(value.getFixedPart());
-            const FractionalPartFieldType fractionalPart(value.getFractionalPart());
+            typedef typename SaturateCheckValueType::FixedPartFieldType SaturateCheckFixedPartFieldType;
+            typedef typename SaturateCheckValueType::FractionalPartFieldType SaturateCheckFractionalPartFieldType;
+            SaturateCheckValueType satCheck;
+            SaturateCheckFixedPartFieldType fixedPart(value.getFixedPart());
+            const SaturateCheckFractionalPartFieldType fractionalPart(value.getFractionalPart());
 
             --fixedPart;
 
-            value.setValue(fixedPart, fractionalPart);
+            satCheck.setValue(fixedPart, fractionalPart);
+
+            convertFromOtherQValueType(value, satCheck);
         }
 
-        template<typename QValueType>
-        static typename QValueType::DivisionResultFullWidthValueType divide(const QValueType& lhs, const QValueType& rhs)
+        template<typename SaturateCheckValueType, typename QValueType>
+        static void divide(QValueType& value, const QValueType& other)
         {
             typedef typename QValueType::DivisionResultFullWidthValueType DivisionResultFullWidthValueType;
             typedef typename QValueType::FullWidthValueType FullWidthValueType ;
             DivisionResultFullWidthValueType left;
             FullWidthValueType right;
             DivisionResultFullWidthValueType result;
+            SaturateCheckValueType satCheck;
 
-            left = static_cast<DivisionResultFullWidthValueType>(lhs.getValue());
-            right = rhs.getValue();
+            left = static_cast<DivisionResultFullWidthValueType>(value.getValue());
+            right = other.getValue();
 
             SignExtender<DivisionResultFullWidthValueType, QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::signExtend(left);
 
             left <<= QValueType::NumberOfFractionalBits;
             result = (left / right);
 
-            return result;
+            satCheck.setValue(result);
+
+            convertFromOtherQValueType(value, satCheck);
         }
 
-        template<typename QValueType>
+        template<typename SaturateCheckValueType, typename QValueType>
         static void increment(QValueType& value)
         {
-            typedef typename QValueType::FixedPartFieldType FixedPartFieldType;
-            typedef typename QValueType::FractionalPartFieldType FractionalPartFieldType;
-            FixedPartFieldType fixedPart(value.getFixedPart());
-            const FractionalPartFieldType fractionalPart(value.getFractionalPart());
+            typedef typename SaturateCheckValueType::FixedPartFieldType SaturateCheckFixedPartFieldType;
+            typedef typename SaturateCheckValueType::FractionalPartFieldType SaturateCheckFractionalPartFieldType;
+            SaturateCheckValueType satCheck;
+            SaturateCheckFixedPartFieldType fixedPart(value.getFixedPart());
+            const SaturateCheckFractionalPartFieldType fractionalPart(value.getFractionalPart());
 
             ++fixedPart;
 
-            value.setValue(fixedPart, fractionalPart);
+            satCheck.setValue(fixedPart, fractionalPart);
+
+            convertFromOtherQValueType(value, satCheck);
         }
 
-        template<typename QValueType>
-        static typename QValueType::MultiplicationResultFullWidthFieldType multiply(const QValueType& lhs, const QValueType& rhs)
+        template<typename SaturateCheckValueType, typename QValueType>
+        static void multiply(QValueType& value, const QValueType& other)
         {
             typedef typename QValueType::MultiplicationResultFullWidthFieldType MultiplicationResultFullWidthFieldType;
             typedef typename QValueType::RoundingPolicy RoundingPolicy;
-            MultiplicationResultFullWidthFieldType left = static_cast<MultiplicationResultFullWidthFieldType>(lhs.getValue());
-            MultiplicationResultFullWidthFieldType right = static_cast<MultiplicationResultFullWidthFieldType>(rhs.getValue());
+            MultiplicationResultFullWidthFieldType left = static_cast<MultiplicationResultFullWidthFieldType>(value.getValue());
+            MultiplicationResultFullWidthFieldType right = static_cast<MultiplicationResultFullWidthFieldType>(other.getValue());
             MultiplicationResultFullWidthFieldType result;
+            SaturateCheckValueType satCheck;
 
             SignExtender<MultiplicationResultFullWidthFieldType, QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::signExtend(left);
             SignExtender<MultiplicationResultFullWidthFieldType, QValueType::NumberOfFixedBits, QValueType::NumberOfFractionalBits, QValueType::IsSigned>::signExtend(right);
@@ -495,20 +505,31 @@ namespace tinymind {
 
             result = RoundingPolicy::round(result);
 
-            return result;
+            satCheck.setValue(result);
+
+            convertFromOtherQValueType(value, satCheck);
         }
 
-        template<typename QValueType>
-        static typename QValueType::FullWidthFieldType subtract(const QValueType& lhs, const QValueType& rhs)
+        template<typename SaturateCheckValueType, typename QValueType>
+        static void subtract(QValueType& value, const QValueType& other)
         {
-            typedef typename QValueType::FullWidthFieldType FullWidthFieldType;
-            FullWidthFieldType left(lhs.getValue());
-            FullWidthFieldType right(rhs.getValue());
-            FullWidthFieldType sum;
+            typedef typename SaturateCheckValueType::FullWidthValueType SaturateCheckFullWidthValueType;
+            SaturateCheckFullWidthValueType sum;
+            SaturateCheckValueType satLeft;
+            SaturateCheckValueType satRight;
+            SaturateCheckValueType satCheck;
+
+            convertFromOtherQValueType(satLeft, value);
+            convertFromOtherQValueType(satRight, other);
+
+            SaturateCheckFullWidthValueType left(satLeft.getValue());
+            SaturateCheckFullWidthValueType right(satRight.getValue());
 
             sum = left - right;
 
-            return sum;
+            satCheck.setValue(sum);
+
+            convertFromOtherQValueType(value, satCheck);
         }
     };
 
@@ -592,21 +613,21 @@ namespace tinymind {
 
         QValue& operator++()
         {
-            QValueSaturatePolicy::increment(*this);
+            QValueSaturatePolicy::template increment<SaturateCheckQValueType>(*this);
 
             return *this;
         }
 
         QValue operator++(int)
         {
-            QValueSaturatePolicy::increment(*this);
+            QValueSaturatePolicy::template increment<SaturateCheckQValueType>(*this);
 
             return *this;
         }
 
         QValue& operator-=(const QValue& other)
         {
-            mValue = QValueSaturatePolicy::subtract(*this, other);
+            QValueSaturatePolicy::template subtract<SaturateCheckQValueType>(*this, other);
 
             return *this;
         }
@@ -615,32 +636,28 @@ namespace tinymind {
         {
             const QValue other(value);
 
-            mValue = QValueSaturatePolicy::subtract(*this, other);
+            QValueSaturatePolicy::template subtract<SaturateCheckQValueType>(*this, other);
 
             return *this;
         }
 
         QValue& operator--()
         {
-            QValueSaturatePolicy::decrement(*this);
+            QValueSaturatePolicy::template decrement<SaturateCheckQValueType>(*this);
 
             return *this;
         }
 
         QValue operator--(int)
         {
-            QValueSaturatePolicy::decrement(*this);
+            QValueSaturatePolicy::template decrement<SaturateCheckQValueType>(*this);
 
             return *this;
         }
 
         QValue& operator*=(const QValue& other)
         {
-            MultiplicationResultFullWidthFieldType result;
-
-            result = QValueSaturatePolicy::multiply(*this, other);
-
-            this->mValue = static_cast<FullWidthFieldType>(result);
+            QValueSaturatePolicy::template multiply<SaturateCheckQValueType>(*this, other);
 
             return *this;
         }
@@ -649,18 +666,14 @@ namespace tinymind {
         {
             const QValue other(static_cast<FixedPartFieldType>(multiplicand), 0);
 
-            (*this) *= other;
+            QValueSaturatePolicy::template multiply<SaturateCheckQValueType>(*this, other);
 
             return *this;
         }
 
         QValue& operator/=(const QValue& other)
         {
-            DivisionResultFullWidthValueType result;
-
-            result = QValueSaturatePolicy::divide(*this, other);
-
-            this->mValue = static_cast<FullWidthFieldType>(result);
+            QValueSaturatePolicy::template divide<SaturateCheckQValueType>(*this, other);
 
             return *this;
         }
@@ -669,7 +682,7 @@ namespace tinymind {
         {
             const QValue other(static_cast<FixedPartFieldType>(divisor), 0);
 
-            (*this) /= other;
+            QValueSaturatePolicy::template divide<SaturateCheckQValueType>(*this, other);
 
             return *this;
         }
