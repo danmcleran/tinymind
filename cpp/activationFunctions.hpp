@@ -43,6 +43,20 @@ namespace tinymind {
             return 0;
         }
     };
+
+    template<typename ValueType>
+    struct LinearActivationPolicy
+    {
+        static ValueType activationFunction(const ValueType& value)
+        {
+            return value;
+        }
+
+        static ValueType activationFunctionDerivative(const ValueType& value)
+        {
+            return 0;
+        }
+    };
     
     template<typename ValueType>
     struct ReluActivationPolicy
