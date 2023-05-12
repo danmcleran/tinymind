@@ -338,7 +338,7 @@ namespace tinymind {
         typedef typename EnvironmentType::EnvironmentStateType StateType;
         typedef typename EnvironmentType::EnvironmentActionType ActionType;
         typedef typename EnvironmentType::EnvironmentValueType ValueType;
-        
+
         static ActionType selectBestActionForState(const StateType state, ActionType const* const actions, const size_t numberOfValidActions, const QLearnerQValuePolicy& qValuePolicy)
         {
             ActionType bestAction;
@@ -527,10 +527,6 @@ namespace tinymind {
             }
         }
 
-        void * operator new(size_t, void *p)
-        {
-            return p;
-        }
     private:
         void copyNetworkWeights()
         {
@@ -656,11 +652,6 @@ namespace tinymind {
             }
 
             this->mState = experience.newState;
-        }
-
-        void * operator new(size_t, void *p)
-        {
-            return p;
         }
     private:
         // Private methods
