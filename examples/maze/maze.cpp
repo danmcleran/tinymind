@@ -57,13 +57,6 @@ The paths out of the maze:
 
 #include "mazelearner.h"
 
-#if !(defined(_LIB_NEW) || defined(_NEW))
-void * operator new(size_t, void *p)
-{
-    return p;
-}
-#endif
-
 extern QLearnerType qLearner;
 
 int main(const int argc, char *argv[])

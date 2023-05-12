@@ -25,9 +25,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
-#if !(TINYMIND_DISBLE_NEW_LIB)
 #include <new>
-#endif
 
 #include "qformat.hpp"
 #include "qlearn.hpp"

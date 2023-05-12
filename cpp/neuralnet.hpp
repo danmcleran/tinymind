@@ -1201,12 +1201,10 @@ namespace tinymind {
             this->mWeight = value;
         }
 
-#if !(defined(_LIB_NEW) || defined(_NEW))
         void * operator new(size_t, void *p)
         {
             return p;
         }
-#endif
     protected:
         ValueType mWeight;
     };
@@ -1329,12 +1327,10 @@ namespace tinymind {
             this->mOutputValue = value;
         }
 
-#if !(defined(_LIB_NEW) || defined(_NEW))
         void * operator new(size_t, void *p)
         {
             return p;
         }
-#endif
 
     protected: // Don't instantiate class. Only for use by child classses
         Neuron()
@@ -1974,12 +1970,10 @@ namespace tinymind {
             pNeuron->setWeightForConnection(connection, weight);
         }
 
-#if !(defined(_LIB_NEW) || defined(_NEW))
         void * operator new(size_t, void *p)
         {
             return p;
         }
-#endif
     protected:
         Layer()
         {

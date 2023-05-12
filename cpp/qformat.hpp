@@ -400,12 +400,10 @@ namespace tinymind {
             return (mValue.getValue() != value);
         }
 
-#if !(defined(_LIB_NEW) || defined(_NEW))
         void * operator new(size_t, void *p)
         {
             return p;
         }
-#endif
 
 #if TINYMIND_ENABLE_OSTREAMS
         friend std::ostream& operator<<(std::ostream& os, const QValue& value)
