@@ -1201,6 +1201,10 @@ namespace tinymind {
             this->mWeight = value;
         }
 
+        void * operator new(size_t, void *p)
+        {
+            return p;
+        }
     protected:
         ValueType mWeight;
     };
@@ -1321,6 +1325,11 @@ namespace tinymind {
         void setOutputValue(const ValueType& value)
         {
             this->mOutputValue = value;
+        }
+
+        void * operator new(size_t, void *p)
+        {
+            return p;
         }
 
     protected: // Don't instantiate class. Only for use by child classses
@@ -1959,6 +1968,11 @@ namespace tinymind {
             const size_t bufferIndex = neuron * sizeof(NeuronType);
             NeuronType* pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
             pNeuron->setWeightForConnection(connection, weight);
+        }
+
+        void * operator new(size_t, void *p)
+        {
+            return p;
         }
     protected:
         Layer()

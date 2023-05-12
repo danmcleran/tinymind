@@ -400,6 +400,11 @@ namespace tinymind {
             return (mValue.getValue() != value);
         }
 
+        void * operator new(size_t, void *p)
+        {
+            return p;
+        }
+
 #if TINYMIND_ENABLE_OSTREAMS
         friend std::ostream& operator<<(std::ostream& os, const QValue& value)
         {
