@@ -526,7 +526,6 @@ namespace tinymind {
                 }
             }
         }
-
     private:
         void copyNetworkWeights()
         {
