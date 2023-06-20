@@ -105,7 +105,8 @@ BOOST_AUTO_TEST_CASE(test_case_construction)
     UnsignedQ8_8Type uQ2(1, 0);
     SignedQ8_24Type Q9(-1, 0);
     SignedQ8_24Type Q10(1, 0);
-    SignedQ2_6Type Q13(-1, 0);
+    UnsignedQ1_7Type Q13(1, 0);
+    SignedQ2_6Type Q14(-1, 0);
 #ifdef __SIZEOF_INT128__
     UnsignedQ32_32Type uQ3(0, 0);
     SignedQ32_32Type Q11(-1, 0);
@@ -163,7 +164,8 @@ BOOST_AUTO_TEST_CASE(test_case_construction)
     BOOST_TEST(static_cast<SignedQ8_24Type::FullWidthValueType>(0xFF000000) == Q9.getValue());
     BOOST_TEST(static_cast<SignedQ8_24Type::FullWidthValueType>(0x1000000) == Q10.getValue());
 
-    BOOST_TEST(static_cast<SignedQ2_6Type::FullWidthValueType>(0xC0) == Q13.getValue());
+    BOOST_TEST(static_cast<UnsignedQ1_7Type::FullWidthValueType>(0x80) == Q13.getValue());
+    BOOST_TEST(static_cast<SignedQ2_6Type::FullWidthValueType>(0xC0) == Q14.getValue());
 
     Q0.setValue(1, 0);
     BOOST_TEST(static_cast<SignedQ8_8Type ::FullWidthValueType>(0x100) == Q0.getValue());
@@ -193,6 +195,10 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     SignedQ8_24Type Q11(1, 0);
     SignedQ8_24Type Q12(0x800000);
     SignedQ8_24Type Q13;
+    UnsignedQ1_7Type Q20(0, 0);
+    UnsignedQ1_7Type Q21(0, 64);
+    SignedQ2_6Type Q22(1, 0);
+    SignedQ2_6Type Q23(-1, 0);
 #ifdef __SIZEOF_INT128__
     UnsignedQ32_32Type uQ5(0, 0);
     UnsignedQ32_32Type uQ6(0, 1);
@@ -330,6 +336,18 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
 
     Q13 = Q11 + 1;
     BOOST_TEST(static_cast<SignedQ8_24Type::FullWidthValueType>(0x2000000) == Q13.getValue());
+
+    Q20 = Q20 + Q21;
+    BOOST_TEST(static_cast<UnsignedQ1_7Type::FullWidthValueType>(0x40) == Q20.getValue());
+
+    Q20 = Q20 + Q21;
+    BOOST_TEST(static_cast<UnsignedQ1_7Type::FullWidthValueType>(0x80) == Q20.getValue());
+
+    Q22 = Q22 + Q23;
+    BOOST_TEST(static_cast<SignedQ2_6Type::FullWidthValueType>(0x0) == Q22.getValue());
+
+    Q22 = Q22 + Q23;
+    BOOST_TEST(static_cast<SignedQ2_6Type::FullWidthValueType>(0xC0) == Q22.getValue());
 }
 
 BOOST_AUTO_TEST_CASE(test_case_subtraction)
