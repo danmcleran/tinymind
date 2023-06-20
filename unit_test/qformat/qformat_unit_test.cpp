@@ -779,6 +779,10 @@ BOOST_AUTO_TEST_CASE(test_case_division)
     SignedQ8_24Type Q9(1, 0);
     SignedQ8_24Type Q10(0x800000);
     SignedQ8_24Type Q11;
+    UnsignedQ1_7Type uQ13(1, 0);
+    UnsignedQ1_7Type uQ14(0, 64);
+    SignedQ2_6Type Q24(-1, 0);
+    SignedQ2_6Type Q25(0, 32);
 #ifdef __SIZEOF_INT128__
     UnsignedQ32_32Type uQ7(1, 0);
     UnsignedQ32_32Type uQ8(2, 0);
@@ -901,6 +905,21 @@ BOOST_AUTO_TEST_CASE(test_case_division)
     divisor = 2;
     uQ2 /= divisor;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0x0080) == uQ2.getValue());
+
+    uQ13 /= 1;
+    BOOST_TEST(static_cast<UnsignedQ1_7Type::FullWidthValueType>(0x80) == uQ13.getValue());
+
+    uQ14 /= uQ13;
+    BOOST_TEST(static_cast<UnsignedQ1_7Type::FullWidthValueType>(0x40) == uQ14.getValue());
+
+    uQ14 /= uQ14;
+    BOOST_TEST(static_cast<UnsignedQ1_7Type::FullWidthValueType>(0x80) == uQ13.getValue());
+
+    Q24 /= 1;
+    BOOST_TEST(static_cast<SignedQ2_6Type::FullWidthValueType>(0xC0) == Q24.getValue());
+
+    Q25 /= Q24;
+    BOOST_TEST(static_cast<SignedQ2_6Type::FullWidthValueType>(0xE0) == Q25.getValue());
 }
 
 BOOST_AUTO_TEST_CASE(test_case_comparators)
