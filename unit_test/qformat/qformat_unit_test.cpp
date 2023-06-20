@@ -38,6 +38,8 @@ typedef tinymind::QValue<24, 8, false> UnsignedQ24_8Type;
 typedef tinymind::QValue<8, 24, true> SignedQ8_24Type;
 typedef tinymind::QValue<8, 24, false> UnsignedQ8_24Type;
 typedef tinymind::QValue<24, 8, false> UnsignedQ24_8Type;
+typedef tinymind::QValue<1, 7, false> UnsignedQ1_7Type;
+typedef tinymind::QValue<2, 6, true> SignedQ2_6Type;
 #ifdef __SIZEOF_INT128__
 typedef tinymind::QValue<32, 32, false> UnsignedQ32_32Type;
 typedef tinymind::QValue<32, 32, true> SignedQ32_32Type;
@@ -56,6 +58,10 @@ static_assert((((1ULL << 23) - 1) == SignedQ24_8Type::MaxFixedPartValue), "Incor
 static_assert((std::numeric_limits<uint8_t>::max() == SignedQ24_8Type::MaxFractionalPartValue), "Incorrect max fractional value.");
 static_assert(((std::numeric_limits<int8_t>::max() >> 1) == SignedQ7_9Type::MaxFixedPartValue), "Incorrect max fixed value.");
 static_assert((((1ULL << 9) - 1) == SignedQ7_9Type::MaxFractionalPartValue), "Incorrect max fractional value.");
+static_assert((1U == UnsignedQ1_7Type::MaxFixedPartValue), "Incorrect max fixed value.");
+static_assert((((1ULL << 7) - 1) == UnsignedQ1_7Type::MaxFractionalPartValue), "Incorrect max fractional value.");
+static_assert((1U == SignedQ2_6Type::MaxFixedPartValue), "Incorrect max fixed value.");
+static_assert((((1ULL << 6) - 1) == SignedQ2_6Type::MaxFractionalPartValue), "Incorrect max fractional value.");
 #ifdef __SIZEOF_INT128__
 static_assert((std::numeric_limits<uint32_t>::max() == UnsignedQ32_32Type::MaxFractionalPartValue), "Incorrect max fractional value.");
 static_assert((std::numeric_limits<uint32_t>::max() == SignedQ32_32Type::MaxFractionalPartValue), "Incorrect max fractional value.");
@@ -99,6 +105,7 @@ BOOST_AUTO_TEST_CASE(test_case_construction)
     UnsignedQ8_8Type uQ2(1, 0);
     SignedQ8_24Type Q9(-1, 0);
     SignedQ8_24Type Q10(1, 0);
+    SignedQ2_6Type Q13(-1, 0);
 #ifdef __SIZEOF_INT128__
     UnsignedQ32_32Type uQ3(0, 0);
     SignedQ32_32Type Q11(-1, 0);
@@ -155,6 +162,8 @@ BOOST_AUTO_TEST_CASE(test_case_construction)
 
     BOOST_TEST(static_cast<SignedQ8_24Type::FullWidthValueType>(0xFF000000) == Q9.getValue());
     BOOST_TEST(static_cast<SignedQ8_24Type::FullWidthValueType>(0x1000000) == Q10.getValue());
+
+    BOOST_TEST(static_cast<SignedQ2_6Type::FullWidthValueType>(0xC0) == Q13.getValue());
 
     Q0.setValue(1, 0);
     BOOST_TEST(static_cast<SignedQ8_8Type ::FullWidthValueType>(0x100) == Q0.getValue());
