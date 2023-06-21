@@ -25,15 +25,58 @@
 #include "constants.hpp"
 
 namespace tinymind {
+    template<unsigned NumberOfFractionalBits>
+    struct ZeroToleranceShiftValue
+    {
+        static constexpr unsigned result = (NumberOfFractionalBits > 7) ? (NumberOfFractionalBits - 7) : 1;
+    };
+
+    template<typename ValueType, bool IsSigned>
+    struct ZeroToleranceResolution
+    {
+    };
+
+    template<typename ValueType>
+    struct ZeroToleranceResolution<ValueType, true>
+    {
+        static ValueType getMaxValue()
+        {
+            static const ValueType zeroTolerance(1 << ZeroToleranceShiftValue<ValueType::NumberOfFractionalBits>::result);
+            return zeroTolerance;
+        }
+
+        static ValueType getMinValue()
+        {
+            static const ValueType zeroTolerance(1 << ZeroToleranceShiftValue<ValueType::NumberOfFractionalBits>::result);
+            static const ValueType negativeTolerance = (Constants<ValueType>::negativeOne() * zeroTolerance);
+            return negativeTolerance;
+        }
+    };
+
+    template<typename ValueType>
+    struct ZeroToleranceResolution<ValueType, false>
+    {
+        static ValueType getMaxValue()
+        {
+            static const ValueType zeroTolerance(1 << ZeroToleranceShiftValue<ValueType::NumberOfFractionalBits>::result);
+            return zeroTolerance;
+        }
+
+        static ValueType getMinValue()
+        {
+            return ValueType(0);
+        }
+    };
+
     template<typename ValueType>
     struct ZeroToleranceCalculator
     {
         static bool isWithinZeroTolerance(const ValueType& value)
         {
-            static const ValueType zeroTolerance(1 << (ValueType::NumberOfFractionalBits - 7));
-            static const ValueType negativeTolerance = (Constants<ValueType>::negativeOne() * zeroTolerance);
+            static const ValueType maxValue = ZeroToleranceResolution<ValueType, ValueType::IsSigned>::getMaxValue();
+            static const ValueType minValue = ZeroToleranceResolution<ValueType, ValueType::IsSigned>::getMinValue();
 
-            return ((Constants<ValueType>::zero() == value) || ((value < zeroTolerance) && (value > negativeTolerance)));
+            return ((Constants<ValueType>::zero() == value) || ((value < maxValue) && (value > minValue)));
         }
     };
 }
