@@ -54,4 +54,7 @@ if __name__ == "__main__":
     pyplot.figure()
     pyplot.plot(values, 'b-x')
     pyplot.title('%s - Q%d.%d' % (activationFn, fixedBits, fractionalBits))
+    pyplot.xlabel('LUT index')
+    pyplot.ylabel('LUT value')
+    pyplot.grid()
     pyplot.show()
