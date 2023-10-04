@@ -8,6 +8,7 @@ if __name__ == "__main__":
     lutFilePath = r'..' + os.sep + '..' + os.sep + 'cpp' + os.sep + 'lookupTables.cpp'
     assert(os.path.exists(lutFilePath))
     supportedFns = ['tanh', 'log', 'sigmoid']
+    supportedTotalBits = [8,16,32,64]
     values = []
     parser = argparse.ArgumentParser(prog='LUT Parser', description='Parse and plot activation function LUT(s)')
     parser.add_argument('function', type=str, help='Specify an activation function (e.g., tanh, etc.).')
@@ -25,6 +26,11 @@ if __name__ == "__main__":
     fixedBits = int(qformatSplit[0])
     fractionalBits = int(qformatSplit[1])
     totalNumBits = (fixedBits + fractionalBits)
+    if not totalNumBits in supportedTotalBits:
+        print('Unsupported number of bits: %d' % totalNumBits)
+        print('Supported bits consists of:')
+        [print(value) for value in supportedTotalBits]
+        sys.exit(-1)
 
     print('Parsing values from %s' % lutFilePath)
     print("Parsing the %s activation function for Q%d.%d" % (activationFn, fixedBits, fractionalBits))
