@@ -11,8 +11,8 @@ if __name__ == "__main__":
     supportedTotalBits = [8,16,32,64]
     values = []
     parser = argparse.ArgumentParser(prog='LUT Parser', description='Parse and plot activation function LUT(s)')
-    parser.add_argument('function', type=str, help='Specify an activation function (e.g., tanh, etc.).')
-    parser.add_argument('qformat', type=str, help='Specify Q-format to parse and plot (e.g., 8.8, 24.8, 2.7, etc.).')
+    parser.add_argument('-f', '--function', dest='function', type=str, help='Specify an activation function (e.g., tanh, etc.).')
+    parser.add_argument('-q', '--qformat', dest='qformat', type=str, help='Specify Q-format to parse and plot (e.g., 8.8, 24.8, 2.7, etc.).')
     args = parser.parse_args()
 
     activationFn = args.function
