@@ -5,7 +5,8 @@ import ctypes
 import matplotlib.pyplot as pyplot
 
 if __name__ == "__main__":
-    filePath = r'..' + os.sep + '..' + os.sep + 'cpp' + os.sep + 'lookupTables.cpp'
+    lutFilePath = r'..' + os.sep + '..' + os.sep + 'cpp' + os.sep + 'lookupTables.cpp'
+    assert(os.path.exists(lutFilePath))
     supportedFns = ['tanh', 'log', 'sigmoid']
     values = []
     parser = argparse.ArgumentParser(prog='LUT Parser', description='Parse and plot activation function LUT(s)')
@@ -23,14 +24,14 @@ if __name__ == "__main__":
     fixedBits = int(qformatSplit[0])
     fractionalBits = int(qformatSplit[1])
     totalNumBits = (fixedBits + fractionalBits)
-    print('Parsing values from %s' % filePath)
+    print('Parsing values from %s' % lutFilePath)
     print("Parsing the %s activation function for Q%d.%d" % (activationFn, fixedBits, fractionalBits))
     buildSwitch = "TINYMIND_USE_%s_%d_%d" % (activationFn.upper(), int(qformatSplit[0]), int(qformatSplit[1]))
     print("Build switch: %s" % buildSwitch)
     searchString = "#if %s" % buildSwitch
     found= False
     parse = False
-    with open(filePath, 'r') as f:
+    with open(lutFilePath, 'r') as f:
         for line in f.readlines():
             if not found:
                 if searchString in line:
@@ -50,6 +51,10 @@ if __name__ == "__main__":
                     elif totalNumBits == 64:
                         value = ctypes.c_int64(int(line.split(',')[0], 16)).value
                     values.append(value)
+
+    if not len(values):
+        print("Failed to parse out LUT values for activation function: %s, fixed bits: %d, and fractional bits: %d" % (activationFn, fixedBits, fractionalBits))
+        sys.exit(-1)
 
     pyplot.figure()
     pyplot.plot(values, 'b-x')
