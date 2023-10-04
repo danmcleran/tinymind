@@ -15,15 +15,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     activationFn = args.function
-    qformatSplit = args.qformat.split('.')
-
     if not activationFn in supportedFns:
         print('Unsupported activation function: %s' % activationFn)
+        print('Supported activation functions are:')
+        [print(fn) for fn in supportedFns]
         sys.exit(-1)
 
+    qformatSplit = args.qformat.split('.')
     fixedBits = int(qformatSplit[0])
     fractionalBits = int(qformatSplit[1])
     totalNumBits = (fixedBits + fractionalBits)
+
     print('Parsing values from %s' % lutFilePath)
     print("Parsing the %s activation function for Q%d.%d" % (activationFn, fixedBits, fractionalBits))
     buildSwitch = "TINYMIND_USE_%s_%d_%d" % (activationFn.upper(), int(qformatSplit[0]), int(qformatSplit[1]))
