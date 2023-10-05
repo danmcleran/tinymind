@@ -7,7 +7,7 @@ import matplotlib.pyplot as pyplot
 if __name__ == "__main__":
     lutFilePath = r'..' + os.sep + '..' + os.sep + 'cpp' + os.sep + 'lookupTables.cpp'
     assert(os.path.exists(lutFilePath))
-    supportedFns = ['tanh', 'log', 'sigmoid']
+    supportedFns = ['tanh', 'log', 'sigmoid', 'exp']
     supportedTotalBits = [8,16,32,64]
     values = []
     parser = argparse.ArgumentParser(prog='LUT Parser', description='Parse and plot activation function LUT(s)')
