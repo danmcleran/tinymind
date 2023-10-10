@@ -62,7 +62,7 @@ int main(const int argc, char *argv[])
     ValueType learnedValues[NeuralNetworkType::NumberOfInputLayerNeurons];
     ValueType error;
 
-    NetworkPropertiesFileManagerType::template loadNetworkWeights<ValueType, ValueType>(neuralNetwork, weightsInputFile);
+    NetworkPropertiesFileManagerType::template loadNetworkWeights<ValueType, ValueType>(testNeuralNet, weightsInputFile);
     NetworkPropertiesFileManagerType::writeHeader(testNeuralNet, results);
 
     for (auto i = 0; i < TRAINING_ITERATIONS; ++i)

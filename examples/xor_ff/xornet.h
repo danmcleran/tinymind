@@ -72,5 +72,5 @@ typedef tinymind::MultilayerPerceptron< ValueType,
                                         NUMBER_OF_HIDDEN_LAYERS,
                                         NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                         NUMBER_OF_OUTPUTS,
-                                        TransferFunctionsType
+                                        TransferFunctionsType,
                                         false> NeuralNetworkType;
