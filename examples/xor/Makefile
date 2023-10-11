@@ -15,4 +15,5 @@ debug  :
 
 # Remove all object files
 clean:
+	rm -f ./*.o
 	rm -f ./output/*
