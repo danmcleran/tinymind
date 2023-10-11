@@ -73,6 +73,7 @@ int main(const int argc, char *argv[])
         error = testNeuralNet.calculateError(&output[0]);
         testNeuralNet.getLearnedValues(&learnedValues[0]);
 
+        tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkProperties(testNeuralNet, results, &output[0], &learnedValues[0]);
         results << error << std::endl;
     }
 
