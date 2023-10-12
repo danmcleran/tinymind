@@ -76,10 +76,13 @@ static double sigmoid(const double x)
 
 static void writeFileCopyrightAndLicense(const string& path)
 {
-    ifstream intelInFile("intel_copyright.txt");
-    ifstream myInFile("my_copyright.txt");
+    ifstream myInFile("../my_copyright.txt");
+    ifstream intelInFile("../intel_copyright.txt");
     ofstream outFile(path);
     char buffer[1024];
+
+    assert(myInFile.is_open());
+    assert(intelInFile.is_open());
 
     while(!myInFile.eof())
     {
