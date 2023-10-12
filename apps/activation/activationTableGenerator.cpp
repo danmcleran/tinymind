@@ -76,13 +76,21 @@ static double sigmoid(const double x)
 
 static void writeFileCopyrightAndLicense(const string& path)
 {
-    ifstream inFile("intel_copyright.txt");
+    ifstream intelInFile("intel_copyright.txt");
+    ifstream myInFile("my_copyright.txt");
     ofstream outFile(path);
     char buffer[1024];
 
-    while(!inFile.eof())
+    while(!myInFile.eof())
     {
-        inFile.getline(buffer, 1024);
+        myInFile.getline(buffer, 1024);
+        outFile.write(buffer, strlen(buffer));
+        outFile << std::endl;
+    }
+
+    while(!intelInFile.eof())
+    {
+        intelInFile.getline(buffer, 1024);
         outFile.write(buffer, strlen(buffer));
         outFile << std::endl;
     }
@@ -90,7 +98,7 @@ static void writeFileCopyrightAndLicense(const string& path)
 
     outFile.flush();
     outFile.close();
-    inFile.close();
+    intelInFile.close();
 }
 
 static void writeNamespaceBegin(const string& path)
