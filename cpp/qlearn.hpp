@@ -178,8 +178,8 @@ namespace tinymind {
 
         static constexpr size_t EnvironmentNumberOfStates = NumberOfStates;
         static constexpr size_t EnvironmentNumberOfActions = NumberOfActions;
-        static constexpr StateType EnvironmentInvalidState = tinymind::limits<StateType>::max;
-        static constexpr ActionType EnvironmentInvalidAction = tinymind::limits<ActionType>::max;
+        static constexpr StateType EnvironmentInvalidState = StateType::InvalidState;
+        static constexpr ActionType EnvironmentInvalidAction = ActionType::InvalidAction;
 
         struct experience_t
         {

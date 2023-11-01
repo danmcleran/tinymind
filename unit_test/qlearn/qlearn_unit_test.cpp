@@ -146,8 +146,8 @@ struct MazeEnvironment : public tinymind::QLearningEnvironment<state_t, action_t
     typedef tinymind::QLearningEnvironment<state_t, action_t, ValueType, NumberOfStates, NumberOfActions, MazeEnvironmentRandomNumberGeneratorPolicy, QLearningPolicy> ParentType;
     static const size_t EnvironmentNumberOfStates = ParentType::EnvironmentNumberOfStates;
     static const size_t EnvironmentNumberOfActions = ParentType::EnvironmentNumberOfActions;
-    static const size_t EnvironmentInvalidState = ParentType::EnvironmentInvalidState;
-    static const size_t EnvironmentInvalidAction = ParentType::EnvironmentInvalidAction;
+    static constexpr StateType EnvironmentInvalidState = tinymind::limits<StateType>::max;
+    static constexpr ActionType EnvironmentInvalidState = tinymind::limits<ActionType>::max;
     static const ValueType EnvironmentNoRewardValue;
     static const ValueType EnvironmentInvalidActionValue;
     
@@ -236,8 +236,8 @@ struct DQNMazeEnvironment : public tinymind::QLearningEnvironment<state_t, actio
     typedef tinymind::QLearningEnvironment<state_t, action_t, ValueType, NumberOfStates, NumberOfActions, MazeEnvironmentRandomNumberGeneratorPolicy, QLearningPolicy> ParentType;
     static const size_t EnvironmentNumberOfStates = ParentType::EnvironmentNumberOfStates;
     static const size_t EnvironmentNumberOfActions = ParentType::EnvironmentNumberOfActions;
-    static const size_t EnvironmentInvalidState = ParentType::EnvironmentInvalidState;
-    static const size_t EnvironmentInvalidAction = ParentType::EnvironmentInvalidAction;
+    static constexpr StateType EnvironmentInvalidState = tinymind::limits<StateType>::max;
+    static constexpr ActionType EnvironmentInvalidState = tinymind::limits<ActionType>::max;
     static const ValueType EnvironmentNoRewardValue;
     static const ValueType EnvironmentInvalidActionValue;
     

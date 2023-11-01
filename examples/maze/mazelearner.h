@@ -86,8 +86,8 @@ struct MazeEnvironment : public tinymind::QLearningEnvironment<state_t, action_t
     typedef tinymind::QLearningEnvironment<StateType, ActionType, ValueType, NumberOfStates, NumberOfActions, MazeEnvironmentRandomNumberGeneratorPolicy> ParentType;
     static constexpr size_t EnvironmentNumberOfStates = ParentType::EnvironmentNumberOfStates;
     static constexpr size_t EnvironmentNumberOfActions = ParentType::EnvironmentNumberOfActions;
-    static constexpr size_t EnvironmentInvalidState = ParentType::EnvironmentInvalidState;
-    static constexpr size_t EnvironmentInvalidAction = ParentType::EnvironmentInvalidAction;
+    static constexpr StateType EnvironmentInvalidState = tinymind::limits<StateType>::max;
+    static constexpr ActionType EnvironmentInvalidState = tinymind::limits<ActionType>::max;
     static const ValueType EnvironmentRewardValue;
     static const ValueType EnvironmentNoRewardValue;
     static const ValueType EnvironmentInvalidActionValue;

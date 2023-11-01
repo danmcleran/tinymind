@@ -43,6 +43,18 @@
 typedef uint8_t state_t;
 typedef uint8_t action_t;
 
+struct dqnState
+{
+    using ValueType = uint8_t;
+    static constexpr ValueType InvalidState = tinymind::limits<ValueType>::max;
+};
+
+struct dqnAction
+{
+    using ValueType = uint8_t;
+    static constexpr ValueType InvalidAction = tinymind::limits<ValueType>::max;
+};
+
 static std::default_random_engine generator(time(nullptr));
 static std::uniform_real_distribution<double> distribution(-1.0, 1.0);
 
@@ -103,13 +115,13 @@ template<   typename StateType,
             typename RewardPolicyType,
             template<typename> class QLearningPolicy = tinymind::DefaultLearningPolicy
         >
-struct DQNMazeEnvironment : public tinymind::QLearningEnvironment<state_t, action_t, ValueType, NumberOfStates, NumberOfActions, DQNMazeEnvironmentRandomNumberGeneratorPolicy>
+struct DQNMazeEnvironment : public tinymind::QLearningEnvironment<StateType, ActionType, ValueType, NumberOfStates, NumberOfActions, DQNMazeEnvironmentRandomNumberGeneratorPolicy>
 {
     typedef tinymind::QLearningEnvironment<StateType, ActionType, ValueType, NumberOfStates, NumberOfActions, DQNMazeEnvironmentRandomNumberGeneratorPolicy> ParentType;
     static constexpr size_t EnvironmentNumberOfStates = ParentType::EnvironmentNumberOfStates;
     static constexpr size_t EnvironmentNumberOfActions = ParentType::EnvironmentNumberOfActions;
-    static constexpr size_t EnvironmentInvalidState = ParentType::EnvironmentInvalidState;
-    static constexpr size_t EnvironmentInvalidAction = ParentType::EnvironmentInvalidAction;
+    static constexpr StateType EnvironmentInvalidState = StateType::InvalidState;
+    static constexpr ActionType EnvironmentInvalidState = ActionType::InvalidState;
     static const ValueType EnvironmentRewardValue;
     static const ValueType EnvironmentNoRewardValue;
     static const ValueType EnvironmentInvalidActionValue;
