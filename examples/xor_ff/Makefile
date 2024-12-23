@@ -5,7 +5,7 @@ default :
 #	Make an output dir to hold the executable
 	mkdir -p ./output
 #	Build the example with default build flags
-	g++ -O3 -Wall -o ./output/xor_ff xor.cpp xornet.cpp ../../cpp/lookupTables.cpp -DTINYMIND_ENABLE_OSTREAMS=1 -DTINYMIND_USE_TANH_8_8=1 -I../../cpp/ -I../../cpp/include -I../../include
+	g++ -O3 -std=c++17 -Wall -o ./output/xor_ff xor.cpp xornet.cpp ../../cpp/lookupTables.cpp -DTINYMIND_ENABLE_OSTREAMS=1 -DTINYMIND_USE_TANH_8_8=1 -I../../cpp/ -I../../cpp/include -I../../include
 
 debug  :
 #	Make an output dir to hold the executable
