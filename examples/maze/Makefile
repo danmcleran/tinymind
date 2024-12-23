@@ -9,7 +9,7 @@ debug :
 #	Make an output dir to hold the executable
 	mkdir -p ./output
 #	Build the example with default build flags
-	g++ -g -Wall -o ./output/maze maze.cpp mazelearner.cpp -I../../cpp -I../../cpp/include
+	g++ -g -std=c++17 -Wall -o ./output/maze maze.cpp mazelearner.cpp -I../../cpp -I../../cpp/include
 
 # Remove all object files
 clean:
