@@ -84,10 +84,10 @@ template<   typename StateType,
 struct MazeEnvironment : public tinymind::QLearningEnvironment<state_t, action_t, ValueType, NumberOfStates, NumberOfActions, MazeEnvironmentRandomNumberGeneratorPolicy>
 {
     typedef tinymind::QLearningEnvironment<StateType, ActionType, ValueType, NumberOfStates, NumberOfActions, MazeEnvironmentRandomNumberGeneratorPolicy> ParentType;
-    static constexpr size_t EnvironmentNumberOfStates = ParentType::EnvironmentNumberOfStates;
-    static constexpr size_t EnvironmentNumberOfActions = ParentType::EnvironmentNumberOfActions;
-    static constexpr size_t EnvironmentInvalidState = ParentType::EnvironmentInvalidState;
-    static constexpr size_t EnvironmentInvalidAction = ParentType::EnvironmentInvalidAction;
+    static const size_t EnvironmentNumberOfStates = ParentType::EnvironmentNumberOfStates;
+    static const size_t EnvironmentNumberOfActions = ParentType::EnvironmentNumberOfActions;
+    static const size_t EnvironmentInvalidState = ParentType::EnvironmentInvalidState;
+    static const size_t EnvironmentInvalidAction = ParentType::EnvironmentInvalidAction;
     static const ValueType EnvironmentRewardValue;
     static const ValueType EnvironmentNoRewardValue;
     static const ValueType EnvironmentInvalidActionValue;

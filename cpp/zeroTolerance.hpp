@@ -28,7 +28,7 @@ namespace tinymind {
     template<unsigned NumberOfFractionalBits>
     struct ZeroToleranceShiftValue
     {
-        static constexpr unsigned result = (NumberOfFractionalBits > 7) ? (NumberOfFractionalBits - 7) : 1;
+        static const unsigned result = (NumberOfFractionalBits > 7) ? (NumberOfFractionalBits - 7) : 1;
     };
 
     template<typename ValueType, bool IsSigned>
