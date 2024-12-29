@@ -890,12 +890,12 @@ BOOST_AUTO_TEST_SUITE(test_suite_nn)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -917,12 +917,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor_nn_copy)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -948,12 +948,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor_nn_copy)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -975,12 +975,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1002,12 +1002,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_nor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1029,13 +1029,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_nor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
-    static constexpr bool TRAINABLE = false;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const bool TRAINABLE = false;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1058,13 +1058,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
-    static constexpr bool TRAINABLE = false;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const bool TRAINABLE = false;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1087,13 +1087,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
-    static constexpr bool TRAINABLE = false;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const bool TRAINABLE = false;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1116,13 +1116,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_nor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
-    static constexpr bool TRAINABLE = false;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const bool TRAINABLE = false;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1145,12 +1145,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_nor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1172,12 +1172,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1199,12 +1199,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1226,12 +1226,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 16;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 16;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 16;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 16;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1253,12 +1253,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 16;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 16;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 16;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 16;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1280,12 +1280,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 16;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 16;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 16;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 16;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1307,12 +1307,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1334,12 +1334,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1361,12 +1361,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1388,14 +1388,14 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = true;
-    static constexpr size_t BATCH_SIZE = 2;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = true;
+    static const size_t BATCH_SIZE = 2;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1427,14 +1427,14 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = true;
-    static constexpr size_t BATCH_SIZE = 2;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = true;
+    static const size_t BATCH_SIZE = 2;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1466,14 +1466,14 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = true;
-    static constexpr size_t BATCH_SIZE = 2;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = true;
+    static const size_t BATCH_SIZE = 2;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1505,14 +1505,14 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = true;
-    static constexpr size_t BATCH_SIZE = 4;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = true;
+    static const size_t BATCH_SIZE = 4;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1544,14 +1544,14 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = true;
-    static constexpr size_t BATCH_SIZE = 4;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = true;
+    static const size_t BATCH_SIZE = 4;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1583,14 +1583,14 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = true;
-    static constexpr size_t BATCH_SIZE = 4;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = true;
+    static const size_t BATCH_SIZE = 4;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1622,11 +1622,11 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_elman_nn)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1647,9 +1647,9 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_elman_nn)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_elman_nn)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1670,10 +1670,10 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_elman_nn)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1695,10 +1695,10 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1720,10 +1720,10 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_and)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1745,13 +1745,13 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_float_weights_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = false;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = false;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1774,13 +1774,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_float_weights_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_float_weights_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = false;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = false;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1803,10 +1803,10 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_float_weights_and)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_relu_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1832,13 +1832,13 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_relu_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_relu_xor_no_train)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = false;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 16;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 16;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = false;
+    static const size_t NUMBER_OF_FIXED_BITS = 16;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 16;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1861,13 +1861,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_relu_xor_no_train)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_relu_xor_no_train)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = false;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = false;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1890,13 +1890,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_relu_xor_no_train)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_8_nn_relu_xor_no_train)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = false;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = false;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1919,10 +1919,10 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_8_nn_relu_xor_no_train)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_2_hidden_nn_relu_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 2;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1948,10 +1948,10 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_2_hidden_nn_relu_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_2_hidden_nn_relu_xor_copy)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 2;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1981,12 +1981,12 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_2_hidden_nn_relu_xor_copy)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_2_hidden_nn_relu_xor_no_train)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 2;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 16;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 16;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 16;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 16;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -2003,12 +2003,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_2_hidden_nn_relu_xor_no_train)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_sigmoid_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,

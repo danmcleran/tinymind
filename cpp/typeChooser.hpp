@@ -123,9 +123,9 @@ namespace tinymind {
     struct FullWidthFieldTypeChooser
     {
 #ifdef __SIZEOF_INT128__
-        static constexpr unsigned Result = (NumBits <= 8) ? 8 : (NumBits <= 16) ? 16 : (NumBits <= 32) ? 32 : (NumBits <= 64) ? 64 : 128;
+        static const unsigned Result = (NumBits <= 8) ? 8 : (NumBits <= 16) ? 16 : (NumBits <= 32) ? 32 : (NumBits <= 64) ? 64 : 128;
 #else // __SIZEOF_INT128__
-        static constexpr unsigned Result = (NumBits <= 8) ? 8 : (NumBits <= 16) ? 16 : (NumBits <= 32) ? 32 : 64;
+        static const unsigned Result = (NumBits <= 8) ? 8 : (NumBits <= 16) ? 16 : (NumBits <= 32) ? 32 : 64;
 #endif // __SIZEOF_INT128__
         typedef typename FullWidthType<Result, IsSigned>::FractionalPartFieldType FractionalPartFieldType;
         typedef typename FullWidthType<Result, IsSigned>::FixedPartFieldType      FixedPartFieldType;

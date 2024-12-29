@@ -33,16 +33,16 @@
 #include "neuralnet.hpp"
 
 // Q-Format value type
-static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+static const size_t NUMBER_OF_FIXED_BITS = 8;
+static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
 typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
 // typedef the underlying full-width representation type
 typedef typename ValueType::FullWidthValueType FullWidthValueType;
 // Neural network architecture
-static constexpr size_t NUMBER_OF_INPUTS = 2;
-static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+static const size_t NUMBER_OF_INPUTS = 2;
+static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+static const size_t NUMBER_OF_OUTPUTS = 1;
 
 // Random number generator
 struct RandomNumberGenerator
