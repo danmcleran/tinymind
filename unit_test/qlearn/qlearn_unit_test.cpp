@@ -150,8 +150,8 @@ struct MazeEnvironment : public tinymind::QLearningEnvironment<state_t, action_t
     static const size_t EnvironmentInvalidAction = ParentType::EnvironmentInvalidAction;
     static const ValueType EnvironmentNoRewardValue;
     static const ValueType EnvironmentInvalidActionValue;
-    
-    MazeEnvironment(const ValueType& learningRate, const ValueType& discountFactor, const size_t randomActionDecisionPoint) : 
+
+    MazeEnvironment(const ValueType& learningRate, const ValueType& discountFactor, const size_t randomActionDecisionPoint) :
         ParentType(learningRate, discountFactor, randomActionDecisionPoint), mGoalState(EnvironmentInvalidState)
     {
     }
@@ -210,7 +210,7 @@ struct MazeEnvironment : public tinymind::QLearningEnvironment<state_t, action_t
     {
         this->mExperience = experience;
     }
-    
+
     typename ParentType::experience_t mExperience;
     StateType mGoalState;
 private:
@@ -240,8 +240,8 @@ struct DQNMazeEnvironment : public tinymind::QLearningEnvironment<state_t, actio
     static const size_t EnvironmentInvalidAction = ParentType::EnvironmentInvalidAction;
     static const ValueType EnvironmentNoRewardValue;
     static const ValueType EnvironmentInvalidActionValue;
-    
-    DQNMazeEnvironment(const ValueType& learningRate, const ValueType& discountFactor, const size_t randomActionDecisionPoint) : 
+
+    DQNMazeEnvironment(const ValueType& learningRate, const ValueType& discountFactor, const size_t randomActionDecisionPoint) :
         ParentType(learningRate, discountFactor, randomActionDecisionPoint), mGoalState(EnvironmentInvalidState)
     {
     }
@@ -308,7 +308,7 @@ struct DQNMazeEnvironment : public tinymind::QLearningEnvironment<state_t, actio
     {
         this->mExperience = experience;
     }
-    
+
     typename ParentType::experience_t mExperience;
     StateType mGoalState;
 private:
@@ -519,7 +519,7 @@ BOOST_AUTO_TEST_CASE(test_qlearn_choose_random_action)
     std::size_t t;
 
     qLearner.getEnvironment().setRandomActionDecisionPoint(50);
-    for(auto i = 0;i < 1000;++i)
+    for(unsigned i = 0;i < 1000;++i)
     {
         choices.push_back(qLearner.getEnvironment().shouldChooseRandomAction());
     }
@@ -530,7 +530,7 @@ BOOST_AUTO_TEST_CASE(test_qlearn_choose_random_action)
 
     qLearner.getEnvironment().setRandomActionDecisionPoint(90);
     choices.clear();
-    for(auto i = 0;i < 1000;++i)
+    for(unsigned i = 0;i < 1000;++i)
     {
         choices.push_back(qLearner.getEnvironment().shouldChooseRandomAction());
     }
@@ -541,7 +541,7 @@ BOOST_AUTO_TEST_CASE(test_qlearn_choose_random_action)
 
     qLearner.getEnvironment().setRandomActionDecisionPoint(0);
     choices.clear();
-    for(auto i = 0;i < 1000;++i)
+    for(unsigned i = 0;i < 1000;++i)
     {
         choices.push_back(qLearner.getEnvironment().shouldChooseRandomAction());
     }
@@ -552,7 +552,7 @@ BOOST_AUTO_TEST_CASE(test_qlearn_choose_random_action)
 
     qLearner.getEnvironment().setRandomActionDecisionPoint(100);
     choices.clear();
-    for(auto i = 0;i < 1000;++i)
+    for(unsigned i = 0;i < 1000;++i)
     {
         choices.push_back(qLearner.getEnvironment().shouldChooseRandomAction());
     }
@@ -665,7 +665,7 @@ BOOST_AUTO_TEST_CASE(test_qlearn_iterate)
     action_t action;
     FullWidthValueType value;
 
-    for (auto i = 0; i < 500; ++i)
+    for (unsigned i = 0; i < 500; ++i)
     {
         qLearner.getEnvironment().setRandomActionDecisionPoint(decisionPoint);
 
@@ -740,7 +740,7 @@ BOOST_AUTO_TEST_CASE(test_dqn_qlearn_iterate)
 
     dqnQLearner.getEnvironment().setGoalState(5);
 
-    for (auto i = 0; i < 500; ++i)
+    for (unsigned i = 0; i < 500; ++i)
     {
         dqnQLearner.getEnvironment().setRandomActionDecisionPoint(decisionPoint);
 
