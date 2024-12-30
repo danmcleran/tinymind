@@ -61,7 +61,7 @@ int main(const int argc, char *argv[])
 
     tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(testNeuralNet, results);
 
-    for (auto i = 0; i < TRAINING_ITERATIONS; ++i)
+    for (unsigned i = 0; i < TRAINING_ITERATIONS; ++i)
     {
         generateXorTrainingValue(values[0], values[1], output[0]);
 
