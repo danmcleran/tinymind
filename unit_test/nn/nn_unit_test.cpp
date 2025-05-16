@@ -118,6 +118,7 @@ using namespace std;
 #define TRAINING_ITERATIONS 2000
 #define NUM_SAMPLES_AVG_ERROR 20
 #define STOP_ON_AVG_ERROR 0
+#define USE_WEIGHTS_INPUT_FILE 1 // the weights input file uses the initial values from a successful training run
 
 template<typename ValueType>
 struct ValueHelper
@@ -541,12 +542,14 @@ static void testFixedPointNeuralNetwork(  NeuralNetworkType& neuralNetwork,
                                 char const* const path,
                                 const int numberOfTrainingIterations = TRAINING_ITERATIONS)
 {
+    typedef tinymind::NetworkPropertiesFileManager<NeuralNetworkType> NetworkPropertiesFileManagerType;
     typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
     typedef typename ValueType::FullWidthValueType FullWidthValueType;
     typedef ValueHelper<ValueType> ValueHelperType;
     static const FullWidthValueType ERROR_LIMIT = ValueHelperType::getErrorLimit();
     ofstream results(path);
     ofstream weightsOutputFile;
+    std::string initialWeightsInputPath(path);
     std::string weightsOutputPath(path);
     std::string binaryWeightsOutputPath(path);
     ValueType values[NeuralNetworkType::NumberOfInputLayerNeurons];
@@ -555,10 +558,24 @@ static void testFixedPointNeuralNetwork(  NeuralNetworkType& neuralNetwork,
     std::deque<FullWidthValueType> errors;
     ValueType error;
 
+    initialWeightsInputPath.replace(weightsOutputPath.find("."), std::string::npos, "_initial_weights.txt");
     weightsOutputPath.replace(weightsOutputPath.find("."), std::string::npos, "_weights.txt");
     binaryWeightsOutputPath.replace(binaryWeightsOutputPath.find(".txt"), std::string::npos, ".bin");
 
     tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+
+#if USE_WEIGHTS_INPUT_FILE
+    initialWeightsInputPath.insert(0, "../input/");
+    ifstream weightsInputFile(initialWeightsInputPath);
+    if (weightsInputFile.is_open())
+    {
+        NetworkPropertiesFileManagerType::template loadNetworkWeights<ValueType, ValueType>(neuralNetwork, weightsInputFile);
+    }
+    else
+    {
+        cout << "Did not find initial weights input file: " << initialWeightsInputPath << endl;
+    }
+#endif
 
     for (int i = 0; i < numberOfTrainingIterations; ++i)
     {
@@ -597,7 +614,7 @@ static void testFixedPointNeuralNetwork(  NeuralNetworkType& neuralNetwork,
     weightsOutputFile.open(weightsOutputPath.c_str());
 
     tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkWeights(neuralNetwork, weightsOutputFile);
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkWeights(neuralNetwork, binaryWeightsOutputPath.c_str());
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkWeightsBinary(neuralNetwork, binaryWeightsOutputPath);
 
     weightsOutputFile.close();
 
