@@ -1017,7 +1017,7 @@ BOOST_AUTO_TEST_CASE(test_case_conversion)
 
     Q0 = 0x180;
     UQ0 = 0;
-    BOOST_TEST(UQ0.getValue() == 0x0);
+    BOOST_TEST(UQ0.getValue() == 0x0UL);
     UQ0.convertFromOtherQValueType(Q0);
     BOOST_TEST(UQ0.getValue() == static_cast<typename UnsignedQ24_8Type::FullWidthValueType>(0x180));
 }
