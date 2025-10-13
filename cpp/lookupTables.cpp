@@ -46462,4 +46462,639 @@ namespace tinymind {
                 0x3,
     };
     #endif // TINYMIND_USE_LOG_63_1
+
+    #if TINYMIND_USE_TANH_1_127
+    const uint8_t TanhValuesTableQ1_127::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_1_127
+
+    #if TINYMIND_USE_TANH_2_126
+    const uint8_t TanhValuesTableQ2_126::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_2_126
+
+    #if TINYMIND_USE_TANH_3_125
+    const uint8_t TanhValuesTableQ3_125::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_3_125
+
+    #if TINYMIND_USE_TANH_4_124
+    const uint8_t TanhValuesTableQ4_124::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_4_124
+
+    #if TINYMIND_USE_TANH_5_123
+    const uint8_t TanhValuesTableQ5_123::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_5_123
+
+    #if TINYMIND_USE_TANH_6_122
+    const uint8_t TanhValuesTableQ6_122::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_6_122
+
+    #if TINYMIND_USE_TANH_7_121
+    const uint8_t TanhValuesTableQ7_121::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_7_121
+
+    #if TINYMIND_USE_TANH_8_120
+    const uint8_t TanhValuesTableQ8_120::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_8_120
+
+    #if TINYMIND_USE_TANH_9_119
+    const uint8_t TanhValuesTableQ9_119::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_9_119
+
+    #if TINYMIND_USE_TANH_10_118
+    const uint8_t TanhValuesTableQ10_118::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_10_118
+
+    #if TINYMIND_USE_TANH_11_117
+    const uint8_t TanhValuesTableQ11_117::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_11_117
+
+    #if TINYMIND_USE_TANH_12_116
+    const uint8_t TanhValuesTableQ12_116::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_12_116
+
+    #if TINYMIND_USE_TANH_13_115
+    const uint8_t TanhValuesTableQ13_115::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_13_115
+
+    #if TINYMIND_USE_TANH_14_114
+    const uint8_t TanhValuesTableQ14_114::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_14_114
+
+    #if TINYMIND_USE_TANH_15_113
+    const uint8_t TanhValuesTableQ15_113::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_15_113
+
+    #if TINYMIND_USE_TANH_16_112
+    const uint8_t TanhValuesTableQ16_112::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_16_112
+
+    #if TINYMIND_USE_TANH_17_111
+    const uint8_t TanhValuesTableQ17_111::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_17_111
+
+    #if TINYMIND_USE_TANH_18_110
+    const uint8_t TanhValuesTableQ18_110::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_18_110
+
+    #if TINYMIND_USE_TANH_19_109
+    const uint8_t TanhValuesTableQ19_109::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_19_109
+
+    #if TINYMIND_USE_TANH_20_108
+    const uint8_t TanhValuesTableQ20_108::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_20_108
+
+    #if TINYMIND_USE_TANH_21_107
+    const uint8_t TanhValuesTableQ21_107::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_21_107
+
+    #if TINYMIND_USE_TANH_22_106
+    const uint8_t TanhValuesTableQ22_106::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_22_106
+
+    #if TINYMIND_USE_TANH_23_105
+    const uint8_t TanhValuesTableQ23_105::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_23_105
+
+    #if TINYMIND_USE_TANH_24_104
+    const uint8_t TanhValuesTableQ24_104::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_24_104
+
+    #if TINYMIND_USE_TANH_25_103
+    const uint8_t TanhValuesTableQ25_103::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_25_103
+
+    #if TINYMIND_USE_TANH_26_102
+    const uint8_t TanhValuesTableQ26_102::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_26_102
+
+    #if TINYMIND_USE_TANH_27_101
+    const uint8_t TanhValuesTableQ27_101::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_27_101
+
+    #if TINYMIND_USE_TANH_28_100
+    const uint8_t TanhValuesTableQ28_100::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_28_100
+
+    #if TINYMIND_USE_TANH_29_99
+    const uint8_t TanhValuesTableQ29_99::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_29_99
+
+    #if TINYMIND_USE_TANH_30_98
+    const uint8_t TanhValuesTableQ30_98::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_30_98
+
+    #if TINYMIND_USE_TANH_31_97
+    const uint8_t TanhValuesTableQ31_97::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_31_97
+
+    #if TINYMIND_USE_TANH_32_96
+    const uint8_t TanhValuesTableQ32_96::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_32_96
+
+    #if TINYMIND_USE_TANH_33_95
+    const uint8_t TanhValuesTableQ33_95::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_33_95
+
+    #if TINYMIND_USE_TANH_34_94
+    const uint8_t TanhValuesTableQ34_94::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_34_94
+
+    #if TINYMIND_USE_TANH_35_93
+    const uint8_t TanhValuesTableQ35_93::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_35_93
+
+    #if TINYMIND_USE_TANH_36_92
+    const uint8_t TanhValuesTableQ36_92::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_36_92
+
+    #if TINYMIND_USE_TANH_37_91
+    const uint8_t TanhValuesTableQ37_91::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_37_91
+
+    #if TINYMIND_USE_TANH_38_90
+    const uint8_t TanhValuesTableQ38_90::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_38_90
+
+    #if TINYMIND_USE_TANH_39_89
+    const uint8_t TanhValuesTableQ39_89::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_39_89
+
+    #if TINYMIND_USE_TANH_40_88
+    const uint8_t TanhValuesTableQ40_88::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_40_88
+
+    #if TINYMIND_USE_TANH_41_87
+    const uint8_t TanhValuesTableQ41_87::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_41_87
+
+    #if TINYMIND_USE_TANH_42_86
+    const uint8_t TanhValuesTableQ42_86::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_42_86
+
+    #if TINYMIND_USE_TANH_43_85
+    const uint8_t TanhValuesTableQ43_85::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_43_85
+
+    #if TINYMIND_USE_TANH_44_84
+    const uint8_t TanhValuesTableQ44_84::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_44_84
+
+    #if TINYMIND_USE_TANH_45_83
+    const uint8_t TanhValuesTableQ45_83::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_45_83
+
+    #if TINYMIND_USE_TANH_46_82
+    const uint8_t TanhValuesTableQ46_82::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_46_82
+
+    #if TINYMIND_USE_TANH_47_81
+    const uint8_t TanhValuesTableQ47_81::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_47_81
+
+    #if TINYMIND_USE_TANH_48_80
+    const uint8_t TanhValuesTableQ48_80::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_48_80
+
+    #if TINYMIND_USE_TANH_49_79
+    const uint8_t TanhValuesTableQ49_79::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_49_79
+
+    #if TINYMIND_USE_TANH_50_78
+    const uint8_t TanhValuesTableQ50_78::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_50_78
+
+    #if TINYMIND_USE_TANH_51_77
+    const uint8_t TanhValuesTableQ51_77::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_51_77
+
+    #if TINYMIND_USE_TANH_52_76
+    const uint8_t TanhValuesTableQ52_76::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_52_76
+
+    #if TINYMIND_USE_TANH_53_75
+    const uint8_t TanhValuesTableQ53_75::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_53_75
+
+    #if TINYMIND_USE_TANH_54_74
+    const uint8_t TanhValuesTableQ54_74::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_54_74
+
+    #if TINYMIND_USE_TANH_55_73
+    const uint8_t TanhValuesTableQ55_73::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_55_73
+
+    #if TINYMIND_USE_TANH_56_72
+    const uint8_t TanhValuesTableQ56_72::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_56_72
+
+    #if TINYMIND_USE_TANH_57_71
+    const uint8_t TanhValuesTableQ57_71::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_57_71
+
+    #if TINYMIND_USE_TANH_58_70
+    const uint8_t TanhValuesTableQ58_70::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_58_70
+
+    #if TINYMIND_USE_TANH_59_69
+    const uint8_t TanhValuesTableQ59_69::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_59_69
+
+    #if TINYMIND_USE_TANH_60_68
+    const uint8_t TanhValuesTableQ60_68::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_60_68
+
+    #if TINYMIND_USE_TANH_61_67
+    const uint8_t TanhValuesTableQ61_67::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_61_67
+
+    #if TINYMIND_USE_TANH_62_66
+    const uint8_t TanhValuesTableQ62_66::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_62_66
+
+    #if TINYMIND_USE_TANH_63_65
+    const uint8_t TanhValuesTableQ63_65::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_63_65
+
+    #if TINYMIND_USE_TANH_64_64
+    const uint8_t TanhValuesTableQ64_64::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_64_64
+
+    #if TINYMIND_USE_TANH_65_63
+    const uint8_t TanhValuesTableQ65_63::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_65_63
+
+    #if TINYMIND_USE_TANH_66_62
+    const uint8_t TanhValuesTableQ66_62::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_66_62
+
+    #if TINYMIND_USE_TANH_67_61
+    const uint8_t TanhValuesTableQ67_61::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_67_61
+
+    #if TINYMIND_USE_TANH_68_60
+    const uint8_t TanhValuesTableQ68_60::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_68_60
+
+    #if TINYMIND_USE_TANH_69_59
+    const uint8_t TanhValuesTableQ69_59::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_69_59
+
+    #if TINYMIND_USE_TANH_70_58
+    const uint8_t TanhValuesTableQ70_58::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_70_58
+
+    #if TINYMIND_USE_TANH_71_57
+    const uint8_t TanhValuesTableQ71_57::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_71_57
+
+    #if TINYMIND_USE_TANH_72_56
+    const uint8_t TanhValuesTableQ72_56::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_72_56
+
+    #if TINYMIND_USE_TANH_73_55
+    const uint8_t TanhValuesTableQ73_55::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_73_55
+
+    #if TINYMIND_USE_TANH_74_54
+    const uint8_t TanhValuesTableQ74_54::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_74_54
+
+    #if TINYMIND_USE_TANH_75_53
+    const uint8_t TanhValuesTableQ75_53::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_75_53
+
+    #if TINYMIND_USE_TANH_76_52
+    const uint8_t TanhValuesTableQ76_52::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_76_52
+
+    #if TINYMIND_USE_TANH_77_51
+    const uint8_t TanhValuesTableQ77_51::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_77_51
+
+    #if TINYMIND_USE_TANH_78_50
+    const uint8_t TanhValuesTableQ78_50::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_78_50
+
+    #if TINYMIND_USE_TANH_79_49
+    const uint8_t TanhValuesTableQ79_49::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_79_49
+
+    #if TINYMIND_USE_TANH_80_48
+    const uint8_t TanhValuesTableQ80_48::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_80_48
+
+    #if TINYMIND_USE_TANH_81_47
+    const uint8_t TanhValuesTableQ81_47::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_81_47
+
+    #if TINYMIND_USE_TANH_82_46
+    const uint8_t TanhValuesTableQ82_46::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_82_46
+
+    #if TINYMIND_USE_TANH_83_45
+    const uint8_t TanhValuesTableQ83_45::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_83_45
+
+    #if TINYMIND_USE_TANH_84_44
+    const uint8_t TanhValuesTableQ84_44::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_84_44
+
+    #if TINYMIND_USE_TANH_85_43
+    const uint8_t TanhValuesTableQ85_43::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_85_43
+
+    #if TINYMIND_USE_TANH_86_42
+    const uint8_t TanhValuesTableQ86_42::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_86_42
+
+    #if TINYMIND_USE_TANH_87_41
+    const uint8_t TanhValuesTableQ87_41::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_87_41
+
+    #if TINYMIND_USE_TANH_88_40
+    const uint8_t TanhValuesTableQ88_40::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_88_40
+
+    #if TINYMIND_USE_TANH_89_39
+    const uint8_t TanhValuesTableQ89_39::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_89_39
+
+    #if TINYMIND_USE_TANH_90_38
+    const uint8_t TanhValuesTableQ90_38::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_90_38
+
+    #if TINYMIND_USE_TANH_91_37
+    const uint8_t TanhValuesTableQ91_37::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_91_37
+
+    #if TINYMIND_USE_TANH_92_36
+    const uint8_t TanhValuesTableQ92_36::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_92_36
+
+    #if TINYMIND_USE_TANH_93_35
+    const uint8_t TanhValuesTableQ93_35::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_93_35
+
+    #if TINYMIND_USE_TANH_94_34
+    const uint8_t TanhValuesTableQ94_34::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_94_34
+
+    #if TINYMIND_USE_TANH_95_33
+    const uint8_t TanhValuesTableQ95_33::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_95_33
+
+    #if TINYMIND_USE_TANH_96_32
+    const uint8_t TanhValuesTableQ96_32::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_96_32
+
+    #if TINYMIND_USE_TANH_97_31
+    const uint8_t TanhValuesTableQ97_31::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_97_31
+
+    #if TINYMIND_USE_TANH_98_30
+    const uint8_t TanhValuesTableQ98_30::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_98_30
+
+    #if TINYMIND_USE_TANH_99_29
+    const uint8_t TanhValuesTableQ99_29::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_99_29
+
+    #if TINYMIND_USE_TANH_100_28
+    const uint8_t TanhValuesTableQ100_28::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_100_28
+
+    #if TINYMIND_USE_TANH_101_27
+    const uint8_t TanhValuesTableQ101_27::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_101_27
+
+    #if TINYMIND_USE_TANH_102_26
+    const uint8_t TanhValuesTableQ102_26::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_102_26
+
+    #if TINYMIND_USE_TANH_103_25
+    const uint8_t TanhValuesTableQ103_25::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_103_25
+
+    #if TINYMIND_USE_TANH_104_24
+    const uint8_t TanhValuesTableQ104_24::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_104_24
+
+    #if TINYMIND_USE_TANH_105_23
+    const uint8_t TanhValuesTableQ105_23::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_105_23
+
+    #if TINYMIND_USE_TANH_106_22
+    const uint8_t TanhValuesTableQ106_22::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_106_22
+
+    #if TINYMIND_USE_TANH_107_21
+    const uint8_t TanhValuesTableQ107_21::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_107_21
+
+    #if TINYMIND_USE_TANH_108_20
+    const uint8_t TanhValuesTableQ108_20::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_108_20
+
+    #if TINYMIND_USE_TANH_109_19
+    const uint8_t TanhValuesTableQ109_19::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_109_19
+
+    #if TINYMIND_USE_TANH_110_18
+    const uint8_t TanhValuesTableQ110_18::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_110_18
+
+    #if TINYMIND_USE_TANH_111_17
+    const uint8_t TanhValuesTableQ111_17::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_111_17
+
+    #if TINYMIND_USE_TANH_112_16
+    const uint8_t TanhValuesTableQ112_16::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_112_16
+
+    #if TINYMIND_USE_TANH_113_15
+    const uint8_t TanhValuesTableQ113_15::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_113_15
+
+    #if TINYMIND_USE_TANH_114_14
+    const uint8_t TanhValuesTableQ114_14::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_114_14
+
+    #if TINYMIND_USE_TANH_115_13
+    const uint8_t TanhValuesTableQ115_13::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_115_13
+
+    #if TINYMIND_USE_TANH_116_12
+    const uint8_t TanhValuesTableQ116_12::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_116_12
+
+    #if TINYMIND_USE_TANH_117_11
+    const uint8_t TanhValuesTableQ117_11::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_117_11
+
+    #if TINYMIND_USE_TANH_118_10
+    const uint8_t TanhValuesTableQ118_10::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_118_10
+
+    #if TINYMIND_USE_TANH_119_9
+    const uint8_t TanhValuesTableQ119_9::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_119_9
+
+    #if TINYMIND_USE_TANH_120_8
+    const uint8_t TanhValuesTableQ120_8::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_120_8
+
+    #if TINYMIND_USE_TANH_121_7
+    const uint8_t TanhValuesTableQ121_7::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_121_7
+
+    #if TINYMIND_USE_TANH_122_6
+    const uint8_t TanhValuesTableQ122_6::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_122_6
+
+    #if TINYMIND_USE_TANH_123_5
+    const uint8_t TanhValuesTableQ123_5::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_123_5
+
+    #if TINYMIND_USE_TANH_124_4
+    const uint8_t TanhValuesTableQ124_4::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_124_4
+
+    #if TINYMIND_USE_TANH_125_3
+    const uint8_t TanhValuesTableQ125_3::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_125_3
+
+    #if TINYMIND_USE_TANH_126_2
+    const uint8_t TanhValuesTableQ126_2::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_126_2
+
+    #if TINYMIND_USE_TANH_127_1
+    const uint8_t TanhValuesTableQ127_1::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {
+    };
+    #endif // TINYMIND_USE_TANH_127_1
 }
