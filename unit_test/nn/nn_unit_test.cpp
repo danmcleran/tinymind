@@ -614,7 +614,6 @@ static void testFixedPointNeuralNetwork(  NeuralNetworkType& neuralNetwork,
     weightsOutputFile.open(weightsOutputPath.c_str());
 
     tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkWeights(neuralNetwork, weightsOutputFile);
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkWeightsBinary(neuralNetwork, binaryWeightsOutputPath);
 
     weightsOutputFile.close();
 
