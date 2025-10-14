@@ -473,19 +473,19 @@ BOOST_AUTO_TEST_CASE(test_qlearn_setreward)
 
 BOOST_AUTO_TEST_CASE(test_qlearn_text_next_state)
 {
-    BOOST_TEST(4 == qLearner.getEnvironment().getNextStateForStateActionPair(0, 4));
-    BOOST_TEST(3 == qLearner.getEnvironment().getNextStateForStateActionPair(1, 3));
-    BOOST_TEST(5 == qLearner.getEnvironment().getNextStateForStateActionPair(1, 5));
-    BOOST_TEST(3 == qLearner.getEnvironment().getNextStateForStateActionPair(2, 3));
-    BOOST_TEST(1 == qLearner.getEnvironment().getNextStateForStateActionPair(3, 1));
-    BOOST_TEST(2 == qLearner.getEnvironment().getNextStateForStateActionPair(3, 2));
-    BOOST_TEST(4 == qLearner.getEnvironment().getNextStateForStateActionPair(3, 4));
-    BOOST_TEST(0 == qLearner.getEnvironment().getNextStateForStateActionPair(4, 0));
-    BOOST_TEST(3 == qLearner.getEnvironment().getNextStateForStateActionPair(4, 3));
-    BOOST_TEST(5 == qLearner.getEnvironment().getNextStateForStateActionPair(4, 5));
-    BOOST_TEST(1 == qLearner.getEnvironment().getNextStateForStateActionPair(5, 1));
-    BOOST_TEST(4 == qLearner.getEnvironment().getNextStateForStateActionPair(5, 4));
-    BOOST_TEST(5 == qLearner.getEnvironment().getNextStateForStateActionPair(5, 5));
+    BOOST_TEST(static_cast<state_t>(4) == qLearner.getEnvironment().getNextStateForStateActionPair(0, 4));
+    BOOST_TEST(static_cast<state_t>(3) == qLearner.getEnvironment().getNextStateForStateActionPair(1, 3));
+    BOOST_TEST(static_cast<state_t>(5) == qLearner.getEnvironment().getNextStateForStateActionPair(1, 5));
+    BOOST_TEST(static_cast<state_t>(3) == qLearner.getEnvironment().getNextStateForStateActionPair(2, 3));
+    BOOST_TEST(static_cast<state_t>(1) == qLearner.getEnvironment().getNextStateForStateActionPair(3, 1));
+    BOOST_TEST(static_cast<state_t>(2) == qLearner.getEnvironment().getNextStateForStateActionPair(3, 2));
+    BOOST_TEST(static_cast<state_t>(4) == qLearner.getEnvironment().getNextStateForStateActionPair(3, 4));
+    BOOST_TEST(static_cast<state_t>(0) == qLearner.getEnvironment().getNextStateForStateActionPair(4, 0));
+    BOOST_TEST(static_cast<state_t>(3) == qLearner.getEnvironment().getNextStateForStateActionPair(4, 3));
+    BOOST_TEST(static_cast<state_t>(5) == qLearner.getEnvironment().getNextStateForStateActionPair(4, 5));
+    BOOST_TEST(static_cast<state_t>(1) == qLearner.getEnvironment().getNextStateForStateActionPair(5, 1));
+    BOOST_TEST(static_cast<state_t>(4) == qLearner.getEnvironment().getNextStateForStateActionPair(5, 4));
+    BOOST_TEST(static_cast<state_t>(5) == qLearner.getEnvironment().getNextStateForStateActionPair(5, 5));
 }
 
 BOOST_AUTO_TEST_CASE(test_qlearn_change_learning_rate)
@@ -548,7 +548,7 @@ BOOST_AUTO_TEST_CASE(test_qlearn_choose_random_action)
 
     t = std::count_if(choices.begin(), choices.end(), [](const bool value){return value;});
 
-    BOOST_TEST(0 == t);
+    BOOST_TEST(0U == t);
 
     qLearner.getEnvironment().setRandomActionDecisionPoint(100);
     choices.clear();
@@ -559,7 +559,7 @@ BOOST_AUTO_TEST_CASE(test_qlearn_choose_random_action)
 
     t = std::count_if(choices.begin(), choices.end(), [](const bool value){return value;});
 
-    BOOST_TEST(1000 == t);
+    BOOST_TEST(1000U == t);
 
     qLearner.getEnvironment().setRandomActionDecisionPoint(oldDecisionPoint);
 }
@@ -569,16 +569,16 @@ BOOST_AUTO_TEST_CASE(test_qlearn_goal_state)
     BOOST_TEST(static_cast<state_t>(-1) == qLearner.getEnvironment().getGoalState());
 
     qLearner.getEnvironment().setGoalState(0);
-    BOOST_TEST(0 == qLearner.getEnvironment().getGoalState());
+    BOOST_TEST(static_cast<state_t>(0) == qLearner.getEnvironment().getGoalState());
 
     qLearner.getEnvironment().setGoalState(-1);
-    BOOST_TEST(0 == qLearner.getEnvironment().getGoalState());
+    BOOST_TEST(static_cast<state_t>(0) == qLearner.getEnvironment().getGoalState());
 
     qLearner.getEnvironment().setGoalState(QLearnerType::NumberOfStates);
-    BOOST_TEST(0 == qLearner.getEnvironment().getGoalState());
+    BOOST_TEST(static_cast<state_t>(0) == qLearner.getEnvironment().getGoalState());
 
     qLearner.getEnvironment().setGoalState(NUMBER_OF_STATES - 1);
-    BOOST_TEST((NUMBER_OF_STATES - 1) == qLearner.getEnvironment().getGoalState());
+    BOOST_TEST(static_cast<state_t>(NUMBER_OF_STATES - 1) == qLearner.getEnvironment().getGoalState());
 }
 
 BOOST_AUTO_TEST_CASE(test_qlearn_argmax_best_action)
@@ -597,7 +597,7 @@ BOOST_AUTO_TEST_CASE(test_qlearn_argmax_best_action)
     }
 
     bestAction = tinymind::ArgMaxPolicy<MazeEnvironmentType, QValuePolicyType>::selectBestActionForState(state, &actions[0], NUMBER_OF_ACTIONS, qValuePolicy);
-    BOOST_TEST(5 == bestAction);
+    BOOST_TEST(static_cast<action_t>(5) == bestAction);
 
     qValue = 0;
     for (action_t action = NUMBER_OF_ACTIONS; action > 0; --action)
@@ -607,11 +607,11 @@ BOOST_AUTO_TEST_CASE(test_qlearn_argmax_best_action)
     }
 
     bestAction = tinymind::ArgMaxPolicy<MazeEnvironmentType, QValuePolicyType>::selectBestActionForState(state, &actions[0], NUMBER_OF_ACTIONS, qValuePolicy);
-    BOOST_TEST(0 == bestAction);
+    BOOST_TEST(static_cast<action_t>(0) == bestAction);
 
     qValuePolicy.setQValue(state, 1, QValueType(100, 0));
     bestAction = tinymind::ArgMaxPolicy<MazeEnvironmentType, QValuePolicyType>::selectBestActionForState(state, &actions[0], NUMBER_OF_ACTIONS - 2, qValuePolicy);
-    BOOST_TEST(1 == bestAction);
+    BOOST_TEST(static_cast<action_t>(1) == bestAction);
 }
 
 BOOST_AUTO_TEST_CASE(test_qlearn_take_action)
@@ -629,10 +629,10 @@ BOOST_AUTO_TEST_CASE(test_qlearn_take_action)
     experience.newState =  static_cast<state_t>(experience.action);
     qLearner.updateFromExperience(experience);
 
-    BOOST_TEST(1 == experience.state);
-    BOOST_TEST(5 == experience.action);
+    BOOST_TEST(static_cast<state_t>(1) == experience.state);
+    BOOST_TEST(static_cast<action_t>(5) == experience.action);
     BOOST_TEST(reward == experience.reward);
-    BOOST_TEST(5 == experience.newState);
+    BOOST_TEST(static_cast<state_t>(5) == experience.newState);
 
     state = 0;
     action = 4;
@@ -644,10 +644,10 @@ BOOST_AUTO_TEST_CASE(test_qlearn_take_action)
     experience.newState =  static_cast<state_t>(experience.action);
     qLearner.updateFromExperience(experience);
 
-    BOOST_TEST(0 == experience.state);
-    BOOST_TEST(4 == experience.action);
+    BOOST_TEST(static_cast<state_t>(0) == experience.state);
+    BOOST_TEST(static_cast<action_t>(4) == experience.action);
     BOOST_TEST(MazeEnvironmentType::EnvironmentNoRewardValue == experience.reward);
-    BOOST_TEST(4 == experience.newState);
+    BOOST_TEST(static_cast<state_t>(4) == experience.newState);
 }
 
 BOOST_AUTO_TEST_CASE(test_qlearn_iterate)
