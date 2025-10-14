@@ -28,9 +28,28 @@
 #include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <iomanip>
+#include <limits>
 
 #include "qformat.hpp"
 #include "activation.hpp"
+
+// Support for 128-bit integers
+#ifdef __SIZEOF_INT128__
+    typedef __uint128_t uint128_t;
+    #define UINT128_SUPPORTED 1
+#else
+    // Fallback: use a struct to represent 128-bit values
+    struct uint128_t {
+        uint64_t low;
+        uint64_t high;
+        
+        uint128_t() : low(0), high(0) {}
+        uint128_t(uint64_t l) : low(l), high(0) {}
+        uint128_t(uint64_t h, uint64_t l) : low(l), high(h) {}
+    };
+    #define UINT128_SUPPORTED 0
+#endif
 
 namespace fs = std::filesystem; // Must use C++ 17
 
@@ -51,7 +70,7 @@ typedef struct
 
 static std::string folderPathString;
 static char const* const activationTags[] = {"TINYMIND_USE_TANH_", "TINYMIND_USE_SIGMOID_", "TINYMIND_USE_EXP_", "TINYMIND_USE_LOG_"};
-static const uint8_t tables[] = {8, 16, 32, 64};
+static const uint8_t tables[] = {8, 16, 32, 64, 128};
 
 using namespace std;
 
@@ -197,7 +216,6 @@ static void writeSelectorMinMaxShift(const string& path)
     outFile << endl;
 }
 
-template <typename T>
 static void writeTableSelectorCases(const string& path, const int fixedBits, const int fracBits, const activation_e activationType)
 {
     const string spaces("    ");
@@ -270,7 +288,15 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
             assert(false);
         }
 
-        uint64_t leftShift = static_cast<T>(1ULL << fracBits);
+        // Handle the bit shift calculation carefully for large fracBits
+        double leftShift;
+        if (fracBits <= 63) {
+            leftShift = static_cast<double>(1ULL << fracBits);
+        } else {
+            // For fracBits > 63, calculate 2^fracBits using pow
+            leftShift = pow(2.0, static_cast<double>(fracBits));
+        }
+        
         num = activate * leftShift;
 
         switch (std::numeric_limits<T>::digits)
@@ -290,6 +316,35 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
             case 64:
                 outFile << spaces << "            0x" << std::hex << std::uppercase << (uint64_t)num << "," << endl;
                 break;
+
+            case 128:
+                {
+                    // Handle 128-bit case
+#if UINT128_SUPPORTED
+                    // Use native 128-bit support
+                    __uint128_t val128 = static_cast<__uint128_t>(num);
+                    uint64_t high = static_cast<uint64_t>(val128 >> 64);
+                    uint64_t low = static_cast<uint64_t>(val128);
+                    
+                    if (high != 0) {
+                        outFile << spaces << "            0x" << std::hex << std::uppercase << high << std::setfill('0') << std::setw(16) << low << "," << endl;
+                    } else {
+                        outFile << spaces << "            0x" << std::hex << std::uppercase << low << "," << endl;
+                    }
+#else
+                    // Fallback: split the double into high and low parts
+                    if (num >= pow(2.0, 64.0)) {
+                        uint64_t high = static_cast<uint64_t>(num / pow(2.0, 64.0));
+                        uint64_t low = static_cast<uint64_t>(fmod(num, pow(2.0, 64.0)));
+                        outFile << spaces << "            0x" << std::hex << std::uppercase << high << std::setfill('0') << std::setw(16) << low << "," << endl;
+                    } else {
+                        uint64_t low = static_cast<uint64_t>(num);
+                        outFile << spaces << "            0x" << std::hex << std::uppercase << low << "," << endl;
+                    }
+#endif
+                }
+                break;
+
             default:
                 assert(0);
         }
@@ -327,6 +382,11 @@ static void generateLut(const string& path, const activation_e activationType)
             case 64:
                 writeLutValues<uint64_t>(path, totalBits, i, totalBits - i, activationType);
                 break;
+
+            case 128:
+                writeLutValues<uint128_t>(path, totalBits, i, totalBits - i, activationType);
+                break;
+
             default:
                 assert(0);
             }
@@ -389,20 +449,25 @@ static void generateHeader(const activation_e activationType)
             switch (totalBits)
             {
             case 8:
-                writeTableSelectorCases<uint8_t>(selectorFilePath.string(), i, totalBits - i, activationType);
+                writeTableSelectorCases(selectorFilePath.string(), i, totalBits - i, activationType);
                 break;
 
             case 16:
-                writeTableSelectorCases<uint16_t>(selectorFilePath.string(), i, totalBits - i, activationType);
+                writeTableSelectorCases(selectorFilePath.string(), i, totalBits - i, activationType);
                 break;
 
             case 32:
-                writeTableSelectorCases<uint32_t>(selectorFilePath.string(), i, totalBits - i, activationType);
+                writeTableSelectorCases(selectorFilePath.string(), i, totalBits - i, activationType);
                 break;
 
             case 64:
-                writeTableSelectorCases<uint64_t>(selectorFilePath.string(), i, totalBits - i, activationType);
+                writeTableSelectorCases(selectorFilePath.string(), i, totalBits - i, activationType);
                 break;
+
+            case 128:
+                writeTableSelectorCases(selectorFilePath.string(), i, totalBits - i, activationType);
+                break;
+
             default:
                 assert(0);
             }
