@@ -23,12 +23,17 @@
 #pragma once
 
 #include "typeChooser.hpp"
+#include <limits>
 
 #ifndef UINT64_MAX
 #define UINT64_MAX 0xFFFFFFFFFFFFFFFFULL
 #endif // UINT64_MAX
 
 namespace tinymind {
+    enum class SaturationMode {
+        WRAP, // Values wrap around on overflow
+        SATURATE // Clamp to min/max on overflow
+   };
 
     template<typename T, unsigned NumberOfFractionalBits>
     class RoundUpPolicy
@@ -213,7 +218,9 @@ namespace tinymind {
         static const FixedPartFieldType MaxFractionalPartValue = (static_cast<FractionalPartFieldType>((1ULL << NumFractionalBits) - 1));
     };
 
-    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned, template<typename, unsigned> class QValueRoundingPolicy = TruncatePolicy>
+    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned,
+            template<typename, unsigned> class QValueRoundingPolicy = TruncatePolicy,
+                                        SaturationMode SatMode = SaturationMode::WRAP>
     struct QValue
     {
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::FullWidthValueType                     FullWidthValueType;
@@ -268,58 +275,125 @@ namespace tinymind {
 
         QValue& operator+=(const QValue& other)
         {
-            mValue += other.mValue;
+            if constexpr (SatMode == SaturationMode::SATURATE) {
+                FullWidthFieldType result = mValue + other.mValue;
+                if (((other.mValue > 0) && (mValue > (std::numeric_limits<FullWidthFieldType>::max() - other.mValue))) ||
+                    ((other.mValue < 0) && (mValue < (std::numeric_limits<FullWidthFieldType>::min() - other.mValue)))) {
+                    mValue = (other.mValue > 0) ? std::numeric_limits<FullWidthFieldType>::max() :
+                                                    std::numeric_limits<FullWidthFieldType>::min();
+                }
+                else {
+                    mValue = result;
+                }
+            } else {
+                mValue += other.mValue; // Wrap around behavior
+            }
 
             return *this;
         }
 
         QValue& operator+=(const FullWidthFieldType& value)
         {
-            mValue += value;
+            if constexpr (SatMode == SaturationMode::SATURATE) {
+                FullWidthFieldType result = mValue + value;
+                if (((value > 0) && (mValue > (std::numeric_limits<FullWidthFieldType>::max() - value))) ||
+                    ((value < 0) && (mValue < (std::numeric_limits<FullWidthFieldType>::min() - value)))) {
+                    mValue = (value > 0) ? std::numeric_limits<FullWidthFieldType>::max() :
+                                            std::numeric_limits<FullWidthFieldType>::min();
+                }
+                else {
+                    mValue = result;
+                }
+            } else {
+                mValue += value; // Wrap around behavior
+            }
 
             return *this;
         }
 
         QValue& operator++()
         {
-            ++mFixedPart;
+            FullWidthFieldType oneUnit = (FullWidthFieldType(1) << NumberOfFractionalBits);
+            if constexpr (SatMode == SaturationMode::SATURATE) {
+                if (mValue > (std::numeric_limits<FullWidthFieldType>::max() - oneUnit)) {
+                    mValue = std::numeric_limits<FullWidthFieldType>::max();
+                }
+                else {
+                    mValue += oneUnit;
+                }
+            }
+            else {
+                mValue += oneUnit;
+            }
 
             return *this;
         }
 
         QValue operator++(int)
         {
-            ++mFixedPart;
-
-            return *this;
+            QValue temp = *this;  // Save copy of current state
+            ++(*this);  // Use prefix increment logic
+            return temp;
         }
 
         QValue& operator-=(const QValue& other)
         {
-            mValue -= other.mValue;
+            if constexpr (SatMode == SaturationMode::SATURATE) {
+                FullWidthFieldType result = mValue - other.mValue;
+                if (((other.mValue > 0) && (mValue < (std::numeric_limits<FullWidthFieldType>::min() + other.mValue))) ||
+                    ((other.mValue < 0) && (mValue > (std::numeric_limits<FullWidthFieldType>::max() + other.mValue)))) {
+                    mValue = (other.mValue > 0) ? std::numeric_limits<FullWidthFieldType>::min() :
+                                                    std::numeric_limits<FullWidthFieldType>::max();
+                } else {
+                    mValue = result;
+                }
+            } else {
+                mValue -= other.mValue; // Wrap around behavior
+            }
 
             return *this;
         }
 
         QValue& operator-=(const FullWidthFieldType& value)
         {
-            mValue -= value;
+            if constexpr (SatMode == SaturationMode::SATURATE) {
+                FullWidthFieldType result = mValue - value;
+                if (((value > 0) && (mValue < (std::numeric_limits<FullWidthFieldType>::min() + value))) ||
+                    ((value < 0) && (mValue > (std::numeric_limits<FullWidthFieldType>::max() + value)))) {
+                    mValue = (value > 0) ? std::numeric_limits<FullWidthFieldType>::min() :
+                                            std::numeric_limits<FullWidthFieldType>::max();
+                } else {
+                    mValue = result;
+                }
+            } else {
+                mValue -= value; // Wrap around behavior
+            }
 
             return *this;
         }
 
         QValue& operator--()
         {
-            --mFixedPart;
+            FullWidthFieldType oneUnit = (FullWidthFieldType(1) << NumberOfFractionalBits);
+            if constexpr (SatMode == SaturationMode::SATURATE) {
+                if (mValue < (std::numeric_limits<FullWidthFieldType>::min() + oneUnit)) {
+                    mValue = std::numeric_limits<FullWidthFieldType>::min();
+                }
+                else {
+                    mValue -= oneUnit;
+                }
+            } else {
+                mValue -= oneUnit;
+            }
 
             return *this;
         }
 
         QValue operator--(int)
         {
-            --mFixedPart;
-
-            return *this;
+            QValue temp = *this;  // Save copy of current state
+            --(*this);  // Use prefix decrement logic
+            return temp;
         }
 
         QValue& operator*=(const QValue& other)
@@ -338,7 +412,22 @@ namespace tinymind {
 
             result = RoundingPolicy::round(result);
 
-            this->mValue = static_cast<FullWidthFieldType>(result);
+            if constexpr (SatMode == SaturationMode::SATURATE) {
+                if (result > static_cast<MultiplicationResultFullWidthFieldType>(
+                    std::numeric_limits<FullWidthFieldType>::max())) {
+                    this->mValue = std::numeric_limits<FullWidthFieldType>::max();
+                }
+                else if (result < static_cast<MultiplicationResultFullWidthFieldType>(
+                    std::numeric_limits<FullWidthFieldType>::min())) {
+                    this->mValue = std::numeric_limits<FullWidthFieldType>::min();
+                }
+                else {
+                    this->mValue = static_cast<FullWidthFieldType>(result);
+                }
+            }
+            else {
+                this->mValue = static_cast<FullWidthFieldType>(result);
+            }
 
             return *this;
         }
@@ -366,7 +455,22 @@ namespace tinymind {
             left <<= NumberOfFractionalBits;
             result = (left / right);
 
-            this->mValue = static_cast<FullWidthFieldType>(result);
+            if constexpr (SatMode == SaturationMode::SATURATE) {
+                if (result > static_cast<DivisionResultFullWidthValueType>(
+                    std::numeric_limits<FullWidthFieldType>::max())) {
+                    this->mValue = std::numeric_limits<FullWidthFieldType>::max();
+                }
+                else if (result < static_cast<DivisionResultFullWidthValueType>(
+                    std::numeric_limits<FullWidthFieldType>::min())) {
+                    this->mValue = std::numeric_limits<FullWidthFieldType>::min();
+                }
+                else {
+                    this->mValue = static_cast<FullWidthFieldType>(result);
+                }
+            }
+            else {
+                this->mValue = static_cast<FullWidthFieldType>(result);
+            }
 
             return *this;
         }
