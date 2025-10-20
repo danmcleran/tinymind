@@ -289,9 +289,9 @@ namespace tinymind {
 
         QValue operator++(int)
         {
-            ++mFixedPart;
-
-            return *this;
+            QValue temp = *this; // Save copy of current value
+            ++(*this); // Use pre-increment logic to increment
+            return temp;
         }
 
         QValue& operator-=(const QValue& other)
@@ -317,9 +317,9 @@ namespace tinymind {
 
         QValue operator--(int)
         {
-            --mFixedPart;
-
-            return *this;
+            QValue temp = *this; // Save copy of current value
+            --(*this); // Use pre-decrement logic to decrement
+            return temp;
         }
 
         QValue& operator*=(const QValue& other)
