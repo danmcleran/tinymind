@@ -60,6 +60,36 @@ namespace tinymind {
         }
     };
 
+    template<typename T>
+    class WrapPolicy
+    {
+    public:
+        static T saturate(const T& value, const T& minValue, const T& maxValue)
+        {
+            // No saturation - just return the value (wrap-around behavior)
+            (void)minValue; // Suppress unused parameter warnings
+            (void)maxValue;
+            return value;
+        }
+    };
+
+    template<typename T>
+    class MinMaxSaturatePolicy
+    {
+    public:
+        static T saturate(const T& value, const T& minValue, const T& maxValue)
+        {
+            // Clamp value to [minValue, maxValue] range
+            if (value > maxValue) {
+                return maxValue;
+            } else if (value < minValue) {
+                return minValue;
+            } else {
+                return value;
+            }
+        }
+    };
+
     template<typename T, unsigned NumberOfFixedBits, unsigned NumberOfFractionalBits, bool IsSigned>
     struct SignExtender
     {
@@ -189,6 +219,46 @@ namespace tinymind {
     };
 
     template<unsigned NumFixedBits, unsigned NumFractionalBits, bool IsSigned>
+    struct QValueBounds
+    {
+        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, IsSigned>::FullWidthFieldType FullWidthFieldType;
+        
+        // Calculate min/max values for this Q-format
+        static FullWidthFieldType getMinValue()
+        {
+            if (IsSigned) {
+                unsigned totalBits = NumFixedBits + NumFractionalBits;
+                // Check if use the full width of the storage type
+                if (totalBits >= (8 * sizeof(FullWidthFieldType))) {
+                    return std::numeric_limits<FullWidthFieldType>::min();
+                } else { // Safe to do bit shift
+                    return static_cast<FullWidthFieldType>(-(1LL << (totalBits - 1)));
+                }
+            } else {
+                // For unsigned: minimum is 0
+                return static_cast<FullWidthFieldType>(0);
+            }
+        }
+        
+        static FullWidthFieldType getMaxValue()
+        {
+            unsigned totalBits = NumFixedBits + NumFractionalBits;
+            // Check if use the full width of the storage type
+            if (totalBits >= (8 * sizeof(FullWidthFieldType))) {
+                return std::numeric_limits<FullWidthFieldType>::max();
+            }
+            
+            if (IsSigned) {
+                // For signed: max value is (2^(totalBits - 1) - 1)
+                return static_cast<FullWidthFieldType>((1LL << (totalBits - 1)) - 1);
+            } else {
+                // For unsigned: max value is (2^totalBits - 1)
+                return static_cast<FullWidthFieldType>((1ULL << totalBits) - 1);
+            }
+        }
+    };
+
+    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool IsSigned>
     struct QValueMaxCalculator
     {
     };
@@ -213,7 +283,10 @@ namespace tinymind {
         static const FixedPartFieldType MaxFractionalPartValue = (static_cast<FractionalPartFieldType>((1ULL << NumFractionalBits) - 1));
     };
 
-    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned, template<typename, unsigned> class QValueRoundingPolicy = TruncatePolicy>
+    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned, 
+         template<typename, unsigned> class QValueRoundingPolicy = TruncatePolicy,
+         template<typename> class QValueSaturatePolicy = WrapPolicy>
+
     struct QValue
     {
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::FullWidthValueType                     FullWidthValueType;
@@ -223,6 +296,10 @@ namespace tinymind {
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::MultiplicationResultFullWidthFieldType MultiplicationResultFullWidthFieldType;
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::DivisionResultFullWidthValueType       DivisionResultFullWidthValueType;
         typedef QValueRoundingPolicy<MultiplicationResultFullWidthFieldType, NumFractionalBits>                                RoundingPolicy;
+        typedef QValueSaturatePolicy<FullWidthFieldType>                                                                       SaturatePolicy;
+
+        static FullWidthFieldType QFormatMinValue() { return QValueBounds<NumFixedBits, NumFractionalBits, QValueIsSigned>::getMinValue(); }
+        static FullWidthFieldType QFormatMaxValue() { return QValueBounds<NumFixedBits, NumFractionalBits, QValueIsSigned>::getMaxValue(); }
 
         static const unsigned                NumberOfFixedBits      = NumFixedBits;
         static const unsigned                NumberOfFractionalBits = NumFractionalBits;
@@ -268,14 +345,24 @@ namespace tinymind {
 
         QValue& operator+=(const QValue& other)
         {
-            mValue += other.mValue;
+            FullWidthFieldType result = mValue + other.mValue;
+            mValue = SaturatePolicy::saturate(
+                static_cast<FullWidthFieldType>(result),
+                QFormatMinValue(),
+                QFormatMaxValue()
+            );
 
             return *this;
         }
 
         QValue& operator+=(const FullWidthFieldType& value)
         {
-            mValue += value;
+            FullWidthFieldType result = mValue + value;
+            mValue = SaturatePolicy::saturate(
+                static_cast<FullWidthFieldType>(result),
+                QFormatMinValue(),
+                QFormatMaxValue()
+            );
 
             return *this;
         }
@@ -283,6 +370,11 @@ namespace tinymind {
         QValue& operator++()
         {
             ++mFixedPart;
+            mValue = SaturatePolicy::saturate(
+                static_cast<FullWidthFieldType>(mValue),
+                QFormatMinValue(),
+                QFormatMaxValue()
+            );
 
             return *this;
         }
@@ -296,14 +388,24 @@ namespace tinymind {
 
         QValue& operator-=(const QValue& other)
         {
-            mValue -= other.mValue;
+            FullWidthFieldType result = mValue - other.mValue;
+            mValue = SaturatePolicy::saturate(
+                static_cast<FullWidthFieldType>(result),
+                QFormatMinValue(),
+                QFormatMaxValue()
+            );
 
             return *this;
         }
 
         QValue& operator-=(const FullWidthFieldType& value)
         {
-            mValue -= value;
+            FullWidthFieldType result = mValue - value;
+            mValue = SaturatePolicy::saturate(
+                static_cast<FullWidthFieldType>(result),
+                QFormatMinValue(),
+                QFormatMaxValue()
+            );
 
             return *this;
         }
@@ -311,6 +413,11 @@ namespace tinymind {
         QValue& operator--()
         {
             --mFixedPart;
+            mValue = SaturatePolicy::saturate(
+                static_cast<FullWidthFieldType>(mValue),
+                QFormatMinValue(),
+                QFormatMaxValue()
+            );
 
             return *this;
         }
@@ -338,7 +445,11 @@ namespace tinymind {
 
             result = RoundingPolicy::round(result);
 
-            this->mValue = static_cast<FullWidthFieldType>(result);
+            mValue = SaturatePolicy::saturate(
+                static_cast<FullWidthFieldType>(result),
+                QFormatMinValue(),
+                QFormatMaxValue()
+            );
 
             return *this;
         }
@@ -366,7 +477,11 @@ namespace tinymind {
             left <<= NumberOfFractionalBits;
             result = (left / right);
 
-            this->mValue = static_cast<FullWidthFieldType>(result);
+            mValue = SaturatePolicy::saturate(
+                static_cast<FullWidthFieldType>(result),
+                QFormatMinValue(),
+                QFormatMaxValue()
+            );
 
             return *this;
         }
