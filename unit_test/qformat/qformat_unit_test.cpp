@@ -478,6 +478,10 @@ BOOST_AUTO_TEST_CASE(test_case_subtraction)
 
 BOOST_AUTO_TEST_CASE(test_case_increment_decrement)
 {
+    UnsignedQ8_8Type uTempQ0;
+    UnsignedQ8_8Type uTempQ0_Zero(0, 0);
+    UnsignedQ8_8Type uTempQ0_NegOne(-1, 0);
+
     UnsignedQ8_8Type uQ0(0, 0);
     UnsignedQ8_8Type uQ2(-1, 0);
     SignedQ8_8Type Q0;
@@ -529,10 +533,12 @@ BOOST_AUTO_TEST_CASE(test_case_increment_decrement)
     ++uQ0;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0) == uQ0.getValue());
 
-    uQ0--;
+    uTempQ0 = uQ0--;
+    BOOST_TEST(uTempQ0.getValue() == uTempQ0_Zero.getValue());
     BOOST_TEST(uQ2.getValue() == uQ0.getValue());
 
-    uQ0++;
+    uTempQ0 = uQ0++;
+    BOOST_TEST(uTempQ0.getValue() == uTempQ0_NegOne.getValue());
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0) == uQ0.getValue());
 
     --Q0;
