@@ -30,6 +30,14 @@
 
 namespace tinymind {
 
+    typedef enum
+    {
+        AdditionOp,
+        SubtractionOp,
+        MultiplicationOp,
+        DivisionOp,
+    } OperatorType_e;
+
     template<typename T, unsigned NumberOfFractionalBits>
     class RoundUpPolicy
     {
@@ -61,32 +69,104 @@ namespace tinymind {
     };
 
     template<typename T>
-    class WrapPolicy
+    class WrapPolicy // No saturation - just return the value (wrap-around behavior)
     {
     public:
-        static T saturate(const T& value, const T& minValue, const T& maxValue)
+        static T saturate(const T& origValue, const T& target, const T& minValue, const T& maxValue, OperatorType_e opType)
         {
-            // No saturation - just return the value (wrap-around behavior)
             (void)minValue; // Suppress unused parameter warnings
             (void)maxValue;
-            return value;
+
+            T result;
+
+            switch (opType) {
+                case AdditionOp: result = origValue + target; break;
+                case SubtractionOp: result = origValue - target; break;
+                case MultiplicationOp: result = origValue * target; break;
+                case DivisionOp: result = origValue / target; break;
+            }
+
+            return result;
         }
     };
 
     template<typename T>
-    class MinMaxSaturatePolicy
+    class MinMaxSaturatePolicy // Clamp value to [minValue, maxValue] range
     {
     public:
-        static T saturate(const T& value, const T& minValue, const T& maxValue)
-        {
-            // Clamp value to [minValue, maxValue] range
-            if (value > maxValue) {
-                return maxValue;
-            } else if (value < minValue) {
-                return minValue;
-            } else {
-                return value;
+        static T saturate(const T& origValue, const T& target, const T& minValue, const T& maxValue, OperatorType_e opType)
+        {   
+            T result;
+            
+            switch (opType) {
+                case AdditionOp:
+                    if (target > 0) {
+                        // Check result for positive overflow
+                        // Adding two positive numbers case
+                        if (origValue > (maxValue - target)) {
+                            result = maxValue; // Saturate to maximum
+                        } else {
+                            result = origValue + target;  // Safe addition
+                        }
+                    } else if (target < 0) {
+                        // Check result for negative underflow
+                        // Adding two negative numbers case
+                        if (origValue < (minValue - target)) {
+                            result = minValue; // Saturate to minimum
+                        } else {
+                            result = origValue + target;  // Safe addition
+                        }
+                    } else {
+                        result = origValue; // Adding zero: no overflow possible
+                    }
+                    break;
+
+                case SubtractionOp:
+                    if (target > 0) {
+                        // Check result for negative underflow
+                        // Subtract two positive numbers case
+                        if (origValue < (minValue + target)) {
+                            result = minValue;  // Saturate to minimum
+                        } else {
+                            result = origValue - target; // Safe subtraction
+                        }
+                    } else if (target < 0) {
+                        // Check result for positive overflow
+                        // Subtract two negative numbers case
+                        if (origValue > (maxValue + target)) {
+                            result = maxValue; // Saturate to maximum
+                        } else {
+                            result = origValue - target; // Safe subtraction
+                        }
+                    } else {
+                        result = origValue; // Subtracting zero: no overflow possible
+                    }
+                    break;
+                case MultiplicationOp:
+                    // Check for multiplication overflow
+                    if ((origValue * target) > maxValue) {
+                        result = maxValue;
+                    // Check for multiplication underflow as well    
+                    } else if ((origValue * target) < minValue) {
+                        result = minValue;
+                    } else {
+                        result = origValue * target; // Safe multiplication
+                    }
+                    break;
+                case DivisionOp:
+                    if (target == 0) { // Handle division by zero first
+                        result = (origValue > 0) ? maxValue : minValue;
+                    } else if ((origValue / target) > maxValue) {
+                        result = maxValue;
+                    } else if ((origValue / target) < minValue) {
+                        result = minValue;
+                    } else {
+                        result = origValue / target; // Safe division
+                    }
+                    break;
             }
+
+            return result;
         }
     };
 
@@ -345,37 +425,20 @@ namespace tinymind {
 
         QValue& operator+=(const QValue& other)
         {
-            FullWidthFieldType result = mValue + other.mValue;
-            mValue = SaturatePolicy::saturate(
-                static_cast<FullWidthFieldType>(result),
-                QFormatMinValue(),
-                QFormatMaxValue()
-            );
-
+            mValue = SaturatePolicy::saturate(mValue, other.mValue, QFormatMinValue(), QFormatMaxValue(), AdditionOp);
             return *this;
         }
 
         QValue& operator+=(const FullWidthFieldType& value)
         {
-            FullWidthFieldType result = mValue + value;
-            mValue = SaturatePolicy::saturate(
-                static_cast<FullWidthFieldType>(result),
-                QFormatMinValue(),
-                QFormatMaxValue()
-            );
-
+            mValue = SaturatePolicy::saturate(mValue, value, QFormatMinValue(), QFormatMaxValue(), AdditionOp);
             return *this;
         }
 
         QValue& operator++()
         {
-            ++mFixedPart;
-            mValue = SaturatePolicy::saturate(
-                static_cast<FullWidthFieldType>(mValue),
-                QFormatMinValue(),
-                QFormatMaxValue()
-            );
-
+            FullWidthFieldType oneUnit = (FullWidthFieldType(1) << NumberOfFractionalBits);
+            mValue = SaturatePolicy::saturate(mValue, oneUnit, QFormatMinValue(), QFormatMaxValue(), AdditionOp);
             return *this;
         }
 
@@ -388,37 +451,20 @@ namespace tinymind {
 
         QValue& operator-=(const QValue& other)
         {
-            FullWidthFieldType result = mValue - other.mValue;
-            mValue = SaturatePolicy::saturate(
-                static_cast<FullWidthFieldType>(result),
-                QFormatMinValue(),
-                QFormatMaxValue()
-            );
-
+            mValue = SaturatePolicy::saturate(mValue, other.mValue, QFormatMinValue(), QFormatMaxValue(), SubtractionOp);
             return *this;
         }
 
         QValue& operator-=(const FullWidthFieldType& value)
         {
-            FullWidthFieldType result = mValue - value;
-            mValue = SaturatePolicy::saturate(
-                static_cast<FullWidthFieldType>(result),
-                QFormatMinValue(),
-                QFormatMaxValue()
-            );
-
+            mValue = SaturatePolicy::saturate(mValue, value, QFormatMinValue(), QFormatMaxValue(), SubtractionOp);
             return *this;
         }
 
         QValue& operator--()
         {
-            --mFixedPart;
-            mValue = SaturatePolicy::saturate(
-                static_cast<FullWidthFieldType>(mValue),
-                QFormatMinValue(),
-                QFormatMaxValue()
-            );
-
+            FullWidthFieldType oneUnit = (FullWidthFieldType(1) << NumberOfFractionalBits);
+            mValue = SaturatePolicy::saturate(mValue, oneUnit, QFormatMinValue(), QFormatMaxValue(), SubtractionOp);
             return *this;
         }
 
@@ -441,16 +487,10 @@ namespace tinymind {
             SignExtender<MultiplicationResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
             SignExtender<MultiplicationResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(right);
 
-            result = left * right;
-
+            result = SaturatePolicy::saturate(left, right, QFormatMinValue(), QFormatMaxValue(), MultiplicationOp);
             result = RoundingPolicy::round(result);
 
-            mValue = SaturatePolicy::saturate(
-                static_cast<FullWidthFieldType>(result),
-                QFormatMinValue(),
-                QFormatMaxValue()
-            );
-
+            mValue = static_cast<FullWidthFieldType>(result);
             return *this;
         }
 
@@ -475,14 +515,10 @@ namespace tinymind {
             SignExtender<DivisionResultFullWidthValueType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
 
             left <<= NumberOfFractionalBits;
-            result = (left / right);
+            result = SaturatePolicy::saturate(left, right, QFormatMinValue(), QFormatMaxValue(), DivisionOp);
+            result = RoundingPolicy::round(result);
 
-            mValue = SaturatePolicy::saturate(
-                static_cast<FullWidthFieldType>(result),
-                QFormatMinValue(),
-                QFormatMaxValue()
-            );
-
+            mValue = static_cast<FullWidthFieldType>(result);
             return *this;
         }
 
@@ -590,7 +626,6 @@ namespace tinymind {
         QValueType result(left);
 
         result += right;
-
         return result;
     }
 
@@ -601,7 +636,6 @@ namespace tinymind {
         QValueType other(right, 0);
 
         result += other;
-
         return result;
     }
 
@@ -611,7 +645,6 @@ namespace tinymind {
         QValueType result(left);
 
         result -= right;
-
         return result;
     }
 
@@ -622,7 +655,6 @@ namespace tinymind {
         QValueType other(right, 0);
 
         result -= other;
-
         return result;
     }
 
@@ -632,7 +664,6 @@ namespace tinymind {
         QValueType result(left);
 
         result *= right;
-
         return result;
     }
 
@@ -643,7 +674,6 @@ namespace tinymind {
         QValueType other(static_cast<typename QValueType::FixedPartFieldType>(right), 0);
 
         result *= other;
-
         return result;
     }
 
@@ -653,7 +683,6 @@ namespace tinymind {
         QValueType result(left);
 
         result /= right;
-
         return result;
     }
 
