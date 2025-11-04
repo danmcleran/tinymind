@@ -323,68 +323,32 @@ namespace tinymind {
         static const FixedPartFieldType MaxFractionalPartValue = (static_cast<FractionalPartFieldType>((1ULL << NumFractionalBits) - 1));
     };
 
-    template<typename T>
-    union MinValues {
-        T value;
-        unsigned char bytes[sizeof(T)];
-    };
-
     template<unsigned NumFixedBits, unsigned NumFractionalBits, bool IsSigned>
-    struct QValueBounds
+    struct QValueMinCalculator
     {
-        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, IsSigned>::FullWidthFieldType FullWidthFieldType;
-        
-        // Get min value for fixed-point Q-format
-        static FullWidthFieldType getMinValue()
-        {
-            if (IsSigned) {
-                if (NumFixedBits >= 64) {
-                    MinValues<FullWidthFieldType> result;
-                    for (size_t i = 0; i < sizeof(FullWidthFieldType); ++i) {
-                        result.bytes[i] = 0;
-                    }
-                    result.bytes[sizeof(FullWidthFieldType) - 1] = 0x80;
-                    return result.value;
-                } else {
-                    FullWidthFieldType minFixedPart = -(1LL << (NumFixedBits - 1));
-                    return minFixedPart << NumFractionalBits;
-                }
-            } else {
-                // For unsigned: minimum fixed part is 0
-                return static_cast<FullWidthFieldType>(0);
-            }
-        }
-
-        // Get max value for fixed-point Q-format
-        static FullWidthFieldType getMaxValue()
-        {
-            if (IsSigned) {
-                // For signed: maximum fixed part is (2^(NumFixedBits-1) - 1)
-                // Shift left by fractional bits to get the Q-format representation
-                if (NumFixedBits >= 64) {
-                    return QValueMaxCalculator<NumFixedBits, NumFractionalBits, true>::MaxFixedPartValue;
-                } else {
-                    FullWidthFieldType maxFixedPart = (1LL << (NumFixedBits - 1)) - 1;
-                    return maxFixedPart << NumFractionalBits;
-                }
-            } else {
-                // For unsigned: maximum fixed part is (2^NumFixedBits - 1)
-                // Shift left by fractional bits to get the Q-format representation
-                if (NumFixedBits >= 64) {
-                    return QValueMaxCalculator<NumFixedBits, NumFractionalBits, false>::MaxFixedPartValue;
-                } else {
-                    FullWidthFieldType maxFixedPart = (1ULL << NumFixedBits) - 1;
-                    return maxFixedPart << NumFractionalBits;
-                }
-            }
-        }
     };
 
-    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned, 
-         template<typename, unsigned> class QValueRoundingPolicy = TruncatePolicy,
-         template<typename> class QValueSaturatePolicy = WrapPolicy>
-         //template<typename> class QValueSaturatePolicy = MinMaxSaturatePolicy>
+    template<unsigned NumFixedBits, unsigned NumFractionalBits>
+    struct QValueMinCalculator<NumFixedBits, NumFractionalBits, false>
+    {
+        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, false>::FixedPartFieldType      FixedPartFieldType;
+        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, false>::FractionalPartFieldType FractionalPartFieldType;
 
+        static const FixedPartFieldType MinFixedPartValue      = 0;
+        static const FixedPartFieldType MinFractionalPartValue = 0;
+    };
+
+    template<unsigned NumFixedBits, unsigned NumFractionalBits>
+    struct QValueMinCalculator<NumFixedBits, NumFractionalBits, true>
+    {
+        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, true>::FixedPartFieldType      FixedPartFieldType;
+        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, true>::FractionalPartFieldType FractionalPartFieldType;
+
+        static const FixedPartFieldType MinFixedPartValue      = -static_cast<FixedPartFieldType>(1ULL << (NumFixedBits - 1));
+        static const FixedPartFieldType MinFractionalPartValue = 0;
+    };
+
+    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned, template<typename, unsigned> class QValueRoundingPolicy = TruncatePolicy>
     struct QValue
     {
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::FullWidthValueType                     FullWidthValueType;
@@ -406,6 +370,8 @@ namespace tinymind {
         static const bool                    IsSigned               = QValueIsSigned;
         static const FixedPartFieldType      MaxFixedPartValue      = QValueMaxCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MaxFixedPartValue;
         static const FractionalPartFieldType MaxFractionalPartValue = QValueMaxCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MaxFractionalPartValue;
+        static const FixedPartFieldType      MinFixedPartValue      = QValueMinCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MinFixedPartValue;
+        static const FractionalPartFieldType MinFractionalPartValue = QValueMinCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MinFractionalPartValue;
 
         QValue() : mValue(0)
         {
