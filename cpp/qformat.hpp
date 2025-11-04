@@ -213,6 +213,31 @@ namespace tinymind {
         static const FixedPartFieldType MaxFractionalPartValue = (static_cast<FractionalPartFieldType>((1ULL << NumFractionalBits) - 1));
     };
 
+    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool IsSigned>
+    struct QValueMinCalculator
+    {
+    };
+
+    template<unsigned NumFixedBits, unsigned NumFractionalBits>
+    struct QValueMinCalculator<NumFixedBits, NumFractionalBits, false>
+    {
+        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, false>::FixedPartFieldType      FixedPartFieldType;
+        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, false>::FractionalPartFieldType FractionalPartFieldType;
+
+        static const FixedPartFieldType MinFixedPartValue      = 0;
+        static const FixedPartFieldType MinFractionalPartValue = 0;
+    };
+
+    template<unsigned NumFixedBits, unsigned NumFractionalBits>
+    struct QValueMinCalculator<NumFixedBits, NumFractionalBits, true>
+    {
+        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, true>::FixedPartFieldType      FixedPartFieldType;
+        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, true>::FractionalPartFieldType FractionalPartFieldType;
+
+        static const FixedPartFieldType MinFixedPartValue      = -static_cast<FixedPartFieldType>(1ULL << (NumFixedBits - 1));
+        static const FixedPartFieldType MinFractionalPartValue = 0;
+    };
+
     template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned, template<typename, unsigned> class QValueRoundingPolicy = TruncatePolicy>
     struct QValue
     {
@@ -229,6 +254,8 @@ namespace tinymind {
         static const bool                    IsSigned               = QValueIsSigned;
         static const FixedPartFieldType      MaxFixedPartValue      = QValueMaxCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MaxFixedPartValue;
         static const FractionalPartFieldType MaxFractionalPartValue = QValueMaxCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MaxFractionalPartValue;
+        static const FixedPartFieldType      MinFixedPartValue      = QValueMinCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MinFixedPartValue;
+        static const FractionalPartFieldType MinFractionalPartValue = QValueMinCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MinFractionalPartValue;
 
         QValue() : mValue(0)
         {
