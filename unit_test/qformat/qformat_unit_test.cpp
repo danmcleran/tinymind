@@ -50,6 +50,10 @@ typedef tinymind::QValue<8, 8, false> UnsignedTruncatingQType;
 
 static_assert((std::numeric_limits<uint8_t>::max() == UnsignedQ8_8Type::MaxFixedPartValue), "Incorrect max fixed value.");
 static_assert((std::numeric_limits<uint8_t>::max() == UnsignedQ8_8Type::MaxFractionalPartValue), "Incorrect max fractional value.");
+static_assert((std::numeric_limits<uint8_t>::min() == UnsignedQ8_8Type::MinFixedPartValue), "Incorrect min fixed value.");
+static_assert((std::numeric_limits<uint8_t>::min() == UnsignedQ8_8Type::MinFractionalPartValue), "Incorrect min fractional value.");
+static_assert((std::numeric_limits<int8_t>::min() == SignedQ8_8Type::MinFixedPartValue), "Incorrect min fixed value.");
+static_assert((0 == SignedQ8_8Type::MinFractionalPartValue), "Incorrect min fractional value.");
 static_assert((((1ULL << 24) - 1) == UnsignedQ24_8Type::MaxFixedPartValue), "Incorrect max value.");
 static_assert((std::numeric_limits<uint8_t>::max() == UnsignedQ24_8Type::MaxFractionalPartValue), "Incorrect max fractional value.");
 static_assert((std::numeric_limits<int8_t>::max() == SignedQ8_8Type::MaxFixedPartValue), "Incorrect fixed max value.");
