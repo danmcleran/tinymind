@@ -29,6 +29,7 @@
 #include "qformat.hpp"
 
 typedef tinymind::QValue<8, 8, false, tinymind::RoundUpPolicy> UnsignedQ8_8Type;
+typedef tinymind::QValue<8, 8, false, tinymind::TruncatePolicy, tinymind::MinMaxSatPolicy> UnsignedQ8_8SatMinMaxType;
 typedef tinymind::QValue<8, 8, true> SignedQ8_8Type;
 typedef tinymind::QValue<7, 9, true> SignedQ7_9Type;
 typedef tinymind::QValue<1, 15, true> SignedQ1_15Type;
@@ -185,6 +186,8 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     UnsignedQ8_8Type uQ2(1, 1);
     UnsignedQ8_8Type uQ3;
     UnsignedQ8_8Type uQ4(-1, 0);
+    UnsignedQ8_8SatMinMaxType uQ10(255, 0);
+    UnsignedQ8_8SatMinMaxType uQSatMinMax_1(1, 0);
     SignedQ8_8Type Q0;
     SignedQ8_8Type Q1(-1, 0);
     SignedQ8_8Type Q2(1, 0);
@@ -228,6 +231,9 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
 
     uQ5 += uQ7;
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0x100000003ULL) == uQ5.getValue());
+
+    uQ10 += uQSatMinMax_1;
+    BOOST_TEST(static_cast<UnsignedQ8_8SatMinMaxType::FullWidthValueType>(0xFF00) == uQ10.getValue());
 
     Q14 += 0;
     BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0) == Q14.getValue());

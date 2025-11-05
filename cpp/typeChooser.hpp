@@ -139,4 +139,39 @@ namespace tinymind {
     {
         typedef typename ValueType::FullWidthFieldType FullWidthFieldType;
     };
+
+    template<unsigned NumBits, bool IsSigned>
+    struct MultiplicationResultFullWidthFieldTypeChooser
+    {
+        static const unsigned FullWidthResult = FullWidthFieldTypeChooser<NumBits, IsSigned>::Result;
+        typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FullWidthFieldType MultiplicationResultFullWidthFieldType;
+    };
+
+    template<unsigned NumBits, bool IsSigned>
+    struct DivisionResultFullWidthValueTypeChooser
+    {
+        static const unsigned FullWidthResult = FullWidthFieldTypeChooser<NumBits, IsSigned>::Result;
+        typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FullWidthValueType DivisionResultFullWidthValueType;
+    };
+
+    template<unsigned NumBits, bool IsSigned>
+    struct SaturationCheckResultFullWidthFieldTypeChooser
+    {
+        static const unsigned FullWidthResult = FullWidthFieldTypeChooser<NumBits, IsSigned>::Result;
+        typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FullWidthFieldType SaturationCheckFullWidthFieldType;
+        typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FixedPartFieldType SaturationCheckFixedPartFieldType;
+    };
+
+    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool IsSigned>
+    struct QTypeChooser
+    {
+        typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FixedPartFieldType                                         FixedPartFieldType;
+        typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FractionalPartFieldType                                    FractionalPartFieldType;
+        typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FullWidthFieldType                                         FullWidthFieldType;
+        typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FullWidthValueType                                         FullWidthValueType;
+        typedef typename MultiplicationResultFullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::MultiplicationResultFullWidthFieldType MultiplicationResultFullWidthFieldType;
+        typedef typename DivisionResultFullWidthValueTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::DivisionResultFullWidthValueType             DivisionResultFullWidthValueType;
+        typedef typename SaturationCheckResultFullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::SaturationCheckFullWidthFieldType     SaturationCheckFullWidthFieldType;
+        typedef typename SaturationCheckResultFullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::SaturationCheckFixedPartFieldType     SaturationCheckFixedPartFieldType;
+    };
 }
