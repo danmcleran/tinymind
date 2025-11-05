@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include <cstddef>
+
 #include "typeChooser.hpp"
 
 #ifndef UINT64_MAX
