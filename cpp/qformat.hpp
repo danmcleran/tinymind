@@ -85,6 +85,11 @@ namespace tinymind {
     template<typename T, unsigned NumberOfFixedBits, unsigned NumberOfFractionalBits, bool IsSigned>
     struct SignExtender
     {
+    };
+
+    template<typename T, unsigned NumberOfFixedBits, unsigned NumberOfFractionalBits>
+    struct SignExtender<T, NumberOfFixedBits, NumberOfFractionalBits, true>
+    {
         static const T SignBitMask = (static_cast<T>(1) << (NumberOfFixedBits + NumberOfFractionalBits - 1));
         static const T SignExtensionBits = static_cast<T>((~(static_cast<size_t>(SignBitMask) - 1)) ^ SignBitMask);
 
@@ -166,6 +171,41 @@ namespace tinymind {
         {
             SaturationCheckFixedPartFieldType satLhs((lhs & FixedPartMask) >> NumberOfFractionalBits);
             SaturationCheckFixedPartFieldType satRhs((rhs & FixedPartMask) >> NumberOfFractionalBits);
+            SaturationCheckFullWidthFieldType satResult = satLhs + satRhs;
+
+            if (satResult > QValueMaxCalculator<NumberOfFixedBits, NumberOfFractionalBits, false>::MaxFixedPartValue)
+            {
+                FullWidthValueType result(QValueMaxCalculator<NumberOfFixedBits, NumberOfFractionalBits, false>::MaxFixedPartValue);
+
+                result <<= NumberOfFractionalBits;
+
+                return result;
+            }
+            else
+            {
+                return lhs + rhs;
+            }
+        }
+    };
+
+    template<unsigned NumberOfFixedBits, unsigned NumberOfFractionalBits>
+    class MinMaxSatPolicy<NumberOfFixedBits, NumberOfFractionalBits, true> 
+    {
+        public:
+        typedef typename QTypeChooser<NumberOfFixedBits, NumberOfFractionalBits, false>::FullWidthValueType FullWidthValueType;
+        typedef typename QTypeChooser<NumberOfFixedBits, NumberOfFractionalBits, false>::SaturationCheckFullWidthFieldType SaturationCheckFullWidthFieldType;
+        typedef typename QTypeChooser<NumberOfFixedBits, NumberOfFractionalBits, false>::SaturationCheckFixedPartFieldType SaturationCheckFixedPartFieldType;
+
+        static const FullWidthValueType FixedPartMask = (static_cast<FullWidthValueType>((1ULL << NumberOfFixedBits) - 1) << NumberOfFractionalBits);
+
+        static FullWidthValueType add(const FullWidthValueType& lhs, const FullWidthValueType& rhs)
+        {
+            SaturationCheckFixedPartFieldType satLhs((lhs & FixedPartMask) >> NumberOfFractionalBits);
+            SaturationCheckFixedPartFieldType satRhs((rhs & FixedPartMask) >> NumberOfFractionalBits);
+
+            SignExtender<SaturationCheckFixedPartFieldType, NumberOfFixedBits, NumberOfFractionalBits, true>::signExtend(satLhs);
+            SignExtender<SaturationCheckFixedPartFieldType, NumberOfFixedBits, NumberOfFractionalBits, true>::signExtend(satRhs);
+            
             SaturationCheckFullWidthFieldType satResult = satLhs + satRhs;
 
             if (satResult > QValueMaxCalculator<NumberOfFixedBits, NumberOfFractionalBits, false>::MaxFixedPartValue)
