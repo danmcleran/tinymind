@@ -95,22 +95,17 @@ namespace tinymind {
     {
     public:
         static T saturate(const T& origValue, const T& target, const T& minValue, const T& maxValue, OperatorType_e opType)
-        {   
+        {
             T result;
-            
             switch (opType) {
                 case AdditionOp:
                     if (target > 0) {
-                        // Check result for positive overflow
-                        // Adding two positive numbers case
                         if (origValue > (maxValue - target)) {
                             result = maxValue; // Saturate to maximum
                         } else {
                             result = origValue + target;  // Safe addition
                         }
                     } else if (target < 0) {
-                        // Check result for negative underflow
-                        // Adding two negative numbers case
                         if (origValue < (minValue - target)) {
                             result = minValue; // Saturate to minimum
                         } else {
@@ -120,19 +115,14 @@ namespace tinymind {
                         result = origValue; // Adding zero: no overflow possible
                     }
                     break;
-
                 case SubtractionOp:
                     if (target > 0) {
-                        // Check result for negative underflow
-                        // Subtract two positive numbers case
                         if (origValue < (minValue + target)) {
                             result = minValue;  // Saturate to minimum
                         } else {
                             result = origValue - target; // Safe subtraction
                         }
                     } else if (target < 0) {
-                        // Check result for positive overflow
-                        // Subtract two negative numbers case
                         if (origValue > (maxValue + target)) {
                             result = maxValue; // Saturate to maximum
                         } else {
@@ -348,7 +338,30 @@ namespace tinymind {
         static const FixedPartFieldType MinFractionalPartValue = 0;
     };
 
-    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned, template<typename, unsigned> class QValueRoundingPolicy = TruncatePolicy>
+    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool IsSigned>
+    struct QValueBounds
+    {
+        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, IsSigned>::FullWidthFieldType FullWidthFieldType;
+        
+        // Get min value for fixed-point Q-format
+        static FullWidthFieldType getMinValue()
+        {
+            FullWidthFieldType minFixedPart = QValueMinCalculator<NumFixedBits, NumFractionalBits, IsSigned>::MinFixedPartValue;
+            return minFixedPart << NumFractionalBits;
+        }
+
+        // Get max value for fixed-point Q-format
+        static FullWidthFieldType getMaxValue()
+        {
+            FullWidthFieldType maxFixedPart = QValueMaxCalculator<NumFixedBits, NumFractionalBits, IsSigned>::MaxFixedPartValue;
+            return maxFixedPart << NumFractionalBits;
+        }
+    };
+    
+    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned,
+        template<typename, unsigned> class QValueRoundingPolicy = TruncatePolicy,
+        template<typename> class QValueSaturatePolicy = WrapPolicy>
+
     struct QValue
     {
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::FullWidthValueType                     FullWidthValueType;
