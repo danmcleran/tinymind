@@ -480,13 +480,16 @@ namespace tinymind {
             MultiplicationResultFullWidthFieldType right;
             MultiplicationResultFullWidthFieldType result;
 
+            MultiplicationResultFullWidthFieldType min = static_cast<MultiplicationResultFullWidthFieldType>(QFormatMinValue()) << NumberOfFractionalBits;
+            MultiplicationResultFullWidthFieldType max = static_cast<MultiplicationResultFullWidthFieldType>(QFormatMaxValue()) << NumberOfFractionalBits;
+
             left = static_cast<MultiplicationResultFullWidthFieldType>(mValue);
             right = static_cast<MultiplicationResultFullWidthFieldType>(other.mValue);
 
             SignExtender<MultiplicationResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
             SignExtender<MultiplicationResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(right);
 
-            result = MultiplicationSaturatePolicy::saturate(left, right, QFormatMinValue(), QFormatMaxValue(), MultiplicationOp);
+            result = MultiplicationSaturatePolicy::saturate(left, right, min, max, MultiplicationOp);
             result = RoundingPolicy::round(result);
 
             mValue = static_cast<FullWidthFieldType>(result);
@@ -508,13 +511,16 @@ namespace tinymind {
             FullWidthValueType right;
             DivisionResultFullWidthValueType result;
 
+            FullWidthValueType min = QFormatMinValue();
+            FullWidthValueType max = QFormatMaxValue();
+
             left = static_cast<DivisionResultFullWidthValueType>(mValue);
             right = other.mValue;
 
             SignExtender<DivisionResultFullWidthValueType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
-
             left <<= NumberOfFractionalBits;
-            result = DivisionSaturatePolicy::saturate(left, right, QFormatMinValue(), QFormatMaxValue(), DivisionOp);
+
+            result = DivisionSaturatePolicy::saturate(left, right, min, max, DivisionOp);
             //result = RoundingPolicy::round(result);
 
             mValue = static_cast<FullWidthFieldType>(result);

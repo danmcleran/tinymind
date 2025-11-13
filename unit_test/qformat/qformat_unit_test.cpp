@@ -1126,36 +1126,66 @@ BOOST_AUTO_TEST_CASE(test_case_subtraction_saturation)
 
 BOOST_AUTO_TEST_CASE(test_case_multiplication_saturation)
 {
-    UnsignedQ1_7SatPolicyType Q0_1_7(0, 0);
-    UnsignedQ1_7SatPolicyType Q1_1_7(0, 0);
-    UnsignedQ8_8SatPolicyType Q0_8_8(0, 0);
-    UnsignedQ8_8SatPolicyType Q1_8_8(0, 0);
-    UnsignedQ16_16SatPolicyType Q0_16_16(0, 0);
-    UnsignedQ16_16SatPolicyType Q1_16_16(0, 0);
-    SignedQ24_8SatPolicyType Q0_24_8(0, 0);
-    SignedQ24_8SatPolicyType Q1_24_8(0, 0);
-    SignedQ7_9SatPolicyType Q0_7_9(0, 0);
-    SignedQ7_9SatPolicyType Q1_7_9(0, 0);
+    UnsignedQ1_7SatPolicyType Q0_1_7(0, 64); // 0.5
+    UnsignedQ1_7SatPolicyType Q1_1_7(0, 64); // 0.5
+    UnsignedQ1_7SatPolicyType Q2_1_7 = Q0_1_7 * Q1_1_7; // Should be 0.25
+    BOOST_TEST(static_cast<UnsignedQ1_7SatPolicyType::FullWidthValueType>(0x20) == Q2_1_7.getValue());
+
+    UnsignedQ8_8SatPolicyType Q0_8_8(127, 0); // 127
+    UnsignedQ8_8SatPolicyType Q1_8_8(5, 64); // 5.5
+    UnsignedQ8_8SatPolicyType Q2_8_8 = Q0_8_8 * Q1_8_8; // Should be 698.5 (saturated to 255)
+    BOOST_TEST(static_cast<UnsignedQ8_8SatPolicyType::FullWidthValueType>(0xFF00) == Q2_8_8.getValue());
+    
+    UnsignedQ16_16SatPolicyType Q0_16_16(294, 16384); // 294.25
+    UnsignedQ16_16SatPolicyType Q1_16_16(0, 32768); // 0.5
+    UnsignedQ16_16SatPolicyType Q2_16_16 = Q0_16_16 * Q1_16_16; // Should be 147.125
+    BOOST_TEST(static_cast<UnsignedQ16_16SatPolicyType::FullWidthValueType>(0x932000) == Q2_16_16.getValue());
+
+    SignedQ7_9SatPolicyType Q0_7_9(62, 0); // 62
+    SignedQ7_9SatPolicyType Q1_7_9(-30, 128); // -30.25
+    SignedQ7_9SatPolicyType Q2_7_9 = Q0_7_9 * Q1_7_9; // Should be -1875.5 (saturated to -64)
+    BOOST_TEST(static_cast<SignedQ7_9SatPolicyType::FullWidthValueType>(0x8000) == Q2_7_9.getValue());
 
 #ifdef __SIZEOF_INT128__
-    UnsignedQ32_32SatPolicyType Q32_32_1(0, 0);
-    SignedQ32_32SatPolicyType Q32_32_2(0, 0);
-    SignedQ24_40SatPolicyType Q24_40_1(0, 0);
+    UnsignedQ32_32SatPolicyType Q0_32_32(523466, 0); // 523,466
+    UnsignedQ32_32SatPolicyType Q1_32_32(130339, 0); // 130,339
+    UnsignedQ32_32SatPolicyType Q2_32_32 = Q0_32_32 * Q1_32_32; // 523,466 * 130,339 = 68177459894 (saturated to 4294967295)
+    BOOST_TEST(static_cast<UnsignedQ32_32SatPolicyType::FullWidthValueType>(0xFFFFFFFF00000000) == Q2_32_32.getValue());
+
+    SignedQ24_40SatPolicyType Q0_24_40(-8150371, 0); // -8,150,371
+    SignedQ24_40SatPolicyType Q1_24_40(90186, 0); // 90,186
+    SignedQ24_40SatPolicyType Q2_24_40 = Q0_24_40 * Q1_24_40; // -8,150,371 * 90,186 = -735,000,000 (saturated to -8,388,608)
+    BOOST_TEST(static_cast<SignedQ24_40SatPolicyType::FullWidthValueType>(0x8000000000000000) == Q2_24_40.getValue());
 #endif // __SIZEOF_INT128__
 }
 
 BOOST_AUTO_TEST_CASE(test_case_division_saturation)
 {
-    UnsignedQ1_7SatPolicyType Q0_1_7(0, 0);
-    UnsignedQ8_8SatPolicyType Q8_8_1(0, 0);
-    UnsignedQ16_16SatPolicyType Q16_16_1(0, 0);
-    SignedQ24_8SatPolicyType Q24_8_1(0, 0);
-    SignedQ7_9SatPolicyType Q7_9_1(0, 0);
+    UnsignedQ1_7SatPolicyType Q0_1_7(1, 64); // 1.5
+    UnsignedQ1_7SatPolicyType Q1_1_7(1, 96); // 1.75
+    UnsignedQ1_7SatPolicyType Q2_1_7 = Q0_1_7 / Q1_1_7; // 1.5 / 1.75 should be 0.857142857 (close to Q1.7(0, 109))
+    BOOST_TEST(static_cast<UnsignedQ1_7SatPolicyType::FullWidthValueType>(0x6D) == Q2_1_7.getValue());
+
+    UnsignedQ16_16SatPolicyType Q0_16_16(39569, 0); // 39,569
+    UnsignedQ16_16SatPolicyType Q1_16_16(0, 32768); // 0.5
+    UnsignedQ16_16SatPolicyType Q2_16_16 = Q0_16_16 / Q1_16_16; // 39,569 / 0.5 should be 79,138 (saturated to 65535)
+    BOOST_TEST(static_cast<UnsignedQ16_16SatPolicyType::FullWidthValueType>(0xFFFF0000) == Q2_16_16.getValue());
+
+    SignedQ7_9SatPolicyType Q0_7_9(-58, 0); // -58
+    SignedQ7_9SatPolicyType Q1_7_9(0, 128); // 0.25
+    SignedQ7_9SatPolicyType Q2_7_9 = Q0_7_9 / Q1_7_9; // -58 / 0.25 should be -232 (saturated to -64)
+    BOOST_TEST(static_cast<SignedQ7_9SatPolicyType::FullWidthValueType>(0x8000) == Q2_7_9.getValue());
 
 #ifdef __SIZEOF_INT128__
-    UnsignedQ32_32SatPolicyType Q32_32_1(0, 0);
-    SignedQ32_32SatPolicyType Q32_32_2(0, 0);
-    SignedQ24_40SatPolicyType Q24_40_1(0, 0);
+    UnsignedQ32_32SatPolicyType Q0_32_32(3886724233, 0); // 3,886,724,233
+    UnsignedQ32_32SatPolicyType Q1_32_32(0, 536870912); // 0.125
+    UnsignedQ32_32SatPolicyType Q2_32_32 = Q0_32_32 / Q1_32_32; // 3,886,724,233 / 0.125 should be 31,093,793,864 (saturated to 4,294,967,295)
+    BOOST_TEST(static_cast<UnsignedQ32_32SatPolicyType::FullWidthValueType>(0xFFFFFFFF00000000) == Q2_32_32.getValue());
+
+    SignedQ24_40SatPolicyType Q0_24_40(-8150371, 0); // -8,150,371
+    SignedQ24_40SatPolicyType Q1_24_40(0, 137438953472); // 0.125
+    SignedQ24_40SatPolicyType Q2_24_40 = Q0_24_40 / Q1_24_40; // -8,150,371 / 0.125 should be -65,202,968 (saturated to -8,388,608)
+    BOOST_TEST(static_cast<SignedQ24_40SatPolicyType::FullWidthValueType>(0x8000000000000000) == Q2_24_40.getValue());
 #endif // __SIZEOF_INT128__
 }
 
