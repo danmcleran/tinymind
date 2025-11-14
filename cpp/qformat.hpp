@@ -162,7 +162,6 @@ namespace tinymind {
     {
         public:
         typedef typename QTypeChooser<NumberOfFixedBits, NumberOfFractionalBits, false>::FullWidthValueType FullWidthValueType;
-        typedef typename QTypeChooser<NumberOfFixedBits, NumberOfFractionalBits, false>::SaturationCheckFullWidthFieldType SaturationCheckFullWidthFieldType;
         typedef typename QTypeChooser<NumberOfFixedBits, NumberOfFractionalBits, false>::SaturationCheckFixedPartFieldType SaturationCheckFixedPartFieldType;
 
         static const FullWidthValueType FixedPartMask = (static_cast<FullWidthValueType>((1ULL << NumberOfFixedBits) - 1) << NumberOfFractionalBits);
@@ -171,7 +170,7 @@ namespace tinymind {
         {
             SaturationCheckFixedPartFieldType satLhs((lhs & FixedPartMask) >> NumberOfFractionalBits);
             SaturationCheckFixedPartFieldType satRhs((rhs & FixedPartMask) >> NumberOfFractionalBits);
-            SaturationCheckFullWidthFieldType satResult = satLhs + satRhs;
+            SaturationCheckFixedPartFieldType satResult = satLhs + satRhs;
 
             if (satResult > QValueMaxCalculator<NumberOfFixedBits, NumberOfFractionalBits, false>::MaxFixedPartValue)
             {
@@ -193,24 +192,29 @@ namespace tinymind {
     {
         public:
         typedef typename QTypeChooser<NumberOfFixedBits, NumberOfFractionalBits, false>::FullWidthValueType FullWidthValueType;
-        typedef typename QTypeChooser<NumberOfFixedBits, NumberOfFractionalBits, false>::SaturationCheckFullWidthFieldType SaturationCheckFullWidthFieldType;
         typedef typename QTypeChooser<NumberOfFixedBits, NumberOfFractionalBits, false>::SaturationCheckFixedPartFieldType SaturationCheckFixedPartFieldType;
 
         static const FullWidthValueType FixedPartMask = (static_cast<FullWidthValueType>((1ULL << NumberOfFixedBits) - 1) << NumberOfFractionalBits);
+        static const FullWidthValueType FixedPartSignBit = static_cast<FullWidthValueType>(1ULL << (NumberOfFixedBits - 1));
+        static const FullWidthValueType FixedPartSatSignBit = static_cast<FullWidthValueType>(1ULL << ((NumberOfFixedBits << 1) - 1));
 
         static FullWidthValueType add(const FullWidthValueType& lhs, const FullWidthValueType& rhs)
         {
-            SaturationCheckFixedPartFieldType satLhs((lhs & FixedPartMask) >> NumberOfFractionalBits);
-            SaturationCheckFixedPartFieldType satRhs((rhs & FixedPartMask) >> NumberOfFractionalBits);
+            SaturationCheckFixedPartFieldType satLhs((lhs & FixedPartMask) << NumberOfFractionalBits);
+            SaturationCheckFixedPartFieldType satRhs((rhs & FixedPartMask) << NumberOfFractionalBits);
+            SaturationCheckFixedPartFieldType satResult = satLhs + satRhs;
 
-            SignExtender<SaturationCheckFixedPartFieldType, NumberOfFixedBits, NumberOfFractionalBits, true>::signExtend(satLhs);
-            SignExtender<SaturationCheckFixedPartFieldType, NumberOfFixedBits, NumberOfFractionalBits, true>::signExtend(satRhs);
-            
-            SaturationCheckFullWidthFieldType satResult = satLhs + satRhs;
-
-            if (satResult > QValueMaxCalculator<NumberOfFixedBits, NumberOfFractionalBits, false>::MaxFixedPartValue)
+            if (satResult > (static_cast<SaturationCheckFixedPartFieldType>(QValueMaxCalculator<NumberOfFixedBits, NumberOfFractionalBits, true>::MaxFixedPartValue) << NumberOfFractionalBits))
             {
-                FullWidthValueType result(QValueMaxCalculator<NumberOfFixedBits, NumberOfFractionalBits, false>::MaxFixedPartValue);
+                FullWidthValueType result(QValueMaxCalculator<NumberOfFixedBits, NumberOfFractionalBits, true>::MaxFixedPartValue);
+
+                result <<= NumberOfFractionalBits;
+
+                return result;
+            }
+            else if (satResult < (static_cast<SaturationCheckFixedPartFieldType>(QValueMinCalculator<NumberOfFixedBits, NumberOfFractionalBits, true>::MinFixedPartValue) << NumberOfFractionalBits))
+            {
+                FullWidthValueType result(QValueMinCalculator<NumberOfFixedBits, NumberOfFractionalBits, true>::MinFixedPartValue);
 
                 result <<= NumberOfFractionalBits;
 
