@@ -72,7 +72,7 @@ namespace tinymind {
     class WrapPolicy // No saturation - just return the value (wrap-around behavior)
     {
     public:
-        static T saturate(const T& origValue, const T& target, const T& minValue, const T& maxValue, OperatorType_e opType)
+        static T saturate(const T& origValue, const T& target, const T& minValue, const T& maxValue, const OperatorType_e opType)
         {
             (void)minValue; // Suppress unused parameter warnings
             (void)maxValue;
@@ -102,7 +102,7 @@ namespace tinymind {
     class MinMaxSaturatePolicy // Clamp value to [minValue, maxValue] range
     {
     public:
-        static T saturate(const T& origValue, const T& target, const T& minValue, const T& maxValue, OperatorType_e opType)
+        static T saturate(const T& origValue, const T& target, const T& minValue, const T& maxValue, const OperatorType_e opType)
         {
             T result;
             switch (opType) {
