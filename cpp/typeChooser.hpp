@@ -41,7 +41,7 @@ namespace tinymind {
     {
         typedef uint8_t FractionalPartFieldType;
         typedef int8_t  FixedPartFieldType;
-        typedef int8_t  FullWidthFieldType;
+        typedef uint8_t FullWidthFieldType;
         typedef int8_t  FullWidthValueType;
     };
 
@@ -59,7 +59,7 @@ namespace tinymind {
     {
         typedef uint16_t FractionalPartFieldType;
         typedef int16_t  FixedPartFieldType;
-        typedef int16_t  FullWidthFieldType;
+        typedef uint16_t FullWidthFieldType;
         typedef int16_t  FullWidthValueType;
     };
 
@@ -77,7 +77,7 @@ namespace tinymind {
     {
         typedef uint32_t FractionalPartFieldType;
         typedef int32_t  FixedPartFieldType;
-        typedef int32_t  FullWidthFieldType;
+        typedef uint32_t FullWidthFieldType;
         typedef int32_t  FullWidthValueType;
     };
 
@@ -95,7 +95,7 @@ namespace tinymind {
     {
         typedef uint64_t FractionalPartFieldType;
         typedef int64_t  FixedPartFieldType;
-        typedef int64_t  FullWidthFieldType;
+        typedef uint64_t FullWidthFieldType;
         typedef int64_t  FullWidthValueType;
     };
 
@@ -114,7 +114,7 @@ namespace tinymind {
     {
         typedef __uint128_t FractionalPartFieldType;
         typedef __int128_t  FixedPartFieldType;
-        typedef __int128_t  FullWidthFieldType;
+        typedef __uint128_t FullWidthFieldType;
         typedef __int128_t  FullWidthValueType;
     };
 #endif // __SIZEOF_INT128__

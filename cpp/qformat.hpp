@@ -80,10 +80,18 @@ namespace tinymind {
             T result;
 
             switch (opType) {
-                case AdditionOp: result = origValue + target; break;
-                case SubtractionOp: result = origValue - target; break;
-                case MultiplicationOp: result = origValue * target; break;
-                case DivisionOp: result = origValue / target; break;
+                case AdditionOp:
+                    result = origValue + target;
+                    break;
+                case SubtractionOp:
+                    result = origValue - target;
+                    break;
+                case MultiplicationOp:
+                    result = origValue * target;
+                    break;
+                case DivisionOp:
+                    result = origValue / target;
+                    break;
             }
 
             return result;
@@ -267,7 +275,7 @@ namespace tinymind {
     struct MultiplicationResultFullWidthFieldTypeChooser
     {
         static const unsigned FullWidthResult = FullWidthFieldTypeChooser<NumBits, IsSigned>::Result;
-        typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FullWidthFieldType MultiplicationResultFullWidthFieldType;
+        typedef typename FullWidthFieldTypeChooser<(FullWidthResult << 1), IsSigned>::FullWidthValueType MultiplicationResultFullWidthValueType;
     };
 
     template<unsigned NumBits, bool IsSigned>
@@ -284,7 +292,7 @@ namespace tinymind {
         typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FractionalPartFieldType                                    FractionalPartFieldType;
         typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FullWidthFieldType                                         FullWidthFieldType;
         typedef typename FullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::FullWidthValueType                                         FullWidthValueType;
-        typedef typename MultiplicationResultFullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::MultiplicationResultFullWidthFieldType MultiplicationResultFullWidthFieldType;
+        typedef typename MultiplicationResultFullWidthFieldTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::MultiplicationResultFullWidthValueType MultiplicationResultFullWidthValueType;
         typedef typename DivisionResultFullWidthValueTypeChooser<NumFixedBits + NumFractionalBits, IsSigned>::DivisionResultFullWidthValueType             DivisionResultFullWidthValueType;
     };
 
@@ -368,15 +376,15 @@ namespace tinymind {
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::FixedPartFieldType                     FixedPartFieldType;
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::FractionalPartFieldType                FractionalPartFieldType;
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::FullWidthFieldType                     FullWidthFieldType;
-        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::MultiplicationResultFullWidthFieldType MultiplicationResultFullWidthFieldType;
+        typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::MultiplicationResultFullWidthValueType MultiplicationResultFullWidthValueType;
         typedef typename QTypeChooser<NumFixedBits, NumFractionalBits, QValueIsSigned>::DivisionResultFullWidthValueType       DivisionResultFullWidthValueType;
-        typedef QValueRoundingPolicy<MultiplicationResultFullWidthFieldType, NumFractionalBits>                                RoundingPolicy;
-        typedef QValueSaturatePolicy<FullWidthFieldType>                                                                       SaturatePolicy;               // For addition and subtraction
-        typedef QValueSaturatePolicy<MultiplicationResultFullWidthFieldType>                                                   MultiplicationSaturatePolicy; // For multiplication
+        typedef QValueRoundingPolicy<MultiplicationResultFullWidthValueType, NumFractionalBits>                                RoundingPolicy;
+        typedef QValueSaturatePolicy<FullWidthValueType>                                                                       SaturatePolicy;               // For addition and subtraction
+        typedef QValueSaturatePolicy<MultiplicationResultFullWidthValueType>                                                   MultiplicationSaturatePolicy; // For multiplication
         typedef QValueSaturatePolicy<DivisionResultFullWidthValueType>                                                         DivisionSaturatePolicy;       // For division
 
-        static FullWidthFieldType QFormatMinValue() { return QValueBounds<NumFixedBits, NumFractionalBits, QValueIsSigned>::getMinValue(); }
-        static FullWidthFieldType QFormatMaxValue() { return QValueBounds<NumFixedBits, NumFractionalBits, QValueIsSigned>::getMaxValue(); }
+        static FullWidthValueType QFormatMinValue() { return QValueBounds<NumFixedBits, NumFractionalBits, QValueIsSigned>::getMinValue(); }
+        static FullWidthValueType QFormatMaxValue() { return QValueBounds<NumFixedBits, NumFractionalBits, QValueIsSigned>::getMaxValue(); }
 
         static const unsigned                NumberOfFixedBits      = NumFixedBits;
         static const unsigned                NumberOfFractionalBits = NumFractionalBits;
@@ -415,7 +423,7 @@ namespace tinymind {
             return *this;
         }
 
-        QValue& operator=(const FullWidthFieldType& value)
+        QValue& operator=(const FullWidthValueType& value)
         {
             mValue = value;
 
@@ -428,7 +436,7 @@ namespace tinymind {
             return *this;
         }
 
-        QValue& operator+=(const FullWidthFieldType& value)
+        QValue& operator+=(const FullWidthValueType& value)
         {
             mValue = SaturatePolicy::saturate(mValue, value, QFormatMinValue(), QFormatMaxValue(), AdditionOp);
             return *this;
@@ -454,7 +462,7 @@ namespace tinymind {
             return *this;
         }
 
-        QValue& operator-=(const FullWidthFieldType& value)
+        QValue& operator-=(const FullWidthValueType& value)
         {
             mValue = SaturatePolicy::saturate(mValue, value, QFormatMinValue(), QFormatMaxValue(), SubtractionOp);
             return *this;
@@ -476,23 +484,22 @@ namespace tinymind {
 
         QValue& operator*=(const QValue& other)
         {
-            MultiplicationResultFullWidthFieldType left;
-            MultiplicationResultFullWidthFieldType right;
-            MultiplicationResultFullWidthFieldType result;
+            MultiplicationResultFullWidthValueType left;
+            MultiplicationResultFullWidthValueType right;
+            MultiplicationResultFullWidthValueType result;
 
-            MultiplicationResultFullWidthFieldType min = static_cast<MultiplicationResultFullWidthFieldType>(QFormatMinValue()) << NumberOfFractionalBits;
-            MultiplicationResultFullWidthFieldType max = static_cast<MultiplicationResultFullWidthFieldType>(QFormatMaxValue()) << NumberOfFractionalBits;
+            MultiplicationResultFullWidthValueType min = static_cast<MultiplicationResultFullWidthValueType>(QFormatMinValue()) << NumberOfFractionalBits;
+            MultiplicationResultFullWidthValueType max = static_cast<MultiplicationResultFullWidthValueType>(QFormatMaxValue()) << NumberOfFractionalBits;
 
-            left = static_cast<MultiplicationResultFullWidthFieldType>(mValue);
-            right = static_cast<MultiplicationResultFullWidthFieldType>(other.mValue);
-
-            SignExtender<MultiplicationResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
-            SignExtender<MultiplicationResultFullWidthFieldType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(right);
+            left = static_cast<MultiplicationResultFullWidthValueType>(mValue);
+            right = static_cast<MultiplicationResultFullWidthValueType>(other.mValue);
+            SignExtender<MultiplicationResultFullWidthValueType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
+            SignExtender<MultiplicationResultFullWidthValueType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(right);
 
             result = MultiplicationSaturatePolicy::saturate(left, right, min, max, MultiplicationOp);
             result = RoundingPolicy::round(result);
 
-            mValue = static_cast<FullWidthFieldType>(result);
+            mValue = static_cast<FullWidthValueType>(result);
             return *this;
         }
 
@@ -521,9 +528,8 @@ namespace tinymind {
             left <<= NumberOfFractionalBits;
 
             result = DivisionSaturatePolicy::saturate(left, right, min, max, DivisionOp);
-            //result = RoundingPolicy::round(result);
 
-            mValue = static_cast<FullWidthFieldType>(result);
+            mValue = static_cast<FullWidthValueType>(result);
             return *this;
         }
 
@@ -614,7 +620,7 @@ namespace tinymind {
                 FractionalPartFieldType mFractionalPart : NumberOfFractionalBits;
                 FixedPartFieldType mFixedPart : NumberOfFixedBits;
             };
-            FullWidthFieldType mValue;
+            FullWidthValueType mValue;
         };
 
         static_assert(((8 * sizeof(FullWidthFieldType)) >= (NumberOfFixedBits + NumberOfFractionalBits)), "Incorrect type choice for ValueType.");
