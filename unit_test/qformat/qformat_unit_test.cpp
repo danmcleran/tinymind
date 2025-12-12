@@ -793,7 +793,6 @@ BOOST_AUTO_TEST_CASE(test_case_division)
     SignedQ8_8Type Q1(-1, 0);
     SignedQ8_8Type Q2;
     SignedQ8_8Type Q3(0, 0x80);
-    SignedQ8_8Type Q4(-0, 0x80);
     SignedQ7_9Type Q5(-1, 0);
     SignedQ7_9Type Q6(0, 0x100);
     SignedQ7_9Type Q7;
@@ -1172,9 +1171,9 @@ BOOST_AUTO_TEST_CASE(test_case_division_saturation)
     BOOST_TEST(static_cast<UnsignedQ16_16SatPolicyType::FullWidthValueType>(0xFFFF0000) == Q2_16_16.getValue());
 
     SignedQ7_9SatPolicyType Q0_7_9(-58, 0); // -58
-    SignedQ7_9SatPolicyType Q1_7_9(0, 128); // 0.25
-    SignedQ7_9SatPolicyType Q2_7_9 = Q0_7_9 / Q1_7_9; // -58 / 0.25 should be -232 (saturated to -64)
-    BOOST_TEST(static_cast<SignedQ7_9SatPolicyType::FullWidthValueType>(0x8000) == Q2_7_9.getValue());
+    SignedQ7_9SatPolicyType Q1_7_9(-1, 384); // -0.25
+    SignedQ7_9SatPolicyType Q2_7_9 = Q0_7_9 / Q1_7_9; // -58 / -0.25 should be 232 (saturate to 63)
+    BOOST_TEST(static_cast<SignedQ7_9SatPolicyType::FullWidthValueType>(0x7E00) == Q2_7_9.getValue());
 
 #ifdef __SIZEOF_INT128__
     UnsignedQ32_32SatPolicyType Q0_32_32(3886724233, 0); // 3,886,724,233

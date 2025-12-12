@@ -561,7 +561,7 @@ namespace tinymind {
 
         bool operator!=(const FullWidthValueType& value) const
         {
-            return (mValue.getValue() != value);
+            return (mValue != value);
         }
 
         void * operator new(size_t, void *p)
