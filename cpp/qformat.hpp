@@ -544,6 +544,26 @@ namespace tinymind {
             return *this;
         }
 
+        bool operator==(const QValue& other) const
+        {
+            return (mValue == other.mValue);
+        }
+
+        bool operator==(const FullWidthValueType& value) const
+        {
+            return (mValue == value);
+        }
+
+        bool operator!=(const QValue& other) const
+        {
+            return (mValue != other.mValue);
+        }
+
+        bool operator!=(const FullWidthValueType& value) const
+        {
+            return (mValue != value);
+        }
+
         void * operator new(size_t, void *p)
         {
             return p;
