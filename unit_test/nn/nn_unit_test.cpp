@@ -21,8 +21,14 @@
 */
 
 // nn_unit_test.cpp : Defines the entry point for the neural network template unit tests.
+
+#include "compiler.h"
+
 #define BOOST_TEST_MODULE nn_unit_test
+DISABLE_WARNING_PUSH
+DISABLE_WARNING("-Wdangling-reference")
 #include <boost/test/included/unit_test.hpp>
+DISABLE_WARNING_POP
 
 #include <cstdint>
 #include <string.h>
@@ -474,7 +480,7 @@ static void testFloatingPointNN(    NeuralNetworkType& neuralNetwork,
 
     weightsOutputPath.replace(weightsOutputPath.find("."), std::string::npos, "_weights.txt");
 
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
     for (int i = 0; i < numberOfTrainingIterations; ++i)
     {
@@ -562,7 +568,7 @@ static void testFixedPointNeuralNetwork(  NeuralNetworkType& neuralNetwork,
     weightsOutputPath.replace(weightsOutputPath.find("."), std::string::npos, "_weights.txt");
     binaryWeightsOutputPath.replace(binaryWeightsOutputPath.find(".txt"), std::string::npos, ".bin");
 
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
 #if USE_WEIGHTS_INPUT_FILE
     initialWeightsInputPath.insert(0, "../input/");
@@ -664,7 +670,7 @@ static void testFixedPointNeuralNetwork_No_Train( NeuralNetworkType& neuralNetwo
     ValueType error;
 
     NetworkPropertiesFileManagerType::template loadNetworkWeights<ValueType, ValueType>(neuralNetwork, weightsInputFile);
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
     for (int i = 0; i < TRAINING_ITERATIONS; ++i)
     {
@@ -743,7 +749,7 @@ static void testFixedPointNeuralNetwork_No_Train_Float_Weights( NeuralNetworkTyp
     ValueType error;
 
     NetworkPropertiesFileManagerType::template loadNetworkWeights<double, ValueType>(neuralNetwork, weightsInputFile);
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
     for (int i = 0; i < TRAINING_ITERATIONS; ++i)
     {
@@ -810,7 +816,7 @@ static void testNeuralNetwork_Recurrent(NeuralNetworkType& neuralNetwork, char c
     std::deque<FullWidthValueType> errors;
     ValueType error;
 
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
     for (int i = 0; i < TRAINING_ITERATIONS; ++i)
     {
@@ -863,7 +869,7 @@ static void testFloatingPointNeuralNetwork_Recurrent(NeuralNetworkType& neuralNe
     std::deque<FullWidthValueType> errors;
     ValueType error;
 
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
     for (int i = 0; i < TRAINING_ITERATIONS; ++i)
     {

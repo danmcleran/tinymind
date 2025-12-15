@@ -48,6 +48,9 @@ extern NeuralNetworkType testNeuralNet;
 
 int main(const int argc, char *argv[])
 {
+    (void)argc; // suppress unused parameter warning
+    (void)argv; // suppress unused parameter warning
+
     using namespace std;
 
     srand(static_cast<unsigned int>(time(0))); // seed random number generator
@@ -59,7 +62,7 @@ int main(const int argc, char *argv[])
     ValueType learnedValues[NeuralNetworkType::NumberOfInputLayerNeurons];
     ValueType error;
 
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(testNeuralNet, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
     for (unsigned i = 0; i < TRAINING_ITERATIONS; ++i)
     {

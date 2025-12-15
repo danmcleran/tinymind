@@ -48,6 +48,9 @@ extern NeuralNetworkType testNeuralNet;
 
 int main(const int argc, char *argv[])
 {
+    (void)argc; // suppress unused parameter warning
+    (void)argv; // suppress unused parameter warning
+
     using namespace std;
     typedef tinymind::NetworkPropertiesFileManager<NeuralNetworkType> NetworkPropertiesFileManagerType;
 
@@ -63,7 +66,7 @@ int main(const int argc, char *argv[])
     ValueType error;
 
     NetworkPropertiesFileManagerType::template loadNetworkWeights<ValueType, ValueType>(testNeuralNet, weightsInputFile);
-    NetworkPropertiesFileManagerType::writeHeader(testNeuralNet, results);
+    NetworkPropertiesFileManagerType::writeHeader(results);
 
     for (unsigned i = 0; i < TRAINING_ITERATIONS; ++i)
     {

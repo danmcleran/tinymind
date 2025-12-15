@@ -23,6 +23,7 @@
 #pragma once
 
 #include <cstdlib>
+#include <cstdint>
 #include <fstream>
 #include <vector>
 #include <cstdio>
@@ -320,7 +321,7 @@ namespace tinymind {
             }
         }
 
-        static void writeHeader(NeuralNetworkType& neuralNetwork, std::ofstream& outFile)
+        static void writeHeader(std::ofstream& outFile)
         {
             int hiddenLayer = 0;
 

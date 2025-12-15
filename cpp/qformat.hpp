@@ -190,6 +190,7 @@ namespace tinymind {
     {
         static void signExtend(T& value)
         {
+            (void)value; // Suppress unused parameter warning
         }
     };
 
