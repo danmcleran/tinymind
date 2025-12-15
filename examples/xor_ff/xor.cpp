@@ -56,8 +56,8 @@ int main(const int argc, char *argv[])
 
     srand(static_cast<unsigned int>(time(0))); // seed random number generator
 
-    char const* const weightsInputPath = "nn_fixed_xor_weights.txt";
-    char const* const path = "nn_fixed_xor.txt";
+    char const* const weightsInputPath = "./input/nn_fixed_xor.txt";
+    char const* const path = "./output/nn_fixed_xor.txt";
     ofstream results(path);
     ifstream weightsInputFile(weightsInputPath);
     ValueType values[NeuralNetworkType::NumberOfInputLayerNeurons];

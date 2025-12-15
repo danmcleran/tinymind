@@ -30,7 +30,7 @@
 
 #include "xornet.h"
 
-#define TRAINING_ITERATIONS 2000
+#define TRAINING_ITERATIONS 10000
 #define NUM_SAMPLES_AVG_ERROR 20
 
 static void generateXorTrainingValue(ValueType& x, ValueType& y, ValueType& z)
@@ -55,7 +55,7 @@ int main(const int argc, char *argv[])
 
     srand(static_cast<unsigned int>(time(0))); // seed random number generator
 
-    char const* const path = "nn_fixed_xor.txt";
+    char const* const path = "./output/nn_fixed_xor.txt";
     ofstream results(path);
     ValueType values[NeuralNetworkType::NumberOfInputLayerNeurons];
     ValueType output[NeuralNetworkType::NumberOfOutputLayerNeurons];
