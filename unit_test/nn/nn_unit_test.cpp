@@ -2045,3 +2045,85 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_sigmoid_xor)
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+
+typedef tinymind::QValue<8, 8, true, tinymind::TruncatePolicy, tinymind::MinMaxSaturatePolicy> SignedQ8_8SatPolicyType;
+typedef tinymind::QValue<8, 8, false, tinymind::TruncatePolicy, tinymind::MinMaxSaturatePolicy> UnsignedQ8_8SatPolicyType;
+
+BOOST_AUTO_TEST_SUITE(SoftMaxLinearClassificationTests)
+
+// Test case: 2x2 grayscale image with 2 classes
+BOOST_AUTO_TEST_CASE(test_softmax_2x2_image_2_classes)
+{
+    // 2x2 grayscale image (4 input features)
+    const size_t inputSize = 4;  // 2x2 pixels
+    const size_t numClasses = 2; // Binary classification
+    
+    // Example: grayscale values normalized to Q8.8 format
+    // Image pixels: [100, 150, 200, 50] -> normalized to [-1, 1] range
+    SignedQ8_8SatPolicyType inputImage[inputSize];
+    inputImage[0] = SignedQ8_8SatPolicyType(-1, 0);    // Dark pixel (-1.0)
+    inputImage[1] = SignedQ8_8SatPolicyType(0, 0);     // Medium pixel (0.0)
+    inputImage[2] = SignedQ8_8SatPolicyType(1, 0);     // Bright pixel (1.0)
+    inputImage[3] = SignedQ8_8SatPolicyType(-1, 128);  // Dark-ish pixel (-0.5)
+    
+    // Linear layer weights: [numClasses x inputSize]
+    // Class 0 weights favor dark pixels, Class 1 favors bright pixels
+    SignedQ8_8SatPolicyType weights[numClasses][inputSize] = {
+        // Class 0: favors dark pixels
+        {SignedQ8_8SatPolicyType(1, 0), SignedQ8_8SatPolicyType(0, 128), 
+         SignedQ8_8SatPolicyType(-1, 0), SignedQ8_8SatPolicyType(1, 128)},
+        // Class 1: favors bright pixels
+        {SignedQ8_8SatPolicyType(-1, 0), SignedQ8_8SatPolicyType(0, 128), 
+         SignedQ8_8SatPolicyType(2, 0), SignedQ8_8SatPolicyType(-1, 128)}
+    };
+    
+    // Bias terms for each class
+    SignedQ8_8SatPolicyType bias[numClasses] = {
+        SignedQ8_8SatPolicyType(0, 128),  // 0.5 bias for class 0
+        SignedQ8_8SatPolicyType(-1, 128)  // -0.5 bias for class 1
+    };
+    
+    // Linear transformation: logits = weights * input + bias
+    SignedQ8_8SatPolicyType logits[numClasses];
+    for (size_t c = 0; c < numClasses; ++c) {
+        logits[c] = bias[c];
+        for (size_t i = 0; i < inputSize; ++i) {
+            logits[c] += weights[c][i] * inputImage[i];
+        }
+    }
+    
+    // Apply SoftMax
+    SignedQ8_8SatPolicyType probabilities[numClasses];
+    tinymind::SoftmaxActivationPolicy<SignedQ8_8SatPolicyType>::activationFunction(
+        logits, 
+        probabilities, 
+        numClasses
+    );
+    
+    // Verify: Sum of probabilities should be close to 1.0
+    SignedQ8_8SatPolicyType sum(0, 0);
+    for (size_t c = 0; c < numClasses; ++c) {
+        sum += probabilities[c];
+    }
+    
+    // Expected sum: 1.0 in Q8.8 = 0x0100 = 256
+    SignedQ8_8SatPolicyType expectedSum(1, 0);
+    
+    // Allow tolerance due to Q-format rounding and exp approximation
+    // Tolerance: ±3 LSB = ±0.01171875 in Q8.8
+    const int tolerance = 3;
+    int sumValue = sum.getValue();
+    int expectedValue = expectedSum.getValue();
+    
+    // Test to make sure sum of probabilities should be ~1.0
+    BOOST_TEST(sumValue >= (expectedValue - tolerance));
+    BOOST_TEST(sumValue <= (expectedValue + tolerance));
+    
+    // Verify each probability is in [0, 1] range
+    for (size_t c = 0; c < numClasses; ++c) {
+        BOOST_TEST(probabilities[c].getValue() >= 0);
+        BOOST_TEST(probabilities[c].getValue() <= SignedQ8_8SatPolicyType(1, 0).getValue());
+    }
+}
+
+BOOST_AUTO_TEST_SUITE_END()
