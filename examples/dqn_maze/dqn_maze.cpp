@@ -61,6 +61,9 @@ extern QLearnerType qLearner;
 
 int main(const int argc, char *argv[])
 {
+    (void)argc; // Unused parameter
+    (void)argv; // Unused parameter
+
     using namespace std;
     state_t state;
     action_t action;

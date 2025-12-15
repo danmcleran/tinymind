@@ -30,6 +30,11 @@
  *   DISABLE_WARNING("-Wwhatever")     // for GCC/Clang
  *   DISABLE_WARNING(4996)              // for MSVC (numeric code)
  *   DISABLE_WARNING_POP
+ * 
+ * Example: disable dangling-reference on GCC/Clang (no-op on MSVC)
+ *   DISABLE_WARNING_PUSH
+ *   DISABLE_WARNING("-Wdangling-reference")
+ *   DISABLE_WARNING_POP
  *
  * Notes:
  *  - For GCC/Clang pass the warning name as a quoted string (e.g. "-Wdeprecated-declarations").
@@ -63,9 +68,3 @@
 	#define DISABLE_WARNING_GCC_CLANG(warning)
 	#define DISABLE_WARNING(w)
 #endif
-
-/* Example: disable dangling-reference on GCC/Clang (no-op on MSVC)
-DISABLE_WARNING_PUSH
-DISABLE_WARNING("-Wdangling-reference")
-DISABLE_WARNING_POP
- */

@@ -51,8 +51,13 @@ The paths out of the maze:
 4->3->1->5
 */
 
+#include "compiler.h"
+
 #define BOOST_TEST_MODULE test module name
+DISABLE_WARNING_PUSH
+DISABLE_WARNING("-Wdangling-reference")
 #include <boost/test/included/unit_test.hpp>
+DISABLE_WARNING_POP
 
 #include <cstdint>
 #include <iostream>
@@ -161,7 +166,7 @@ struct MazeEnvironment : public tinymind::QLearningEnvironment<state_t, action_t
         return this->mGoalState;
     }
 
-    size_t getNextStateForStateActionPair(const state_t state, const action_t action) const
+    size_t getNextStateForStateActionPair(const action_t action) const
     {
         return action;
     }
@@ -259,7 +264,7 @@ struct DQNMazeEnvironment : public tinymind::QLearningEnvironment<state_t, actio
         *pInputs = input;
     }
 
-    size_t getNextStateForStateActionPair(const state_t state, const action_t action) const
+    size_t getNextStateForStateActionPair(const action_t action) const
     {
         return action;
     }
@@ -473,19 +478,19 @@ BOOST_AUTO_TEST_CASE(test_qlearn_setreward)
 
 BOOST_AUTO_TEST_CASE(test_qlearn_text_next_state)
 {
-    BOOST_TEST(static_cast<state_t>(4) == qLearner.getEnvironment().getNextStateForStateActionPair(0, 4));
-    BOOST_TEST(static_cast<state_t>(3) == qLearner.getEnvironment().getNextStateForStateActionPair(1, 3));
-    BOOST_TEST(static_cast<state_t>(5) == qLearner.getEnvironment().getNextStateForStateActionPair(1, 5));
-    BOOST_TEST(static_cast<state_t>(3) == qLearner.getEnvironment().getNextStateForStateActionPair(2, 3));
-    BOOST_TEST(static_cast<state_t>(1) == qLearner.getEnvironment().getNextStateForStateActionPair(3, 1));
-    BOOST_TEST(static_cast<state_t>(2) == qLearner.getEnvironment().getNextStateForStateActionPair(3, 2));
-    BOOST_TEST(static_cast<state_t>(4) == qLearner.getEnvironment().getNextStateForStateActionPair(3, 4));
-    BOOST_TEST(static_cast<state_t>(0) == qLearner.getEnvironment().getNextStateForStateActionPair(4, 0));
-    BOOST_TEST(static_cast<state_t>(3) == qLearner.getEnvironment().getNextStateForStateActionPair(4, 3));
-    BOOST_TEST(static_cast<state_t>(5) == qLearner.getEnvironment().getNextStateForStateActionPair(4, 5));
-    BOOST_TEST(static_cast<state_t>(1) == qLearner.getEnvironment().getNextStateForStateActionPair(5, 1));
-    BOOST_TEST(static_cast<state_t>(4) == qLearner.getEnvironment().getNextStateForStateActionPair(5, 4));
-    BOOST_TEST(static_cast<state_t>(5) == qLearner.getEnvironment().getNextStateForStateActionPair(5, 5));
+    BOOST_TEST(static_cast<state_t>(4) == qLearner.getEnvironment().getNextStateForStateActionPair(4));
+    BOOST_TEST(static_cast<state_t>(3) == qLearner.getEnvironment().getNextStateForStateActionPair(3));
+    BOOST_TEST(static_cast<state_t>(5) == qLearner.getEnvironment().getNextStateForStateActionPair(5));
+    BOOST_TEST(static_cast<state_t>(3) == qLearner.getEnvironment().getNextStateForStateActionPair(3));
+    BOOST_TEST(static_cast<state_t>(1) == qLearner.getEnvironment().getNextStateForStateActionPair(1));
+    BOOST_TEST(static_cast<state_t>(2) == qLearner.getEnvironment().getNextStateForStateActionPair(2));
+    BOOST_TEST(static_cast<state_t>(4) == qLearner.getEnvironment().getNextStateForStateActionPair(4));
+    BOOST_TEST(static_cast<state_t>(0) == qLearner.getEnvironment().getNextStateForStateActionPair(0));
+    BOOST_TEST(static_cast<state_t>(3) == qLearner.getEnvironment().getNextStateForStateActionPair(3));
+    BOOST_TEST(static_cast<state_t>(5) == qLearner.getEnvironment().getNextStateForStateActionPair(5));
+    BOOST_TEST(static_cast<state_t>(1) == qLearner.getEnvironment().getNextStateForStateActionPair(1));
+    BOOST_TEST(static_cast<state_t>(4) == qLearner.getEnvironment().getNextStateForStateActionPair(4));
+    BOOST_TEST(static_cast<state_t>(5) == qLearner.getEnvironment().getNextStateForStateActionPair(5));
 }
 
 BOOST_AUTO_TEST_CASE(test_qlearn_change_learning_rate)

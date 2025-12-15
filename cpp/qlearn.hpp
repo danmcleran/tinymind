@@ -34,11 +34,16 @@ namespace tinymind {
     public:
         ValueType getRewardForStateAndAction(const StateType state, const ActionType action) const
         {
+            (void)state; // Unused parameter
+            (void)action; // Unused parameter
             return 0;
         }
 
         void setRewardForStateAndAction(const StateType state, const ActionType action, const ValueType& reward)
         {
+            (void)state; // Unused parameter
+            (void)action; // Unused parameter
+            (void)reward; // Unused parameter
         }
     };
 
@@ -116,10 +121,12 @@ namespace tinymind {
 
         void setDiscountFactor(const ValueType& discountFactor)
         {
+            (void)discountFactor; // Unused parameter
         }
 
         void setLearningRate(const ValueType& learningRate)
         {
+            (void)learningRate; // Unused parameter
         }
     };
 
@@ -477,6 +484,7 @@ namespace tinymind {
 
         ValueType getQValue(const StateType state, const ActionType action) const
         {
+            (void)state; // Unused parameter
             ValueType learnedValues[NumberOfActions];
 
             this->mNeuralNet.getLearnedValues(&learnedValues[0]);
@@ -499,6 +507,7 @@ namespace tinymind {
 
         void init(const EnvironmentType& environment)
         {
+            (void)environment; // Unused parameter
         }
 
         void setQValue(const StateType state, const ActionType action, const ValueType& value)

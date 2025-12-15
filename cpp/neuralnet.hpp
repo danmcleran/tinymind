@@ -425,6 +425,11 @@ namespace tinymind {
         template<typename LayerType>
         static void updateBiasConnectionWeights(LayerType& layer, const size_t neuron, const ValueType& learningRate, const ValueType& momentumRate, const ValueType& accelerationRate)
         {
+            (void)layer; // Suppress unused parameter warning
+            (void)neuron; // Suppress unused parameter warning
+            (void)learningRate; // Suppress unused parameter warning
+            (void)momentumRate; // Suppress unused parameter warning
+            (void)accelerationRate; // Suppress unused parameter warning
         }
     };
 
@@ -680,6 +685,9 @@ namespace tinymind {
         template<typename LayerType, typename NextLayerType>
         static void calculateAndUpdateGradients(LayerType& layer, const NextLayerType& nextLayer, GradientsManagerType& gradientsManager)
         {
+            (void)layer; // Suppress unused parameter warning
+            (void)nextLayer; // Suppress unused parameter warning
+            (void)gradientsManager; // Suppress unused parameter warning
         }
     };
 
@@ -940,6 +948,7 @@ namespace tinymind {
         template<typename LayerType, typename PreviousLayerType>
         void updateConnectionWeights(LayerType& layer, PreviousLayerType& previousLayer)
         {
+            (void)layer; // Suppress unused parameter warning
             typedef BiasNeuronConnectionWeightUpdater<ValueType, PreviousLayerType::NumberOfBiasNeuronsInLayer> BiasNeuronConnectionWeightUpdaterType;
             ValueType previousDeltaWeight;
             ValueType currentDeltaWeight;
@@ -2335,28 +2344,40 @@ namespace tinymind {
     {
         ValueType getBiasNeuronWeightForConnection(const size_t connection) const
         {
+            (void)connection; // Suppress unused parameter warning
             return 0;
         }
 
         ValueType getWeightForNeuronAndConnection(const size_t neuron, const size_t connection) const
         {
+            (void)neuron;   // Suppress unused parameter warning
+            (void)connection; // Suppress unused parameter warning
             return 0;
         }
 
         void setBiasNeuronDeltaWeightForConnection(const size_t connection, const ValueType& deltaWeight)
         {
+            (void)connection; // Suppress unused parameter warning
+            (void)deltaWeight; // Suppress unused parameter warning
         }
 
         void setBiasNeuronGradientForConnection(const size_t connection, const ValueType& value)
         {
+            (void)connection; // Suppress unused parameter warning
+            (void)value; // Suppress unused parameter warning
         }
 
         void setBiasNeuronWeightForConnection(const size_t connection, const ValueType& weight)
         {
+            (void)connection; // Suppress unused parameter warning
+            (void)weight; // Suppress unused parameter warning
         }
 
         void setWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& weight)
         {
+            (void)neuron;   // Suppress unused parameter warning
+            (void)connection; // Suppress unused parameter warning
+            (void)weight; // Suppress unused parameter warning
         }
     };
 
@@ -2575,6 +2596,7 @@ namespace tinymind {
     {
         static void feedForward(InputLayerType& inputLayer, InnerHiddenLayerType* pInnerHiddenLayers, LastHiddenLayerType& lastHiddenLayer)
         {
+            (void)pInnerHiddenLayers; // Suppress unused parameter warning
             lastHiddenLayer.feedForward(inputLayer);
         }
     };

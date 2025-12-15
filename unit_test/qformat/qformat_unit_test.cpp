@@ -27,6 +27,7 @@
 #include <limits>
 
 #include "qformat.hpp"
+#include "compiler.h"
 
 typedef tinymind::QValue<1, 7, false, tinymind::TruncatePolicy, tinymind::MinMaxSaturatePolicy> UnsignedQ1_7SatPolicyType;
 typedef tinymind::QValue<8, 8, false, tinymind::TruncatePolicy, tinymind::MinMaxSaturatePolicy> UnsignedQ8_8SatPolicyType;
@@ -101,7 +102,10 @@ static_assert((std::numeric_limits<int32_t>::max() == std::numeric_limits<typena
 static_assert((std::numeric_limits<uint32_t>::max() == std::numeric_limits<typename SignedQ24_8Type::FractionalPartFieldType>::max()), "Invalid type.");
 
 #define BOOST_TEST_MODULE test module name
+DISABLE_WARNING_PUSH
+DISABLE_WARNING("-Wdangling-reference")
 #include <boost/test/included/unit_test.hpp>
+DISABLE_WARNING_POP
 
 BOOST_AUTO_TEST_SUITE(test_suite_qformat)
 
