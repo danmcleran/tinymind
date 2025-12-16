@@ -37,7 +37,7 @@
 // Support for 128-bit integers
 #ifdef __SIZEOF_INT128__
     typedef __uint128_t uint128_t;
-    #define UINT128_SUPPORTED 1
+    #define TINYMIND_UINT128_SUPPORTED 1
 #else
     // Fallback: use a struct to represent 128-bit values
     struct uint128_t {
@@ -48,7 +48,7 @@
         uint128_t(uint64_t l) : low(l), high(0) {}
         uint128_t(uint64_t h, uint64_t l) : low(l), high(h) {}
     };
-    #define UINT128_SUPPORTED 0
+    #define TINYMIND_UINT128_SUPPORTED 0
 #endif
 
 namespace fs = std::filesystem; // Must use C++ 17
@@ -320,7 +320,7 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
             case 128:
                 {
                     // Handle 128-bit case
-#if UINT128_SUPPORTED
+#if TINYMIND_UINT128_SUPPORTED
                     // Use native 128-bit support
                     __uint128_t val128 = static_cast<__uint128_t>(num);
                     uint64_t high = static_cast<uint64_t>(val128 >> 64);
