@@ -979,15 +979,15 @@ namespace tinymind {
         {
         }
         
-        ~BackPropagationParent(){};
+        ~BackPropagationParent(){}
 
         ValueType mLearningRate;
         ValueType mMomentumRate;
         ValueType mAccelerationRate;
 
     private:
-        BackPropagationParent(const BackPropagationParent&) {}; // hide copy constructor
-        BackPropagationParent& operator=(const BackPropagationParent&) {}; // hide assignment operator
+        BackPropagationParent(const BackPropagationParent&) {} // hide copy constructor
+        BackPropagationParent& operator=(const BackPropagationParent&) {} // hide assignment operator
         static_assert(BatchSize > 0, "Invalid batch size.");
     };
 
