@@ -174,7 +174,7 @@ namespace tinymind {
     struct SignExtender
     {
         static const T SignBitMask = (static_cast<T>(1) << (NumberOfFixedBits + NumberOfFractionalBits - 1));
-        static const T SignExtensionBits = static_cast<T>((~(static_cast<size_t>(SignBitMask) - 1)) ^ SignBitMask);
+        static const T SignExtensionBits = static_cast<T>((~(static_cast<size_t>(SignBitMask) - 1)) ^ static_cast<size_t>(SignBitMask));
 
         static void signExtend(T& value)
         {
@@ -357,7 +357,7 @@ namespace tinymind {
         // Get min value for fixed-point Q-format
         static FullWidthFieldType getMinValue()
         {
-            FullWidthFieldType minFixedPart = QValueMinCalculator<NumFixedBits, NumFractionalBits, IsSigned>::MinFixedPartValue;
+            FullWidthFieldType minFixedPart = static_cast<FullWidthFieldType>(QValueMinCalculator<NumFixedBits, NumFractionalBits, IsSigned>::MinFixedPartValue);
             return minFixedPart << NumFractionalBits;
         }
 
@@ -386,8 +386,8 @@ namespace tinymind {
         typedef QValueSaturatePolicy<MultiplicationResultFullWidthValueType>                                                   MultiplicationSaturatePolicy; // For multiplication
         typedef QValueSaturatePolicy<DivisionResultFullWidthValueType>                                                         DivisionSaturatePolicy;       // For division
 
-        static FullWidthValueType QFormatMinValue() { return QValueBounds<NumFixedBits, NumFractionalBits, QValueIsSigned>::getMinValue(); }
-        static FullWidthValueType QFormatMaxValue() { return QValueBounds<NumFixedBits, NumFractionalBits, QValueIsSigned>::getMaxValue(); }
+        static FullWidthValueType QFormatMinValue() { return static_cast<FullWidthValueType>(QValueBounds<NumFixedBits, NumFractionalBits, QValueIsSigned>::getMinValue()); }
+        static FullWidthValueType QFormatMaxValue() { return static_cast<FullWidthValueType>(QValueBounds<NumFixedBits, NumFractionalBits, QValueIsSigned>::getMaxValue()); }
 
         static const unsigned                NumberOfFixedBits      = NumFixedBits;
         static const unsigned                NumberOfFractionalBits = NumFractionalBits;
@@ -405,7 +405,7 @@ namespace tinymind {
         {
         }
 
-        QValue(const FullWidthFieldType& value) : mValue(value)
+        QValue(const FullWidthFieldType& value) : mValue(static_cast<FullWidthValueType>(value))
         {
         }
 
