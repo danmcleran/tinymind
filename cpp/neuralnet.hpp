@@ -2545,7 +2545,11 @@ namespace tinymind {
     {
         InnerHiddenLayerManager()
         {
+#if __cplusplus >= 201103L
+            this->pInnerHiddenLayers = nullptr;
+#else
             this->pInnerHiddenLayers = NULL;
+#endif
         }
 
         static void initializeInnerHiddenLayerWeights()
@@ -3096,8 +3100,8 @@ namespace tinymind {
     private:
         unsigned char mLearnedValuesBuffer[NumberOfOutputLayerNeurons * sizeof(ValueType)];
     private:
-        MultilayerPerceptron(const MultilayerPerceptron&) {}; // hide copy constructor
-        MultilayerPerceptron& operator=(const MultilayerPerceptron&) {}; // hide assignment operator
+        MultilayerPerceptron(const MultilayerPerceptron&) {} // hide copy constructor
+        MultilayerPerceptron& operator=(const MultilayerPerceptron&) {} // hide assignment operator
 
         static_assert(NumberOfInputs > 0, "Invalid number of inputs.");
         static_assert(NumberOfHiddenLayers > 0, "Invalid number of hidden layers.");
