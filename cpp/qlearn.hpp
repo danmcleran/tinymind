@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include <cstddef>
+
 #include "constants.hpp"
 #include "limits.hpp"
 #include "signed.hpp"

@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include <cstddef>
+
 #include "activationFunctions.hpp"
 
 namespace tinymind {
@@ -3099,6 +3101,7 @@ namespace tinymind {
         GradientsManagerType mGradientsManager;
     private:
         unsigned char mLearnedValuesBuffer[NumberOfOutputLayerNeurons * sizeof(ValueType)];
+        unsigned char alignmentPads[1];
     private:
         MultilayerPerceptron(const MultilayerPerceptron&) {} // hide copy constructor
         MultilayerPerceptron& operator=(const MultilayerPerceptron&) {} // hide assignment operator
