@@ -12,13 +12,13 @@ default :
 #	Make an output dir to hold the executable
 	$(MKDIR)
 #	Build the example with default build flags
-	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
 
-debug  :
+release :
 #	Make an output dir to hold the executable
 	$(MKDIR)
 #	Build the example with default build flags
-	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
 
 # Remove all object files
 clean:
