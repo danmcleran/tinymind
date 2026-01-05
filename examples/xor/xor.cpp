@@ -30,8 +30,8 @@
 
 #include "xornet.h"
 
-#define TRAINING_ITERATIONS 2000
-#define NUM_SAMPLES_AVG_ERROR 20
+#define TRAINING_ITERATIONS 20000
+#define NUM_SAMPLES_AVG_ERROR 100
 
 static void generateXorTrainingValue(ValueType& x, ValueType& y, ValueType& z)
 {
@@ -53,14 +53,15 @@ int main(const int argc, char *argv[])
 
     using namespace std;
 
-    srand(static_cast<unsigned int>(time(0))); // seed random number generator
+    srand(7U); // seed random number generator
 
     char const* const path = "nn_fixed_xor.txt";
     ofstream results(path);
     ValueType values[NeuralNetworkType::NumberOfInputLayerNeurons];
     ValueType output[NeuralNetworkType::NumberOfOutputLayerNeurons];
-    ValueType learnedValues[NeuralNetworkType::NumberOfInputLayerNeurons];
+    ValueType learnedValues[NeuralNetworkType::NumberOfOutputLayerNeurons];
     ValueType error;
+    ValueType avgError(0U);
 
     tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
@@ -78,7 +79,26 @@ int main(const int argc, char *argv[])
 
         tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkProperties(testNeuralNet, results, &output[0], &learnedValues[0]);
         results << error << std::endl;
+
+        avgError += error;
+        if ((i + 1) % NUM_SAMPLES_AVG_ERROR == 0)
+        {
+            avgError = avgError / ValueType(NUM_SAMPLES_AVG_ERROR, 0);
+            cout << "Iteration: " << (i + 1) << " Average Error: " << avgError << endl;
+            avgError = ValueType(0U);
+        }
     }
+
+    if (!NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
+    {
+        cout << "Training did not complete successfully after " << TRAINING_ITERATIONS << " iterations." << endl;
+    }
+    else
+    {
+        cout << "Training completed successfully." << endl;
+    }
+
+    results.close();
 
     return 0;
 }
