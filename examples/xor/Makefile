@@ -19,8 +19,14 @@ release :
 	$(MKDIR)
 #	Build the example with default build flags
 	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+run :
+#	Run the XOR example
+	cd ./output && ./xor && cd ../
+plot :
+#	Plot the results of the XOR example using matplotlib
+	python3 ../../unit_test/nn/nn_plot.py output/nn_fixed_xor.txt
 
+clean :
 # Remove all object files
-clean:
 	rm -f ./*.o
 	rm -f ./output/*
