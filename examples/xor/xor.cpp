@@ -32,6 +32,7 @@
 
 #define TRAINING_ITERATIONS 20000
 #define NUM_SAMPLES_AVG_ERROR 100
+#define RANDOM_SEED 7U
 
 static void generateXorTrainingValue(ValueType& x, ValueType& y, ValueType& z)
 {
@@ -53,7 +54,7 @@ int main(const int argc, char *argv[])
 
     using namespace std;
 
-    srand(7U); // seed random number generator
+    srand(RANDOM_SEED); // seed random number generator
 
     char const* const path = "nn_fixed_xor.txt";
     ofstream results(path);
