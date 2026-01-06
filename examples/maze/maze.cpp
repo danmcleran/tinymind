@@ -197,6 +197,15 @@ int main(const int argc, char *argv[])
 
         logFile << logEntry << endl;
     }
+    
+    if (qLearner.getState() == qLearner.getEnvironment().getGoalState())
+    {
+        cout << "Reached the goal state!" << endl;
+    }
+    else
+    {
+        cout << "Did not reach the goal state!" << endl;
+    }
 
     return 0;
 }
