@@ -30,8 +30,8 @@
 
 #include "xornet.h"
 
-#define TRAINING_ITERATIONS 20000
-#define NUM_SAMPLES_AVG_ERROR 100
+#define TRAINING_ITERATIONS 20000U
+#define NUM_SAMPLES_AVG_ERROR 100U
 #define RANDOM_SEED 7U
 
 static void generateXorTrainingValue(ValueType& x, ValueType& y, ValueType& z)
