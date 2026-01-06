@@ -324,7 +324,7 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
 
     BOOST_TEST(static_cast<SignedQ1_15Type::FullWidthValueType>(0x8001) == Q4.getValue());
 
-    Q4 = 0x8000;
+    Q4 = static_cast<SignedQ1_15Type::FullWidthValueType>(0x8000);
 
     for (uint32_t i = 0; i < 4194303; ++i)
     {
