@@ -25,10 +25,10 @@
 #include "compiler.h"
 
 #define BOOST_TEST_MODULE nn_unit_test
-DISABLE_WARNING_PUSH
-DISABLE_WARNING("-Wdangling-reference")
+TINYMIND_DISABLE_WARNING_PUSH
+TINYMIND_DISABLE_WARNING("-Wdangling-reference")
 #include <boost/test/included/unit_test.hpp>
-DISABLE_WARNING_POP
+TINYMIND_DISABLE_WARNING_POP
 
 #include <cstdint>
 #include <string.h>

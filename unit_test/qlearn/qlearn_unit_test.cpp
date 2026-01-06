@@ -54,10 +54,10 @@ The paths out of the maze:
 #include "compiler.h"
 
 #define BOOST_TEST_MODULE test module name
-DISABLE_WARNING_PUSH
-DISABLE_WARNING("-Wdangling-reference")
+TINYMIND_DISABLE_WARNING_PUSH
+TINYMIND_DISABLE_WARNING("-Wdangling-reference")
 #include <boost/test/included/unit_test.hpp>
-DISABLE_WARNING_POP
+TINYMIND_DISABLE_WARNING_POP
 
 #include <cstdint>
 #include <iostream>

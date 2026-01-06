@@ -26,15 +26,15 @@
  * Cross-compiler macros to push/pop diagnostics and disable warnings.
  *
  * Usage:
- *   DISABLE_WARNING_PUSH
- *   DISABLE_WARNING("-Wwhatever")     // for GCC/Clang
- *   DISABLE_WARNING(4996)              // for MSVC (numeric code)
- *   DISABLE_WARNING_POP
+ *   TINYMIND_DISABLE_WARNING_PUSH
+ *   TINYMIND_DISABLE_WARNING("-Wwhatever")     // for GCC/Clang
+ *   TINYMIND_DISABLE_WARNING(4996)              // for MSVC (numeric code)
+ *   TINYMIND_DISABLE_WARNING_POP
  * 
  * Example: disable dangling-reference on GCC/Clang (no-op on MSVC)
- *   DISABLE_WARNING_PUSH
- *   DISABLE_WARNING("-Wdangling-reference")
- *   DISABLE_WARNING_POP
+ *   TINYMIND_DISABLE_WARNING_PUSH
+ *   TINYMIND_DISABLE_WARNING("-Wdangling-reference")
+ *   TINYMIND_DISABLE_WARNING_POP
  *
  * Notes:
  *  - For GCC/Clang pass the warning name as a quoted string (e.g. "-Wdeprecated-declarations").
@@ -42,29 +42,29 @@
  */
 
 #if defined(_MSC_VER)
-	#define TM_PRAGMA(x) __pragma(x)
-	#define DISABLE_WARNING_PUSH TM_PRAGMA(warning(push))
-	#define DISABLE_WARNING_POP  TM_PRAGMA(warning(pop))
-	#define DISABLE_WARNING_MSVC(code) TM_PRAGMA(warning(disable: code))
+	#define TINYMIND_PRAGMA(x) __pragma(x)
+	#define TINYMIND_DISABLE_WARNING_PUSH TINYMIND_PRAGMA(warning(push))
+	#define TINYMIND_DISABLE_WARNING_POP  TINYMIND_PRAGMA(warning(pop))
+	#define TINYMIND_DISABLE_WARNING_MSVC(code) TINYMIND_PRAGMA(warning(disable: code))
 	/* GCC/Clang style no-op on MSVC */
-	#define DISABLE_WARNING_GCC_CLANG(warning)
+	#define TINYMIND_DISABLE_WARNING_GCC_CLANG(warning)
 	/* Generic helper maps to MSVC form on MSVC */
-	#define DISABLE_WARNING(w) DISABLE_WARNING_MSVC(w)
+	#define TINYMIND_DISABLE_WARNING(w) TINYMIND_DISABLE_WARNING_MSVC(w)
 #elif defined(__clang__) || defined(__GNUC__)
-	#define TM_PRAGMA(x) _Pragma(#x)
-	#define DISABLE_WARNING_PUSH TM_PRAGMA(GCC diagnostic push)
-	#define DISABLE_WARNING_POP  TM_PRAGMA(GCC diagnostic pop)
-	#define DISABLE_WARNING_GCC_CLANG(warning) TM_PRAGMA(GCC diagnostic ignored warning)
+	#define TINYMIND_PRAGMA(x) _Pragma(#x)
+	#define TINYMIND_DISABLE_WARNING_PUSH TINYMIND_PRAGMA(GCC diagnostic push)
+	#define TINYMIND_DISABLE_WARNING_POP  TINYMIND_PRAGMA(GCC diagnostic pop)
+	#define TINYMIND_DISABLE_WARNING_GCC_CLANG(warning) TINYMIND_PRAGMA(GCC diagnostic ignored warning)
 	/* MSVC form no-op on GCC/Clang */
-	#define DISABLE_WARNING_MSVC(code)
+	#define TINYMIND_DISABLE_WARNING_MSVC(code)
 	/* Generic helper maps to GCC/Clang form on GCC/Clang */
-	#define DISABLE_WARNING(w) DISABLE_WARNING_GCC_CLANG(w)
+	#define TINYMIND_DISABLE_WARNING(w) TINYMIND_DISABLE_WARNING_GCC_CLANG(w)
 #else
 	/* Unknown compiler: define no-ops so code using these macros stays portable */
-	#define TM_PRAGMA(x)
-	#define DISABLE_WARNING_PUSH
-	#define DISABLE_WARNING_POP
-	#define DISABLE_WARNING_MSVC(code)
-	#define DISABLE_WARNING_GCC_CLANG(warning)
-	#define DISABLE_WARNING(w)
+	#define TINYMIND_PRAGMA(x)
+	#define TINYMIND_DISABLE_WARNING_PUSH
+	#define TINYMIND_DISABLE_WARNING_POP
+	#define TINYMIND_DISABLE_WARNING_MSVC(code)
+	#define TINYMIND_DISABLE_WARNING_GCC_CLANG(warning)
+	#define TINYMIND_DISABLE_WARNING(w)
 #endif

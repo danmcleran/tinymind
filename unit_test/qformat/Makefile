@@ -6,6 +6,10 @@ qformat_unit_test: qformat_unit_test.cpp
 #	Build the unit tests
 	g++ -g -Wall -Wextra -Werror -o ./output/qformat_unit_test qformat_unit_test.cpp -DTINYMIND_ENABLE_OSTREAMS=1 -I ../../include -I../../cpp -I${BOOST_HOME}
 
+run :
+#	Run the q-format unit tests
+	cd ./output && ./qformat_unit_test && cd ../
+
 # Remove all object files
 clean:
 	rm -f ./output/*

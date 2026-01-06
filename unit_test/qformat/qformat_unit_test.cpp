@@ -102,10 +102,10 @@ static_assert((std::numeric_limits<int32_t>::max() == std::numeric_limits<typena
 static_assert((std::numeric_limits<uint32_t>::max() == std::numeric_limits<typename SignedQ24_8Type::FractionalPartFieldType>::max()), "Invalid type.");
 
 #define BOOST_TEST_MODULE test module name
-DISABLE_WARNING_PUSH
-DISABLE_WARNING("-Wdangling-reference")
+TINYMIND_DISABLE_WARNING_PUSH
+TINYMIND_DISABLE_WARNING("-Wdangling-reference")
 #include <boost/test/included/unit_test.hpp>
-DISABLE_WARNING_POP
+TINYMIND_DISABLE_WARNING_POP
 
 BOOST_AUTO_TEST_SUITE(test_suite_qformat)
 
