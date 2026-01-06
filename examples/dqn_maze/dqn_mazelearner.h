@@ -39,11 +39,12 @@
 // 6 rooms and 6 actions
 #define NUMBER_OF_STATES 6
 #define NUMBER_OF_ACTIONS 6
+#define RANDOM_SEED 7U
 
 typedef uint8_t state_t;
 typedef uint8_t action_t;
 
-static std::default_random_engine generator(time(nullptr));
+static std::default_random_engine generator(RANDOM_SEED);
 static std::uniform_real_distribution<double> distribution(-1.0, 1.0);
 
 template<typename ValueType>
@@ -65,7 +66,7 @@ struct DQNMazeEnvironmentRandomNumberGeneratorPolicy
 {
     DQNMazeEnvironmentRandomNumberGeneratorPolicy()
     {
-        srand(static_cast<unsigned int>(time(0))); // seed random number generator
+        srand(RANDOM_SEED); // seed random number generator
     }
 
     size_t getRandomActionDecisionPoint() const
