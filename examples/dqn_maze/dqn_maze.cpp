@@ -59,6 +59,11 @@ The paths out of the maze:
 
 extern QLearnerType qLearner;
 
+#define TOTAL_NUMBER_OF_EPISODES 10000U
+#define NUMBER_OF_PURE_RANDOM_TRAINING_EPISODES (TOTAL_NUMBER_OF_EPISODES - 1000U)
+#define NUMBER_OF_TEST_EPISODES 100U
+#define MAX_NUMBER_OF_STEPS_PER_EPISODE 100U
+
 int main(const int argc, char *argv[])
 {
     (void)argc; // Unused parameter
@@ -106,10 +111,10 @@ int main(const int argc, char *argv[])
     qLearner.getEnvironment().setGoalState(5);
 
     // randomly search the maze for the reward, keep updating the Q table
-    for (unsigned i = 0; i < 500; ++i)
+    for (unsigned i = 0; i < TOTAL_NUMBER_OF_EPISODES; ++i)
     {
         // after 400 random iterations, scale down the randomness on every iteration
-        if (i >= 400)
+        if (i >= NUMBER_OF_PURE_RANDOM_TRAINING_EPISODES)
         {
             randomActionDecisionPoint = qLearner.getEnvironment().getRandomActionDecisionPoint();
             if (randomActionDecisionPoint > 0)
@@ -137,7 +142,8 @@ int main(const int argc, char *argv[])
         qLearner.updateFromExperience(experience);
 
         // look until we find the cheese
-        while (qLearner.getState() != qLearner.getEnvironment().getGoalState())
+        unsigned stepCount = 0;
+        while ((qLearner.getState() != qLearner.getEnvironment().getGoalState()) && (stepCount < MAX_NUMBER_OF_STEPS_PER_EPISODE))
         {
             action = qLearner.takeAction(qLearner.getState());
             cout << "take action " << (int)action << endl;
@@ -148,6 +154,12 @@ int main(const int argc, char *argv[])
             experience.reward = qLearner.getEnvironment().getRewardForStateAndAction(experience.state, experience.action);
             experience.newState =  static_cast<state_t>(experience.action);
             qLearner.updateFromExperience(experience);
+            ++stepCount;
+        }
+
+        if (stepCount >= MAX_NUMBER_OF_STEPS_PER_EPISODE)
+        {
+            cerr << "Episode " << i << " reached max step count without finding goal state." << endl;
         }
 
         logFile << logEntry << endl;
@@ -162,7 +174,7 @@ int main(const int argc, char *argv[])
     }
 
     // trainging is done, now run some test iterations
-    for (unsigned i = 0; i < 100; ++i)
+    for (unsigned i = 0; i < NUMBER_OF_TEST_EPISODES; ++i)
     {
         qLearner.startNewEpisode();
 
@@ -182,7 +194,8 @@ int main(const int argc, char *argv[])
         qLearner.updateFromExperience(experience);
 
         // look until we find the cheese
-        while (qLearner.getState() != qLearner.getEnvironment().getGoalState())
+        unsigned stepCount = 0;
+        while ((qLearner.getState() != qLearner.getEnvironment().getGoalState()) && (stepCount < MAX_NUMBER_OF_STEPS_PER_EPISODE))
         {
             action = qLearner.takeAction(qLearner.getState());
             cout << "take action " << (int)action << endl;
@@ -193,10 +206,27 @@ int main(const int argc, char *argv[])
             experience.reward = qLearner.getEnvironment().getRewardForStateAndAction(experience.state, experience.action);
             experience.newState =  static_cast<state_t>(experience.action);
             qLearner.updateFromExperience(experience);
+            ++stepCount;
+        }
+
+        if (stepCount >= MAX_NUMBER_OF_STEPS_PER_EPISODE)
+        {
+            cerr << "Episode " << i << " reached max step count without finding goal state." << endl;
         }
 
         logFile << logEntry << endl;
     }
+    
+    if (qLearner.getState() == qLearner.getEnvironment().getGoalState())
+    {
+        cout << "Reached the goal state!" << endl;
+    }
+    else
+    {
+        cerr << "Did not reach the goal state!" << endl;
+    }
+
+    logFile.close();
 
     return 0;
 }
