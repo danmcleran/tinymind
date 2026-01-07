@@ -3,7 +3,7 @@
 # Tell the code to compile the Q8.8 tanh activation function LUT
 MKDIR=mkdir -p ./output
 CC=g++
-WARN=-Wall -Wextra -Werror
+WARN=-Wall -Wextra -Werror -Wpedantic
 OUT=./output/xor
 SOURCES=xor.cpp xornet.cpp ../../cpp/lookupTables.cpp
 INCLUDES=-I../../cpp -I../../cpp/include -I../../include/
@@ -14,12 +14,14 @@ default :
 	$(MKDIR)
 #	Build the example with default build flags
 	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+	g++ -c xornet.cpp $(WARN) -o ./output/xornet.o $(INCLUDES) $(DEFINES)
 
 release :
 #	Make an output dir to hold the executable
 	$(MKDIR)
 #	Build the example with default build flags
 	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+	g++ -c xornet.cpp -O3 $(WARN) -o ./output/xornet.o $(INCLUDES) $(DEFINES)
 
 run :
 #	Run the XOR example
