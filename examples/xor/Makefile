@@ -15,6 +15,7 @@ default :
 #	Build the example with default build flags
 	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
 	g++ -c xornet.cpp $(WARN) -o ./output/xornet.o $(INCLUDES) $(DEFINES)
+	g++ -c ../../cpp/lookupTables.cpp $(WARN) -o ./output/lookupTables.o $(INCLUDES) $(DEFINES)
 
 release :
 #	Make an output dir to hold the executable
@@ -22,6 +23,7 @@ release :
 #	Build the example with default build flags
 	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
 	g++ -c xornet.cpp -O3 $(WARN) -o ./output/xornet.o $(INCLUDES) $(DEFINES)
+	g++ -c ../../cpp/lookupTables.cpp -O3 $(WARN) -o ./output/lookupTables.o $(INCLUDES) $(DEFINES)
 
 run :
 #	Run the XOR example
