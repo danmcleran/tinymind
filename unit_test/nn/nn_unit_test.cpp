@@ -168,7 +168,7 @@ private:
 };
 
 template<typename ValueType>
-std::default_random_engine UniformRealRandomNumberGenerator<ValueType>::generator;
+std::default_random_engine UniformRealRandomNumberGenerator<ValueType>::generator(RANDOM_SEED);
 
 template<typename ValueType>
 std::uniform_real_distribution<double> UniformRealRandomNumberGenerator<ValueType>::distribution(-1.0, 1.0);
