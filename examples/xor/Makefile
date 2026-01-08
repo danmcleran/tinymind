@@ -12,7 +12,6 @@ DEFINES=-DTINYMIND_ENABLE_OSTREAMS=1 -DTINYMIND_USE_TANH_8_8=1
 default :
 #	Make an output dir to hold the executable
 	$(MKDIR)
-#	Build the example with default build flags
 	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
 	g++ -c xornet.cpp $(WARN) -o ./output/xornet.o $(INCLUDES) $(DEFINES)
 	g++ -c ../../cpp/lookupTables.cpp $(WARN) -o ./output/lookupTables.o $(INCLUDES) $(DEFINES)
@@ -20,7 +19,6 @@ default :
 release :
 #	Make an output dir to hold the executable
 	$(MKDIR)
-#	Build the example with default build flags
 	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
 	g++ -c xornet.cpp -O3 $(WARN) -o ./output/xornet.o $(INCLUDES) $(DEFINES)
 	g++ -c ../../cpp/lookupTables.cpp -O3 $(WARN) -o ./output/lookupTables.o $(INCLUDES) $(DEFINES)
@@ -34,6 +32,5 @@ plot :
 	python3 ../../unit_test/nn/nn_plot.py output/nn_fixed_xor.txt
 
 clean :
-# Remove all object files
-	rm -f ./*.o
+# Remove all files
 	rm -f ./output/*
