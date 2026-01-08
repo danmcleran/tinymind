@@ -125,6 +125,7 @@ using namespace std;
 #define NUM_SAMPLES_AVG_ERROR 20
 #define STOP_ON_AVG_ERROR 0
 #define USE_WEIGHTS_INPUT_FILE 1 // the weights input file uses the initial values from a successful training run
+#define RANDOM_SEED 7U
 
 template<typename ValueType>
 struct ValueHelper
@@ -167,7 +168,7 @@ private:
 };
 
 template<typename ValueType>
-std::default_random_engine UniformRealRandomNumberGenerator<ValueType>::generator;
+std::default_random_engine UniformRealRandomNumberGenerator<ValueType>::generator(RANDOM_SEED);
 
 template<typename ValueType>
 std::uniform_real_distribution<double> UniformRealRandomNumberGenerator<ValueType>::distribution(-1.0, 1.0);
@@ -930,7 +931,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -957,7 +958,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor_nn_copy)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_xor.txt";
     char const* const pathCopy = "nn_fixed_xor_copy.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
@@ -988,7 +989,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_and)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1015,7 +1016,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_or)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1042,7 +1043,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_nor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_nor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1071,7 +1072,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_xor)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_no_train_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1100,7 +1101,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_and)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_no_train_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1129,7 +1130,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_or)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_no_train_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1158,7 +1159,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_nor)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_no_train_nor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1185,7 +1186,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_5_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1212,7 +1213,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_and)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_5_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1239,7 +1240,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_or)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_5_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1266,7 +1267,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_16_16_5_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1293,7 +1294,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_and)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_16_16_5_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1320,7 +1321,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_or)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_16_16_5_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1347,7 +1348,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_8_24_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1374,7 +1375,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_and)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_8_24_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1401,7 +1402,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_or)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_8_24_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1432,7 +1433,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_xor)
                                             TransferFunctionsType,
                                             TRAINABLE,
                                             BATCH_SIZE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_batch_2_8_24_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1471,7 +1472,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_and)
                                             TransferFunctionsType,
                                             TRAINABLE,
                                             BATCH_SIZE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_batch_2_8_24_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1510,7 +1511,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_or)
                                             TransferFunctionsType,
                                             TRAINABLE,
                                             BATCH_SIZE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_batch_2_8_24_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1549,7 +1550,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_xor)
                                             TransferFunctionsType,
                                             TRAINABLE,
                                             BATCH_SIZE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_batch_4_8_24_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1588,7 +1589,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_and)
                                             TransferFunctionsType,
                                             TRAINABLE,
                                             BATCH_SIZE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_batch_4_8_24_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1627,7 +1628,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_or)
                                             TransferFunctionsType,
                                             TRAINABLE,
                                             BATCH_SIZE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_batch_4_8_24_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1660,7 +1661,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_elman_nn)
                                     NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                     NUMBER_OF_OUTPUTS,
                                     TransferFunctionsType> FixedPointElmanNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_elman.txt";
     FixedPointElmanNetworkType nn;
 
@@ -1683,7 +1684,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_elman_nn)
                                     NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                     NUMBER_OF_OUTPUTS,
                                     TransferFunctionsType> FloatingPointElmanNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_elman.txt";
     FloatingPointElmanNetworkType nn;
 
@@ -1708,7 +1709,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FloatingPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_xor.txt";
     FloatingPointMultiLayerPerceptronNetworkType nn;
 
@@ -1733,7 +1734,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_and)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FloatingPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_and.txt";
     FloatingPointMultiLayerPerceptronNetworkType nn;
 
@@ -1758,7 +1759,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_or)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FloatingPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_or.txt";
     FloatingPointMultiLayerPerceptronNetworkType nn;
 
@@ -1787,7 +1788,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_float_weights_xor)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_no_train_float_weights_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1816,7 +1817,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_float_weights_and)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_no_train_float_weights_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1841,7 +1842,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_relu_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FloatingPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_relu_xor.txt";
     FloatingPointMultiLayerPerceptronNetworkType nn;
 
@@ -1874,7 +1875,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_relu_xor_no_train)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_relu_xor_no_train.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1903,7 +1904,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_relu_xor_no_train)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_8_24_relu_xor_no_train.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1932,7 +1933,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_8_nn_relu_xor_no_train)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_8_8_relu_xor_no_train.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1957,7 +1958,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_2_hidden_nn_relu_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FloatingPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_2_hidden_relu_xor.txt";
     FloatingPointMultiLayerPerceptronNetworkType nn;
 
@@ -1986,7 +1987,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_2_hidden_nn_relu_xor_copy)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FloatingPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_2_hidden_relu_xor.txt";
     char const* const pathCopy = "nn_float_2_hidden_relu_xor_copy.txt";
     FloatingPointMultiLayerPerceptronNetworkType nn;
@@ -2016,7 +2017,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_2_hidden_nn_relu_xor_no_train)
                                                     tinymind::ReluActivationPolicy<ValueType>,
                                                     tinymind::TanhActivationPolicy<ValueType>> TransferFunctionsType;
     typedef tinymind::MultilayerPerceptron<ValueType, NUMBER_OF_INPUTS, NUMBER_OF_HIDDEN_LAYERS, NUMBER_OF_NEURONS_PER_HIDDEN_LAYER, NUMBER_OF_OUTPUTS, TransferFunctionsType, false> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_2_hidden_relu_xor_no_train.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -2043,7 +2044,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_sigmoid_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_sigmoid_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
