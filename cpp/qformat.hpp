@@ -24,6 +24,10 @@
 
 #include <cstddef>
 
+#if TINYMIND_ENABLE_OSTREAMS
+#include <ostream>
+#endif // TINYMIND_ENABLE_OSTREAMS
+
 #include "typeChooser.hpp"
 
 #ifndef UINT64_MAX
