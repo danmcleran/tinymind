@@ -74,10 +74,9 @@ TINYMIND_DISABLE_WARNING_POP
 #include "activationFunctions.hpp"
 #include "nnproperties.hpp"
 
-static std::random_device rd;
-
 #define NUMBER_OF_STATES 6
 #define NUMBER_OF_ACTIONS 6
+#define RANDOM_SEED 7U
 
 typedef uint8_t state_t;
 typedef uint8_t action_t;
@@ -109,7 +108,7 @@ std::uniform_real_distribution<double> UniformRealRandomNumberGenerator<ValueTyp
 template<typename T>
 struct MazeEnvironmentRandomNumberGeneratorPolicy
 {
-    MazeEnvironmentRandomNumberGeneratorPolicy() : mRandomEngine(rd())
+    MazeEnvironmentRandomNumberGeneratorPolicy() : mRandomEngine(RANDOM_SEED)
     {
     }
 
@@ -660,7 +659,7 @@ BOOST_AUTO_TEST_CASE(test_qlearn_iterate)
     typedef typename QValueType::FullWidthValueType FullWidthValueType;
     static char const* const qTableFilePath = "qtable.txt";
     static char const* const qTableBinFilePath = "qtable.bin";
-    std::default_random_engine engine(rd());
+    std::default_random_engine engine(RANDOM_SEED);;
     std::uniform_int_distribution<size_t> stateDistribution(0, NUMBER_OF_STATES - 1);
     size_t decisionPoint = 100;
     std::ofstream qTableFile(qTableFilePath);
@@ -734,7 +733,7 @@ BOOST_AUTO_TEST_CASE(test_qlearn_iterate)
 
 BOOST_AUTO_TEST_CASE(test_dqn_qlearn_iterate)
 {
-    std::default_random_engine engine(rd());
+    std::default_random_engine engine(RANDOM_SEED);;
     std::uniform_int_distribution<size_t> stateDistribution(0, NUMBER_OF_STATES - 1);
     size_t decisionPoint = 100;
     typename DQNMazeEnvironmentType::ParentType::experience_t experience;
@@ -809,7 +808,7 @@ BOOST_AUTO_TEST_CASE(test_untrained_qlearner_reward)
 BOOST_AUTO_TEST_CASE(test_untrained_qlearner_iterate)
 {
     static const state_t goalState = 5;
-    std::default_random_engine engine(rd());
+    std::default_random_engine engine(RANDOM_SEED);;
     std::uniform_int_distribution<size_t> stateDistribution(0, NUMBER_OF_STATES - 1);
     size_t iterations = 0;
     typename UntrainedMazeEnvironmentType::ParentType::experience_t experience;
