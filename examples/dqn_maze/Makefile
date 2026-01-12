@@ -11,6 +11,12 @@ DEFINES=-DTINYMIND_USE_TANH_16_16=1
 default:
 	$(MKDIR)
 	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+	$(CC) -c dqn_mazelearner.cpp $(WARN) -o output/dqn_mazelearner.o $(INCLUDES) $(DEFINES)
+
+release :
+	$(MKDIR)
+	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+	$(CC) -c dqn_mazelearner.cpp -O3 $(WARN) -o output/dqn_mazelearner.o $(INCLUDES) $(DEFINES)
 
 run :
 	cd ./output && ./dqn_maze && cd ../
