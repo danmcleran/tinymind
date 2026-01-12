@@ -62,7 +62,6 @@ TINYMIND_DISABLE_WARNING_POP
 #include <cstdint>
 #include <iostream>
 #include <cstdlib>
-#include <ctime>
 #include <fstream>
 #include <random>
 #include <vector>
