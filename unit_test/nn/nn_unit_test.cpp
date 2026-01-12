@@ -41,7 +41,6 @@ TINYMIND_DISABLE_WARNING_POP
 #include "nnproperties.hpp"
 #include <iostream>
 #include <cstdlib>
-#include <ctime>
 #include <fstream>
 #include <random>
 #include <vector>
