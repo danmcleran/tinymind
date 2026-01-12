@@ -63,6 +63,7 @@ int main(const int argc, char *argv[])
     ValueType learnedValues[NeuralNetworkType::NumberOfOutputLayerNeurons];
     ValueType error;
     ValueType avgError(0U);
+    ValueType lastAvgError(0U);
 
     tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
@@ -81,16 +82,17 @@ int main(const int argc, char *argv[])
         tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkProperties(testNeuralNet, results, &output[0], &learnedValues[0]);
         results << error << std::endl;
 
-        avgError += error;
+        avgError += abs(error.getValue());
         if ((i + 1) % NUM_SAMPLES_AVG_ERROR == 0)
         {
             avgError = avgError / ValueType(NUM_SAMPLES_AVG_ERROR, 0);
             cout << "Iteration: " << (i + 1) << " Average Error: " << avgError << endl;
+            lastAvgError = avgError;
             avgError = ValueType(0U);
         }
     }
 
-    if (!NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
+    if (!NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(lastAvgError))
     {
         cout << "Training did not complete successfully after " << TRAINING_ITERATIONS << " iterations." << endl;
     }
