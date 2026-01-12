@@ -8,11 +8,13 @@ INCLUDES=-I../../cpp -I../../cpp/include -I../../include/
 
 default :
 	$(MKDIR)
-	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES)
-
-debug :
-	$(MKDIR)
 	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES)
+	$(CC) -c mazelearner.cpp $(WARN) -o output/mazelearner.o $(INCLUDES)
+
+release :
+	$(MKDIR)
+	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES)
+	$(CC) -c mazelearner.cpp -O3 $(WARN) -o output/mazelearner.o $(INCLUDES)
 
 run :
 	cd ./output && ./maze && cd ../
