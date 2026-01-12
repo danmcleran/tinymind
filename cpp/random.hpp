@@ -45,6 +45,7 @@ namespace tinymind {
 
         void setRandomActionDecisionPoint(const size_t randomActionDecisionPoint)
         {
+            (void)randomActionDecisionPoint; // suppress unused parameter warning
         }
     };
 }
