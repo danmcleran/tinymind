@@ -125,7 +125,7 @@ using namespace std;
 #define TRAINING_ITERATIONS 2000
 #define NUM_SAMPLES_AVG_ERROR 20
 #define STOP_ON_AVG_ERROR 0
-#define USE_WEIGHTS_INPUT_FILE 1 // the weights input file uses the initial values from a successful training run
+#define USE_WEIGHTS_INPUT_FILE 0 // the weights input file uses the initial values from a successful training run
 #define RANDOM_SEED 7U
 
 template<typename ValueType>
@@ -565,7 +565,9 @@ static void testFixedPointNeuralNetwork(  NeuralNetworkType& neuralNetwork,
                                 char const* const path,
                                 const int numberOfTrainingIterations = TRAINING_ITERATIONS)
 {
+#if USE_WEIGHTS_INPUT_FILE == 1
     typedef tinymind::NetworkPropertiesFileManager<NeuralNetworkType> NetworkPropertiesFileManagerType;
+#endif // USE_WEIGHTS_INPUT_FILE
     typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
     typedef typename ValueType::FullWidthValueType FullWidthValueType;
     typedef ValueHelper<ValueType> ValueHelperType;
@@ -975,7 +977,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor_xavier)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
     srand(RANDOM_SEED);
-    char const* const path = "nn_fixed_xor.txt";
+    char const* const path = "nn_fixed_xor_xavier.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
     testFixedPointNeuralNetwork_Xor(nn, path);
