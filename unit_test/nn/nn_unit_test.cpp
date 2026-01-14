@@ -39,6 +39,8 @@ TINYMIND_DISABLE_WARNING_POP
 #include "fixedPointTransferFunctions.hpp"
 #include "random.hpp"
 #include "nnproperties.hpp"
+#include "xavier.hpp"
+
 #include <iostream>
 #include <cstdlib>
 #include <fstream>
@@ -160,7 +162,6 @@ struct UniformRealRandomNumberGenerator
 
         return weight;
     }
-
 private:
     static std::default_random_engine generator;
     static std::uniform_real_distribution<double> distribution;
@@ -171,6 +172,22 @@ std::default_random_engine UniformRealRandomNumberGenerator<ValueType>::generato
 
 template<typename ValueType>
 std::uniform_real_distribution<double> UniformRealRandomNumberGenerator<ValueType>::distribution(-1.0, 1.0);
+
+template<typename ValueType, unsigned NUMBER_OF_INPUTS, unsigned NUMBER_OF_HIDDEN_LAYERS, unsigned NUMBER_OF_NEURONS_PER_HIDDEN_LAYER, unsigned NUMBER_OF_OUTPUTS>
+struct XavierRandomNumberGenerator
+{
+    typedef tinymind::XavierWeightInitializer<NUMBER_OF_INPUTS, NUMBER_OF_HIDDEN_LAYERS, NUMBER_OF_NEURONS_PER_HIDDEN_LAYER, NUMBER_OF_OUTPUTS> XavierWeightInitializerType;
+    typedef tinymind::ValueConverter<double, ValueType> WeightConverterPolicy;
+
+    static ValueType generateRandomWeight()
+    {
+        static XavierWeightInitializerType xavierWeightInitializer;
+        const double temp = xavierWeightInitializer.generateUniformWeight();
+        const ValueType weight = WeightConverterPolicy::convertToDestinationType(temp);
+
+        return weight;
+    }
+};
 
 template<
         typename ValueType,
@@ -922,6 +939,33 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor)
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
                                                     UniformRealRandomNumberGenerator<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>> TransferFunctionsType;
+    typedef tinymind::MultilayerPerceptron< ValueType,
+                                            NUMBER_OF_INPUTS,
+                                            NUMBER_OF_HIDDEN_LAYERS,
+                                            NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
+                                            NUMBER_OF_OUTPUTS,
+                                            TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
+    srand(RANDOM_SEED);
+    char const* const path = "nn_fixed_xor.txt";
+    FixedPointMultiLayerPerceptronNetworkType nn;
+
+    testFixedPointNeuralNetwork_Xor(nn, path);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor_xavier)
+{
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::FixedPointTransferFunctions<
+                                                    ValueType,
+                                                    XavierRandomNumberGenerator<ValueType, NUMBER_OF_INPUTS, NUMBER_OF_HIDDEN_LAYERS, NUMBER_OF_NEURONS_PER_HIDDEN_LAYER, NUMBER_OF_OUTPUTS>,
                                                     tinymind::TanhActivationPolicy<ValueType>,
                                                     tinymind::TanhActivationPolicy<ValueType>> TransferFunctionsType;
     typedef tinymind::MultilayerPerceptron< ValueType,
