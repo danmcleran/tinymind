@@ -63,8 +63,8 @@ struct RandomNumberGenerator
 // Typedef of transfer functions for the fixed-point neural network
 typedef tinymind::FixedPointTransferFunctions<  ValueType,
                                                 RandomNumberGenerator,
-                                                tinymind::TanhActivationPolicy<ValueType>,
-                                                tinymind::TanhActivationPolicy<ValueType>> TransferFunctionsType;
+                                                tinymind::ReluActivationPolicy<ValueType>,
+                                                tinymind::SigmoidActivationPolicy<ValueType>> TransferFunctionsType;
 
 // typedef the neural network itself
 typedef tinymind::MultilayerPerceptron< ValueType,
