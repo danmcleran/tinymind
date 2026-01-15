@@ -7,7 +7,7 @@ WARN=-Wall -Wextra -Werror -Wpedantic
 OUT=./output/xor
 SOURCES=xor.cpp xornet.cpp ../../cpp/lookupTables.cpp
 INCLUDES=-I../../cpp -I../../cpp/include -I../../include/
-DEFINES=-DTINYMIND_ENABLE_OSTREAMS=1 -DTINYMIND_USE_TANH_8_8=1
+DEFINES=-DTINYMIND_ENABLE_OSTREAMS=1 -DTINYMIND_USE_SIGMOID_8_8=1
 
 default :
 	$(MKDIR)
