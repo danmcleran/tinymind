@@ -595,7 +595,7 @@ static void testFixedPointNeuralNetwork(  NeuralNetworkType& neuralNetwork,
     std::string binaryWeightsOutputPath(path);
     ValueType values[NeuralNetworkType::NumberOfInputLayerNeurons];
     ValueType output[NeuralNetworkType::NumberOfOutputLayerNeurons];
-    ValueType learnedValues[NeuralNetworkType::NumberOfInputLayerNeurons];
+    ValueType learnedValues[NeuralNetworkType::NumberOfOutputLayerNeurons];
     std::deque<FullWidthValueType> errors;
     ValueType error;
 
@@ -700,7 +700,7 @@ static void testFixedPointNeuralNetwork_No_Train( NeuralNetworkType& neuralNetwo
     ifstream weightsInputFile(weightsInputPath);
     ValueType values[NeuralNetworkType::NumberOfInputLayerNeurons];
     ValueType output[NeuralNetworkType::NumberOfOutputLayerNeurons];
-    ValueType learnedValues[NeuralNetworkType::NumberOfInputLayerNeurons];
+    ValueType learnedValues[NeuralNetworkType::NumberOfOutputLayerNeurons];
     std::deque<FullWidthValueType> errors;
     ValueType error;
 
@@ -779,7 +779,7 @@ static void testFixedPointNeuralNetwork_No_Train_Float_Weights( NeuralNetworkTyp
     ifstream weightsInputFile(weightsInputPath);
     ValueType values[NeuralNetworkType::NumberOfInputLayerNeurons];
     ValueType output[NeuralNetworkType::NumberOfOutputLayerNeurons];
-    ValueType learnedValues[NeuralNetworkType::NumberOfInputLayerNeurons];
+    ValueType learnedValues[NeuralNetworkType::NumberOfOutputLayerNeurons];
     std::deque<FullWidthValueType> errors;
     ValueType error;
 
@@ -847,7 +847,7 @@ static void testNeuralNetwork_Recurrent(NeuralNetworkType& neuralNetwork, char c
     ofstream results(path);
     ValueType values[NeuralNetworkType::NumberOfInputLayerNeurons];
     ValueType output[NeuralNetworkType::NumberOfOutputLayerNeurons];
-    ValueType learnedValues[NeuralNetworkType::NumberOfInputLayerNeurons];
+    ValueType learnedValues[NeuralNetworkType::NumberOfOutputLayerNeurons];
     std::deque<FullWidthValueType> errors;
     ValueType error;
 
@@ -900,7 +900,7 @@ static void testFloatingPointNeuralNetwork_Recurrent(NeuralNetworkType& neuralNe
     ofstream results(path);
     ValueType values[NeuralNetworkType::NumberOfInputLayerNeurons];
     ValueType output[NeuralNetworkType::NumberOfOutputLayerNeurons];
-    ValueType learnedValues[NeuralNetworkType::NumberOfInputLayerNeurons];
+    ValueType learnedValues[NeuralNetworkType::NumberOfOutputLayerNeurons];
     std::deque<FullWidthValueType> errors;
     ValueType error;
 
