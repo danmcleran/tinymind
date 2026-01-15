@@ -24,12 +24,31 @@
 #include <fstream>
 #include <string>
 #include <cassert>
-#include <ctime>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
+#include <iomanip>
+#include <limits>
 
 #include "qformat.hpp"
 #include "activation.hpp"
+
+// Support for 128-bit integers
+#ifdef __SIZEOF_INT128__
+    typedef __uint128_t uint128_t;
+    #define TINYMIND_UINT128_SUPPORTED 1
+#else
+    // Fallback: use a struct to represent 128-bit values
+    struct uint128_t {
+        uint64_t low;
+        uint64_t high;
+        
+        uint128_t() : low(0), high(0) {}
+        uint128_t(uint64_t l) : low(l), high(0) {}
+        uint128_t(uint64_t h, uint64_t l) : low(l), high(h) {}
+    };
+    #define TINYMIND_UINT128_SUPPORTED 0
+#endif
 
 namespace fs = std::filesystem; // Must use C++ 17
 
@@ -50,7 +69,7 @@ typedef struct
 
 static std::string folderPathString;
 static char const* const activationTags[] = {"TINYMIND_USE_TANH_", "TINYMIND_USE_SIGMOID_", "TINYMIND_USE_EXP_", "TINYMIND_USE_LOG_"};
-static const uint8_t tables[] = {8, 16, 32, 64};
+static const uint8_t tables[] = {8, 16, 32, 64, 128};
 
 using namespace std;
 
@@ -73,125 +92,34 @@ static double sigmoid(const double x)
     return result;
 }
 
-static copyrightSpan_t getCurrentCopyright(const string& path)
+static void writeFileCopyrightAndLicense(const string& path)
 {
-    copyrightSpan_t span = {0,0};
-    ifstream file;
-	char line[256] = {'\0'};
-    char startYear[5] = {0};
-    char endYear[5] = {0};
-    size_t len;
-    size_t pos;
-    int yearIndex = 0;
-
-    for(int i = 0;i < 10;++i)
-    {
-        file.open(path);
-        if(file.is_open())
-        {
-            break;
-        }
-    }
-
-    if(!file.is_open())
-    {
-        return span;
-    }
-
-    for(int i = 0;i < 4;++i)
-    {
-        file.getline(&line[0], 256); // Assumes the Copyright tag is in the 4th line
-    }
-
-    len = strlen(&line[0]);
-
-    for(pos = 0;pos < len;++pos)
-    {
-        if(isdigit(line[pos]))
-        {
-            startYear[yearIndex] = line[pos];
-            ++yearIndex;
-            if(yearIndex == 4)
-            {
-                break;
-            }
-        }
-    }
-
-    span.startYear = atoi(&startYear[0]);
-    yearIndex = 0;
-    ++pos;
-
-    for(;pos < len;++pos)
-    {
-        if(isdigit(line[pos]))
-        {
-            endYear[yearIndex] = line[pos];
-            ++yearIndex;
-            if(yearIndex == 4)
-            {
-                break;
-            }
-        }
-    }
-
-    span.endYear = atoi(&endYear[0]);
-    if(span.endYear <= span.startYear)
-    {
-        span.endYear = 0;
-    }
-
-    return span;
-}
-
-static void writeFileCopyrightAndLicense(const string& path, const copyrightSpan_t& span)
-{
-    time_t t = time(NULL);
-    tm* timePtr = localtime(&t);
-    const size_t currentYear = (1900 + timePtr->tm_year);
-
+    ifstream myInFile("../my_copyright.txt");
+    ifstream intelInFile("../intel_copyright.txt");
     ofstream outFile(path);
-    outFile << "/**" << endl;
-    if((span.startYear == 0) && (span.endYear == 0))
+    char buffer[1024];
+
+    assert(myInFile.is_open());
+    assert(intelInFile.is_open());
+
+    while(!myInFile.eof())
     {
-        outFile << "* Copyright " << currentYear << " Intel Corporation All Rights Reserved." << endl;
+        myInFile.getline(buffer, 1024);
+        outFile.write(buffer, strlen(buffer));
+        outFile << std::endl;
     }
-    else if((span.startYear != 0) && (span.endYear == 0))
+
+    while(!intelInFile.eof())
     {
-        if(currentYear == span.startYear)
-        {
-            outFile << "* Copyright " << currentYear << " Intel Corporation All Rights Reserved." << endl;
-        }
-        else
-        {
-            outFile << "* Copyright " << span.startYear << "-" << currentYear << " Intel Corporation All Rights Reserved." << endl;
-        }
+        intelInFile.getline(buffer, 1024);
+        outFile.write(buffer, strlen(buffer));
+        outFile << std::endl;
     }
-    else if((span.startYear != 0) && (span.endYear != 0))
-    {
-        outFile << "* Copyright " << span.startYear << "-" << currentYear << " Intel Corporation All Rights Reserved." << endl;
-    }
-    outFile << "*" << endl;
-    outFile << "* Permission is hereby granted, free of charge, to any person obtaining a copy" << endl;
-    outFile << "* of this software and associated documentation files (the \"Software\"), to deal" << endl;
-    outFile << "* in the Software without restriction, including without limitation the rights" << endl;
-    outFile << "* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell" << endl;
-    outFile << "* copies of the Software, and to permit persons to whom the Software is" << endl;
-    outFile << "* furnished to do so, subject to the following conditions:" << endl;
-    outFile << "*" << endl;
-    outFile << "* The above copyright notice and this permission notice shall be included in all" << endl;
-    outFile << "* copies or substantial portions of the Software." << endl;
-    outFile << "*" << endl;
-    outFile << "* THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR" << endl;
-    outFile << "* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY," << endl;
-    outFile << "* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE" << endl;
-    outFile << "* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER" << endl;
-    outFile << "* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM," << endl;
-    outFile << "* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE" << endl;
-    outFile << "* SOFTWARE." << endl;
-    outFile << "*/" << endl;
-    outFile << endl;
+    outFile << std::endl;
+
     outFile.flush();
+    outFile.close();
+    intelInFile.close();
 }
 
 static void writeNamespaceBegin(const string& path)
@@ -210,9 +138,7 @@ static void writeNamespaceEnd(const string& path)
 
 static void writeActivationFileHeader(const string& path)
 {
-    copyrightSpan_t span = getCurrentCopyright(path);
-
-    writeFileCopyrightAndLicense(path, span);
+    writeFileCopyrightAndLicense(path);
 
     ofstream outFile(path, ofstream::app);
     outFile << "#pragma once" << endl << endl;
@@ -220,9 +146,7 @@ static void writeActivationFileHeader(const string& path)
 
 static void writeFileHeader(const string& path)
 {
-    copyrightSpan_t span = getCurrentCopyright(path);
-
-    writeFileCopyrightAndLicense(path, span);
+    writeFileCopyrightAndLicense(path);
 
     ofstream outFile(path, ofstream::app);
     outFile << "#pragma once" << endl << endl;
@@ -234,28 +158,18 @@ static void writeTableHeader(const string& path, char const* const preprocessorT
     const string spaces("    ");
     ofstream outFile;
     outFile.open(path, ofstream::app);
-    outFile << spaces << "#if (defined(" << activationTags[activationType] << fixedBits << "_" << fracBits << "))" << endl;
+    outFile << spaces << "#if " << preprocessorTag << fixedBits << "_" << fracBits << endl;
     outFile << spaces << "struct " << structPrefixes[activationType] << "ValuesTableQ" << fixedBits << "_" << fracBits << endl;
     outFile << spaces << "{" << endl;
     outFile << spaces << "    static const uint" << totalBits << "_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];" << endl;
     outFile << spaces << "};" << endl;
-    outFile << spaces << "#endif // "  << "(defined(" << preprocessorTag << fixedBits << "_" << fracBits << "))" << endl;
+    outFile << spaces << "#endif // "  << preprocessorTag << fixedBits << "_" << fracBits << endl;
     outFile.close();
-}
-
-static void writeTableFooter(const string& path, char const* const preprocessorTag, uint64_t fixedBits, uint64_t fracBits)
-{
-    ofstream outFile;
-    outFile.open(path, ofstream::app);
-    outFile << "};" << endl;
-    outFile << "#endif // "  << "(defined(" << preprocessorTag << fixedBits << "_" << fracBits << "))" << endl << endl;
 }
 
 static void writeLutFileHeader(const string& path)
 {
-    copyrightSpan_t span = getCurrentCopyright(path);
-
-    writeFileCopyrightAndLicense(path, span);
+    writeFileCopyrightAndLicense(path);
 
     ofstream outFile(path, ofstream::app);
     outFile << "#include <cstdint>" << endl << endl;
@@ -301,19 +215,18 @@ static void writeSelectorMinMaxShift(const string& path)
     outFile << endl;
 }
 
-template <typename T>
 static void writeTableSelectorCases(const string& path, const int fixedBits, const int fracBits, const activation_e activationType)
 {
     const string spaces("    ");
     ofstream outFile;
     outFile.open(path, ofstream::app);
-    outFile << spaces << "#if (defined(" << activationTags[activationType] << fixedBits << "_" << fracBits << "))" << endl;
+    outFile << spaces << "#if " << activationTags[activationType] << fixedBits << "_" << fracBits << endl;
     outFile << spaces << "template<>" << endl;
     outFile << spaces << "struct " << structPrefixes[activationType] << "TableValueSize<"<< fixedBits << ", " << fracBits << ", true>\n";
     outFile << spaces << "{" << endl;
     outFile << spaces << "    typedef " << structPrefixes[activationType] << "ValuesTableQ" << fixedBits << "_" << fracBits << " " << structPrefixes[activationType] << "TableType;\n";
     outFile << spaces << "};" << endl;
-    outFile << spaces << "#endif // "  << "(defined(" << activationTags[activationType] << fixedBits << "_" << fracBits << "))" << endl << endl;
+    outFile << spaces << "#endif // "  << activationTags[activationType] << fixedBits << "_" << fracBits << endl << endl;
 }
 
 static void writeTableSelector(string path, const activation_e activationType)
@@ -334,7 +247,6 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
 {
     const string spaces("    ");
     const double valueDelta = (static_cast<double>(1.0) / static_cast<double>(1 << ACTIVATION_DELTA_SHIFT));
-    const uint64_t one = fixedBits;
     double value = MIN_X_TABLE_VALUE;
     ofstream outFile;
     outFile.open(path, ofstream::app);
@@ -342,7 +254,7 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
     double num;
 
     outFile << std::dec;
-    outFile << spaces << "#if (defined(" << activationTags[activationType] << fixedBits << "_" << fracBits << "))" << endl;
+    outFile << spaces << "#if " << activationTags[activationType] << fixedBits << "_" << fracBits << endl;
     outFile << spaces << "const uint" << totalBits << "_t " << structPrefixes[activationType] << "ValuesTableQ" << fixedBits << "_" << fracBits << "::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {" << endl;
 
     for (int i = 0; i < NUMBER_OF_ACTIVATION_TABLE_VALUES; ++i)
@@ -375,7 +287,15 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
             assert(false);
         }
 
-        uint64_t leftShift = static_cast<T>(1ULL << fracBits);
+        // Handle the bit shift calculation carefully for large fracBits
+        double leftShift;
+        if (fracBits <= 63) {
+            leftShift = static_cast<double>(1ULL << fracBits);
+        } else {
+            // For fracBits > 63, calculate 2^fracBits using pow
+            leftShift = pow(2.0, static_cast<double>(fracBits));
+        }
+        
         num = activate * leftShift;
 
         switch (std::numeric_limits<T>::digits)
@@ -395,6 +315,35 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
             case 64:
                 outFile << spaces << "            0x" << std::hex << std::uppercase << (uint64_t)num << "," << endl;
                 break;
+
+            case 128:
+                {
+                    // Handle 128-bit case
+#if TINYMIND_UINT128_SUPPORTED
+                    // Use native 128-bit support
+                    __uint128_t val128 = static_cast<__uint128_t>(num);
+                    uint64_t high = static_cast<uint64_t>(val128 >> 64);
+                    uint64_t low = static_cast<uint64_t>(val128);
+                    
+                    if (high != 0) {
+                        outFile << spaces << "            0x" << std::hex << std::uppercase << high << std::setfill('0') << std::setw(16) << low << "," << endl;
+                    } else {
+                        outFile << spaces << "            0x" << std::hex << std::uppercase << low << "," << endl;
+                    }
+#else
+                    // Fallback: split the double into high and low parts
+                    if (num >= pow(2.0, 64.0)) {
+                        uint64_t high = static_cast<uint64_t>(num / pow(2.0, 64.0));
+                        uint64_t low = static_cast<uint64_t>(fmod(num, pow(2.0, 64.0)));
+                        outFile << spaces << "            0x" << std::hex << std::uppercase << high << std::setfill('0') << std::setw(16) << low << "," << endl;
+                    } else {
+                        uint64_t low = static_cast<uint64_t>(num);
+                        outFile << spaces << "            0x" << std::hex << std::uppercase << low << "," << endl;
+                    }
+#endif
+                }
+                break;
+
             default:
                 assert(0);
         }
@@ -404,7 +353,7 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
 
     outFile << std::dec;
     outFile << spaces << "};" << endl;
-    outFile << spaces << "#endif // "  << "(defined(" << activationTags[activationType] << fixedBits << "_" << fracBits << "))" << endl;
+    outFile << spaces << "#endif // "  << activationTags[activationType] << fixedBits << "_" << fracBits << endl;
 }
 
 static void generateLut(const string& path, const activation_e activationType)
@@ -432,6 +381,11 @@ static void generateLut(const string& path, const activation_e activationType)
             case 64:
                 writeLutValues<uint64_t>(path, totalBits, i, totalBits - i, activationType);
                 break;
+
+            case 128:
+                writeLutValues<uint128_t>(path, totalBits, i, totalBits - i, activationType);
+                break;
+
             default:
                 assert(0);
             }
@@ -494,20 +448,25 @@ static void generateHeader(const activation_e activationType)
             switch (totalBits)
             {
             case 8:
-                writeTableSelectorCases<uint8_t>(selectorFilePath.string(), i, totalBits - i, activationType);
+                writeTableSelectorCases(selectorFilePath.string(), i, totalBits - i, activationType);
                 break;
 
             case 16:
-                writeTableSelectorCases<uint16_t>(selectorFilePath.string(), i, totalBits - i, activationType);
+                writeTableSelectorCases(selectorFilePath.string(), i, totalBits - i, activationType);
                 break;
 
             case 32:
-                writeTableSelectorCases<uint32_t>(selectorFilePath.string(), i, totalBits - i, activationType);
+                writeTableSelectorCases(selectorFilePath.string(), i, totalBits - i, activationType);
                 break;
 
             case 64:
-                writeTableSelectorCases<uint64_t>(selectorFilePath.string(), i, totalBits - i, activationType);
+                writeTableSelectorCases(selectorFilePath.string(), i, totalBits - i, activationType);
                 break;
+
+            case 128:
+                writeTableSelectorCases(selectorFilePath.string(), i, totalBits - i, activationType);
+                break;
+
             default:
                 assert(0);
             }

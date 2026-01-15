@@ -61,6 +61,9 @@ extern QLearnerType qLearner;
 
 int main(const int argc, char *argv[])
 {
+    (void)argc; // suppress unused parameter warning
+    (void)argv; // suppress unused parameter warning
+
     using namespace std;
     state_t state;
     action_t action;
@@ -103,7 +106,7 @@ int main(const int argc, char *argv[])
     qLearner.getEnvironment().setGoalState(5);
 
     // randomly search the maze for the reward, keep updating the Q table
-    for (auto i = 0; i < 500; ++i)
+    for (unsigned i = 0; i < 500; ++i)
     {
         // after 400 random iterations, scale down the randomness on every iteration
         if (i >= 400)
@@ -159,7 +162,7 @@ int main(const int argc, char *argv[])
     }
 
     // trainging is done, now run some test iterations
-    for (auto i = 0; i < 100; ++i)
+    for (unsigned i = 0; i < 100; ++i)
     {
         qLearner.startNewEpisode();
 
@@ -193,6 +196,15 @@ int main(const int argc, char *argv[])
         }
 
         logFile << logEntry << endl;
+    }
+    
+    if (qLearner.getState() == qLearner.getEnvironment().getGoalState())
+    {
+        cout << "Reached the goal state!" << endl;
+    }
+    else
+    {
+        cout << "Did not reach the goal state!" << endl;
     }
 
     return 0;

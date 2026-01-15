@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include <cstddef>
+
 #include "activationFunctions.hpp"
 
 namespace tinymind {
@@ -190,16 +192,16 @@ namespace tinymind {
         typedef typename NeuralNetworkType::InnerHiddenLayerType InnerHiddenLayerType;
         typedef typename NeuralNetworkType::InputLayerType InputLayerType;
 
-        static constexpr size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
-        static constexpr size_t NumberOfInnerHiddenLayerNeurons = InnerHiddenLayerType::NumberOfNeuronsInLayer;
-        static constexpr size_t NumberOfLastHiddenLayerNeurons = LastHiddenLayerType::NumberOfNeuronsInLayer;
-        static constexpr size_t NumberOfOutputLayerNeurons = OutputLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfInnerHiddenLayerNeurons = InnerHiddenLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfLastHiddenLayerNeurons = LastHiddenLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfOutputLayerNeurons = OutputLayerType::NumberOfNeuronsInLayer;
 
-        static constexpr size_t LastHiddenToOutputNumGradients = (NumberOfLastHiddenLayerNeurons * NumberOfOutputLayerNeurons) + NumberOfOutputLayerNeurons;
-        static constexpr size_t InnerHiddenToLastHiddenNumGradients = (NumberOfInnerHiddenLayerNeurons * NumberOfLastHiddenLayerNeurons) + NumberOfLastHiddenLayerNeurons;
-        static constexpr size_t InnerToInnerNumGradients = ((NumberOfInnerHiddenLayers - 1) * NumberOfInnerHiddenLayerNeurons * NumberOfInnerHiddenLayerNeurons) + NumberOfInnerHiddenLayerNeurons;
-        static constexpr size_t InputToHiddenNumGradients = (NumberOfInputLayerNeurons * NumberOfInnerHiddenLayerNeurons) + NumberOfInnerHiddenLayerNeurons;
-        static constexpr size_t NumberOfGradients = (LastHiddenToOutputNumGradients + InnerHiddenToLastHiddenNumGradients + InnerToInnerNumGradients + InputToHiddenNumGradients);
+        static const size_t LastHiddenToOutputNumGradients = (NumberOfLastHiddenLayerNeurons * NumberOfOutputLayerNeurons) + NumberOfOutputLayerNeurons;
+        static const size_t InnerHiddenToLastHiddenNumGradients = (NumberOfInnerHiddenLayerNeurons * NumberOfLastHiddenLayerNeurons) + NumberOfLastHiddenLayerNeurons;
+        static const size_t InnerToInnerNumGradients = ((NumberOfInnerHiddenLayers - 1) * NumberOfInnerHiddenLayerNeurons * NumberOfInnerHiddenLayerNeurons) + NumberOfInnerHiddenLayerNeurons;
+        static const size_t InputToHiddenNumGradients = (NumberOfInputLayerNeurons * NumberOfInnerHiddenLayerNeurons) + NumberOfInnerHiddenLayerNeurons;
+        static const size_t NumberOfGradients = (LastHiddenToOutputNumGradients + InnerHiddenToLastHiddenNumGradients + InnerToInnerNumGradients + InputToHiddenNumGradients);
 
         template<typename CurrentLayerType>
         void updateBiasGradients(CurrentLayerType& layer, const size_t nextNeuron, const ValueType& gradient)
@@ -225,15 +227,15 @@ namespace tinymind {
         typedef typename NeuralNetworkType::InnerHiddenLayerType InnerHiddenLayerType;
         typedef typename NeuralNetworkType::InputLayerType InputLayerType;
 
-        static constexpr size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
-        static constexpr size_t NumberOfInnerHiddenLayerNeurons = InnerHiddenLayerType::NumberOfNeuronsInLayer;
-        static constexpr size_t NumberOfLastHiddenLayerNeurons = LastHiddenLayerType::NumberOfNeuronsInLayer;
-        static constexpr size_t NumberOfOutputLayerNeurons = OutputLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfInnerHiddenLayerNeurons = InnerHiddenLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfLastHiddenLayerNeurons = LastHiddenLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfOutputLayerNeurons = OutputLayerType::NumberOfNeuronsInLayer;
 
-        static constexpr size_t LastHiddenToOutputNumGradients = (NumberOfLastHiddenLayerNeurons * NumberOfOutputLayerNeurons) + NumberOfOutputLayerNeurons;
-        static constexpr size_t InnerHiddenToLastHiddenNumGradients = (NumberOfInnerHiddenLayerNeurons * NumberOfLastHiddenLayerNeurons) + NumberOfLastHiddenLayerNeurons;
-        static constexpr size_t InputToHiddenNumGradients = (NumberOfInputLayerNeurons * NumberOfInnerHiddenLayerNeurons) + NumberOfInnerHiddenLayerNeurons;        
-        static constexpr size_t NumberOfGradients = (LastHiddenToOutputNumGradients + InnerHiddenToLastHiddenNumGradients + InputToHiddenNumGradients);
+        static const size_t LastHiddenToOutputNumGradients = (NumberOfLastHiddenLayerNeurons * NumberOfOutputLayerNeurons) + NumberOfOutputLayerNeurons;
+        static const size_t InnerHiddenToLastHiddenNumGradients = (NumberOfInnerHiddenLayerNeurons * NumberOfLastHiddenLayerNeurons) + NumberOfLastHiddenLayerNeurons;
+        static const size_t InputToHiddenNumGradients = (NumberOfInputLayerNeurons * NumberOfInnerHiddenLayerNeurons) + NumberOfInnerHiddenLayerNeurons;        
+        static const size_t NumberOfGradients = (LastHiddenToOutputNumGradients + InnerHiddenToLastHiddenNumGradients + InputToHiddenNumGradients);
 
         template<typename CurrentLayerType>
         void updateBiasGradients(CurrentLayerType& layer, const size_t nextNeuron, const ValueType& gradient)
@@ -257,13 +259,13 @@ namespace tinymind {
         typedef typename NeuralNetworkType::NeuralNetworkOutputLayerType OutputLayerType;
         typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
         typedef typename NeuralNetworkType::InputLayerType InputLayerType;
-        static constexpr size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
-        static constexpr size_t NumberOfHiddenLayerNeurons = LastHiddenLayerType::NumberOfNeuronsInLayer;
-        static constexpr size_t NumberOfOutputLayerNeurons = OutputLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfHiddenLayerNeurons = LastHiddenLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfOutputLayerNeurons = OutputLayerType::NumberOfNeuronsInLayer;
         
-        static constexpr size_t HiddenToOutputNumGradients = (NumberOfHiddenLayerNeurons * NumberOfOutputLayerNeurons) + NumberOfOutputLayerNeurons;
-        static constexpr size_t InputToHiddenNumGradients = (NumberOfInputLayerNeurons * NumberOfHiddenLayerNeurons) + NumberOfHiddenLayerNeurons;
-        static constexpr size_t NumberOfGradients = HiddenToOutputNumGradients + InputToHiddenNumGradients;
+        static const size_t HiddenToOutputNumGradients = (NumberOfHiddenLayerNeurons * NumberOfOutputLayerNeurons) + NumberOfOutputLayerNeurons;
+        static const size_t InputToHiddenNumGradients = (NumberOfInputLayerNeurons * NumberOfHiddenLayerNeurons) + NumberOfHiddenLayerNeurons;
+        static const size_t NumberOfGradients = HiddenToOutputNumGradients + InputToHiddenNumGradients;
 
         template<typename CurrentLayerType>
         void updateBiasGradients(CurrentLayerType& layer, const size_t nextNeuron, const ValueType& gradient)
@@ -436,6 +438,11 @@ namespace tinymind {
         template<typename CurrentLayerType>
         static void updateBiasConnectionWeights(CurrentLayerType& layer, const size_t neuron, const ValueType& learningRate, const ValueType& momentumRate, const ValueType& accelerationRate)
         {
+            (void)layer; // Suppress unused parameter warning
+            (void)neuron; // Suppress unused parameter warning
+            (void)learningRate; // Suppress unused parameter warning
+            (void)momentumRate; // Suppress unused parameter warning
+            (void)accelerationRate; // Suppress unused parameter warning
         }
     };
 
@@ -739,7 +746,7 @@ namespace tinymind {
                         OutputLayerType,
                         NeuralNetworkType::NeuralNetworkOutputLayerConfiguration>::OutputLayerNodeDeltasCalculatorType OutputLayerNodeDeltasCalculatorType;
 
-        static constexpr size_t RecurrentConnectionDepth = RecurrentLayerType::RecurrentLayerRecurrentConnectionDepth;
+        static const size_t RecurrentConnectionDepth = RecurrentLayerType::RecurrentLayerRecurrentConnectionDepth;
 
         static void calculateNetworkDeltas(NeuralNetworkType& nn, ValueType const* const targetValues)
         {
@@ -788,6 +795,9 @@ namespace tinymind {
         template<typename LayerType, typename NextLayerType>
         static void calculateAndUpdateGradients(LayerType& layer, const NextLayerType& nextLayer, GradientsManagerType& gradientsManager)
         {
+            (void)layer; // Suppress unused parameter warning
+            (void)nextLayer; // Suppress unused parameter warning
+            (void)gradientsManager; // Suppress unused parameter warning
         }
     };
 
@@ -1048,10 +1058,8 @@ namespace tinymind {
         template<typename CurrentLayerType, typename PreviousLayerType>
         void updateConnectionWeights(CurrentLayerType& layer, PreviousLayerType& previousLayer)
         {
-            typedef typename BiasNeuronConnectionWeightUpdaterTypeSelector<  ValueType,
-                                                                             CurrentLayerType::LayerType,
-                                                                             PreviousLayerType::LayerType,
-                                                                             PreviousLayerType::NumberOfBiasNeuronsInLayer>::BiasNeuronConnectionWeightUpdaterType BiasNeuronConnectionWeightUpdaterType;
+            (void)layer; // Suppress unused parameter warning
+            typedef BiasNeuronConnectionWeightUpdater<ValueType, PreviousLayerType::NumberOfBiasNeuronsInLayer> BiasNeuronConnectionWeightUpdaterType;
             ValueType previousDeltaWeight;
             ValueType currentDeltaWeight;
             ValueType newDeltaWeight;
@@ -1081,16 +1089,15 @@ namespace tinymind {
         {
         }
         
-        ~BackPropagationParent(){};
+        ~BackPropagationParent(){}
 
         ValueType mLearningRate;
         ValueType mMomentumRate;
         ValueType mAccelerationRate;
 
     private:
-        BackPropagationParent(const BackPropagationParent&) = delete;
-        BackPropagationParent(const BackPropagationParent&&) = delete;
-        BackPropagationParent& operator=(const BackPropagationParent&) = delete;
+        BackPropagationParent(const BackPropagationParent&) {} // hide copy constructor
+        BackPropagationParent& operator=(const BackPropagationParent&) {} // hide assignment operator
         static_assert(BatchSize > 0, "Invalid batch size.");
     };
 
@@ -1306,7 +1313,7 @@ namespace tinymind {
     {
         typedef ValueType ConnectionValueType;
 
-        static constexpr bool IsTrainable = false;
+        static const bool IsTrainable = false;
 
         Connection() : mWeight(0)
         {
@@ -1345,6 +1352,10 @@ namespace tinymind {
             this->mWeight = value;
         }
 
+        void * operator new(size_t, void *p)
+        {
+            return p;
+        }
     protected:
         ValueType mWeight;
 
@@ -1359,7 +1370,7 @@ namespace tinymind {
     {
         typedef ValueType ConnectionValueType;
         
-        static constexpr bool IsTrainable = true;
+        static const bool IsTrainable = true;
 
         TrainableConnection() : mDeltaWeight(0), mPreviousDeltaWeight(0), mGradient(0)
         {
@@ -1752,7 +1763,7 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
 
         ValueType getOutputValue() const
         {
@@ -1800,6 +1811,11 @@ namespace tinymind {
             this->mOutputValue = value;
         }
 
+        void * operator new(size_t, void *p)
+        {
+            return p;
+        }
+
     protected: // Don't instantiate class. Only for use by child classses
         Neuron()
         {
@@ -1837,7 +1853,7 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
 
         ValueType getDeltaWeightForConnection(const size_t connection) const
         {
@@ -2133,7 +2149,7 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename NeuronTransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
     };
 
     template<
@@ -2147,7 +2163,7 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename NeuronTransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
     };
 
     template<
@@ -2191,7 +2207,7 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
     };
 
     template<
@@ -2205,7 +2221,7 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
     };
 
     template<
@@ -2219,7 +2235,9 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename NeuronTransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+    private:
+        ValueType mState;
     };
 
     template<
@@ -2233,7 +2251,9 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename NeuronTransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+    private:
+        ValueType mState;
     };
 
     template<
@@ -2247,7 +2267,7 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename NeuronTransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
 
         ValueType getCellState(void) const
         {
@@ -2273,7 +2293,7 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename NeuronTransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
 
         ValueType getCellState(void) const
         {
@@ -2390,7 +2410,7 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename NeuronTransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
     };
 
     template<
@@ -2404,7 +2424,7 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename NeuronTransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
     };
 
     template<
@@ -2447,7 +2467,7 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = 1;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = 1;
     };
 
     template<
@@ -2460,7 +2480,7 @@ namespace tinymind {
         typedef TransferFunctionsPolicy NeuronTransferFunctionsPolicy;
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr size_t NumberOfOutgoingConnectionsFromNeuron = 1;
+        static const size_t NumberOfOutgoingConnectionsFromNeuron = 1;
     };
 
     template<
@@ -2544,7 +2564,7 @@ namespace tinymind {
         typedef typename NeuronType::ValueType ValueType;
         typedef typename NeuronType::NeuronTransferFunctionsPolicy TransferFunctionsPolicy;
 
-        static constexpr size_t NumberOfNeuronsInLayer = NumberOfNeurons;
+        static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
 
         ValueType getGradientForNeuronAndConnection(const size_t neuron, const size_t connection) const
         {
@@ -2654,6 +2674,11 @@ namespace tinymind {
             NeuronType* pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
             pNeuron->setWeightForConnection(connection, weight);
         }
+
+        void * operator new(size_t, void *p)
+        {
+            return p;
+        }
     protected:
         Layer()
         {
@@ -2678,7 +2703,37 @@ namespace tinymind {
         typedef typename NeuronType::NeuronTransferFunctionsPolicy TransferFunctionsPolicy;
         typedef typename BiasNeuronTypeSelector<ConnectionType, NeuronType::NumberOfOutgoingConnectionsFromNeuron, TransferFunctionsPolicy, ConnectionType::IsTrainable>::BiasNeuronType BiasNeuronType;
 
-        static constexpr size_t NumberOfBiasNeuronsInLayer = NumberOfBiasNeurons;
+        static const size_t NumberOfBiasNeuronsInLayer = 1;
+
+        ValueType getBiasNeuronDeltaWeightForConnection(const size_t connection) const
+        {
+            return this->mBiasNeuron.getDeltaWeightForConnection(connection);
+        }
+
+        ValueType getBiasNeuronGradientForConnection(const size_t connection) const
+        {
+            return this->mBiasNeuron.getGradientForConnection(connection);
+        }
+
+        ValueType getBiasNeuronOutputValue() const
+        {
+            return this->mBiasNeuron.getOutputValue();
+        }
+
+        ValueType getBiasNeuronPreviousDeltaWeightForConnection(const size_t connection) const
+        {
+            return this->mBiasNeuron.getPreviousDeltaWeightForConnection(connection);
+        }
+
+        ValueType getBiasNeuronWeightForConnection(const size_t connection) const
+        {
+            return this->mBiasNeuron.getWeightForConnection(connection);
+        }
+
+        ValueType getBiasNeuronValueForOutgoingConnection(const size_t connection) const
+        {
+            return this->mBiasNeuron.getOutputValueForConnection(connection);
+        }
 
         void initializeNeurons()
         {
@@ -2768,10 +2823,8 @@ namespace tinymind {
         typedef typename NeuronType::NeuronTransferFunctionsPolicy TransferFunctionsPolicy;
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr layerType_e LayerType = layerType_e::InputLayerType;
-        static constexpr size_t NumberOfNeuronsInLayer = NumberOfNeurons;
-        static constexpr size_t NumberOfBiasNeuronsInLayer = NumberOfBiasNeurons;
-        static constexpr size_t BiasNeuronIndex = 0;
+        static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
+        static const size_t NumberOfBiasNeuronsInLayer = 1;
 
         /**
          * Feed forward simply latches the current value for each neuron.
@@ -3052,10 +3105,8 @@ namespace tinymind {
         typedef typename NeuronType::ValueType ValueType;
         typedef typename NeuronType::NeuronTransferFunctionsPolicy TransferFunctionsPolicy;
 
-        static constexpr layerType_e LayerType = layerType_e::HiddenLayerType;
-        static constexpr size_t NumberOfNeuronsInLayer = NumberOfNeurons;
-        static constexpr size_t NumberOfBiasNeuronsInLayer = 1;
-        static constexpr size_t BiasNeuronIndex = 0;
+        static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
+        static const size_t NumberOfBiasNeuronsInLayer = 1;
 
         template<typename PreviousLayerType>
         void feedForward(const PreviousLayerType& previousLayer)
@@ -3197,9 +3248,8 @@ namespace tinymind {
         typedef SigmoidActivationPolicy<ValueType> UpdateGateActivationPolicy;
         typedef TanhActivationPolicy<ValueType> CellStateActivationPolicy;
 
-        static constexpr layerType_e LayerType = layerType_e::GruHiddenLayerType;
-        static constexpr size_t NumberOfNeuronsInLayer = NumberOfNeurons;
-        static constexpr size_t NumberOfBiasNeuronsInLayer = 1;
+        static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
+        static const size_t NumberOfBiasNeuronsInLayer = 0;
 
         template<typename PreviousLayerType, typename RecurrentLayerType>
         void feedForward(const PreviousLayerType& previousLayer, RecurrentLayerType& recurrentLayer)
@@ -3262,9 +3312,8 @@ namespace tinymind {
         typedef SigmoidActivationPolicy<ValueType> OutputGateActivationPolicy;
         typedef TanhActivationPolicy<ValueType> CellStateActivationPolicy;
         
-        static constexpr layerType_e LayerType = layerType_e::LstmHiddenLayerType;
-        static constexpr size_t NumberOfNeuronsInLayer = NumberOfNeurons;
-        static constexpr size_t NumberOfBiasNeuronsInLayer = 1;
+        static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
+        static const size_t NumberOfBiasNeuronsInLayer = 0;
 
         template<typename PreviousLayerType, typename RecurrentLayerType>
         void feedForward(const PreviousLayerType& previousLayer, RecurrentLayerType& recurrentLayer)
@@ -3354,28 +3403,40 @@ namespace tinymind {
     {
         ValueType getBiasNeuronWeightForConnection(const size_t connection) const
         {
+            (void)connection; // Suppress unused parameter warning
             return 0;
         }
 
         ValueType getWeightForNeuronAndConnection(const size_t neuron, const size_t connection) const
         {
+            (void)neuron;   // Suppress unused parameter warning
+            (void)connection; // Suppress unused parameter warning
             return 0;
         }
 
         void setBiasNeuronDeltaWeightForConnection(const size_t connection, const ValueType& deltaWeight)
         {
+            (void)connection; // Suppress unused parameter warning
+            (void)deltaWeight; // Suppress unused parameter warning
         }
 
         void setBiasNeuronGradientForConnection(const size_t connection, const ValueType& value)
         {
+            (void)connection; // Suppress unused parameter warning
+            (void)value; // Suppress unused parameter warning
         }
 
         void setBiasNeuronWeightForConnection(const size_t connection, const ValueType& weight)
         {
+            (void)connection; // Suppress unused parameter warning
+            (void)weight; // Suppress unused parameter warning
         }
 
         void setWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& weight)
         {
+            (void)neuron;   // Suppress unused parameter warning
+            (void)connection; // Suppress unused parameter warning
+            (void)weight; // Suppress unused parameter warning
         }
     };
 
@@ -3387,10 +3448,9 @@ namespace tinymind {
     {
         typedef typename NeuronType::ValueType ValueType;
         
-        static constexpr layerType_e LayerType = layerType_e::RecurrentLayerType;
-        static constexpr size_t NumberOfNeuronsInLayer = NumberOfNeurons;
-        static constexpr size_t NumberOfBiasNeuronsInLayer = 0;
-        static constexpr size_t RecurrentLayerRecurrentConnectionDepth = RecurrentConnectionDepth;
+        static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
+        static const size_t NumberOfBiasNeuronsInLayer = 0;
+        static const size_t RecurrentLayerRecurrentConnectionDepth = RecurrentConnectionDepth;
 
         ValueType getOutputValueForOutgoingConnection(const size_t connection) const
         {
@@ -3413,10 +3473,9 @@ namespace tinymind {
         typedef typename NeuronType::NeuronTransferFunctionsPolicy TransferFunctionsPolicy;
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr layerType_e LayerType = layerType_e::OutputLayerType;
-        static constexpr size_t NumberOfNeuronsInLayer = NumberOfNeurons;
-        static constexpr size_t NumberOfBiasNeuronsInLayer = 0;
-        static constexpr outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration;
+        static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
+        static const size_t NumberOfBiasNeuronsInLayer = 0;
+        static const outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration;
 
         template<typename PreviousLayerType>
         void feedForward(const PreviousLayerType& previousLayer)
@@ -3446,10 +3505,9 @@ namespace tinymind {
         typedef typename NeuronType::NeuronTransferFunctionsPolicy TransferFunctionsPolicy;
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
-        static constexpr layerType_e LayerType = layerType_e::ClassifierOutputLayerType;
-        static constexpr size_t NumberOfNeuronsInLayer = NumberOfNeurons;
-        static constexpr size_t NumberOfBiasNeuronsInLayer = 0;
-        static constexpr outputLayerConfiguration_e OutputLayerConfiguration = ClassifierOutputLayerConfiguration;
+        static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
+        static const size_t NumberOfBiasNeuronsInLayer = 0;
+        static const outputLayerConfiguration_e OutputLayerConfiguration = ClassifierOutputLayerConfiguration;
 
         template<typename PreviousLayerType>
         void feedForward(const PreviousLayerType& previousLayer)
@@ -3558,7 +3616,11 @@ namespace tinymind {
     {
         InnerHiddenLayerManager()
         {
+#if __cplusplus >= 201103L
+            this->pInnerHiddenLayers = nullptr;
+#else
             this->pInnerHiddenLayers = NULL;
+#endif
         }
 
         static void initializeInnerHiddenLayerWeights()
@@ -3609,6 +3671,7 @@ namespace tinymind {
     {
         static void feedForward(InputLayerType& inputLayer, InnerHiddenLayerType* pInnerHiddenLayers, LastHiddenLayerType& lastHiddenLayer)
         {
+            (void)pInnerHiddenLayers; // Suppress unused parameter warning
             lastHiddenLayer.feedForward(inputLayer);
         }
     };
@@ -3683,8 +3746,8 @@ namespace tinymind {
 
     struct NullRecurrentLayer
     {
-        static constexpr size_t RecurrentLayerRecurrentConnectionDepth = 0;
-        static constexpr size_t NumberOfBiasNeuronsInLayer = 0;
+        static const size_t RecurrentLayerRecurrentConnectionDepth = 0;
+        static const size_t NumberOfBiasNeuronsInLayer = 0;
         
         void initializeNeurons()
         {
@@ -3783,15 +3846,14 @@ namespace tinymind {
                                                         IsTrainable,
                                                         OutputLayerConfiguration>::TrainingPolicyType TrainingPolicyType;
 
-        static constexpr size_t NeuralNetworkNumberOfHiddenLayers = NumberOfHiddenLayers;
-        static constexpr size_t NumberOfInnerHiddenLayers = NumberOfHiddenLayers - 1;
-        static constexpr size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
-        static constexpr size_t NumberOfHiddenLayerNeurons = LastHiddenLayerType::NumberOfNeuronsInLayer;
-        static constexpr size_t NumberOfOutputLayerNeurons = NeuralNetworkOutputLayerType::NumberOfNeuronsInLayer;
-        static constexpr size_t NeuralNetworkRecurrentConnectionDepth = NeuralNetworkRecurrentLayerType::RecurrentLayerRecurrentConnectionDepth;
-        static constexpr size_t NeuralNetworkBatchSize = BatchSize;
-        static constexpr hiddenLayerConfiguration_e NeuralNetworkHiddenLayerConfiguration = HiddenLayerConfiguration;
-        static constexpr outputLayerConfiguration_e NeuralNetworkOutputLayerConfiguration = OutputLayerConfiguration;
+        static const size_t NeuralNetworkNumberOfHiddenLayers = NumberOfHiddenLayers;
+        static const size_t NumberOfInnerHiddenLayers = NumberOfHiddenLayers - 1;
+        static const size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfHiddenLayerNeurons = LastHiddenLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfOutputLayerNeurons = NeuralNetworkOutputLayerType::NumberOfNeuronsInLayer;
+        static const size_t NeuralNetworkRecurrentConnectionDepth = NeuralNetworkRecurrentLayerType::RecurrentLayerRecurrentConnectionDepth;
+        static const size_t NeuralNetworkBatchSize = BatchSize;
+        static const outputLayerConfiguration_e NeuralNetworkOutputLayerConfiguration = OutputLayerConfiguration;
 
         MultilayerPerceptron()
         {
@@ -4110,10 +4172,10 @@ namespace tinymind {
         GradientsManagerType mGradientsManager;
     private:
         unsigned char mLearnedValuesBuffer[NumberOfOutputLayerNeurons * sizeof(ValueType)];
+        unsigned char alignmentPads[1];
     private:
-        MultilayerPerceptron(const MultilayerPerceptron&) = delete;
-        MultilayerPerceptron(const MultilayerPerceptron&&) = delete;
-        MultilayerPerceptron& operator=(const MultilayerPerceptron&) = delete;
+        MultilayerPerceptron(const MultilayerPerceptron&) {} // hide copy constructor
+        MultilayerPerceptron& operator=(const MultilayerPerceptron&) {} // hide assignment operator
 
         static_assert(NumberOfInputs > 0, "Invalid number of inputs.");
         static_assert(NumberOfHiddenLayers > 0, "Invalid number of hidden layers.");

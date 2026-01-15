@@ -21,8 +21,14 @@
 */
 
 // nn_unit_test.cpp : Defines the entry point for the neural network template unit tests.
+
+#include "compiler.h"
+
 #define BOOST_TEST_MODULE nn_unit_test
+TINYMIND_DISABLE_WARNING_PUSH
+TINYMIND_DISABLE_WARNING("-Wdangling-reference")
 #include <boost/test/included/unit_test.hpp>
+TINYMIND_DISABLE_WARNING_POP
 
 #include <cstdint>
 #include <string.h>
@@ -33,9 +39,10 @@
 #include "fixedPointTransferFunctions.hpp"
 #include "random.hpp"
 #include "nnproperties.hpp"
+#include "xavier.hpp"
+
 #include <iostream>
 #include <cstdlib>
-#include <ctime>
 #include <fstream>
 #include <random>
 #include <vector>
@@ -118,6 +125,8 @@ using namespace std;
 #define TRAINING_ITERATIONS 2000
 #define NUM_SAMPLES_AVG_ERROR 20
 #define STOP_ON_AVG_ERROR 0
+#define USE_WEIGHTS_INPUT_FILE 0 // the weights input file uses the initial values from a successful training run
+#define RANDOM_SEED 7U
 
 template<typename ValueType>
 struct ValueHelper
@@ -153,17 +162,32 @@ struct UniformRealRandomNumberGenerator
 
         return weight;
     }
-
 private:
     static std::default_random_engine generator;
     static std::uniform_real_distribution<double> distribution;
 };
 
 template<typename ValueType>
-std::default_random_engine UniformRealRandomNumberGenerator<ValueType>::generator;
+std::default_random_engine UniformRealRandomNumberGenerator<ValueType>::generator(RANDOM_SEED);
 
 template<typename ValueType>
 std::uniform_real_distribution<double> UniformRealRandomNumberGenerator<ValueType>::distribution(-1.0, 1.0);
+
+template<typename ValueType, unsigned NUMBER_OF_INPUTS, unsigned NUMBER_OF_HIDDEN_LAYERS, unsigned NUMBER_OF_NEURONS_PER_HIDDEN_LAYER, unsigned NUMBER_OF_OUTPUTS>
+struct XavierRandomNumberGenerator
+{
+    typedef tinymind::XavierWeightInitializer<NUMBER_OF_INPUTS, NUMBER_OF_HIDDEN_LAYERS, NUMBER_OF_NEURONS_PER_HIDDEN_LAYER, NUMBER_OF_OUTPUTS> XavierWeightInitializerType;
+    typedef tinymind::ValueConverter<double, ValueType> WeightConverterPolicy;
+
+    static ValueType generateRandomWeight()
+    {
+        static XavierWeightInitializerType xavierWeightInitializer;
+        const double temp = xavierWeightInitializer.generateUniformWeight();
+        const ValueType weight = WeightConverterPolicy::convertToDestinationType(temp);
+
+        return weight;
+    }
+};
 
 template<
         typename ValueType,
@@ -473,7 +497,7 @@ static void testFloatingPointNN(    NeuralNetworkType& neuralNetwork,
 
     weightsOutputPath.replace(weightsOutputPath.find("."), std::string::npos, "_weights.txt");
 
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
     for (int i = 0; i < numberOfTrainingIterations; ++i)
     {
@@ -541,12 +565,16 @@ static void testFixedPointNeuralNetwork(  NeuralNetworkType& neuralNetwork,
                                 char const* const path,
                                 const int numberOfTrainingIterations = TRAINING_ITERATIONS)
 {
+#if USE_WEIGHTS_INPUT_FILE == 1
+    typedef tinymind::NetworkPropertiesFileManager<NeuralNetworkType> NetworkPropertiesFileManagerType;
+#endif // USE_WEIGHTS_INPUT_FILE
     typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
     typedef typename ValueType::FullWidthValueType FullWidthValueType;
     typedef ValueHelper<ValueType> ValueHelperType;
     static const FullWidthValueType ERROR_LIMIT = ValueHelperType::getErrorLimit();
     ofstream results(path);
     ofstream weightsOutputFile;
+    std::string initialWeightsInputPath(path);
     std::string weightsOutputPath(path);
     std::string binaryWeightsOutputPath(path);
     ValueType values[NeuralNetworkType::NumberOfInputLayerNeurons];
@@ -555,10 +583,24 @@ static void testFixedPointNeuralNetwork(  NeuralNetworkType& neuralNetwork,
     std::deque<FullWidthValueType> errors;
     ValueType error;
 
+    initialWeightsInputPath.replace(weightsOutputPath.find("."), std::string::npos, "_initial_weights.txt");
     weightsOutputPath.replace(weightsOutputPath.find("."), std::string::npos, "_weights.txt");
     binaryWeightsOutputPath.replace(binaryWeightsOutputPath.find(".txt"), std::string::npos, ".bin");
 
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
+
+#if USE_WEIGHTS_INPUT_FILE
+    initialWeightsInputPath.insert(0, "../input/");
+    ifstream weightsInputFile(initialWeightsInputPath);
+    if (weightsInputFile.is_open())
+    {
+        NetworkPropertiesFileManagerType::template loadNetworkWeights<ValueType, ValueType>(neuralNetwork, weightsInputFile);
+    }
+    else
+    {
+        cout << "Did not find initial weights input file: " << initialWeightsInputPath << endl;
+    }
+#endif
 
     for (int i = 0; i < numberOfTrainingIterations; ++i)
     {
@@ -597,7 +639,6 @@ static void testFixedPointNeuralNetwork(  NeuralNetworkType& neuralNetwork,
     weightsOutputFile.open(weightsOutputPath.c_str());
 
     tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkWeights(neuralNetwork, weightsOutputFile);
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkWeights(neuralNetwork, binaryWeightsOutputPath.c_str());
 
     weightsOutputFile.close();
 
@@ -648,7 +689,7 @@ static void testFixedPointNeuralNetwork_No_Train( NeuralNetworkType& neuralNetwo
     ValueType error;
 
     NetworkPropertiesFileManagerType::template loadNetworkWeights<ValueType, ValueType>(neuralNetwork, weightsInputFile);
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
     for (int i = 0; i < TRAINING_ITERATIONS; ++i)
     {
@@ -727,7 +768,7 @@ static void testFixedPointNeuralNetwork_No_Train_Float_Weights( NeuralNetworkTyp
     ValueType error;
 
     NetworkPropertiesFileManagerType::template loadNetworkWeights<double, ValueType>(neuralNetwork, weightsInputFile);
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
     for (int i = 0; i < TRAINING_ITERATIONS; ++i)
     {
@@ -794,7 +835,7 @@ static void testNeuralNetwork_Recurrent(NeuralNetworkType& neuralNetwork, char c
     std::deque<FullWidthValueType> errors;
     ValueType error;
 
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
     for (int i = 0; i < TRAINING_ITERATIONS; ++i)
     {
@@ -847,7 +888,7 @@ static void testFloatingPointNeuralNetwork_Recurrent(NeuralNetworkType& neuralNe
     std::deque<FullWidthValueType> errors;
     ValueType error;
 
-    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(neuralNetwork, results);
+    tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
     for (int i = 0; i < TRAINING_ITERATIONS; ++i)
     {
@@ -890,12 +931,12 @@ BOOST_AUTO_TEST_SUITE(test_suite_nn)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -908,8 +949,35 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_xor.txt";
+    FixedPointMultiLayerPerceptronNetworkType nn;
+
+    testFixedPointNeuralNetwork_Xor(nn, path);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor_xavier)
+{
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::FixedPointTransferFunctions<
+                                                    ValueType,
+                                                    XavierRandomNumberGenerator<ValueType, NUMBER_OF_INPUTS, NUMBER_OF_HIDDEN_LAYERS, NUMBER_OF_NEURONS_PER_HIDDEN_LAYER, NUMBER_OF_OUTPUTS>,
+                                                    tinymind::TanhActivationPolicy<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>> TransferFunctionsType;
+    typedef tinymind::MultilayerPerceptron< ValueType,
+                                            NUMBER_OF_INPUTS,
+                                            NUMBER_OF_HIDDEN_LAYERS,
+                                            NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
+                                            NUMBER_OF_OUTPUTS,
+                                            TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
+    srand(RANDOM_SEED);
+    char const* const path = "nn_fixed_xor_xavier.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
     testFixedPointNeuralNetwork_Xor(nn, path);
@@ -917,12 +985,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor_nn_copy)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -935,7 +1003,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor_nn_copy)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_xor.txt";
     char const* const pathCopy = "nn_fixed_xor_copy.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
@@ -948,12 +1016,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor_nn_copy)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -966,7 +1034,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_and)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -975,12 +1043,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -993,7 +1061,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_or)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1002,12 +1070,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_nor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1020,7 +1088,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_nor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_nor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1029,13 +1097,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_nor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
-    static constexpr bool TRAINABLE = false;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const bool TRAINABLE = false;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1049,7 +1117,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_xor)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_no_train_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1058,13 +1126,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
-    static constexpr bool TRAINABLE = false;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const bool TRAINABLE = false;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1078,7 +1146,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_and)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_no_train_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1087,13 +1155,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
-    static constexpr bool TRAINABLE = false;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const bool TRAINABLE = false;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1107,7 +1175,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_or)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_no_train_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1116,13 +1184,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_nor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
-    static constexpr bool TRAINABLE = false;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const bool TRAINABLE = false;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1136,7 +1204,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_nor)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_no_train_nor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1145,12 +1213,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_nor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1163,7 +1231,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_5_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1172,12 +1240,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1190,7 +1258,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_and)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_5_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1199,12 +1267,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1217,7 +1285,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_or)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_5_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1226,12 +1294,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_5_hidden_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 16;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 16;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 16;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 16;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1244,7 +1312,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_16_16_5_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1253,12 +1321,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 16;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 16;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 16;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 16;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1271,7 +1339,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_and)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_16_16_5_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1280,12 +1348,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 16;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 16;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 16;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 16;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1298,7 +1366,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_or)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_16_16_5_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1307,12 +1375,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_16_16_nn_5_hidden_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1325,7 +1393,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_8_24_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1334,12 +1402,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1352,7 +1420,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_and)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_8_24_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1361,12 +1429,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1379,7 +1447,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_or)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_8_24_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1388,14 +1456,14 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = true;
-    static constexpr size_t BATCH_SIZE = 2;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = true;
+    static const size_t BATCH_SIZE = 2;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1410,7 +1478,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_xor)
                                             TransferFunctionsType,
                                             TRAINABLE,
                                             BATCH_SIZE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_batch_2_8_24_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1427,14 +1495,14 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = true;
-    static constexpr size_t BATCH_SIZE = 2;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = true;
+    static const size_t BATCH_SIZE = 2;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1449,7 +1517,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_and)
                                             TransferFunctionsType,
                                             TRAINABLE,
                                             BATCH_SIZE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_batch_2_8_24_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1466,14 +1534,14 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = true;
-    static constexpr size_t BATCH_SIZE = 2;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = true;
+    static const size_t BATCH_SIZE = 2;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1488,7 +1556,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_or)
                                             TransferFunctionsType,
                                             TRAINABLE,
                                             BATCH_SIZE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_batch_2_8_24_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1505,14 +1573,14 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_2_8_24_nn_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = true;
-    static constexpr size_t BATCH_SIZE = 4;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = true;
+    static const size_t BATCH_SIZE = 4;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1527,7 +1595,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_xor)
                                             TransferFunctionsType,
                                             TRAINABLE,
                                             BATCH_SIZE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_batch_4_8_24_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1544,14 +1612,14 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = true;
-    static constexpr size_t BATCH_SIZE = 4;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = true;
+    static const size_t BATCH_SIZE = 4;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1566,7 +1634,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_and)
                                             TransferFunctionsType,
                                             TRAINABLE,
                                             BATCH_SIZE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_batch_4_8_24_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1583,14 +1651,14 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_and)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = true;
-    static constexpr size_t BATCH_SIZE = 4;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = true;
+    static const size_t BATCH_SIZE = 4;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1605,7 +1673,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_or)
                                             TransferFunctionsType,
                                             TRAINABLE,
                                             BATCH_SIZE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_batch_4_8_24_or.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1622,11 +1690,11 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_batch_4_8_24_nn_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_elman_nn)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1638,7 +1706,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_elman_nn)
                                     NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                     NUMBER_OF_OUTPUTS,
                                     TransferFunctionsType> FixedPointElmanNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_elman.txt";
     FixedPointElmanNetworkType nn;
 
@@ -1647,9 +1715,9 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_elman_nn)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_elman_nn)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1661,7 +1729,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_elman_nn)
                                     NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                     NUMBER_OF_OUTPUTS,
                                     TransferFunctionsType> FloatingPointElmanNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_elman.txt";
     FloatingPointElmanNetworkType nn;
 
@@ -1670,10 +1738,10 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_elman_nn)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1686,7 +1754,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FloatingPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_xor.txt";
     FloatingPointMultiLayerPerceptronNetworkType nn;
 
@@ -1695,10 +1763,10 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1711,7 +1779,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_and)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FloatingPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_and.txt";
     FloatingPointMultiLayerPerceptronNetworkType nn;
 
@@ -1720,10 +1788,10 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_and)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_or)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1736,7 +1804,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_or)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FloatingPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_or.txt";
     FloatingPointMultiLayerPerceptronNetworkType nn;
 
@@ -1745,13 +1813,13 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_or)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_float_weights_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = false;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = false;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1765,7 +1833,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_float_weights_xor)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_no_train_float_weights_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1774,13 +1842,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_float_weights_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_float_weights_and)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = false;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = false;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1794,7 +1862,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_float_weights_and)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_no_train_float_weights_and.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1803,10 +1871,10 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_float_weights_and)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_relu_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1819,7 +1887,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_relu_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FloatingPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_relu_xor.txt";
     FloatingPointMultiLayerPerceptronNetworkType nn;
 
@@ -1832,13 +1900,13 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_nn_relu_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_relu_xor_no_train)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = false;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 16;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 16;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = false;
+    static const size_t NUMBER_OF_FIXED_BITS = 16;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 16;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1852,7 +1920,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_relu_xor_no_train)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_relu_xor_no_train.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1861,13 +1929,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_relu_xor_no_train)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_relu_xor_no_train)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = false;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 24;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = false;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 24;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1881,7 +1949,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_relu_xor_no_train)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_8_24_relu_xor_no_train.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1890,13 +1958,13 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_24_nn_relu_xor_no_train)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_8_nn_relu_xor_no_train)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr bool TRAINABLE = false;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const bool TRAINABLE = false;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1910,7 +1978,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_8_nn_relu_xor_no_train)
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType,
                                             TRAINABLE> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_8_8_relu_xor_no_train.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -1919,10 +1987,10 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_8_8_nn_relu_xor_no_train)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_2_hidden_nn_relu_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 2;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1935,7 +2003,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_2_hidden_nn_relu_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FloatingPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_2_hidden_relu_xor.txt";
     FloatingPointMultiLayerPerceptronNetworkType nn;
 
@@ -1948,10 +2016,10 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_2_hidden_nn_relu_xor)
 
 BOOST_AUTO_TEST_CASE(test_case_floatingpoint_2_hidden_nn_relu_xor_copy)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 2;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
                                             ValueType,
@@ -1964,7 +2032,7 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_2_hidden_nn_relu_xor_copy)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FloatingPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_float_2_hidden_relu_xor.txt";
     char const* const pathCopy = "nn_float_2_hidden_relu_xor_copy.txt";
     FloatingPointMultiLayerPerceptronNetworkType nn;
@@ -1981,12 +2049,12 @@ BOOST_AUTO_TEST_CASE(test_case_floatingpoint_2_hidden_nn_relu_xor_copy)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_2_hidden_nn_relu_xor_no_train)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 2;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 16;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 16;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 5;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 16;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 16;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -1994,7 +2062,7 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_2_hidden_nn_relu_xor_no_train)
                                                     tinymind::ReluActivationPolicy<ValueType>,
                                                     tinymind::TanhActivationPolicy<ValueType>> TransferFunctionsType;
     typedef tinymind::MultilayerPerceptron<ValueType, NUMBER_OF_INPUTS, NUMBER_OF_HIDDEN_LAYERS, NUMBER_OF_NEURONS_PER_HIDDEN_LAYER, NUMBER_OF_OUTPUTS, TransferFunctionsType, false> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_2_hidden_relu_xor_no_train.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
@@ -2003,12 +2071,12 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_2_hidden_nn_relu_xor_no_train)
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_sigmoid_xor)
 {
-    static constexpr size_t NUMBER_OF_INPUTS = 2;
-    static constexpr size_t NUMBER_OF_HIDDEN_LAYERS = 1;
-    static constexpr size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
-    static constexpr size_t NUMBER_OF_OUTPUTS = 1;
-    static constexpr size_t NUMBER_OF_FIXED_BITS = 8;
-    static constexpr size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
     typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
@@ -2021,11 +2089,93 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_sigmoid_xor)
                                             NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                             NUMBER_OF_OUTPUTS,
                                             TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
-    srand(static_cast<unsigned int>(time(NULL)));
+    srand(RANDOM_SEED);
     char const* const path = "nn_fixed_sigmoid_xor.txt";
     FixedPointMultiLayerPerceptronNetworkType nn;
 
     testFixedPointNeuralNetwork_Xor(nn, path, 75000);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+typedef tinymind::QValue<8, 8, true, tinymind::TruncatePolicy, tinymind::MinMaxSaturatePolicy> SignedQ8_8SatPolicyType;
+typedef tinymind::QValue<8, 8, false, tinymind::TruncatePolicy, tinymind::MinMaxSaturatePolicy> UnsignedQ8_8SatPolicyType;
+
+BOOST_AUTO_TEST_SUITE(SoftMaxLinearClassificationTests)
+
+// Test case: 2x2 grayscale image with 2 classes
+BOOST_AUTO_TEST_CASE(test_softmax_2x2_image_2_classes)
+{
+    // 2x2 grayscale image (4 input features)
+    const size_t inputSize = 4;  // 2x2 pixels
+    const size_t numClasses = 2; // Binary classification
+    
+    // Example: grayscale values normalized to Q8.8 format
+    // Image pixels: [100, 150, 200, 50] -> normalized to [-1, 1] range
+    SignedQ8_8SatPolicyType inputImage[inputSize];
+    inputImage[0] = SignedQ8_8SatPolicyType(-1, 0);    // Dark pixel (-1.0)
+    inputImage[1] = SignedQ8_8SatPolicyType(0, 0);     // Medium pixel (0.0)
+    inputImage[2] = SignedQ8_8SatPolicyType(1, 0);     // Bright pixel (1.0)
+    inputImage[3] = SignedQ8_8SatPolicyType(-1, 128);  // Dark-ish pixel (-0.5)
+    
+    // Linear layer weights: [numClasses x inputSize]
+    // Class 0 weights favor dark pixels, Class 1 favors bright pixels
+    SignedQ8_8SatPolicyType weights[numClasses][inputSize] = {
+        // Class 0: favors dark pixels
+        {SignedQ8_8SatPolicyType(1, 0), SignedQ8_8SatPolicyType(0, 128), 
+         SignedQ8_8SatPolicyType(-1, 0), SignedQ8_8SatPolicyType(1, 128)},
+        // Class 1: favors bright pixels
+        {SignedQ8_8SatPolicyType(-1, 0), SignedQ8_8SatPolicyType(0, 128), 
+         SignedQ8_8SatPolicyType(2, 0), SignedQ8_8SatPolicyType(-1, 128)}
+    };
+    
+    // Bias terms for each class
+    SignedQ8_8SatPolicyType bias[numClasses] = {
+        SignedQ8_8SatPolicyType(0, 128),  // 0.5 bias for class 0
+        SignedQ8_8SatPolicyType(-1, 128)  // -0.5 bias for class 1
+    };
+    
+    // Linear transformation: logits = weights * input + bias
+    SignedQ8_8SatPolicyType logits[numClasses];
+    for (size_t c = 0; c < numClasses; ++c) {
+        logits[c] = bias[c];
+        for (size_t i = 0; i < inputSize; ++i) {
+            logits[c] += weights[c][i] * inputImage[i];
+        }
+    }
+    
+    // Apply SoftMax
+    SignedQ8_8SatPolicyType probabilities[numClasses];
+    tinymind::SoftmaxActivationPolicy<SignedQ8_8SatPolicyType>::activationFunction(
+        logits, 
+        probabilities, 
+        numClasses
+    );
+    
+    // Verify: Sum of probabilities should be close to 1.0
+    SignedQ8_8SatPolicyType sum(0, 0);
+    for (size_t c = 0; c < numClasses; ++c) {
+        sum += probabilities[c];
+    }
+    
+    // Expected sum: 1.0 in Q8.8 = 0x0100 = 256
+    SignedQ8_8SatPolicyType expectedSum(1, 0);
+    
+    // Allow tolerance due to Q-format rounding and exp approximation
+    // Tolerance: ±3 LSB = ±0.01171875 in Q8.8
+    const int tolerance = 3;
+    int sumValue = sum.getValue();
+    int expectedValue = expectedSum.getValue();
+    
+    // Test to make sure sum of probabilities should be ~1.0
+    BOOST_TEST(sumValue >= (expectedValue - tolerance));
+    BOOST_TEST(sumValue <= (expectedValue + tolerance));
+    
+    // Verify each probability is in [0, 1] range
+    for (size_t c = 0; c < numClasses; ++c) {
+        BOOST_TEST(probabilities[c].getValue() >= 0);
+        BOOST_TEST(probabilities[c].getValue() <= SignedQ8_8SatPolicyType(1, 0).getValue());
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

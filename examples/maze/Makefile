@@ -1,16 +1,27 @@
 # Simple Makefile for the table-based q-learner example
+MKDIR=mkdir -p ./output
+CC=g++
+WARN=-Wall -Wextra -Werror -Wpedantic
+OUT=./output/maze
+SOURCES=maze.cpp mazelearner.cpp
+INCLUDES=-I../../cpp -I../../cpp/include -I../../include/
+
 default :
-#	Make an output dir to hold the executable
-	mkdir -p ~/maze
-#	Build the example with default build flags
-	g++ -O3 -Wall -o ~/maze/maze maze.cpp mazelearner.cpp -I../../cpp
+	$(MKDIR)
+	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES)
+	$(CC) -c mazelearner.cpp $(WARN) -o output/mazelearner.o $(INCLUDES)
 
-debug :
-#	Make an output dir to hold the executable
-	mkdir -p ~/maze
-#	Build the example with default build flags
-	g++ -g -Wall -o ~/maze/maze maze.cpp mazelearner.cpp -I../../cpp
+release :
+	$(MKDIR)
+	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES)
+	$(CC) -c mazelearner.cpp -O3 $(WARN) -o output/mazelearner.o $(INCLUDES)
 
-# Remove all object files
+run :
+	cd ./output && ./maze && cd ../
+
+plot :
+	python3 ./mazeplot.py output/maze_training.txt &
+	python3 ./mazeplot.py output/maze_test.txt &
+
 clean:
-	rm *.o
+	rm -f ./output/*

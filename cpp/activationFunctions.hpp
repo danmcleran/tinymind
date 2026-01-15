@@ -35,11 +35,28 @@ namespace tinymind {
     {
         static ValueType activationFunction(const ValueType& value)
         {
+            (void)value; // suppress unused parameter warning
             return 0;
         }
 
         static ValueType activationFunctionDerivative(const ValueType& value)
         {
+            (void)value; // suppress unused parameter warning
+            return 0;
+        }
+    };
+
+    template<typename ValueType>
+    struct LinearActivationPolicy
+    {
+        static ValueType activationFunction(const ValueType& value)
+        {
+            return value;
+        }
+
+        static ValueType activationFunctionDerivative(const ValueType& value)
+        {
+            (void)value; // suppress unused parameter warning
             return 0;
         }
     };
@@ -72,7 +89,7 @@ namespace tinymind {
     struct CappedReluActivationPolicy
     {
         typedef typename FullWidthFieldTypeShim<ValueType>::FullWidthFieldType FullWidthFieldType;
-        static constexpr FullWidthFieldType MAX_VALUE = MaxValue;
+        static const FullWidthFieldType MAX_VALUE = MaxValue;
 
         static ValueType activationFunction(const ValueType& value)
         {
@@ -107,7 +124,7 @@ namespace tinymind {
 
         static ValueType activationFunction(const ValueType& value)
         {
-            static constexpr ptrdiff_t MAX_ACTIVATION_INDEX = ((sizeof(sigmoidActivationTable.values) / sizeof(sigmoidActivationTable.values[0])) - 1);
+            static const ptrdiff_t MAX_ACTIVATION_INDEX = ((sizeof(sigmoidActivationTable.values) / sizeof(sigmoidActivationTable.values[0])) - 1);
 
             const ValueType result = LookupTableType::getValue(value, &sigmoidActivationTable.values[0], MAX_ACTIVATION_INDEX);
 
@@ -138,7 +155,7 @@ namespace tinymind {
 
         static ValueType activationFunction(const ValueType& value)
         {
-            static constexpr ptrdiff_t MAX_ACTIVATION_INDEX = (((sizeof(FullWidthFieldType) * NUMBER_OF_ACTIVATION_TABLE_VALUES) / sizeof(tanhActivationTable.values[0])) - 1);
+            static const ptrdiff_t MAX_ACTIVATION_INDEX = (((sizeof(FullWidthFieldType) * NUMBER_OF_ACTIVATION_TABLE_VALUES) / sizeof(tanhActivationTable.values[0])) - 1);
 
             const ValueType result = LookupTableType::getValue(value, &tanhActivationTable.values[0], MAX_ACTIVATION_INDEX);
 
@@ -169,7 +186,7 @@ namespace tinymind {
 
         static void activationFunction(ValueType const* const values, ValueType* results, const size_t numberOfNerons)
         {
-            static constexpr ptrdiff_t MAX_ACTIVATION_INDEX = (((sizeof(FullWidthFieldType) * NUMBER_OF_ACTIVATION_TABLE_VALUES) / sizeof(expActivationTable.values[0])) - 1);
+            static const ptrdiff_t MAX_ACTIVATION_INDEX = (((sizeof(FullWidthFieldType) * NUMBER_OF_ACTIVATION_TABLE_VALUES) / sizeof(expActivationTable.values[0])) - 1);
             ValueType result;
             ValueType sum(0);
 
@@ -180,9 +197,12 @@ namespace tinymind {
                 sum += result;
             }
 
-            for(size_t neuron = 0;neuron < numberOfNerons;++neuron)
+            if (sum != 0)
             {
-                results[neuron] /= sum;
+                for(size_t neuron = 0;neuron < numberOfNerons;++neuron)
+                {
+                    results[neuron] /= sum;
+                }
             }
         }
 

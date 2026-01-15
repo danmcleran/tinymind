@@ -38,11 +38,14 @@ namespace tinymind {
 
         static ValueType randInt(ValueType const& min, ValueType const& max)
         {
+            (void)min; // suppress unused parameter warning
+            (void)max; // suppress unused parameter warning
             return 0;
         }
 
         void setRandomActionDecisionPoint(const size_t randomActionDecisionPoint)
         {
+            (void)randomActionDecisionPoint; // suppress unused parameter warning
         }
     };
 }

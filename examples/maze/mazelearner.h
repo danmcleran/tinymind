@@ -24,7 +24,6 @@
 
 #include <cstdint>
 #include <cstdlib>
-#include <ctime>
 #include <new>
 
 #include "qformat.hpp"
@@ -34,6 +33,7 @@
 // 6 rooms and 6 actions
 #define NUMBER_OF_STATES 6
 #define NUMBER_OF_ACTIONS 6
+#define RANDOM_SEED 7U
 
 typedef uint8_t state_t;
 typedef uint8_t action_t;
@@ -43,7 +43,7 @@ struct MazeEnvironmentRandomNumberGeneratorPolicy
 {
     MazeEnvironmentRandomNumberGeneratorPolicy()
     {
-        srand(static_cast<unsigned int>(time(0))); // seed random number generator
+        srand(RANDOM_SEED); // seed random number generator
     }
 
     size_t getRandomActionDecisionPoint() const
@@ -84,10 +84,10 @@ template<   typename StateType,
 struct MazeEnvironment : public tinymind::QLearningEnvironment<state_t, action_t, ValueType, NumberOfStates, NumberOfActions, MazeEnvironmentRandomNumberGeneratorPolicy>
 {
     typedef tinymind::QLearningEnvironment<StateType, ActionType, ValueType, NumberOfStates, NumberOfActions, MazeEnvironmentRandomNumberGeneratorPolicy> ParentType;
-    static constexpr size_t EnvironmentNumberOfStates = ParentType::EnvironmentNumberOfStates;
-    static constexpr size_t EnvironmentNumberOfActions = ParentType::EnvironmentNumberOfActions;
-    static constexpr size_t EnvironmentInvalidState = ParentType::EnvironmentInvalidState;
-    static constexpr size_t EnvironmentInvalidAction = ParentType::EnvironmentInvalidAction;
+    static const size_t EnvironmentNumberOfStates = ParentType::EnvironmentNumberOfStates;
+    static const size_t EnvironmentNumberOfActions = ParentType::EnvironmentNumberOfActions;
+    static const size_t EnvironmentInvalidState = ParentType::EnvironmentInvalidState;
+    static const size_t EnvironmentInvalidAction = ParentType::EnvironmentInvalidAction;
     static const ValueType EnvironmentRewardValue;
     static const ValueType EnvironmentNoRewardValue;
     static const ValueType EnvironmentInvalidActionValue;
