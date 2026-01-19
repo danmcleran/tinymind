@@ -1112,6 +1112,8 @@ namespace tinymind {
         template<typename NNType>
         void trainNetwork(NNType& nn, ValueType const* const targetValues)
         {
+            (void)nn; // Suppress unused parameter warning
+            (void)targetValues; // Suppress unused parameter warning
         }
     };
 
@@ -2707,6 +2709,29 @@ namespace tinymind {
         typedef RecurrentLayer<RecurrentLayerNeuronType, NumberOfNeuronsInHiddenLayers, RecurrentConnectionDepth> RecurrentLayerType;
     };
 
+    template<typename NeuralNetworkType, bool IsTrainable>
+    struct WeightInitPolicySelector
+    {
+    };
+
+    template<typename NeuralNetworkType>
+    struct WeightInitPolicySelector<NeuralNetworkType, true>
+    {
+        static void initializeWeights(NeuralNetworkType& neuralNetwork)
+        {
+            neuralNetwork.initializeWeights();
+        }
+    };
+
+    template<typename NeuralNetworkType>
+    struct WeightInitPolicySelector<NeuralNetworkType, false>
+    {
+        static void initializeWeights(NeuralNetworkType& neuralNetwork)
+        {
+            (void)neuralNetwork; // Suppress unused parameter warning
+        }
+    };
+
     /**
      * MLP Neural Network
      */
@@ -2775,6 +2800,8 @@ namespace tinymind {
                                                         IsTrainable,
                                                         OutputLayerConfiguration>::TrainingPolicyType TrainingPolicyType;
 
+        typedef WeightInitPolicySelector<NeuralNetworkType, IsTrainable> WeightInitPolicyType;
+
         static const size_t NeuralNetworkNumberOfHiddenLayers = NumberOfHiddenLayers;
         static const size_t NumberOfInnerHiddenLayers = NumberOfHiddenLayers - 1;
         static const size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
@@ -2800,6 +2827,17 @@ namespace tinymind {
 
             this->mTrainingPolicy.initialize();
 
+            WeightInitPolicyType::initializeWeights(*this);
+
+            for(size_t learnedValue = 0;learnedValue < NumberOfOutputLayerNeurons;++learnedValue)
+            {
+                bufferIndex = learnedValue * sizeof(ValueType);
+                new (&this->mLearnedValuesBuffer[bufferIndex]) ValueType();
+            }
+        }
+
+        void initializeWeights()
+        {
             this->mInputLayer.initializeWeights();
 
             this->mInnerHiddenLayerManager.initializeInnerHiddenLayerWeights();
@@ -2809,12 +2847,6 @@ namespace tinymind {
             this->mOutputLayer.initializeWeights();
 
             this->mRecurrentLayer.initializeWeights();
-
-            for(size_t learnedValue = 0;learnedValue < NumberOfOutputLayerNeurons;++learnedValue)
-            {
-                bufferIndex = learnedValue * sizeof(ValueType);
-                new (&this->mLearnedValuesBuffer[bufferIndex]) ValueType();
-            }
         }
 
         ValueType calculateError(ValueType const* const targetValues)
