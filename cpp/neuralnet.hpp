@@ -271,18 +271,18 @@ namespace tinymind {
     };
 
     template<typename NeuralNetworkType, size_t NumberOfInnerHiddenLayers, bool IsTrainable>
-    struct GradientsManagerChooser
+    struct GradientsManagerSelector
     {
     };
 
     template<typename NeuralNetworkType, size_t NumberOfInnerHiddenLayers>
-    struct GradientsManagerChooser<NeuralNetworkType, NumberOfInnerHiddenLayers, true>
+    struct GradientsManagerSelector<NeuralNetworkType, NumberOfInnerHiddenLayers, true>
     {
         typedef GradientsManager<NeuralNetworkType, NumberOfInnerHiddenLayers> GradientsManagerType;
     };
 
     template<typename NeuralNetworkType, size_t NumberOfInnerHiddenLayers>
-    struct GradientsManagerChooser<NeuralNetworkType, NumberOfInnerHiddenLayers, false>
+    struct GradientsManagerSelector<NeuralNetworkType, NumberOfInnerHiddenLayers, false>
     {
         typedef NullGradientsManager<NeuralNetworkType, NumberOfInnerHiddenLayers> GradientsManagerType;
     };
@@ -2710,12 +2710,12 @@ namespace tinymind {
     };
 
     template<typename NeuralNetworkType, bool IsTrainable>
-    struct WeightInitPolicySelector
+    struct WeightInitPolicy
     {
     };
 
     template<typename NeuralNetworkType>
-    struct WeightInitPolicySelector<NeuralNetworkType, true>
+    struct WeightInitPolicy<NeuralNetworkType, true>
     {
         static void initializeWeights(NeuralNetworkType& neuralNetwork)
         {
@@ -2724,7 +2724,7 @@ namespace tinymind {
     };
 
     template<typename NeuralNetworkType>
-    struct WeightInitPolicySelector<NeuralNetworkType, false>
+    struct WeightInitPolicy<NeuralNetworkType, false>
     {
         static void initializeWeights(NeuralNetworkType& neuralNetwork)
         {
@@ -2789,7 +2789,7 @@ namespace tinymind {
                                         OutputLayerConfiguration> OutputLayerTypeSelectorType;
         typedef typename OutputLayerTypeSelectorType::OutputLayerType NeuralNetworkOutputLayerType;
         typedef TransferFunctionsPolicy NeuralNetworkTransferFunctionsPolicy;
-        typedef typename GradientsManagerChooser<
+        typedef typename GradientsManagerSelector<
                                                     NeuralNetworkType,
                                                     NumberOfHiddenLayers - 1,
                                                     IsTrainable>::GradientsManagerType GradientsManagerType;
@@ -2800,7 +2800,7 @@ namespace tinymind {
                                                         IsTrainable,
                                                         OutputLayerConfiguration>::TrainingPolicyType TrainingPolicyType;
 
-        typedef WeightInitPolicySelector<NeuralNetworkType, IsTrainable> WeightInitPolicyType;
+        typedef WeightInitPolicy<NeuralNetworkType, IsTrainable> WeightInitPolicyType;
 
         static const size_t NeuralNetworkNumberOfHiddenLayers = NumberOfHiddenLayers;
         static const size_t NumberOfInnerHiddenLayers = NumberOfHiddenLayers - 1;
