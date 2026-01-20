@@ -7,11 +7,12 @@ SOURCES=qformat_unit_test.cpp
 DEFINES=-DTINYMIND_ENABLE_OSTREAMS=1
 INCLUDES=-I../../include -I../../cpp -I${BOOST_HOME}
 OUT=./output/qformat_unit_test
+
 qformat_unit_test:
 	$(MKDIR)
 	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(DEFINES) $(INCLUDES)
 
-run :
+run:
 	cd ./output && ./qformat_unit_test && cd ../
 
 clean:
