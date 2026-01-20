@@ -12,14 +12,14 @@ DEFINES=-DTINYMIND_ENABLE_OSTREAMS=1 -DTINYMIND_USE_SIGMOID_8_8=1
 default :
 	$(MKDIR)
 	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
-	g++ -c xornet.cpp $(WARN) -o ./output/xornet.o $(INCLUDES) $(DEFINES)
-	g++ -c ../../cpp/lookupTables.cpp $(WARN) -o ./output/lookupTables.o $(INCLUDES) $(DEFINES)
+	$(CC) -c xornet.cpp $(WARN) -o ./output/xornet.o $(INCLUDES) $(DEFINES)
+	$(CC) -c ../../cpp/lookupTables.cpp $(WARN) -o ./output/lookupTables.o $(INCLUDES) $(DEFINES)
 
 release :
 	$(MKDIR)
 	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
-	g++ -c xornet.cpp -O3 $(WARN) -o ./output/xornet.o $(INCLUDES) $(DEFINES)
-	g++ -c ../../cpp/lookupTables.cpp -O3 $(WARN) -o ./output/lookupTables.o $(INCLUDES) $(DEFINES)
+	$(CC) -c xornet.cpp -O3 $(WARN) -o ./output/xornet.o $(INCLUDES) $(DEFINES)
+	$(CC) -c ../../cpp/lookupTables.cpp -O3 $(WARN) -o ./output/lookupTables.o $(INCLUDES) $(DEFINES)
 
 run :
 	cd ./output && ./xor && cd ../
