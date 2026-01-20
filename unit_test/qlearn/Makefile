@@ -8,11 +8,12 @@ SOURCES=qlearn_unit_test.cpp ../../cpp/lookupTables.cpp
 DEFINES=-DTINYMIND_ENABLE_OSTREAMS=1
 INCLUDES=-I../../cpp -I../../cpp/include -I../../include -DTINYMIND_USE_TANH_16_16=1 -I${BOOST_HOME}
 OUT=./output/qlearn_unit_test
+
 qlearn_unit_test:
 	$(MKDIR)
 	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(DEFINES) $(INCLUDES)
 
-run :
+run:
 	cd ./output && ./qlearn_unit_test && cd ../
 
 clean:
