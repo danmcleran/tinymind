@@ -210,8 +210,15 @@ namespace tinymind {
         {
             storeNetworkWeights(neuralNetwork, outFile, ",");
 
-            outFile << output[0] << ",";
-            outFile << learnedValues[0] << ",";
+            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+            {
+                outFile << output[o] << ",";
+            }
+
+            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+            {
+                outFile << learnedValues[o] << ",";
+            }
         }
 
         static void storeNetworkWeights(NeuralNetworkType& neuralNetwork, std::ofstream& outFile, char const* const delimiter = "\n")
