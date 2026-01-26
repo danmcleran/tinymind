@@ -69,7 +69,7 @@ namespace tinymind {
 
         static DestinationType convertToDestinationType(const double& value)
         {
-            const FullWidthValueType fullWidthValue = static_cast<FullWidthValueType>(value * static_cast<double>(1 << DestinationType::NumberOfFractionalBits));
+            const FullWidthValueType fullWidthValue = static_cast<FullWidthValueType>(value * static_cast<double>(1ULL << DestinationType::NumberOfFractionalBits));
             const DestinationType weight(fullWidthValue);
 
             return weight;
