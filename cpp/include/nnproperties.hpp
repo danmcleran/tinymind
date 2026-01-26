@@ -371,12 +371,12 @@ namespace tinymind {
 
             for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
             {
-                outFile << "Expected,";
+                outFile << "Expected" << o << ",";
             }
 
             for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
             {
-                outFile << "Learned,";
+                outFile << "Learned" << o << ",";
             }
 
             outFile << "Error" << std::endl;
