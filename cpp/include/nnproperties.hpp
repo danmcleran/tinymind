@@ -369,8 +369,16 @@ namespace tinymind {
                 outFile << "Hidden" << hiddenLayer << "Bias" << o << "Weight,";
             }
 
-            outFile << "Expected,";
-            outFile << "Learned,";
+            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+            {
+                outFile << "Expected" << o << ",";
+            }
+
+            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+            {
+                outFile << "Learned" << o << ",";
+            }
+
             outFile << "Error" << std::endl;
             outFile << std::dec;
         }
