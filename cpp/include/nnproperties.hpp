@@ -33,11 +33,14 @@ namespace tinymind {
     struct ValueParser
     {
         typedef typename SourceType::FullWidthValueType FullWidthValueType;
-        typedef int ParsedValueType;
+        typedef int64_t ParsedValueType;
 
-        static int parseValue(char const* const buffer)
+        static int64_t parseValue(char const* const buffer)
         {
-            return atoi(buffer);
+            int64_t value;
+            char* endPtr;
+            value = strtoll(buffer, &endPtr, 10);
+            return value;
         }
     };
 
