@@ -33,11 +33,14 @@ namespace tinymind {
     struct ValueParser
     {
         typedef typename SourceType::FullWidthValueType FullWidthValueType;
-        typedef int ParsedValueType;
+        typedef int64_t ParsedValueType;
 
-        static int parseValue(char const* const buffer)
+        static int64_t parseValue(char const* const buffer)
         {
-            return atoi(buffer);
+            int64_t value;
+            char* endPtr;
+            value = strtoll(buffer, &endPtr, 10);
+            return value;
         }
     };
 
@@ -69,7 +72,7 @@ namespace tinymind {
 
         static DestinationType convertToDestinationType(const double& value)
         {
-            const FullWidthValueType fullWidthValue = static_cast<FullWidthValueType>(value * static_cast<double>(1 << DestinationType::NumberOfFractionalBits));
+            const FullWidthValueType fullWidthValue = static_cast<FullWidthValueType>(value * static_cast<double>(1ULL << DestinationType::NumberOfFractionalBits));
             const DestinationType weight(fullWidthValue);
 
             return weight;
@@ -210,8 +213,15 @@ namespace tinymind {
         {
             storeNetworkWeights(neuralNetwork, outFile, ",");
 
-            outFile << output[0] << ",";
-            outFile << learnedValues[0] << ",";
+            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+            {
+                outFile << output[o] << ",";
+            }
+
+            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+            {
+                outFile << learnedValues[o] << ",";
+            }
         }
 
         static void storeNetworkWeights(NeuralNetworkType& neuralNetwork, std::ofstream& outFile, char const* const delimiter = "\n")
@@ -369,8 +379,16 @@ namespace tinymind {
                 outFile << "Hidden" << hiddenLayer << "Bias" << o << "Weight,";
             }
 
-            outFile << "Expected,";
-            outFile << "Learned,";
+            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+            {
+                outFile << "Expected" << o << ",";
+            }
+
+            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+            {
+                outFile << "Learned" << o << ",";
+            }
+
             outFile << "Error" << std::endl;
             outFile << std::dec;
         }

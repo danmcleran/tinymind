@@ -28,21 +28,21 @@ namespace tinymind {
     {
         static ValueType one()
         {
-            static const ValueType result(1,0);
+            const ValueType result(1,0);
 
             return result;
         }
 
         static ValueType negativeOne()
         {
-            static const ValueType result(-1, 0);
+            const ValueType result(-1, 0);
 
             return result;
         }
 
         static ValueType zero()
         {
-            static const ValueType result(0);
+            const ValueType result(0);
 
             return result;
         }
