@@ -108,7 +108,6 @@ namespace tinymind {
         static const size_t NumberOfHiddenLayers = NeuralNetworkType::NeuralNetworkNumberOfHiddenLayers;
         static const size_t NumberOfHiddenLayerNeurons = NeuralNetworkType::NumberOfHiddenLayerNeurons;
         static const size_t NumberOfOutputLayerNeurons = NeuralNetworkType::NumberOfOutputLayerNeurons;
-        static_assert(NumberOfHiddenLayers <= 2, "> 2 hidden layers not supported yet");
 
         template<typename SourceType, typename DestinationType>
         static void loadNetworkWeights(NeuralNetworkType& neuralNetwork, std::ifstream& inFile)
