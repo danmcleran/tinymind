@@ -10,7 +10,7 @@ INCLUDES=-I ../../include -I../../cpp -I../../cpp/include -I../../include -I${BO
 OUT=./output/nn_unit_test
 nn_unit_test:
 	$(MKDIR)
-	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(DEFINES) $(INCLUDES)
+	$(CC) -ggdb $(WARN) -o $(OUT) $(SOURCES) $(DEFINES) $(INCLUDES)
 run :
 	cd ./output && ./nn_unit_test && cd ../
 

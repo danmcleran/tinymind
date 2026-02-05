@@ -119,7 +119,7 @@ namespace tinymind {
             char buffer[256];
             ParsedValueType weight;
             ValueType weightValue;
-            int hiddenLayer = 0;
+            unsigned hiddenLayer = 0;
 
             for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
             {
@@ -140,7 +140,7 @@ namespace tinymind {
                 neuralNetwork.setInputLayerBiasWeightForConnection(h, weightValue);
             }
 
-            if (2 == NumberOfHiddenLayers)
+            for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
             {
                 for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
                 {
@@ -160,10 +160,9 @@ namespace tinymind {
                     weightValue = ValueConverterType::convertToDestinationType(weight);
                     neuralNetwork.setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1, weightValue);
                 }
-
-                ++hiddenLayer;
             }
 
+            --hiddenLayer;
             for (uint32_t hiddenNeuron = 0; hiddenNeuron < NumberOfHiddenLayerNeurons; ++hiddenNeuron)
             {
                 for (uint32_t outputNeuron = 0; outputNeuron < NumberOfOutputLayerNeurons; ++outputNeuron)
@@ -226,7 +225,7 @@ namespace tinymind {
 
         static void storeNetworkWeights(NeuralNetworkType& neuralNetwork, std::ofstream& outFile, char const* const delimiter = "\n")
         {
-            int hiddenLayer = 0;
+            unsigned hiddenLayer = 0;
 
             for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
             {
@@ -241,7 +240,7 @@ namespace tinymind {
                 outFile << neuralNetwork.getInputLayerBiasNeuronWeightForConnection(h) << delimiter;
             }
 
-            if (2 == NumberOfHiddenLayers)
+            for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
             {
                 for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
                 {
@@ -255,10 +254,9 @@ namespace tinymind {
                 {
                     outFile << neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1) << delimiter;
                 }
-
-                ++hiddenLayer;
             }
 
+            --hiddenLayer;
             for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
             {
                 for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
@@ -278,7 +276,7 @@ namespace tinymind {
             typedef typename NeuralNetworkType::NeuralNetworkValueType::FullWidthValueType FullWidthValueType;
             std::ofstream outFile(binaryFilePath, std::ios::binary);
             FullWidthValueType value;
-            int hiddenLayer = 0;
+            unsigned hiddenLayer = 0;
 
             for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
             {
@@ -295,7 +293,7 @@ namespace tinymind {
                 outFile.write(reinterpret_cast<char*>(&value), sizeof(value));
             }
 
-            if (2 == NumberOfHiddenLayers)
+            for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
             {
                 for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
                 {
@@ -311,10 +309,9 @@ namespace tinymind {
                     value = neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1).getValue();
                     outFile.write(reinterpret_cast<char*>(&value), sizeof(value));
                 }
-
-                ++hiddenLayer;
             }
 
+            --hiddenLayer;
             for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
             {
                 for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
@@ -333,7 +330,7 @@ namespace tinymind {
 
         static void writeHeader(std::ofstream& outFile)
         {
-            int hiddenLayer = 0;
+            unsigned hiddenLayer = 0;
 
             for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
             {
@@ -348,7 +345,7 @@ namespace tinymind {
                 outFile << "InputBias" << hiddenLayer << h << "Weight,";
             }
 
-            if (2 == NumberOfHiddenLayers)
+            for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
             {
                 for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
                 {
@@ -362,10 +359,9 @@ namespace tinymind {
                 {
                     outFile << "Hidden0ToHidden1Bias" << h1 << "Weight,";
                 }
-
-                ++hiddenLayer;
             }
 
+            --hiddenLayer;
             for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
             {
                 for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
