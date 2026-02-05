@@ -317,7 +317,7 @@ namespace tinymind {
         }
 
     private:
-        static_assert(NeuralNetworkType::RecurrentConnectionDepth == 0, "Invalid use of BackPropConnectionWeightUpdater.");
+        static_assert(NeuralNetworkType::NeuralNetworkRecurrentConnectionDepth == 0, "Invalid use of BackPropConnectionWeightUpdater.");
     };
 
     template<typename NeuralNetworkType>

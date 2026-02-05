@@ -2139,6 +2139,33 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_sigmoid_xor)
     testFixedPointNeuralNetwork_Xor(nn, path, 75000);
 }
 
+BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_xor_4_hidden_layers)
+{
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_HIDDEN_LAYERS = 4;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::FixedPointTransferFunctions<
+                                                    ValueType,
+                                                    UniformRealRandomNumberGenerator<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>> TransferFunctionsType;
+    typedef tinymind::MultilayerPerceptron< ValueType,
+                                            NUMBER_OF_INPUTS,
+                                            NUMBER_OF_HIDDEN_LAYERS,
+                                            NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
+                                            NUMBER_OF_OUTPUTS,
+                                            TransferFunctionsType> FixedPointMultiLayerPerceptronNetworkType;
+    srand(RANDOM_SEED);
+    char const* const path = "nn_fixed_xor_4_hidden_layers.txt";
+    FixedPointMultiLayerPerceptronNetworkType nn;
+
+    testFixedPointNeuralNetwork_Xor(nn, path, TRAINING_ITERATIONS * 100);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 typedef tinymind::QValue<8, 8, true, tinymind::TruncatePolicy, tinymind::MinMaxSaturatePolicy> SignedQ8_8SatPolicyType;
