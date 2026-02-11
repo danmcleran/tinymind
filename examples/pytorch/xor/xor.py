@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
+import struct
 from typing import Tuple
 
 
@@ -105,6 +106,59 @@ class QuantizedXORNet(nn.Module):
             weights_dict[name] = fp_values
         
         return weights_dict
+
+
+def save_fixedpoint_weights(filename: str, weights_dict: dict) -> None:
+    """Save fixed-point integer weights to a binary file.
+
+    Format:
+    - uint32: number of parameter entries (N)
+    For each entry:
+      - uint16: length of name (L)
+      - L bytes: UTF-8 name
+      - uint8: number of dims (D)
+      - D x uint32: shape dimensions
+      - (4 * num_elements) bytes: little-endian int32 raw data
+    """
+    with open(filename, "wb") as f:
+        f.write(struct.pack("<I", len(weights_dict)))
+        for name, arr in weights_dict.items():
+            name_b = name.encode("utf-8")
+            f.write(struct.pack("<H", len(name_b)))
+            f.write(name_b)
+
+            np_arr = np.asarray(arr, dtype=np.int32)
+            f.write(struct.pack("<B", np_arr.ndim))
+            for dim in np_arr.shape:
+                f.write(struct.pack("<I", int(dim)))
+
+            # Write raw little-endian int32 bytes
+            f.write(np_arr.astype("<i4").tobytes())
+
+
+def load_fixedpoint_weights(filename: str) -> dict:
+    """Load fixed-point integer weights from a binary file created by save_fixedpoint_weights.
+
+    Returns a dict mapping parameter name -> numpy ndarray of dtype int32.
+    """
+    weights = {}
+    with open(filename, "rb") as f:
+        count_bytes = f.read(4)
+        if len(count_bytes) < 4:
+            raise EOFError("Invalid or empty weight file")
+        count = struct.unpack("<I", count_bytes)[0]
+        for _ in range(count):
+            name_len = struct.unpack("<H", f.read(2))[0]
+            name = f.read(name_len).decode("utf-8")
+
+            ndim = struct.unpack("<B", f.read(1))[0]
+            shape = tuple(struct.unpack("<I", f.read(4))[0] for _ in range(ndim))
+            numel = int(np.prod(shape, dtype=np.int64))
+            data = f.read(numel * 4)
+            arr = np.frombuffer(data, dtype="<i4").reshape(shape).copy()
+            weights[name] = arr
+
+    return weights
 
 
 def create_xor_data(q_format: int = 16) -> Tuple[torch.Tensor, torch.Tensor, np.ndarray, np.ndarray]:
@@ -281,6 +335,10 @@ def main():
         # Show as floating-point for reference
         fp_values = FixedPoint.array_to_float(weight_values, Q_FORMAT)
         print(f"(As floating-point: {fp_values})")
+    # Save quantized weights to binary file (int32 fixed-point integers)
+    weights_filename = f"xor_weights_q{Q_FORMAT}.bin"
+    save_fixedpoint_weights(weights_filename, quantized_weights)
+    print(f"Quantized fixed-point weights saved to '{weights_filename}'")
     
     # Plot training loss
     print("\n" + "=" * 70)
