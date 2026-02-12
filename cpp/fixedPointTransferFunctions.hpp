@@ -51,7 +51,7 @@ namespace tinymind {
         typedef TransferFunctionNetworkInitializationPolicy  NetworkIntializationPolicy;
         typedef TransferFunctionErrorCalculatorPolicy        ErrorCalulatorPolicy;
         typedef TransferFunctionZeroTolerancePolicy          ZeroToleranceCalculatorPolicy;
-        typedef typename ValueType::FullWidthFieldType       FullWidthFieldType;
+        // typedef typename ValueType::FullWidthFieldType       FullWidthFieldType;
 
         static const unsigned NumberOfTransferFunctionsOutputNeurons = NumberOfOutputNeurons;
 
