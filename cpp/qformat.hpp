@@ -23,6 +23,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 #if TINYMIND_ENABLE_OSTREAMS
 #include <ostream>
