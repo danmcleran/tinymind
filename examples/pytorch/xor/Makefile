@@ -25,3 +25,4 @@ plot :
 
 clean :
 	rm -f ./output/*
+	rm -f ./input/*

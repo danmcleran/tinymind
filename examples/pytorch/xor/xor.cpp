@@ -55,7 +55,8 @@ typedef tinymind::MultilayerPerceptron< ValueType,
                                         NUMBER_OF_HIDDEN_LAYERS,
                                         NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                         NUMBER_OF_OUTPUTS,
-                                        TransferFunctionsType> NeuralNetworkType;
+                                        TransferFunctionsType,
+                                        false> NeuralNetworkType;
 
 typedef tinymind::NetworkPropertiesFileManager<NeuralNetworkType> NetworkPropertiesFileManagerType;
 
@@ -84,9 +85,9 @@ int main(const int argc, char *argv[])
 
     srand(RANDOM_SEED); // seed random number generator
 
-    char const* const inPath = "xor_weights_q16.bin";
-    char const* const outPath = "nn_fixed_xor.txt";
-    ifstream weightsInputFile(inPath, ios::in | ios::binary);
+    char const* const inPath = "xor_weights_q16.txt";
+    char const* const outPath = "../input/nn_fixed_xor.txt";
+    ifstream weightsInputFile(inPath);
     ofstream results(outPath);
     ValueType values[NeuralNetworkType::NumberOfInputLayerNeurons];
     ValueType output[NeuralNetworkType::NumberOfOutputLayerNeurons];
@@ -94,6 +95,12 @@ int main(const int argc, char *argv[])
     ValueType error;
     ValueType avgError(0U);
     ValueType lastAvgError(0U);
+
+    if (!weightsInputFile.is_open())
+    {
+        cerr << "Error opening weights input file: " << inPath << endl;
+        return 1;
+    }
 
     NetworkPropertiesFileManagerType::template loadNetworkWeights<ValueType, ValueType>(testNeuralNet, weightsInputFile);
 

@@ -1,11 +1,10 @@
 """
-XOR Prediction Neural Network using PyTorch
+Simple XOR neural network using floating-point values.
 
-This program demonstrates training a simple feedforward neural network
-to learn the XOR (exclusive OR) function, which is a classic non-linear
-classification problem.
-
-The network learns to map binary inputs to the correct XOR output.
+This script trains a small feedforward network on the XOR problem
+and demonstrates prediction, evaluation, and a loss plot.  All
+calculations use native floating-point; the previous fixed-point
+quantization utilities have been removed for simplicity.
 """
 
 import torch
@@ -13,356 +12,168 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
-import struct
-from typing import Tuple
 
 
-class FixedPoint:
-    """
-    Fixed-point arithmetic utility using Q-format (signed fixed-point).
-    Q-format notation: Qm.n means m integer bits and n fractional bits.
-    For example, Q15.16 has 15 integer bits and 16 fractional bits.
-    """
-    
-    def __init__(self, value: float = 0.0, q_format: int = 16):
-        """
-        Initialize a fixed-point number.
-        
-        Args:
-            value: Floating-point value to convert
-            q_format: Number of fractional bits (default 16)
-        """
-        self.q_format = q_format
-        self.scale = 2 ** q_format
-        self.value = int(value * self.scale)  # Store as integer
-    
-    def to_float(self) -> float:
-        """Convert fixed-point back to floating-point."""
-        return self.value / self.scale
-    
-    def __repr__(self) -> str:
-        return f"FP({self.to_float():.6f}, Q{self.q_format})"
-    
-    @staticmethod
-    def array_to_float(arr: np.ndarray, q_format: int = 16) -> np.ndarray:
-        """Convert array of fixed-point integers to floating-point."""
-        scale = 2 ** q_format
-        return arr / scale
-    
-    @staticmethod
-    def array_from_float(arr: np.ndarray, q_format: int = 16) -> np.ndarray:
-        """Convert array of floating-point to fixed-point integers."""
-        scale = 2 ** q_format
-        return (arr * scale).astype(np.int32)
+# utility for fixed-point conversion
+# Q16.16 has 16 integer bits, 16 fractional bits
+# stored in a signed 32-bit integer
 
+def float_to_q16_16(x: float) -> int:
+    """Convert a Python float to signed Q16.16 integer representation."""
+    # scale by 2^16 and round to nearest integer
+    val = int(round(x * (1 << 16)))
+    # clamp to signed 32-bit range
+    if val < -2**31:
+        val = -2**31
+    elif val > 2**31 - 1:
+        val = 2**31 - 1
+    return val
 
-class QuantizedXORNet(nn.Module):
-    """
-    A feedforward neural network with quantized (fixed-point) weights and activations.
-    
-    Architecture:
-    - Input layer: 2 neurons (for 2 binary inputs)
-    - Hidden layer: 3 neurons with ReLU activation
-    - Output layer: 1 neuron with Sigmoid activation (for binary classification)
-    
-    Uses fixed-point quantization with Q16 format for efficient inference.
-    """
-    
-    def __init__(self, hidden_size: int = 3, q_format: int = 16):
-        super(QuantizedXORNet, self).__init__()
-        self.q_format = q_format
+class XORNet(nn.Module):
+    """Two-layer MLP for XOR using float32 operations."""
+
+    def __init__(self, hidden_size: int = 3):
+        super(XORNet, self).__init__()
         self.fc1 = nn.Linear(2, hidden_size)
         self.relu = nn.ReLU()
         self.fc2 = nn.Linear(hidden_size, 1)
         self.sigmoid = nn.Sigmoid()
-    
-    def forward(self, x):
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.fc1(x)
         x = self.relu(x)
         x = self.fc2(x)
-        x = self.sigmoid(x)
-        return x
-    
-    def quantize_weights(self) -> None:
-        """Quantize all weights to fixed-point format."""
-        with torch.no_grad():
-            for param in self.parameters():
-                param.data = self._quantize(param.data)
-    
-    def _quantize(self, tensor: torch.Tensor) -> torch.Tensor:
-        """Quantize a tensor to fixed-point and back to simulate quantization."""
-        scale = 2 ** self.q_format
-        quantized = torch.round(tensor * scale) / scale
-        return quantized
-    
-    def get_quantized_weights(self) -> dict:
-        """Get all weights in fixed-point integer representation."""
-        weights_dict = {}
-        scale = 2 ** self.q_format
+        return self.sigmoid(x)
+
+    def save_to_tinymind_format(self, path: str) -> None:
+        """Save model weights in a simple text format for TinyMind."""
+        from collections import OrderedDict
+        data = OrderedDict()
         
-        for name, param in self.named_parameters():
-            # Convert to fixed-point integers
-            fp_values = (param.data * scale).round().int().cpu().numpy()
-            weights_dict[name] = fp_values
+        # Write the input -> hidden
+        rows, cols = self.fc1.weight.T.shape
+        for i in range(rows):
+            for j in range(cols):
+                weight = self.fc1.weight.T[i, j]
+                quant_weight = float_to_q16_16(weight.item())
+                # @TODO check quant_weight == weight
+                header = f'Input{i}{j}Weight'
+                data[header] = quant_weight
+
+        # Write the input bias -> hidden
+        for j in range(len(self.fc1.bias)):
+            bias = self.fc1.bias[j]
+            quant_bias = float_to_q16_16(bias.item())
+            header = f'InputBias0{j}Weight'
+            data[header] = quant_bias
         
-        return weights_dict
+        # Write hidden -> out
+        rows, cols = self.fc2.weight.T.shape
+        for i in range(rows):
+            for j in range(cols):
+                weight = self.fc2.weight.T[i, j]
+                quant_weight = float_to_q16_16(weight.item())
+                header = f'Hidden0{i}{j}Weight'
+                data[header] = quant_weight
+       
+        # Write hidden bias -> out
+        for j in range(len(self.fc2.bias)):
+            bias = self.fc2.bias[j]
+            quant_bias = float_to_q16_16(bias.item())
+            header = f'Hidden0Bias{j}Weight'
+            data[header] = quant_bias
 
+        with open(path, 'w+') as f:
+            vals = '\n'.join(str(v) for v in data.values())
+            f.write(vals + '\n')
 
-def save_fixedpoint_weights(filename: str, weights_dict: dict) -> None:
-    """Save fixed-point integer weights to a binary file.
-
-    This version saves only the raw weight arrays in layer order (left-to-right).
-
-    Format:
-    - uint32: number of parameter arrays (N)
-    For each array:
-      - uint8: number of dims (D)
-      - D x uint32: shape dimensions
-      - (4 * num_elements) bytes: little-endian int32 raw data
-    """
-    with open(filename, "wb") as f:
-        # rely on insertion order of weights_dict to preserve layer order
-        f.write(struct.pack("<I", len(weights_dict)))
-        for arr in weights_dict.values():
-            np_arr = np.asarray(arr, dtype=np.int32)
-            f.write(struct.pack("<B", np_arr.ndim))
-            for dim in np_arr.shape:
-                f.write(struct.pack("<I", int(dim)))
-
-            # Write raw little-endian int32 bytes
-            f.write(np_arr.astype("<i4").tobytes())
-
-def create_xor_data(q_format: int = 16) -> Tuple[torch.Tensor, torch.Tensor, np.ndarray, np.ndarray]:
-    """
-    Create XOR training data in both floating-point and fixed-point formats.
-    
-    Args:
-        q_format: Number of fractional bits for fixed-point representation
-    
-    Returns:
-        Tuple of (X_float, y_float, X_fixed, y_fixed)
-    """
-    X_float = torch.tensor([
+def create_xor_data() -> tuple[torch.Tensor, torch.Tensor]:
+    """Return the XOR inputs and targets as float32 tensors."""
+    X = torch.tensor([
         [0, 0],
         [0, 1],
         [1, 0],
-        [1, 1]
+        [1, 1],
     ], dtype=torch.float32)
-    
-    y_float = torch.tensor([
+
+    y = torch.tensor([
         [0],
         [1],
         [1],
-        [0]
+        [0],
     ], dtype=torch.float32)
-    
-    # Convert to fixed-point representation
-    X_fixed = FixedPoint.array_from_float(X_float.numpy(), q_format)
-    y_fixed = FixedPoint.array_from_float(y_float.numpy(), q_format)
-    
-    return X_float, y_float, X_fixed, y_fixed
 
+    return X, y
 
-def train(model, X, y, epochs=1000, learning_rate=0.1, quantize_interval=50):
-    """
-    Train the XOR neural network with periodic quantization to fixed-point.
-    
-    Args:
-        model: The neural network model
-        X: Input features
-        y: Target labels
-        epochs: Number of training iterations
-        learning_rate: Learning rate for the optimizer
-        quantize_interval: Quantize weights every N epochs to simulate fixed-point training
-        
-    Returns:
-        losses: List of loss values during training
-    """
-    criterion = nn.BCELoss()  # Binary Cross-Entropy Loss
+def train(
+    model: nn.Module,
+    X: torch.Tensor,
+    y: torch.Tensor,
+    epochs: int = 1000,
+    learning_rate: float = 0.1,
+) -> list[float]:
+    """Train the model and return the loss history."""
+    criterion = nn.BCELoss()
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-    
-    losses = []
-    
+    losses: list[float] = []
+
     for epoch in range(epochs):
-        # Forward pass
+        optimizer.zero_grad()
         outputs = model(X)
         loss = criterion(outputs, y)
-        
-        # Backward pass and optimization
-        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        
-        # Periodically quantize weights to fixed-point
-        if (epoch + 1) % quantize_interval == 0:
-            model.quantize_weights()
-        
+
         losses.append(loss.item())
-        
         if (epoch + 1) % 100 == 0:
-            print(f"Epoch [{epoch + 1}/{epochs}], Loss: {loss.item():.4f}")
-    
+            print(f"Epoch {epoch+1}/{epochs}, loss={loss.item():.4f}")
+
     return losses
 
-
-def predict(model, X):
-    """
-    Make predictions using the trained model.
-    
-    Args:
-        model: The trained neural network model
-        X: Input features
-        
-    Returns:
-        predictions: Raw output predictions (probabilities)
-        binary_predictions: Binary predictions (0 or 1)
-    """
+def predict(
+    model: nn.Module, X: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return raw and binary predictions."""
     with torch.no_grad():
-        predictions = model(X)
-        binary_predictions = (predictions > 0.5).float()
-    
-    return predictions, binary_predictions
+        outputs = model(X)
+        binary = (outputs > 0.5).float()
+    return outputs, binary
 
 
-def evaluate(model, X, y):
-    """
-    Evaluate the model on the given data.
-    
-    Args:
-        model: The trained neural network model
-        X: Input features
-        y: Target labels
-        
-    Returns:
-        accuracy: Accuracy percentage
-    """
-    predictions, binary_predictions = predict(model, X)
-    correct = (binary_predictions == y).sum().item()
-    accuracy = (correct / y.size(0)) * 100
-    
-    return accuracy, predictions, binary_predictions
+def evaluate(
+    model: nn.Module, X: torch.Tensor, y: torch.Tensor
+) -> tuple[float, torch.Tensor, torch.Tensor]:
+    """Compute accuracy and return predictions."""
+    raw, binary = predict(model, X)
+    acc = (binary == y).float().mean().item() * 100.0
+    return acc, raw, binary
 
 
 def main():
-    """Main function to train and evaluate the XOR network with fixed-point quantization."""
-    
-    print("=" * 70)
-    print("XOR Prediction Neural Network - Fixed-Point Quantized (Q16 Format)")
-    print("=" * 70)
-    
-    # Set random seed for reproducibility
     torch.manual_seed(42)
     np.random.seed(42)
-    
-    Q_FORMAT = 16  # Q16 fixed-point format (16 fractional bits)
-    print(f"\nUsing Q{Q_FORMAT} fixed-point format (scale: 2^{Q_FORMAT} = {2**Q_FORMAT})")
-    
-    # Create model
-    model = QuantizedXORNet(hidden_size=3, q_format=Q_FORMAT)
-    print("\nModel Architecture:")
-    print(model)
-    
-    # Prepare data
-    data_x, data_y, data_x_fixed, data_y_fixed = create_xor_data(Q_FORMAT)
-    print("\nTraining Data (Floating-Point):")
-    print("Inputs:\n", data_x)
-    print("Targets:\n", data_y.squeeze())
-    
-    print(f"\nTraining Data (Fixed-Point Q{Q_FORMAT}):")
-    print("Inputs (as integers):\n", data_x_fixed)
-    print("Targets (as integers):\n", data_y_fixed.squeeze())
-    
-    # Train the model
-    print("\n" + "=" * 70)
-    print("Training with Periodic Quantization...")
-    print("=" * 70)
-    losses = train(model, data_x, data_y, epochs=1000, learning_rate=0.1, quantize_interval=50)
-    
-    # Evaluate on training data
-    print("\n" + "=" * 70)
-    print("Evaluation - Floating-Point Results")
-    print("=" * 70)
-    accuracy, predictions, binary_predictions = evaluate(model, data_x, data_y)
-    
-    print(f"\nAccuracy: {accuracy:.2f}%")
-    print("\nPredictions vs Targets (Floating-Point):")
-    print("Input\t\tPrediction\tBinary\t\tTarget")
-    print("-" * 70)
-    for i in range(data_x.size(0)):
-        input_str = f"[{int(data_x[i, 0])}, {int(data_x[i, 1])}]"
-        pred_val = f"{predictions[i, 0]:.4f}"
-        binary_val = int(binary_predictions[i, 0])
-        target_val = int(data_y[i, 0])
-        print(f"{input_str}\t\t{pred_val}\t\t{binary_val}\t\t{target_val}")
-    
-    # Display quantized weights
-    print("\n" + "=" * 70)
-    print(f"Quantized Weights (Q{Q_FORMAT} Fixed-Point Integers)")
-    print("=" * 70)
-    quantized_weights = model.get_quantized_weights()
-    for weight_name, weight_values in quantized_weights.items():
-        print(f"\n{weight_name}:")
-        print(weight_values)
-        # Show as floating-point for reference
-        fp_values = FixedPoint.array_to_float(weight_values, Q_FORMAT)
-        print(f"(As floating-point: {fp_values})")
-    # Save quantized weights to binary file (int32 fixed-point integers)
-    weights_filename = f"xor_weights_q{Q_FORMAT}.bin"
-    save_fixedpoint_weights(weights_filename, quantized_weights)
-    print(f"Quantized fixed-point weights saved to '{weights_filename}'")
-    
-    # Plot training loss
-    print("\n" + "=" * 70)
-    print("Generating plots...")
-    print("=" * 70)
-    
-    plt.figure(figsize=(12, 5))
-    
-    # Plot 1: Training Loss
-    plt.subplot(1, 2, 1)
-    plt.plot(losses, linewidth=2)
-    plt.xlabel("Epoch", fontsize=12)
-    plt.ylabel("Loss (Binary Cross-Entropy)", fontsize=12)
-    plt.title("XOR Network Training Loss (Q16 Fixed-Point)", fontsize=14)
-    plt.grid(True, alpha=0.3)
-    
-    # Plot 2: Decision Boundary
-    plt.subplot(1, 2, 2)
-    x_min, x_max = -0.5, 1.5
-    y_min, y_max = -0.5, 1.5
-    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 100),
-                         np.linspace(y_min, y_max, 100))
-    
-    Z = model(torch.tensor(np.c_[xx.ravel(), yy.ravel()], dtype=torch.float32))
-    Z = Z.detach().numpy().reshape(xx.shape)
-    
-    plt.contourf(xx, yy, Z, levels=20, cmap='RdBu', alpha=0.7)
-    plt.colorbar(label="Model Output")
-    
-    # Plot training points
-    xor_0 = data_x[data_y.squeeze() == 0]
-    xor_1 = data_x[data_y.squeeze() == 1]
-    
-    plt.scatter(xor_0[:, 0], xor_0[:, 1], c='red', marker='o', s=200, 
-                edgecolors='black', linewidth=2, label='XOR = 0')
-    plt.scatter(xor_1[:, 0], xor_1[:, 1], c='blue', marker='s', s=200, 
-                edgecolors='black', linewidth=2, label='XOR = 1')
-    
-    plt.xlabel("Input 0", fontsize=12)
-    plt.ylabel("Input 1", fontsize=12)
-    plt.title("XOR Decision Boundary (Q16 Fixed-Point)", fontsize=14)
-    plt.legend(fontsize=10)
-    plt.xlim(x_min, x_max)
-    plt.ylim(y_min, y_max)
-    
-    plt.tight_layout()
-    plt.savefig('xor_training_fixedpoint.png', dpi=100, bbox_inches='tight')
-    print("Plot saved as 'xor_training_fixedpoint.png'")
+
+    model = XORNet(hidden_size=3)
+    print("Model architecture:\n", model)
+
+    X, y = create_xor_data()
+    losses = train(model, X, y, epochs=1000, learning_rate=0.1)
+
+    acc, raw, binary = evaluate(model, X, y)
+    print(f"Accuracy on training data: {acc:.2f}%")
+    print("Raw outputs:\n", raw.numpy())
+    print("Binary predictions:\n", binary.numpy())
+
+    model.save_to_tinymind_format("input/xor_weights_q16.txt")
+
+    # plot loss curve
+    plt.figure()
+    plt.plot(losses)
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training Loss")
+    plt.grid(True)
     plt.show()
-    
-    print("\n" + "=" * 70)
-    print("Training complete! Network is ready for fixed-point inference.")
-    print("=" * 70)
 
 
 if __name__ == "__main__":
