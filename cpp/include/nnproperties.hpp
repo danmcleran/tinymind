@@ -139,29 +139,32 @@ namespace tinymind {
                 neuralNetwork.setInputLayerBiasWeightForConnection(h, weightValue);
             }
 
-            for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
+            if (NumberOfHiddenLayers > 1)
             {
-                for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+                for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
                 {
+                    for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+                    {
+                        for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
+                        {
+                            inFile.getline(buffer, 255);
+                            weight = ValueParserType::parseValue(buffer);
+                            weightValue = ValueConverterType::convertToDestinationType(weight);
+                            neuralNetwork.setHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1, weightValue);
+                        }
+                    }
+
                     for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
                     {
                         inFile.getline(buffer, 255);
                         weight = ValueParserType::parseValue(buffer);
                         weightValue = ValueConverterType::convertToDestinationType(weight);
-                        neuralNetwork.setHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1, weightValue);
+                        neuralNetwork.setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1, weightValue);
                     }
                 }
-
-                for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                {
-                    inFile.getline(buffer, 255);
-                    weight = ValueParserType::parseValue(buffer);
-                    weightValue = ValueConverterType::convertToDestinationType(weight);
-                    neuralNetwork.setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1, weightValue);
-                }
+                --hiddenLayer;
             }
 
-            --hiddenLayer;
             for (uint32_t hiddenNeuron = 0; hiddenNeuron < NumberOfHiddenLayerNeurons; ++hiddenNeuron)
             {
                 for (uint32_t outputNeuron = 0; outputNeuron < NumberOfOutputLayerNeurons; ++outputNeuron)
