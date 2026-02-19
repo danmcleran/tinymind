@@ -65,7 +65,7 @@ static NeuralNetworkType testNeuralNet;
 #define TESTING_ITERATIONS 1000U
 #define RANDOM_SEED 7U
 
-static void generateXorTrainingValue(ValueType& x, ValueType& y, ValueType& z)
+static void generateXorTestValues(ValueType& x, ValueType& y, ValueType& z)
 {
     const int randX = rand() & 0x1;
     const int randY = rand() & 0x1;
@@ -85,7 +85,7 @@ int main(const int argc, char *argv[])
 
     srand(RANDOM_SEED); // seed random number generator
 
-    char const* const inPath = "../input/xor_weights_q16.txt";
+    char const* const inPath = "../input/xor_weights_q16_16.txt";
     char const* const outPath = "../output/nn_fixed_xor.txt";
     ifstream weightsInputFile(inPath);
     ofstream results(outPath);
@@ -108,7 +108,7 @@ int main(const int argc, char *argv[])
 
     for (unsigned i = 0U; i < TESTING_ITERATIONS ; ++i)
     {
-        generateXorTrainingValue(values[0], values[1], output[0]);
+        generateXorTestValues(values[0], values[1], output[0]);
 
         testNeuralNet.feedForward(&values[0]);
         error = testNeuralNet.calculateError(&output[0]);

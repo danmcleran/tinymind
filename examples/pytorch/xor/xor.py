@@ -83,7 +83,7 @@ class XORNet(nn.Module):
             header = f'Hidden0Bias{j}Weight'
             data[header] = quant_bias
 
-        with open(path, 'w+') as f:
+        with open(path, 'w') as f:
             vals = '\n'.join(str(v) for v in data.values())
             f.write(vals + '\n')
 
@@ -109,7 +109,7 @@ def train(
     model: nn.Module,
     X: torch.Tensor,
     y: torch.Tensor,
-    epochs: int = 1000,
+    epochs: int = 100000,
     learning_rate: float = 0.1,
 ) -> list[float]:
     """Train the model and return the loss history."""
@@ -164,7 +164,7 @@ def main():
     print("Raw outputs:\n", raw.numpy())
     print("Binary predictions:\n", binary.numpy())
 
-    model.save_to_tinymind_format("input/xor_weights_q16.txt")
+    model.save_to_tinymind_format("input/xor_weights_q16_16.txt")
 
     # plot loss curve
     plt.figure()

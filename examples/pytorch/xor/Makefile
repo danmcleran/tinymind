@@ -11,7 +11,7 @@ DEFINES=-DTINYMIND_ENABLE_OSTREAMS=1 -DTINYMIND_USE_SIGMOID_16_16=1
 
 default :
 	$(MKDIR)
-	$(CC) -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+	$(CC) -ggdb $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
 
 release :
 	$(MKDIR)
@@ -25,4 +25,3 @@ plot :
 
 clean :
 	rm -f ./output/*
-	rm -f ./input/*
