@@ -162,6 +162,7 @@ namespace tinymind {
                         neuralNetwork.setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1, weightValue);
                     }
                 }
+
                 --hiddenLayer;
             }
 
@@ -242,23 +243,27 @@ namespace tinymind {
                 outFile << neuralNetwork.getInputLayerBiasNeuronWeightForConnection(h) << delimiter;
             }
 
-            for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
+            if (NumberOfHiddenLayers > 1)
             {
-                for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+                for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
                 {
+                    for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+                    {
+                        for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
+                        {
+                            outFile << neuralNetwork.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1) << delimiter;
+                        }
+                    }
+
                     for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
                     {
-                        outFile << neuralNetwork.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1) << delimiter;
+                        outFile << neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1) << delimiter;
                     }
                 }
 
-                for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                {
-                    outFile << neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1) << delimiter;
-                }
+                --hiddenLayer;
             }
 
-            --hiddenLayer;
             for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
             {
                 for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
@@ -347,23 +352,27 @@ namespace tinymind {
                 outFile << "InputBias" << hiddenLayer << h << "Weight,";
             }
 
-            for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
+            if (NumberOfHiddenLayers > 1)
             {
-                for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+                for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
                 {
+                    for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+                    {
+                        for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
+                        {
+                            outFile << "Hidden" << hiddenLayer << h << h1 << "Weight,";
+                        }
+                    }
+
                     for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
                     {
-                        outFile << "Hidden" << hiddenLayer << h << h1 << "Weight,";
+                        outFile << "Hidden0ToHidden1Bias" << h1 << "Weight,";
                     }
                 }
 
-                for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                {
-                    outFile << "Hidden0ToHidden1Bias" << h1 << "Weight,";
-                }
+                --hiddenLayer;
             }
 
-            --hiddenLayer;
             for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
             {
                 for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
