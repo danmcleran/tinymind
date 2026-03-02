@@ -55,6 +55,18 @@ namespace tinymind {
             return atof(buffer);
         }
     };
+    
+    template<>
+    struct ValueParser<float>
+    {
+        typedef float FullWidthValueType;
+        typedef float ParsedValueType;
+
+        static float parseValue(char const* const buffer)
+        {
+            return static_cast<float>(atof(buffer));
+        }
+    };
 
     template<typename SourceType, typename DestinationType>
     struct ValueConverter
@@ -95,6 +107,41 @@ namespace tinymind {
     struct ValueConverter<double, double>
     {
         static double convertToDestinationType(const double& value)
+        {
+            return value;
+        }
+    };
+
+    template<typename DestinationType>
+    struct ValueConverter<float, DestinationType>
+    {
+        typedef typename DestinationType::FullWidthValueType FullWidthValueType;
+
+        static DestinationType convertToDestinationType(const float& value)
+        {
+            const FullWidthValueType fullWidthValue = static_cast<FullWidthValueType>(value * static_cast<float>(1ULL << DestinationType::NumberOfFractionalBits));
+            const DestinationType weight(fullWidthValue);
+
+            return weight;
+        }
+    };
+
+    template<typename SourceType>
+    struct ValueConverter<SourceType, float>
+    {
+        static float convertToDestinationType(const SourceType& value)
+        {
+            static const float factor = pow(2, -1.0f * SourceType::NumberOfFractionalBits);
+            const float result = (static_cast<float>(value.getValue()) * factor);
+
+            return result;
+        }
+    };
+
+    template<>
+    struct ValueConverter<float, float>
+    {
+        static float convertToDestinationType(const float& value)
         {
             return value;
         }
