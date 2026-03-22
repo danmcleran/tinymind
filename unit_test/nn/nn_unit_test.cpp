@@ -48,6 +48,7 @@ TINYMIND_DISABLE_WARNING_POP
 #include <vector>
 #include <numeric>
 #include <deque>
+#include <cmath>
 
 namespace tinymind {
     template<>
@@ -2976,6 +2977,217 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sequence_predicti
     const FullWidthValueType averageError = (totalError / static_cast<FullWidthValueType>(NUM_SAMPLES_AVG_ERROR));
 
     BOOST_TEST(averageError <= FP_SEQ_ERROR_LIMIT);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_float_sinusoid_prediction)
+{
+    // Train a floating-point LSTM on a sampled sinusoid and verify it can
+    // predict the next few values in the sequence. The sinusoid is sampled
+    // at regular intervals and scaled to [0, 1] so all values are positive
+    // and within the network's output range.
+    //
+    // Training input: (sin[i-1], sin[i]) -> sin[i+1]
+    // After training, feed the last training pair and auto-regressively
+    // predict the next PREDICTION_LENGTH values. Verify each predicted
+    // value is close to the true sinusoid value.
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 16;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t SEQUENCE_LENGTH = 10;
+    static const size_t PREDICTION_LENGTH = 2;
+    static const int SIN_TRAINING_ITERATIONS = 50000;
+    static const double SIN_TRAINING_ERROR_LIMIT = 0.15;
+    static const double SIN_PREDICTION_TOLERANCE = 0.35;
+
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::SigmoidActivationPolicy> TransferFunctionsType;
+    typedef tinymind::LstmNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<NUMBER_OF_NEURONS_PER_HIDDEN_LAYER>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> LstmSinNNType;
+    srand(RANDOM_SEED);
+    LstmSinNNType nn;
+
+    // Generate sinusoid samples scaled to [0, 1]
+    // sin(x) ranges [-1, 1], so (sin(x) + 1) / 2 maps to [0, 1]
+    const double step = 2.0 * M_PI / static_cast<double>(SEQUENCE_LENGTH);
+    double sinSamples[SEQUENCE_LENGTH + PREDICTION_LENGTH];
+    for (size_t i = 0; i < SEQUENCE_LENGTH + PREDICTION_LENGTH; ++i)
+    {
+        sinSamples[i] = (sin(static_cast<double>(i) * step) + 1.0) / 2.0;
+    }
+
+    ValueType values[LstmSinNNType::NumberOfInputLayerNeurons];
+    ValueType target[LstmSinNNType::NumberOfOutputLayerNeurons];
+    ValueType learnedValues[LstmSinNNType::NumberOfOutputLayerNeurons];
+    std::deque<double> errors;
+    ValueType error;
+
+    // Train the network over the sinusoid sequence multiple epochs
+    for (int epoch = 0; epoch < SIN_TRAINING_ITERATIONS; ++epoch)
+    {
+        for (size_t i = 1; i < SEQUENCE_LENGTH - 1; ++i)
+        {
+            values[0] = sinSamples[i - 1];
+            values[1] = sinSamples[i];
+            target[0] = sinSamples[i + 1];
+
+            nn.feedForward(&values[0]);
+            error = nn.calculateError(&target[0]);
+
+            if (!LstmSinNNType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
+            {
+                nn.trainNetwork(&target[0]);
+            }
+
+            errors.push_front(error);
+            if (errors.size() > NUM_SAMPLES_AVG_ERROR)
+            {
+                errors.pop_back();
+            }
+        }
+    }
+
+    // Verify training converged
+    const double totalError = std::accumulate(errors.begin(), errors.end(), 0.0);
+    const double averageError = (totalError / static_cast<double>(NUM_SAMPLES_AVG_ERROR));
+    BOOST_TEST(averageError <= SIN_TRAINING_ERROR_LIMIT);
+
+    // Now predict the next PREDICTION_LENGTH values auto-regressively
+    // Start from the last two training samples
+    double prev = sinSamples[SEQUENCE_LENGTH - 2];
+    double curr = sinSamples[SEQUENCE_LENGTH - 1];
+
+    for (size_t p = 0; p < PREDICTION_LENGTH; ++p)
+    {
+        values[0] = prev;
+        values[1] = curr;
+
+        nn.feedForward(&values[0]);
+        nn.getLearnedValues(&learnedValues[0]);
+
+        const double predicted = learnedValues[0];
+        const double expected = sinSamples[SEQUENCE_LENGTH + p];
+        const double predictionError = fabs(predicted - expected);
+
+        BOOST_TEST(predictionError <= SIN_PREDICTION_TOLERANCE);
+
+        // Shift window for next prediction
+        prev = curr;
+        curr = predicted;
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sinusoid_prediction)
+{
+    // Train a Q16.16 fixed-point LSTM on a sampled sinusoid and verify it
+    // can predict the next few values. The sinusoid is sampled at regular
+    // intervals and scaled to [0, 1] for the network's output range.
+    //
+    // Training input: (sin[i-1], sin[i]) -> sin[i+1]
+    // After training, auto-regressively predict PREDICTION_LENGTH values
+    // and verify each is close to the true sinusoid value.
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 16;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t SEQUENCE_LENGTH = 10;
+    static const size_t PREDICTION_LENGTH = 2;
+    static const int FP_SIN_TRAINING_ITERATIONS = 50000;
+
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    typedef typename ValueType::FullWidthValueType FullWidthValueType;
+    typedef tinymind::ValueConverter<double, ValueType> ConverterType;
+    typedef tinymind::FixedPointTransferFunctions<
+                                                    ValueType,
+                                                    UniformRealRandomNumberGenerator<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>> TransferFunctionsType;
+    typedef tinymind::LstmNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<NUMBER_OF_NEURONS_PER_HIDDEN_LAYER>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> FixedPointLstmSinNNType;
+    srand(RANDOM_SEED);
+    FixedPointLstmSinNNType nn;
+
+    // Generate sinusoid samples scaled to [0, 1] and convert to fixed-point
+    const double step = 2.0 * M_PI / static_cast<double>(SEQUENCE_LENGTH);
+    ValueType sinSamples[SEQUENCE_LENGTH + PREDICTION_LENGTH];
+    double sinSamplesDouble[SEQUENCE_LENGTH + PREDICTION_LENGTH];
+    for (size_t i = 0; i < SEQUENCE_LENGTH + PREDICTION_LENGTH; ++i)
+    {
+        sinSamplesDouble[i] = (sin(static_cast<double>(i) * step) + 1.0) / 2.0;
+        sinSamples[i] = ConverterType::convertToDestinationType(sinSamplesDouble[i]);
+    }
+
+    ValueType values[FixedPointLstmSinNNType::NumberOfInputLayerNeurons];
+    ValueType target[FixedPointLstmSinNNType::NumberOfOutputLayerNeurons];
+    ValueType learnedValues[FixedPointLstmSinNNType::NumberOfOutputLayerNeurons];
+    std::deque<FullWidthValueType> errors;
+    ValueType error;
+
+    // Train the network over the sinusoid sequence multiple epochs
+    for (int epoch = 0; epoch < FP_SIN_TRAINING_ITERATIONS; ++epoch)
+    {
+        for (size_t i = 1; i < SEQUENCE_LENGTH - 1; ++i)
+        {
+            values[0] = sinSamples[i - 1];
+            values[1] = sinSamples[i];
+            target[0] = sinSamples[i + 1];
+
+            nn.feedForward(&values[0]);
+            error = nn.calculateError(&target[0]);
+
+            if (!FixedPointLstmSinNNType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
+            {
+                nn.trainNetwork(&target[0]);
+            }
+
+            errors.push_front(error.getValue());
+            if (errors.size() > NUM_SAMPLES_AVG_ERROR)
+            {
+                errors.pop_back();
+            }
+        }
+    }
+
+    // Verify training converged
+    // Error limit: 1/4 of full fractional range (generous for fixed-point sinusoid)
+    static const FullWidthValueType FP_SIN_ERROR_LIMIT = (1 << (ValueType::NumberOfFractionalBits - 2));
+    const FullWidthValueType totalError = std::accumulate(errors.begin(), errors.end(), static_cast<FullWidthValueType>(0));
+    const FullWidthValueType averageError = (totalError / static_cast<FullWidthValueType>(NUM_SAMPLES_AVG_ERROR));
+    BOOST_TEST(averageError <= FP_SIN_ERROR_LIMIT);
+
+    // Now predict the next PREDICTION_LENGTH values auto-regressively
+    ValueType prev = sinSamples[SEQUENCE_LENGTH - 2];
+    ValueType curr = sinSamples[SEQUENCE_LENGTH - 1];
+    // Prediction tolerance in fixed-point: ~0.35 = 0.35 * 65536 ≈ 22937
+    static const FullWidthValueType FP_SIN_PREDICTION_TOLERANCE = static_cast<FullWidthValueType>(0.35 * (1 << ValueType::NumberOfFractionalBits));
+
+    for (size_t p = 0; p < PREDICTION_LENGTH; ++p)
+    {
+        values[0] = prev;
+        values[1] = curr;
+
+        nn.feedForward(&values[0]);
+        nn.getLearnedValues(&learnedValues[0]);
+
+        const FullWidthValueType predicted = learnedValues[0].getValue();
+        const FullWidthValueType expected = sinSamples[SEQUENCE_LENGTH + p].getValue();
+        const FullWidthValueType predictionError = (predicted > expected) ? (predicted - expected) : (expected - predicted);
+
+        BOOST_TEST(predictionError <= FP_SIN_PREDICTION_TOLERANCE);
+
+        // Shift window for next prediction
+        prev = curr;
+        curr = learnedValues[0];
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
