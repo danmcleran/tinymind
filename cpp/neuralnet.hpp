@@ -742,6 +742,9 @@ namespace tinymind {
         template<typename LayerType, typename NextLayerType>
         static void calculateAndUpdateGradients(LayerType& layer, const NextLayerType& nextLayer, GradientsManagerType& gradientsManager)
         {
+            (void)layer;
+            (void)nextLayer;
+            (void)gradientsManager;
         }
     };
 
@@ -2292,7 +2295,6 @@ namespace tinymind {
             ValueType previousCellState;
             ValueType input;
             ValueType forget;
-            ValueType sum;
 
             for (size_t neuron = 0; neuron < NumberOfNeurons; ++neuron)
             {
@@ -2311,9 +2313,9 @@ namespace tinymind {
                 forget = (input + previousCellState);
                 forgetGateActivation = ForgetGateActivationPolicy::activationFunction(forget);
 
-                inputActivation = TransferFunctionsPolicy::hiddenNeuronActivationFunction(sum);
-                inputGateActivation = InputGateActivationPolicy::activationFunction(sum);
-                outputGateActivation = OutputGateActivationPolicy::activationFunction(sum);
+                inputActivation = TransferFunctionsPolicy::hiddenNeuronActivationFunction(input);
+                inputGateActivation = InputGateActivationPolicy::activationFunction(input);
+                outputGateActivation = OutputGateActivationPolicy::activationFunction(input);
 
                 input = (inputActivation * inputGateActivation);
                 forget = (forgetGateActivation * previousCellState);
@@ -2675,6 +2677,27 @@ namespace tinymind {
         typedef NullHiddenLayer<ValueType> InnerHiddenLayerType;
         typedef typename HiddenLayerNeuronTypeSelector<ConnectionType, NumberOfOutputs, TransferFunctionsPolicy, ConnectionType::IsTrainable, LSTMHiddenLayerConfig>::HiddenLayerNeuronType LastHiddenLayerNeuronType;
         typedef LstmHiddenLayer<LastHiddenLayerNeuronType, NumberOfNeuronsInHiddenLayers> LastHiddenLayerType;
+    };
+
+    /**
+     * Selects the correct last hidden layer type based on hidden layer configuration.
+     */
+    template<typename NeuronType, size_t NumberOfNeurons, hiddenLayerConfiguration_e HiddenLayerConfig>
+    struct LastHiddenLayerTypeSelector
+    {
+        typedef HiddenLayer<NeuronType, NumberOfNeurons> LastHiddenLayerType;
+    };
+
+    template<typename NeuronType, size_t NumberOfNeurons>
+    struct LastHiddenLayerTypeSelector<NeuronType, NumberOfNeurons, GRUHiddenLayerConfig>
+    {
+        typedef GruHiddenLayer<NeuronType, NumberOfNeurons> LastHiddenLayerType;
+    };
+
+    template<typename NeuronType, size_t NumberOfNeurons>
+    struct LastHiddenLayerTypeSelector<NeuronType, NumberOfNeurons, LSTMHiddenLayerConfig>
+    {
+        typedef LstmHiddenLayer<NeuronType, NumberOfNeurons> LastHiddenLayerType;
     };
 
     struct NullRecurrentLayer
@@ -4269,7 +4292,7 @@ namespace tinymind {
 
         // Last hidden layer: neurons connect to the output layer
         typedef typename HiddenLayerNeuronTypeSelector<ConnectionType, NumberOfOutputs, TransferFunctionsPolicy, ConnectionType::IsTrainable, HiddenLayerConfig>::HiddenLayerNeuronType LastHiddenLayerNeuronType;
-        typedef HiddenLayer<LastHiddenLayerNeuronType, HiddenLayersDescriptor::LastLayerSize> LastHiddenLayerType;
+        typedef typename LastHiddenLayerTypeSelector<LastHiddenLayerNeuronType, HiddenLayersDescriptor::LastLayerSize, HiddenLayerConfig>::LastHiddenLayerType LastHiddenLayerType;
 
         // Recurrent layer
         typedef RecurrentLayerTypeSelector< ConnectionType,
@@ -4706,5 +4729,38 @@ namespace tinymind {
                                                                1,
                                                                OutputLayerConfiguration>
     {
+    };
+
+    /**
+     * LSTM Neural Network
+     *
+     * Recurrent neural network with LSTM hidden layer.
+     * Supports heterogeneous hidden layers via HiddenLayers<S0, S1, ...>.
+     */
+    template<
+            typename ValueType,
+            size_t NumberOfInputs,
+            typename HiddenLayersDescriptor,
+            size_t NumberOfOutputs,
+            typename TransferFunctionsPolicy,
+            bool IsTrainable = true,
+            size_t BatchSize = 1,
+            size_t RecurrentConnectionDepth = 1,
+            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
+            >
+    class LstmNeuralNetwork : public NeuralNetwork< ValueType,
+                                                      NumberOfInputs,
+                                                      HiddenLayersDescriptor,
+                                                      NumberOfOutputs,
+                                                      TransferFunctionsPolicy,
+                                                      IsTrainable,
+                                                      BatchSize,
+                                                      true,
+                                                      LSTMHiddenLayerConfig,
+                                                      RecurrentConnectionDepth,
+                                                      OutputLayerConfiguration>
+    {
+    private:
+        static_assert(RecurrentConnectionDepth > 0, "Invalid recurrent connection depth.");
     };
 }
