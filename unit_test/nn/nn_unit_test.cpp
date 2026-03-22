@@ -2899,13 +2899,21 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_char_sequence_prediction)
 
 BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sequence_prediction)
 {
-    // Train a fixed-point LSTM to predict the next value in a repeating
-    // sequence: -1, 0, 1, -1, 0, 1, ...
-    // Uses Q16.16 fixed-point format with 2 inputs and 1 output.
+    // Train a Q16.16 fixed-point LSTM to predict the next value in a
+    // repeating 2-value sequence: 0.3, 0.7, 0.3, 0.7, ...
+    // Input is (previous, current) and the target is the next value.
+    // The 2 training pairs are:
+    //   (0.7, 0.3) -> 0.7
+    //   (0.3, 0.7) -> 0.3
+    // After training, verify the average error over the last samples is
+    // below a threshold, confirming the network learned to predict the
+    // next number in the repeating sequence.
+    static const size_t SEQUENCE_LENGTH = 2;
     static const size_t NUMBER_OF_INPUTS = 2;
     static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 4;
     static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    typedef typename ValueType::FullWidthValueType FullWidthValueType;
     typedef tinymind::FixedPointTransferFunctions<
                                                     ValueType,
                                                     UniformRealRandomNumberGenerator<ValueType>,
@@ -2919,37 +2927,55 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sequence_predicti
     srand(RANDOM_SEED);
     FixedPointLstmSeqNNType nn;
 
+    // Repeating sequence: 0.3, 0.7 in Q16.16 fixed-point
+    typedef tinymind::ValueConverter<double, ValueType> ConverterType;
+    const ValueType sequence[SEQUENCE_LENGTH] = {
+        ConverterType::convertToDestinationType(0.3),
+        ConverterType::convertToDestinationType(0.7)
+    };
     ValueType values[FixedPointLstmSeqNNType::NumberOfInputLayerNeurons];
-    ValueType output[FixedPointLstmSeqNNType::NumberOfOutputLayerNeurons];
+    ValueType target[FixedPointLstmSeqNNType::NumberOfOutputLayerNeurons];
     ValueType learnedValues[FixedPointLstmSeqNNType::NumberOfOutputLayerNeurons];
+    std::deque<FullWidthValueType> errors;
     ValueType error;
-    ValueType firstError;
-    bool firstErrorCaptured = false;
+    static const int FP_SEQ_TRAINING_ITERATIONS = 20000;
+    size_t seqIndex = 0;
 
-    for (int i = 0; i < TRAINING_ITERATIONS; ++i)
+    for (int i = 0; i < FP_SEQ_TRAINING_ITERATIONS; ++i)
     {
-        generateFixedPointRecurrentValues(values, output);
+        const size_t prevIndex = (seqIndex + SEQUENCE_LENGTH - 1) % SEQUENCE_LENGTH;
+        const size_t nextIndex = (seqIndex + 1) % SEQUENCE_LENGTH;
+
+        values[0] = sequence[prevIndex];
+        values[1] = sequence[seqIndex];
+        target[0] = sequence[nextIndex];
 
         nn.feedForward(&values[0]);
-        error = nn.calculateError(&output[0]);
-
-        if (!firstErrorCaptured)
-        {
-            firstError = error;
-            firstErrorCaptured = true;
-        }
+        error = nn.calculateError(&target[0]);
 
         if (!FixedPointLstmSeqNNType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
         {
-            nn.trainNetwork(&output[0]);
+            nn.trainNetwork(&target[0]);
         }
         nn.getLearnedValues(&learnedValues[0]);
+
+        errors.push_front(error.getValue());
+        if (errors.size() > NUM_SAMPLES_AVG_ERROR)
+        {
+            errors.pop_back();
+        }
+
+        seqIndex = nextIndex;
     }
 
-    // Verify feedforward produces valid output after training
-    nn.feedForward(&values[0]);
-    nn.getLearnedValues(&learnedValues[0]);
-    BOOST_TEST(learnedValues[0].getValue() != 0);
+    // Verify: the average error over the last NUM_SAMPLES_AVG_ERROR samples
+    // should be below the error limit, confirming the LSTM learned to
+    // predict the next number in the repeating sequence.
+    static const FullWidthValueType FP_SEQ_ERROR_LIMIT = (1 << (ValueType::NumberOfFractionalBits - 4));
+    const FullWidthValueType totalError = std::accumulate(errors.begin(), errors.end(), static_cast<FullWidthValueType>(0));
+    const FullWidthValueType averageError = (totalError / static_cast<FullWidthValueType>(NUM_SAMPLES_AVG_ERROR));
+
+    BOOST_TEST(averageError <= FP_SEQ_ERROR_LIMIT);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
