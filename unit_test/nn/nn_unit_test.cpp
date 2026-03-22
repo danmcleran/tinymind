@@ -2248,4 +2248,405 @@ BOOST_AUTO_TEST_CASE(test_softmax_2x2_image_2_classes)
     }
 }
 
+// =========================================================================
+// Tests for the new NeuralNetwork class with heterogeneous hidden layers
+// =========================================================================
+
+BOOST_AUTO_TEST_CASE(test_case_new_nn_uniform_hidden_layers_xor)
+{
+    // NeuralNetwork with uniform hidden layers should work like MultilayerPerceptron
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::ReluActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::NeuralNetwork< ValueType,
+                                     2,
+                                     tinymind::HiddenLayers<5>,
+                                     1,
+                                     TransferFunctionsType> NNType;
+    srand(RANDOM_SEED);
+    NNType nn;
+    ValueType error;
+
+    nn.setLearningRate(0.1);
+    nn.setAccelerationRate(0.03);
+    nn.setMomentumRate(0.16);
+
+    ValueType values[2];
+    ValueType output[1];
+
+    for (int i = 0; i < 10000; ++i)
+    {
+        generateXorValues(values, output);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        if (!TransferFunctionsType::isWithinZeroTolerance(error))
+        {
+            nn.trainNetwork(&output[0]);
+        }
+    }
+
+    // Verify the network has learned XOR
+    std::deque<double> errors;
+
+    for (int i = 0; i < 100; ++i)
+    {
+        generateXorValues(values, output);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        errors.push_back(error);
+    }
+
+    double totalError = 0.0;
+    for (size_t i = 0; i < errors.size(); ++i)
+    {
+        totalError += std::abs(errors[i]);
+    }
+    double averageError = totalError / static_cast<double>(errors.size());
+    BOOST_TEST(averageError <= 0.1);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_new_nn_2_uniform_hidden_layers_xor)
+{
+    // NeuralNetwork with 2 uniform hidden layers
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::ReluActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::NeuralNetwork< ValueType,
+                                     2,
+                                     tinymind::HiddenLayers<5, 5>,
+                                     1,
+                                     TransferFunctionsType> NNType;
+    srand(RANDOM_SEED);
+    NNType nn;
+    ValueType error;
+
+    nn.setLearningRate(0.005);
+    nn.setAccelerationRate(0.03);
+    nn.setMomentumRate(0.16);
+
+    ValueType values[2];
+    ValueType output[1];
+
+    for (int i = 0; i < 100000; ++i)
+    {
+        generateXorValues(values, output);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        if (!TransferFunctionsType::isWithinZeroTolerance(error))
+        {
+            nn.trainNetwork(&output[0]);
+        }
+    }
+
+    // Verify convergence
+    std::deque<double> errors;
+    for (int i = 0; i < 100; ++i)
+    {
+        generateXorValues(values, output);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        errors.push_back(error);
+    }
+
+    double totalError = 0.0;
+    for (size_t i = 0; i < errors.size(); ++i)
+    {
+        totalError += std::abs(errors[i]);
+    }
+    double averageError = totalError / static_cast<double>(errors.size());
+    BOOST_TEST(averageError <= 0.1);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_new_nn_heterogeneous_hidden_layers_xor)
+{
+    // NeuralNetwork with heterogeneous hidden layers: 8 neurons, then 4 neurons
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::ReluActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::NeuralNetwork< ValueType,
+                                     2,
+                                     tinymind::HiddenLayers<8, 4>,
+                                     1,
+                                     TransferFunctionsType> NNType;
+    srand(RANDOM_SEED);
+    NNType nn;
+    ValueType error;
+
+    nn.setLearningRate(0.005);
+    nn.setAccelerationRate(0.03);
+    nn.setMomentumRate(0.16);
+
+    ValueType values[2];
+    ValueType output[1];
+
+    for (int i = 0; i < 100000; ++i)
+    {
+        generateXorValues(values, output);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        if (!TransferFunctionsType::isWithinZeroTolerance(error))
+        {
+            nn.trainNetwork(&output[0]);
+        }
+    }
+
+    // Verify convergence
+    std::deque<double> errors;
+    for (int i = 0; i < 100; ++i)
+    {
+        generateXorValues(values, output);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        errors.push_back(error);
+    }
+
+    double totalError = 0.0;
+    for (size_t i = 0; i < errors.size(); ++i)
+    {
+        totalError += std::abs(errors[i]);
+    }
+    double averageError = totalError / static_cast<double>(errors.size());
+    BOOST_TEST(averageError <= 0.1);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_new_nn_3_heterogeneous_hidden_layers_xor)
+{
+    // NeuralNetwork with 3 heterogeneous hidden layers: 10, 5, 3
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::ReluActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::NeuralNetwork< ValueType,
+                                     2,
+                                     tinymind::HiddenLayers<10, 5, 3>,
+                                     1,
+                                     TransferFunctionsType> NNType;
+    srand(RANDOM_SEED);
+    NNType nn;
+    ValueType error;
+
+    nn.setLearningRate(0.005);
+    nn.setAccelerationRate(0.03);
+    nn.setMomentumRate(0.16);
+
+    ValueType values[2];
+    ValueType output[1];
+
+    for (int i = 0; i < 100000; ++i)
+    {
+        generateXorValues(values, output);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        if (!TransferFunctionsType::isWithinZeroTolerance(error))
+        {
+            nn.trainNetwork(&output[0]);
+        }
+    }
+
+    // Verify convergence
+    std::deque<double> errors;
+    for (int i = 0; i < 100; ++i)
+    {
+        generateXorValues(values, output);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        errors.push_back(error);
+    }
+
+    double totalError = 0.0;
+    for (size_t i = 0; i < errors.size(); ++i)
+    {
+        totalError += std::abs(errors[i]);
+    }
+    double averageError = totalError / static_cast<double>(errors.size());
+    BOOST_TEST(averageError <= 0.1);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_new_nn_uniform_alias_xor)
+{
+    // Verify UniformHiddenLayersAlias works correctly
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::ReluActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::NeuralNetwork< ValueType,
+                                     2,
+                                     typename tinymind::UniformHiddenLayersAlias<2, 5>::type,
+                                     1,
+                                     TransferFunctionsType> NNType;
+    srand(RANDOM_SEED);
+    NNType nn;
+    ValueType error;
+
+    nn.setLearningRate(0.005);
+    nn.setAccelerationRate(0.03);
+    nn.setMomentumRate(0.16);
+
+    ValueType values[2];
+    ValueType output[1];
+
+    for (int i = 0; i < 100000; ++i)
+    {
+        generateXorValues(values, output);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        if (!TransferFunctionsType::isWithinZeroTolerance(error))
+        {
+            nn.trainNetwork(&output[0]);
+        }
+    }
+
+    // Verify convergence
+    std::deque<double> errors;
+    for (int i = 0; i < 100; ++i)
+    {
+        generateXorValues(values, output);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        errors.push_back(error);
+    }
+
+    double totalError = 0.0;
+    for (size_t i = 0; i < errors.size(); ++i)
+    {
+        totalError += std::abs(errors[i]);
+    }
+    double averageError = totalError / static_cast<double>(errors.size());
+    BOOST_TEST(averageError <= 0.1);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_new_nn_not_trainable)
+{
+    // Verify non-trainable NeuralNetwork compiles and runs feedForward
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::ReluActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::NeuralNetwork< ValueType,
+                                     2,
+                                     tinymind::HiddenLayers<4, 3>,
+                                     1,
+                                     TransferFunctionsType,
+                                     false> NNType;
+    NNType nn;
+
+    ValueType values[2] = {1.0, 0.0};
+    nn.feedForward(&values[0]);
+
+    // Just verify it runs without crashing
+    BOOST_TEST(true);
+}
+
+// =========================================================================
+// Tests for RecurrentNeuralNetwork and ElmanNeuralNetwork
+// =========================================================================
+
+BOOST_AUTO_TEST_CASE(test_case_elman_neural_network_floating_point)
+{
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::ElmanNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> FloatingPointElmanNeuralNetworkType;
+    srand(RANDOM_SEED);
+    char const* const path = "nn_float_elman_neural_network.txt";
+    FloatingPointElmanNeuralNetworkType nn;
+
+    testFloatingPointNeuralNetwork_Recurrent(nn, path);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_elman_neural_network_fixed_point)
+{
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
+    typedef tinymind::FixedPointTransferFunctions<
+                                                    ValueType,
+                                                    UniformRealRandomNumberGenerator<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>> TransferFunctionsType;
+    typedef tinymind::ElmanNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> FixedPointElmanNeuralNetworkType;
+    srand(RANDOM_SEED);
+    char const* const path = "nn_fixed_elman_neural_network.txt";
+    FixedPointElmanNeuralNetworkType nn;
+
+    testNeuralNetwork_Recurrent(nn, path);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_recurrent_neural_network_floating_point)
+{
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::RecurrentNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<3>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> RecurrentNNType;
+    srand(RANDOM_SEED);
+    char const* const path = "nn_float_recurrent_neural_network.txt";
+    RecurrentNNType nn;
+
+    testFloatingPointNeuralNetwork_Recurrent(nn, path);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_recurrent_neural_network_heterogeneous_layers)
+{
+    // RecurrentNeuralNetwork with heterogeneous hidden layers
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::RecurrentNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<4, 3>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> RecurrentNNType;
+    srand(RANDOM_SEED);
+    char const* const path = "nn_float_recurrent_nn_hetero.txt";
+    RecurrentNNType nn;
+
+    testFloatingPointNeuralNetwork_Recurrent(nn, path);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

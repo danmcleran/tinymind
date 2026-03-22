@@ -3213,4 +3213,1498 @@ namespace tinymind {
                                                                 >
     {
     };
+
+    // =========================================================================
+    // Heterogeneous Hidden Layer Support
+    //
+    // The types and templates below enable neural networks where each hidden
+    // layer can have a different number of neurons. The existing
+    // MultilayerPerceptron class (above) is fully preserved for backward
+    // compatibility.
+    // =========================================================================
+
+    // Forward declaration
+    template<size_t... Sizes>
+    struct HiddenLayers;
+
+    namespace detail {
+        template<size_t First, size_t... Rest>
+        struct FirstOf
+        {
+            static const size_t value = First;
+        };
+
+        template<size_t... Sizes>
+        struct LastOf;
+
+        template<size_t S>
+        struct LastOf<S>
+        {
+            static const size_t value = S;
+        };
+
+        template<size_t S, size_t... Rest>
+        struct LastOf<S, Rest...> : LastOf<Rest...>
+        {
+        };
+
+        template<size_t Count, size_t Size, size_t... Accumulated>
+        struct UniformHiddenLayersHelper
+        {
+            typedef typename UniformHiddenLayersHelper<Count - 1, Size, Accumulated..., Size>::type type;
+        };
+
+        template<size_t Size, size_t... Accumulated>
+        struct UniformHiddenLayersHelper<0, Size, Accumulated...>
+        {
+            typedef HiddenLayers<Accumulated...> type;
+        };
+
+        template<size_t A, size_t B>
+        struct PairwiseGradients
+        {
+            static const size_t value = A * B + B;
+        };
+
+        template<size_t A, size_t B, size_t... Rest>
+        struct PairwiseGradientsVar
+        {
+            static const size_t value = A * B + B + PairwiseGradientsVar<B, Rest...>::value;
+        };
+
+        template<size_t A, size_t B>
+        struct PairwiseGradientsVar<A, B>
+        {
+            static const size_t value = A * B + B;
+        };
+        // Computes total gradients for the full chain: Input, HiddenSizes..., Output
+        template<size_t NumberOfInputs, size_t NumberOfOutputs, typename HiddenLayersDescriptor>
+        struct TotalGradientsForNetwork;
+
+        template<size_t NumberOfInputs, size_t NumberOfOutputs, size_t... Sizes>
+        struct TotalGradientsForNetwork<NumberOfInputs, NumberOfOutputs, HiddenLayers<Sizes...> >
+        {
+            static const size_t value = PairwiseGradientsVar<NumberOfInputs, Sizes..., NumberOfOutputs>::value;
+        };
+    } // namespace detail
+
+    /**
+     * Descriptor type for specifying per-layer hidden neuron counts.
+     * Example: HiddenLayers<10, 5, 3> means 3 hidden layers with 10, 5, and 3 neurons.
+     */
+    template<size_t... Sizes>
+    struct HiddenLayers
+    {
+        static const size_t Count = sizeof...(Sizes);
+        static const size_t FirstLayerSize = detail::FirstOf<Sizes...>::value;
+        static const size_t LastLayerSize = detail::LastOf<Sizes...>::value;
+    };
+
+    /**
+     * Helper alias: generates a HiddenLayers<Size, Size, ..., Size> with Count copies.
+     * Example: UniformHiddenLayers<3, 5> = HiddenLayers<5, 5, 5>
+     */
+    template<size_t Count, size_t Size>
+    struct UniformHiddenLayersAlias
+    {
+        typedef typename detail::UniformHiddenLayersHelper<Count, Size>::type type;
+    };
+
+    // =========================================================================
+    // Layer Chain: recursive heterogeneous storage for inner hidden layers
+    // =========================================================================
+
+    struct EmptyLayerChain
+    {
+        void initializeWeights() {}
+        void initializeNeurons() {}
+    };
+
+    template<typename LayerType, typename RestChainType>
+    struct LayerChain
+    {
+        LayerType layer;
+        RestChainType rest;
+
+        void initializeWeights()
+        {
+            layer.initializeWeights();
+            rest.initializeWeights();
+        }
+
+        void initializeNeurons()
+        {
+            layer.initializeNeurons();
+            rest.initializeNeurons();
+        }
+    };
+
+    template<typename ChainType>
+    struct ChainFirstLayer;
+
+    template<typename LayerType, typename RestType>
+    struct ChainFirstLayer<LayerChain<LayerType, RestType> >
+    {
+        typedef LayerType type;
+
+        static LayerType& get(LayerChain<LayerType, RestType>& chain)
+        {
+            return chain.layer;
+        }
+    };
+
+    // =========================================================================
+    // InnerLayerChainBuilder: builds the chain of inner hidden layers from
+    // a HiddenLayers descriptor. All layers except the last become "inner"
+    // layers stored in the chain.
+    // =========================================================================
+
+    template<typename ConnectionType, typename TransferFunctionsPolicy, bool IsTrainable,
+             hiddenLayerConfiguration_e HLConfig, typename HiddenLayerSizes>
+    struct InnerLayerChainBuilder;
+
+    // Single hidden layer: no inner layers
+    template<typename CT, typename TF, bool IT, hiddenLayerConfiguration_e HLC, size_t S0>
+    struct InnerLayerChainBuilder<CT, TF, IT, HLC, HiddenLayers<S0> >
+    {
+        typedef EmptyLayerChain ChainType;
+    };
+
+    // Two or more hidden layers: recursive construction
+    template<typename CT, typename TF, bool IT, hiddenLayerConfiguration_e HLC, size_t S0, size_t S1, size_t... Rest>
+    struct InnerLayerChainBuilder<CT, TF, IT, HLC, HiddenLayers<S0, S1, Rest...> >
+    {
+        typedef typename HiddenLayerNeuronTypeSelector<CT, S1, TF, CT::IsTrainable, HLC>::HiddenLayerNeuronType NeuronType;
+        typedef HiddenLayer<NeuronType, S0> CurrentLayerType;
+        typedef typename InnerLayerChainBuilder<CT, TF, IT, HLC, HiddenLayers<S1, Rest...> >::ChainType RestChainType;
+        typedef LayerChain<CurrentLayerType, RestChainType> ChainType;
+    };
+
+    // =========================================================================
+    // Chain-based feed-forward helper
+    // =========================================================================
+
+    template<typename ChainType>
+    struct ChainFeedForwardHelper;
+
+    template<>
+    struct ChainFeedForwardHelper<EmptyLayerChain>
+    {
+        template<typename PrevLayerType, typename LastHiddenLayerType>
+        static void feedForward(PrevLayerType& prev, EmptyLayerChain& chain, LastHiddenLayerType& lastHidden)
+        {
+            (void)chain;
+            lastHidden.feedForward(prev);
+        }
+    };
+
+    template<typename LayerType, typename RestChainType>
+    struct ChainFeedForwardHelper<LayerChain<LayerType, RestChainType> >
+    {
+        template<typename PrevLayerType, typename LastHiddenLayerType>
+        static void feedForward(PrevLayerType& prev, LayerChain<LayerType, RestChainType>& chain, LastHiddenLayerType& lastHidden)
+        {
+            chain.layer.feedForward(prev);
+            ChainFeedForwardHelper<RestChainType>::feedForward(chain.layer, chain.rest, lastHidden);
+        }
+    };
+
+    // =========================================================================
+    // Chain-based recurrent feed-forward helper
+    // Same as ChainFeedForwardHelper but passes the recurrent layer to the
+    // last hidden layer's feedForward call.
+    // =========================================================================
+
+    template<typename ChainType>
+    struct ChainRecurrentFeedForwardHelper;
+
+    template<>
+    struct ChainRecurrentFeedForwardHelper<EmptyLayerChain>
+    {
+        template<typename PrevLayerType, typename LastHiddenLayerType, typename RecurrentLayerType>
+        static void feedForward(PrevLayerType& prev, EmptyLayerChain& chain, LastHiddenLayerType& lastHidden, RecurrentLayerType& recurrentLayer)
+        {
+            (void)chain;
+            lastHidden.feedForward(prev, recurrentLayer);
+        }
+    };
+
+    template<typename LayerType, typename RestChainType>
+    struct ChainRecurrentFeedForwardHelper<LayerChain<LayerType, RestChainType> >
+    {
+        template<typename PrevLayerType, typename LastHiddenLayerType, typename RecurrentLayerType>
+        static void feedForward(PrevLayerType& prev, LayerChain<LayerType, RestChainType>& chain, LastHiddenLayerType& lastHidden, RecurrentLayerType& recurrentLayer)
+        {
+            chain.layer.feedForward(prev);
+            ChainRecurrentFeedForwardHelper<RestChainType>::feedForward(chain.layer, chain.rest, lastHidden, recurrentLayer);
+        }
+    };
+
+    // =========================================================================
+    // Compile-time dispatch for feed-forward: recurrent vs non-recurrent
+    // =========================================================================
+
+    template<bool HasRecurrentLayer>
+    struct ChainFeedForwardDispatcher;
+
+    template<>
+    struct ChainFeedForwardDispatcher<false>
+    {
+        template<typename ChainType, typename InputType, typename InnerChainType, typename LastHiddenType, typename RecurrentType>
+        static void feedForward(InputType& input, InnerChainType& chain, LastHiddenType& lastHidden, RecurrentType&)
+        {
+            ChainFeedForwardHelper<ChainType>::feedForward(input, chain, lastHidden);
+        }
+    };
+
+    template<>
+    struct ChainFeedForwardDispatcher<true>
+    {
+        template<typename ChainType, typename InputType, typename InnerChainType, typename LastHiddenType, typename RecurrentType>
+        static void feedForward(InputType& input, InnerChainType& chain, LastHiddenType& lastHidden, RecurrentType& recurrentLayer)
+        {
+            ChainRecurrentFeedForwardHelper<ChainType>::feedForward(input, chain, lastHidden, recurrentLayer);
+        }
+    };
+
+    // =========================================================================
+    // Chain-based backward delta calculation
+    // Processes from output toward input (right-to-left through the chain).
+    // =========================================================================
+
+    template<typename ChainType>
+    struct ChainBackwardDeltaCalculator;
+
+    template<>
+    struct ChainBackwardDeltaCalculator<EmptyLayerChain>
+    {
+        template<typename NodeDeltasCalcType, typename NextLayerType>
+        static void calculate(EmptyLayerChain& chain, NextLayerType& nextTowardOutput)
+        {
+            (void)chain;
+            (void)nextTowardOutput;
+        }
+    };
+
+    // Single-element chain
+    template<typename LayerType>
+    struct ChainBackwardDeltaCalculator<LayerChain<LayerType, EmptyLayerChain> >
+    {
+        template<typename NodeDeltasCalcType, typename NextLayerType>
+        static void calculate(LayerChain<LayerType, EmptyLayerChain>& chain, NextLayerType& nextTowardOutput)
+        {
+            NodeDeltasCalcType::calculateAndSetNodeDeltas(chain.layer, nextTowardOutput);
+        }
+
+        static LayerType& getFirstLayer(LayerChain<LayerType, EmptyLayerChain>& chain)
+        {
+            return chain.layer;
+        }
+    };
+
+    // Multi-element chain
+    template<typename LayerType, typename RestChainType>
+    struct ChainBackwardDeltaCalculator<LayerChain<LayerType, RestChainType> >
+    {
+        template<typename NodeDeltasCalcType, typename NextLayerType>
+        static void calculate(LayerChain<LayerType, RestChainType>& chain, NextLayerType& nextTowardOutput)
+        {
+            // Process the rest of the chain first (closer to output)
+            ChainBackwardDeltaCalculator<RestChainType>::template calculate<NodeDeltasCalcType>(chain.rest, nextTowardOutput);
+            // Then calculate this layer's deltas against the first layer of the rest
+            typedef typename ChainFirstLayer<RestChainType>::type RestFirstLayerType;
+            RestFirstLayerType& firstOfRest = ChainFirstLayer<RestChainType>::get(chain.rest);
+            NodeDeltasCalcType::calculateAndSetNodeDeltas(chain.layer, firstOfRest);
+        }
+
+        static LayerType& getFirstLayer(LayerChain<LayerType, RestChainType>& chain)
+        {
+            return chain.layer;
+        }
+    };
+
+    // =========================================================================
+    // Chain-based backward gradient calculation
+    // Same right-to-left traversal pattern as delta calculation.
+    // =========================================================================
+
+    template<typename ChainType>
+    struct ChainBackwardGradientCalculator;
+
+    template<>
+    struct ChainBackwardGradientCalculator<EmptyLayerChain>
+    {
+        template<typename GradCalcType, typename GradientsManagerType, typename NextLayerType>
+        static void calculate(EmptyLayerChain& chain, NextLayerType& nextTowardOutput, GradientsManagerType& gm)
+        {
+            (void)chain;
+            (void)nextTowardOutput;
+            (void)gm;
+        }
+    };
+
+    template<typename LayerType>
+    struct ChainBackwardGradientCalculator<LayerChain<LayerType, EmptyLayerChain> >
+    {
+        template<typename GradCalcType, typename GradientsManagerType, typename NextLayerType>
+        static void calculate(LayerChain<LayerType, EmptyLayerChain>& chain, NextLayerType& nextTowardOutput, GradientsManagerType& gm)
+        {
+            GradCalcType::calculateAndUpdateGradients(chain.layer, nextTowardOutput, gm);
+        }
+
+        static LayerType& getFirstLayer(LayerChain<LayerType, EmptyLayerChain>& chain)
+        {
+            return chain.layer;
+        }
+    };
+
+    template<typename LayerType, typename RestChainType>
+    struct ChainBackwardGradientCalculator<LayerChain<LayerType, RestChainType> >
+    {
+        template<typename GradCalcType, typename GradientsManagerType, typename NextLayerType>
+        static void calculate(LayerChain<LayerType, RestChainType>& chain, NextLayerType& nextTowardOutput, GradientsManagerType& gm)
+        {
+            ChainBackwardGradientCalculator<RestChainType>::template calculate<GradCalcType>(chain.rest, nextTowardOutput, gm);
+            typedef typename ChainFirstLayer<RestChainType>::type RestFirstLayerType;
+            RestFirstLayerType& firstOfRest = ChainFirstLayer<RestChainType>::get(chain.rest);
+            GradCalcType::calculateAndUpdateGradients(chain.layer, firstOfRest, gm);
+        }
+
+        static LayerType& getFirstLayer(LayerChain<LayerType, RestChainType>& chain)
+        {
+            return chain.layer;
+        }
+    };
+
+    // =========================================================================
+    // Chain-based backward weight update
+    // =========================================================================
+
+    template<typename ChainType>
+    struct ChainBackwardWeightUpdater;
+
+    template<>
+    struct ChainBackwardWeightUpdater<EmptyLayerChain>
+    {
+        template<typename TrainingPolicyType, typename NextLayerType>
+        static void update(TrainingPolicyType& tp, EmptyLayerChain& chain, NextLayerType& nextTowardOutput)
+        {
+            (void)tp;
+            (void)chain;
+            (void)nextTowardOutput;
+        }
+    };
+
+    template<typename LayerType>
+    struct ChainBackwardWeightUpdater<LayerChain<LayerType, EmptyLayerChain> >
+    {
+        template<typename TrainingPolicyType, typename NextLayerType>
+        static void update(TrainingPolicyType& tp, LayerChain<LayerType, EmptyLayerChain>& chain, NextLayerType& nextTowardOutput)
+        {
+            tp.updateConnectionWeights(nextTowardOutput, chain.layer);
+        }
+
+        static LayerType& getFirstLayer(LayerChain<LayerType, EmptyLayerChain>& chain)
+        {
+            return chain.layer;
+        }
+    };
+
+    template<typename LayerType, typename RestChainType>
+    struct ChainBackwardWeightUpdater<LayerChain<LayerType, RestChainType> >
+    {
+        template<typename TrainingPolicyType, typename NextLayerType>
+        static void update(TrainingPolicyType& tp, LayerChain<LayerType, RestChainType>& chain, NextLayerType& nextTowardOutput)
+        {
+            ChainBackwardWeightUpdater<RestChainType>::update(tp, chain.rest, nextTowardOutput);
+            typedef typename ChainFirstLayer<RestChainType>::type RestFirstLayerType;
+            RestFirstLayerType& firstOfRest = ChainFirstLayer<RestChainType>::get(chain.rest);
+            tp.updateConnectionWeights(firstOfRest, chain.layer);
+        }
+
+        static LayerType& getFirstLayer(LayerChain<LayerType, RestChainType>& chain)
+        {
+            return chain.layer;
+        }
+    };
+
+    // =========================================================================
+    // Input layer connectors: handle the input-to-first-hidden connection
+    // for delta, gradient, and weight-update passes.
+    // =========================================================================
+
+    template<typename InnerChainType>
+    struct InputLayerDeltaConnector;
+
+    template<>
+    struct InputLayerDeltaConnector<EmptyLayerChain>
+    {
+        template<typename NodeDeltasCalcType, typename InputLayerType, typename LastHiddenLayerType>
+        static void connect(InputLayerType& input, EmptyLayerChain& chain, LastHiddenLayerType& lastHidden)
+        {
+            (void)chain;
+            NodeDeltasCalcType::calculateAndSetNodeDeltas(input, lastHidden);
+        }
+    };
+
+    template<typename LayerType, typename RestChainType>
+    struct InputLayerDeltaConnector<LayerChain<LayerType, RestChainType> >
+    {
+        template<typename NodeDeltasCalcType, typename InputLayerType, typename LastHiddenLayerType>
+        static void connect(InputLayerType& input, LayerChain<LayerType, RestChainType>& chain, LastHiddenLayerType& lastHidden)
+        {
+            (void)lastHidden;
+            NodeDeltasCalcType::calculateAndSetNodeDeltas(input, chain.layer);
+        }
+    };
+
+    template<typename InnerChainType>
+    struct InputLayerGradientConnector;
+
+    template<>
+    struct InputLayerGradientConnector<EmptyLayerChain>
+    {
+        template<typename GradCalcType, typename GradientsManagerType, typename InputLayerType, typename LastHiddenLayerType>
+        static void connect(InputLayerType& input, EmptyLayerChain& chain, LastHiddenLayerType& lastHidden, GradientsManagerType& gm)
+        {
+            (void)chain;
+            GradCalcType::calculateAndUpdateGradients(input, lastHidden, gm);
+        }
+    };
+
+    template<typename LayerType, typename RestChainType>
+    struct InputLayerGradientConnector<LayerChain<LayerType, RestChainType> >
+    {
+        template<typename GradCalcType, typename GradientsManagerType, typename InputLayerType, typename LastHiddenLayerType>
+        static void connect(InputLayerType& input, LayerChain<LayerType, RestChainType>& chain, LastHiddenLayerType& lastHidden, GradientsManagerType& gm)
+        {
+            (void)lastHidden;
+            GradCalcType::calculateAndUpdateGradients(input, chain.layer, gm);
+        }
+    };
+
+    template<typename InnerChainType>
+    struct InputLayerWeightUpdateConnector;
+
+    template<>
+    struct InputLayerWeightUpdateConnector<EmptyLayerChain>
+    {
+        template<typename TrainingPolicyType, typename InputLayerType, typename LastHiddenLayerType>
+        static void connect(TrainingPolicyType& tp, InputLayerType& input, EmptyLayerChain& chain, LastHiddenLayerType& lastHidden)
+        {
+            (void)chain;
+            tp.updateConnectionWeights(lastHidden, input);
+        }
+    };
+
+    template<typename LayerType, typename RestChainType>
+    struct InputLayerWeightUpdateConnector<LayerChain<LayerType, RestChainType> >
+    {
+        template<typename TrainingPolicyType, typename InputLayerType, typename LastHiddenLayerType>
+        static void connect(TrainingPolicyType& tp, InputLayerType& input, LayerChain<LayerType, RestChainType>& chain, LastHiddenLayerType& lastHidden)
+        {
+            (void)lastHidden;
+            tp.updateConnectionWeights(chain.layer, input);
+        }
+    };
+
+    // =========================================================================
+    // Network-level chain calculators
+    // =========================================================================
+
+    template<typename NeuralNetworkType>
+    struct ChainNetworkDeltasCalculator
+    {
+        typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
+        typedef typename NeuralNetworkType::InputLayerType InputLayerType;
+        typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
+        typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkOutputLayerType OutputLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy TransferFunctionsPolicy;
+        typedef NodeDeltasCalculator<TransferFunctionsPolicy> NodeDeltasCalculatorType;
+        typedef typename OutputLayerNodeDeltasCalculatorChooser<
+                        TransferFunctionsPolicy,
+                        OutputLayerType,
+                        NeuralNetworkType::NeuralNetworkOutputLayerConfiguration>::OutputLayerNodeDeltasCalculatorType OutputLayerNodeDeltasCalculatorType;
+
+        static void calculateNetworkDeltas(NeuralNetworkType& nn, ValueType const* const targetValues)
+        {
+            InputLayerType& inputLayer = nn.getInputLayer();
+            InnerChainType& innerChain = nn.getInnerHiddenLayerChain();
+            LastHiddenLayerType& lastHiddenLayer = nn.getLastHiddenLayer();
+            OutputLayerType& outputLayer = nn.getOutputLayer();
+
+            OutputLayerNodeDeltasCalculatorType::calculateOutputLayerNodeDeltas(outputLayer, targetValues);
+
+            NodeDeltasCalculatorType::calculateAndSetNodeDeltas(lastHiddenLayer, outputLayer);
+
+            ChainBackwardDeltaCalculator<InnerChainType>::template calculate<NodeDeltasCalculatorType>(innerChain, lastHiddenLayer);
+
+            InputLayerDeltaConnector<InnerChainType>::template connect<NodeDeltasCalculatorType>(inputLayer, innerChain, lastHiddenLayer);
+        }
+    };
+
+    template<typename NeuralNetworkType>
+    struct ChainNetworkGradientsCalculator
+    {
+        typedef typename NeuralNetworkType::InputLayerType InputLayerType;
+        typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
+        typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkOutputLayerType OutputLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy TransferFunctionsPolicy;
+        typedef typename NeuralNetworkType::GradientsManagerType GradientsManagerType;
+        typedef GradientsCalculator<TransferFunctionsPolicy, GradientsManagerType> GradientsCalculatorType;
+
+        static void calculateNetworkGradients(NeuralNetworkType& nn)
+        {
+            InputLayerType& inputLayer = nn.getInputLayer();
+            InnerChainType& innerChain = nn.getInnerHiddenLayerChain();
+            LastHiddenLayerType& lastHiddenLayer = nn.getLastHiddenLayer();
+            OutputLayerType& outputLayer = nn.getOutputLayer();
+            GradientsManagerType& gradientsManager = nn.getGradientsManager();
+
+            GradientsCalculatorType::calculateAndUpdateOutputLayerGradients(lastHiddenLayer, outputLayer, gradientsManager);
+
+            ChainBackwardGradientCalculator<InnerChainType>::template calculate<GradientsCalculatorType>(innerChain, lastHiddenLayer, gradientsManager);
+
+            InputLayerGradientConnector<InnerChainType>::template connect<GradientsCalculatorType>(inputLayer, innerChain, lastHiddenLayer, gradientsManager);
+        }
+    };
+
+    template<typename NeuralNetworkType>
+    struct ChainBackPropConnectionWeightUpdater
+    {
+        typedef typename NeuralNetworkType::NeuralNetworkOutputLayerType OutputLayerType;
+        typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
+        typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
+        typedef typename NeuralNetworkType::InputLayerType InputLayerType;
+
+        template<typename TrainingPolicyType>
+        static void updateConnectionWeights(TrainingPolicyType& trainingPolicy, NeuralNetworkType& nn)
+        {
+            OutputLayerType& outputLayer = nn.getOutputLayer();
+            LastHiddenLayerType& lastHiddenLayer = nn.getLastHiddenLayer();
+            InnerChainType& innerChain = nn.getInnerHiddenLayerChain();
+            InputLayerType& inputLayer = nn.getInputLayer();
+
+            trainingPolicy.updateConnectionWeights(outputLayer, lastHiddenLayer);
+
+            ChainBackwardWeightUpdater<InnerChainType>::update(trainingPolicy, innerChain, lastHiddenLayer);
+
+            InputLayerWeightUpdateConnector<InnerChainType>::connect(trainingPolicy, inputLayer, innerChain, lastHiddenLayer);
+        }
+    };
+
+    // =========================================================================
+    // Chain-based recurrent training calculators
+    // These mirror the chain-based non-recurrent calculators but include
+    // recurrent layer processing for backpropagation through time.
+    // =========================================================================
+
+    template<typename NeuralNetworkType>
+    struct ChainRecurrentNetworkDeltasCalculator
+    {
+        typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
+        typedef typename NeuralNetworkType::InputLayerType InputLayerType;
+        typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
+        typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkRecurrentLayerType RecurrentLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkOutputLayerType OutputLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy TransferFunctionsPolicy;
+        typedef NodeDeltasCalculator<TransferFunctionsPolicy> NodeDeltasCalculatorType;
+        typedef typename OutputLayerNodeDeltasCalculatorChooser<
+                        TransferFunctionsPolicy,
+                        OutputLayerType,
+                        NeuralNetworkType::NeuralNetworkOutputLayerConfiguration>::OutputLayerNodeDeltasCalculatorType OutputLayerNodeDeltasCalculatorType;
+
+        static void calculateNetworkDeltas(NeuralNetworkType& nn, ValueType const* const targetValues)
+        {
+            InputLayerType& inputLayer = nn.getInputLayer();
+            InnerChainType& innerChain = nn.getInnerHiddenLayerChain();
+            LastHiddenLayerType& lastHiddenLayer = nn.getLastHiddenLayer();
+            RecurrentLayerType& recurrentLayer = nn.getRecurrentLayer();
+            OutputLayerType& outputLayer = nn.getOutputLayer();
+
+            OutputLayerNodeDeltasCalculatorType::calculateOutputLayerNodeDeltas(outputLayer, targetValues);
+
+            NodeDeltasCalculatorType::calculateAndSetNodeDeltas(lastHiddenLayer, outputLayer);
+
+            NodeDeltasCalculatorType::calculateAndSetNodeDeltas(recurrentLayer, lastHiddenLayer);
+
+            ChainBackwardDeltaCalculator<InnerChainType>::template calculate<NodeDeltasCalculatorType>(innerChain, lastHiddenLayer);
+
+            InputLayerDeltaConnector<InnerChainType>::template connect<NodeDeltasCalculatorType>(inputLayer, innerChain, lastHiddenLayer);
+        }
+    };
+
+    template<typename NeuralNetworkType>
+    struct ChainRecurrentNetworkGradientsCalculator
+    {
+        typedef typename NeuralNetworkType::InputLayerType InputLayerType;
+        typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
+        typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkRecurrentLayerType RecurrentLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkOutputLayerType OutputLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy TransferFunctionsPolicy;
+        typedef typename NeuralNetworkType::GradientsManagerType GradientsManagerType;
+        typedef GradientsCalculator<TransferFunctionsPolicy, GradientsManagerType> GradientsCalculatorType;
+
+        static void calculateNetworkGradients(NeuralNetworkType& nn)
+        {
+            InputLayerType& inputLayer = nn.getInputLayer();
+            InnerChainType& innerChain = nn.getInnerHiddenLayerChain();
+            LastHiddenLayerType& lastHiddenLayer = nn.getLastHiddenLayer();
+            RecurrentLayerType& recurrentLayer = nn.getRecurrentLayer();
+            OutputLayerType& outputLayer = nn.getOutputLayer();
+            GradientsManagerType& gradientsManager = nn.getGradientsManager();
+
+            GradientsCalculatorType::calculateAndUpdateOutputLayerGradients(lastHiddenLayer, outputLayer, gradientsManager);
+
+            GradientsCalculatorType::calculateAndUpdateGradients(recurrentLayer, lastHiddenLayer, gradientsManager);
+
+            ChainBackwardGradientCalculator<InnerChainType>::template calculate<GradientsCalculatorType>(innerChain, lastHiddenLayer, gradientsManager);
+
+            InputLayerGradientConnector<InnerChainType>::template connect<GradientsCalculatorType>(inputLayer, innerChain, lastHiddenLayer, gradientsManager);
+        }
+    };
+
+    template<typename NeuralNetworkType>
+    struct ChainRecurrentBackPropConnectionWeightUpdater
+    {
+        typedef typename NeuralNetworkType::NeuralNetworkOutputLayerType OutputLayerType;
+        typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkRecurrentLayerType RecurrentLayerType;
+        typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
+        typedef typename NeuralNetworkType::InputLayerType InputLayerType;
+
+        template<typename TrainingPolicyType>
+        static void updateConnectionWeights(TrainingPolicyType& trainingPolicy, NeuralNetworkType& nn)
+        {
+            OutputLayerType& outputLayer = nn.getOutputLayer();
+            LastHiddenLayerType& lastHiddenLayer = nn.getLastHiddenLayer();
+            RecurrentLayerType& recurrentLayer = nn.getRecurrentLayer();
+            InnerChainType& innerChain = nn.getInnerHiddenLayerChain();
+            InputLayerType& inputLayer = nn.getInputLayer();
+
+            trainingPolicy.updateConnectionWeights(outputLayer, lastHiddenLayer);
+
+            trainingPolicy.updateConnectionWeights(lastHiddenLayer, recurrentLayer);
+
+            ChainBackwardWeightUpdater<InnerChainType>::update(trainingPolicy, innerChain, lastHiddenLayer);
+
+            InputLayerWeightUpdateConnector<InnerChainType>::connect(trainingPolicy, inputLayer, innerChain, lastHiddenLayer);
+        }
+    };
+
+    // =========================================================================
+    // Chain-based gradients manager
+    // =========================================================================
+
+    template<typename NeuralNetworkType, bool IsTrainable>
+    struct ChainGradientsManagerSelector;
+
+    template<typename NeuralNetworkType>
+    struct ChainGradientsManagerSelector<NeuralNetworkType, true>
+    {
+        typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
+        static const size_t NumberOfGradients = NeuralNetworkType::TotalNumberOfGradients;
+
+        struct type
+        {
+            template<typename LayerType>
+            void updateBiasGradients(LayerType& layer, const size_t nextNeuron, const ValueType& gradient)
+            {
+                this->gradientsHolder.updateBiasGradients(layer, nextNeuron, gradient);
+            }
+
+            template<typename LayerType>
+            void updateGradients(LayerType& layer, const size_t neuron, const size_t nextNeuron, const ValueType& gradient)
+            {
+                this->gradientsHolder.updateGradients(layer, neuron, nextNeuron, gradient);
+            }
+        private:
+            GradientsHolder<ValueType, NumberOfGradients, NeuralNetworkType::NeuralNetworkBatchSize> gradientsHolder;
+        };
+    };
+
+    template<typename NeuralNetworkType>
+    struct ChainGradientsManagerSelector<NeuralNetworkType, false>
+    {
+        typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
+
+        struct type
+        {
+            template<typename LayerType>
+            void updateBiasGradients(LayerType& layer, const size_t nextNeuron, const ValueType& gradient)
+            {
+                (void)layer;
+                (void)nextNeuron;
+                (void)gradient;
+            }
+
+            template<typename LayerType>
+            void updateGradients(LayerType& layer, const size_t neuron, const size_t nextNeuron, const ValueType& gradient)
+            {
+                (void)layer;
+                (void)neuron;
+                (void)nextNeuron;
+                (void)gradient;
+            }
+        };
+    };
+
+    // =========================================================================
+    // Chain-based training policy
+    // =========================================================================
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainBackPropagationPolicy : public BackPropagationParent<TransferFunctionsPolicy, BatchSize>
+    {
+        typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
+
+        template<typename NNType>
+        void trainNetwork(NNType& nn, ValueType const* const targetValues)
+        {
+            ChainNetworkDeltasCalculator<NNType>::calculateNetworkDeltas(nn, targetValues);
+
+            ChainNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
+
+            ChainBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+        }
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainClassifierBackPropagationPolicy : public BackPropagationParent<TransferFunctionsPolicy, BatchSize>
+    {
+        typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
+
+        template<typename NNType>
+        void trainNetwork(NNType& nn, ValueType const* const targetValues)
+        {
+            ChainNetworkDeltasCalculator<NNType>::calculateNetworkDeltas(nn, targetValues);
+
+            ChainNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
+
+            ChainBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+        }
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainBackPropagationThruTimePolicy : public BackPropagationParent<TransferFunctionsPolicy, BatchSize>
+    {
+        typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
+
+        template<typename NNType>
+        void trainNetwork(NNType& nn, ValueType const* const targetValues)
+        {
+            ChainRecurrentNetworkDeltasCalculator<NNType>::calculateNetworkDeltas(nn, targetValues);
+
+            ChainRecurrentNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
+
+            ChainRecurrentBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+        }
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainClassifierBackPropagationThruTimePolicy : public BackPropagationParent<TransferFunctionsPolicy, BatchSize>
+    {
+        typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
+
+        template<typename NNType>
+        void trainNetwork(NNType& nn, ValueType const* const targetValues)
+        {
+            ChainRecurrentNetworkDeltasCalculator<NNType>::calculateNetworkDeltas(nn, targetValues);
+
+            ChainRecurrentNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
+
+            ChainRecurrentBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+        }
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize, bool HasRecurrentLayer, bool IsTrainable, outputLayerConfiguration_e OutputLayerConfiguration>
+    struct ChainTrainingPolicySelector
+    {
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, false, true, FeedForwardOutputLayerConfiguration>
+    {
+        typedef ChainBackPropagationPolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, false, true, ClassifierOutputLayerConfiguration>
+    {
+        typedef ChainClassifierBackPropagationPolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, true, true, FeedForwardOutputLayerConfiguration>
+    {
+        typedef ChainBackPropagationThruTimePolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, true, true, ClassifierOutputLayerConfiguration>
+    {
+        typedef ChainClassifierBackPropagationThruTimePolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, false, false, FeedForwardOutputLayerConfiguration>
+    {
+        typedef NullTrainingPolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, false, false, ClassifierOutputLayerConfiguration>
+    {
+        typedef NullTrainingPolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, true, false, FeedForwardOutputLayerConfiguration>
+    {
+        typedef NullTrainingPolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, true, false, ClassifierOutputLayerConfiguration>
+    {
+        typedef NullTrainingPolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
+    };
+
+    // =========================================================================
+    // Chain-based hidden layer accessor
+    // Provides runtime-indexed access to hidden layers stored in a chain.
+    // Used by NeuralNetwork to implement layer-indexed weight get/set methods.
+    // =========================================================================
+
+    template<typename ChainType>
+    struct ChainHiddenLayerAccessor;
+
+    template<>
+    struct ChainHiddenLayerAccessor<EmptyLayerChain>
+    {
+        template<typename ValueType>
+        static ValueType getBiasNeuronWeightForConnection(EmptyLayerChain&, size_t, size_t)
+        {
+            return ValueType();
+        }
+
+        template<typename ValueType>
+        static ValueType getWeightForNeuronAndConnection(EmptyLayerChain&, size_t, size_t, size_t)
+        {
+            return ValueType();
+        }
+
+        template<typename ValueType>
+        static void setBiasNeuronWeightForConnection(EmptyLayerChain&, size_t, size_t, const ValueType&)
+        {
+        }
+
+        template<typename ValueType>
+        static void setBiasNeuronDeltaWeightForConnection(EmptyLayerChain&, size_t, size_t, const ValueType&)
+        {
+        }
+
+        template<typename ValueType>
+        static void setWeightForNeuronAndConnection(EmptyLayerChain&, size_t, size_t, size_t, const ValueType&)
+        {
+        }
+
+        template<typename ValueType>
+        static void setDeltaWeightForNeuronAndConnection(EmptyLayerChain&, size_t, size_t, size_t, const ValueType&)
+        {
+        }
+    };
+
+    template<typename LayerType, typename RestChainType>
+    struct ChainHiddenLayerAccessor<LayerChain<LayerType, RestChainType> >
+    {
+        typedef typename LayerType::ValueType ValueType;
+
+        template<typename VT = ValueType>
+        static VT getBiasNeuronWeightForConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t connection)
+        {
+            if(layerIndex == 0)
+            {
+                return chain.layer.getBiasNeuronWeightForConnection(connection);
+            }
+            return ChainHiddenLayerAccessor<RestChainType>::template getBiasNeuronWeightForConnection<ValueType>(chain.rest, layerIndex - 1, connection);
+        }
+
+        template<typename VT = ValueType>
+        static VT getWeightForNeuronAndConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t neuron, size_t connection)
+        {
+            if(layerIndex == 0)
+            {
+                return chain.layer.getWeightForNeuronAndConnection(neuron, connection);
+            }
+            return ChainHiddenLayerAccessor<RestChainType>::template getWeightForNeuronAndConnection<ValueType>(chain.rest, layerIndex - 1, neuron, connection);
+        }
+
+        static void setBiasNeuronWeightForConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t connection, const ValueType& weight)
+        {
+            if(layerIndex == 0)
+            {
+                chain.layer.setBiasNeuronWeightForConnection(connection, weight);
+                return;
+            }
+            ChainHiddenLayerAccessor<RestChainType>::template setBiasNeuronWeightForConnection<ValueType>(chain.rest, layerIndex - 1, connection, weight);
+        }
+
+        static void setBiasNeuronDeltaWeightForConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t connection, const ValueType& deltaWeight)
+        {
+            if(layerIndex == 0)
+            {
+                chain.layer.setBiasNeuronDeltaWeightForConnection(connection, deltaWeight);
+                return;
+            }
+            ChainHiddenLayerAccessor<RestChainType>::template setBiasNeuronDeltaWeightForConnection<ValueType>(chain.rest, layerIndex - 1, connection, deltaWeight);
+        }
+
+        static void setWeightForNeuronAndConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t neuron, size_t connection, const ValueType& weight)
+        {
+            if(layerIndex == 0)
+            {
+                chain.layer.setWeightForNeuronAndConnection(neuron, connection, weight);
+                return;
+            }
+            ChainHiddenLayerAccessor<RestChainType>::template setWeightForNeuronAndConnection<ValueType>(chain.rest, layerIndex - 1, neuron, connection, weight);
+        }
+
+        static void setDeltaWeightForNeuronAndConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t neuron, size_t connection, const ValueType& deltaWeight)
+        {
+            if(layerIndex == 0)
+            {
+                chain.layer.setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
+                return;
+            }
+            ChainHiddenLayerAccessor<RestChainType>::template setDeltaWeightForNeuronAndConnection<ValueType>(chain.rest, layerIndex - 1, neuron, connection, deltaWeight);
+        }
+    };
+
+    // =========================================================================
+    // Hidden layer size accessor
+    // Provides runtime-indexed access to hidden layer sizes from
+    // a HiddenLayers descriptor. Used by setWeights to determine
+    // iteration bounds for each layer.
+    // =========================================================================
+
+    template<typename HiddenLayersDescriptorType>
+    struct HiddenLayerSizeAccessor;
+
+    template<size_t S>
+    struct HiddenLayerSizeAccessor<HiddenLayers<S> >
+    {
+        static size_t getSize(size_t)
+        {
+            return S;
+        }
+    };
+
+    template<size_t S, size_t... Rest>
+    struct HiddenLayerSizeAccessor<HiddenLayers<S, Rest...> >
+    {
+        static size_t getSize(size_t index)
+        {
+            if(index == 0)
+            {
+                return S;
+            }
+            return HiddenLayerSizeAccessor<HiddenLayers<Rest...> >::getSize(index - 1);
+        }
+    };
+
+    // =========================================================================
+    // NeuralNetwork: MLP with heterogeneous hidden layers
+    //
+    // Usage:
+    //   // Different sizes per hidden layer
+    //   NeuralNetwork<double, 2, HiddenLayers<10, 5, 3>, 1, TransferFunctions>
+    //
+    //   // Uniform hidden layers (equivalent to MultilayerPerceptron<..., 2, 5, ...>)
+    //   NeuralNetwork<double, 2, UniformHiddenLayersAlias<2, 5>::type, 1, TransferFunctions>
+    // =========================================================================
+
+    template<
+            typename ValueType,
+            size_t NumberOfInputs,
+            typename HiddenLayersDescriptor,
+            size_t NumberOfOutputs,
+            typename TransferFunctionsPolicy,
+            bool IsTrainable = true,
+            size_t BatchSize = 1,
+            bool HasRecurrentLayer = false,
+            hiddenLayerConfiguration_e HiddenLayerConfig = NonRecurrentHiddenLayerConfig,
+            size_t RecurrentConnectionDepth = 0,
+            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
+            >
+    class NeuralNetwork
+    {
+    public:
+        typedef NeuralNetwork<  ValueType,
+                                NumberOfInputs,
+                                HiddenLayersDescriptor,
+                                NumberOfOutputs,
+                                TransferFunctionsPolicy,
+                                IsTrainable,
+                                BatchSize,
+                                HasRecurrentLayer,
+                                HiddenLayerConfig,
+                                RecurrentConnectionDepth,
+                                OutputLayerConfiguration> NeuralNetworkType;
+
+        typedef ValueType NeuralNetworkValueType;
+        typedef typename ConnectionTypeSelector<ValueType, IsTrainable>::ConnectionType ConnectionType;
+        typedef TransferFunctionsPolicy NeuralNetworkTransferFunctionsPolicy;
+
+        // Input layer: neurons have outgoing connections to the first hidden layer
+        typedef typename InputLayerNeuronTypeSelector<ConnectionType, HiddenLayersDescriptor::FirstLayerSize, TransferFunctionsPolicy, IsTrainable>::InputLayerNeuronType InputLayerNeuronType;
+        typedef InputLayer<InputLayerNeuronType, NumberOfInputs> InputLayerType;
+
+        // Inner hidden layer chain (all hidden layers except the last)
+        typedef typename InnerLayerChainBuilder<ConnectionType, TransferFunctionsPolicy, IsTrainable, HiddenLayerConfig, HiddenLayersDescriptor>::ChainType InnerHiddenLayerChainType;
+
+        // Last hidden layer: neurons connect to the output layer
+        typedef typename HiddenLayerNeuronTypeSelector<ConnectionType, NumberOfOutputs, TransferFunctionsPolicy, ConnectionType::IsTrainable, HiddenLayerConfig>::HiddenLayerNeuronType LastHiddenLayerNeuronType;
+        typedef HiddenLayer<LastHiddenLayerNeuronType, HiddenLayersDescriptor::LastLayerSize> LastHiddenLayerType;
+
+        // Recurrent layer
+        typedef RecurrentLayerTypeSelector< ConnectionType,
+                                            HiddenLayersDescriptor::LastLayerSize,
+                                            TransferFunctionsPolicy,
+                                            RecurrentConnectionDepth,
+                                            HasRecurrentLayer> RecurrentLayerTypeSelectorType;
+        typedef typename RecurrentLayerTypeSelectorType::RecurrentLayerType NeuralNetworkRecurrentLayerType;
+
+        // Output layer
+        typedef typename OutputLayerNeuronTypeSelector<ConnectionType, TransferFunctionsPolicy, IsTrainable>::OutputLayerNeuronType OutputLayerNeuronType;
+        typedef typename OutputLayerTypeSelector<OutputLayerNeuronType, NumberOfOutputs, OutputLayerConfiguration>::OutputLayerType NeuralNetworkOutputLayerType;
+
+        // Gradient count: computed over the full chain Input, S0, S1, ..., Sk, Output
+        static const size_t TotalNumberOfGradients = detail::TotalGradientsForNetwork<NumberOfInputs, NumberOfOutputs, HiddenLayersDescriptor>::value;
+
+        // Gradients manager
+        typedef typename ChainGradientsManagerSelector<NeuralNetworkType, IsTrainable>::type GradientsManagerType;
+
+        // Training policy
+        typedef typename ChainTrainingPolicySelector<
+                            TransferFunctionsPolicy,
+                            BatchSize,
+                            HasRecurrentLayer,
+                            IsTrainable,
+                            OutputLayerConfiguration>::TrainingPolicyType TrainingPolicyType;
+
+        static const size_t NeuralNetworkNumberOfHiddenLayers = HiddenLayersDescriptor::Count;
+        static const size_t NumberOfInnerHiddenLayers = HiddenLayersDescriptor::Count - 1;
+        static const size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfHiddenLayerNeurons = LastHiddenLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfOutputLayerNeurons = NeuralNetworkOutputLayerType::NumberOfNeuronsInLayer;
+        static const size_t NeuralNetworkRecurrentConnectionDepth = NeuralNetworkRecurrentLayerType::RecurrentLayerRecurrentConnectionDepth;
+        static const size_t NeuralNetworkBatchSize = BatchSize;
+        static const outputLayerConfiguration_e NeuralNetworkOutputLayerConfiguration = OutputLayerConfiguration;
+
+        NeuralNetwork()
+        {
+            size_t bufferIndex;
+
+            this->mInputLayer.initializeNeurons();
+
+            this->mInnerHiddenLayerChain.initializeNeurons();
+
+            this->mLastHiddenLayer.initializeNeurons();
+
+            this->mOutputLayer.initializeNeurons();
+
+            this->mRecurrentLayer.initializeNeurons();
+
+            this->mTrainingPolicy.initialize();
+
+            if(IsTrainable)
+            {
+                this->initializeWeights();
+            }
+
+            for(size_t learnedValue = 0;learnedValue < NumberOfOutputLayerNeurons;++learnedValue)
+            {
+                bufferIndex = learnedValue * sizeof(ValueType);
+                new (&this->mLearnedValuesBuffer[bufferIndex]) ValueType();
+            }
+        }
+
+        void initializeWeights()
+        {
+            this->mInputLayer.initializeWeights();
+
+            this->mInnerHiddenLayerChain.initializeWeights();
+
+            this->mLastHiddenLayer.initializeWeights();
+
+            this->mOutputLayer.initializeWeights();
+
+            this->mRecurrentLayer.initializeWeights();
+        }
+
+        ValueType calculateError(ValueType const* const targetValues)
+        {
+            ValueType* pLearnedValues = reinterpret_cast<ValueType*>(&this->mLearnedValuesBuffer[0]);
+
+            getLearnedValues(pLearnedValues);
+
+            return TransferFunctionsPolicy::calculateError(targetValues, pLearnedValues);
+        }
+
+        void feedForward(ValueType const* const values)
+        {
+            this->mInputLayer.feedForward(values);
+
+            ChainFeedForwardDispatcher<HasRecurrentLayer>::template feedForward<InnerHiddenLayerChainType>(this->mInputLayer, this->mInnerHiddenLayerChain, this->mLastHiddenLayer, this->mRecurrentLayer);
+
+            this->mOutputLayer.feedForward(this->mLastHiddenLayer);
+        }
+
+        ValueType getAccelerationRate() const
+        {
+            return this->mTrainingPolicy.getAccelerationRate();
+        }
+
+        ValueType getLearningRate() const
+        {
+            return this->mTrainingPolicy.getLearningRate();
+        }
+
+        ValueType getMomentumRate() const
+        {
+            return this->mTrainingPolicy.getMomentumRate();
+        }
+
+        NeuralNetworkRecurrentLayerType& getRecurrentLayer()
+        {
+            return this->mRecurrentLayer;
+        }
+
+        GradientsManagerType& getGradientsManager()
+        {
+            return this->mGradientsManager;
+        }
+
+        ValueType getHiddenLayerBiasNeuronWeightForConnection(const size_t hiddenLayer, const size_t connection)
+        {
+            if((NeuralNetworkNumberOfHiddenLayers - 1) == hiddenLayer)
+            {
+                return this->mLastHiddenLayer.getBiasNeuronWeightForConnection(connection);
+            }
+            else
+            {
+                return ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::template getBiasNeuronWeightForConnection<ValueType>(this->mInnerHiddenLayerChain, hiddenLayer, connection);
+            }
+        }
+
+        ValueType getHiddenLayerWeightForNeuronAndConnection(const size_t hiddenLayer, const size_t neuron, const size_t connection)
+        {
+            if((NeuralNetworkNumberOfHiddenLayers - 1) == hiddenLayer)
+            {
+                return this->mLastHiddenLayer.getWeightForNeuronAndConnection(neuron, connection);
+            }
+            else
+            {
+                return ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::template getWeightForNeuronAndConnection<ValueType>(this->mInnerHiddenLayerChain, hiddenLayer, neuron, connection);
+            }
+        }
+
+        InputLayerType& getInputLayer()
+        {
+            return this->mInputLayer;
+        }
+
+        InnerHiddenLayerChainType& getInnerHiddenLayerChain()
+        {
+            return this->mInnerHiddenLayerChain;
+        }
+
+        LastHiddenLayerType& getLastHiddenLayer()
+        {
+            return this->mLastHiddenLayer;
+        }
+
+        void getLearnedValues(ValueType* output) const
+        {
+            for (size_t outputNeuron = 0; outputNeuron < NumberOfOutputLayerNeurons; ++outputNeuron)
+            {
+                output[outputNeuron] = mOutputLayer.getOutputValueForNeuron(outputNeuron);
+            }
+        }
+
+        NeuralNetworkOutputLayerType& getOutputLayer()
+        {
+            return this->mOutputLayer;
+        }
+
+        ValueType getInputLayerBiasNeuronWeightForConnection(const size_t connection) const
+        {
+            return this->mInputLayer.getBiasNeuronWeightForConnection(connection);
+        }
+
+        ValueType getInputLayerWeightForNeuronAndConnection(const size_t neuron, const size_t connection) const
+        {
+            return this->mInputLayer.getWeightForNeuronAndConnection(neuron, connection);
+        }
+
+        void setAccelerationRate(const ValueType& value)
+        {
+            this->mTrainingPolicy.setAccelerationRate(value);
+        }
+
+        void setLearningRate(const ValueType& value)
+        {
+            this->mTrainingPolicy.setLearningRate(value);
+        }
+
+        void setMomentumRate(const ValueType& value)
+        {
+            this->mTrainingPolicy.setMomentumRate(value);
+        }
+
+        void setHiddenLayerBiasNeuronWeightForConnection(const size_t hiddenLayer, const size_t connection, const ValueType& weight)
+        {
+            if((NeuralNetworkNumberOfHiddenLayers - 1) == hiddenLayer)
+            {
+                this->mLastHiddenLayer.setBiasNeuronWeightForConnection(connection, weight);
+            }
+            else
+            {
+                ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::setBiasNeuronWeightForConnection(this->mInnerHiddenLayerChain, hiddenLayer, connection, weight);
+            }
+        }
+
+        void setHiddenLayerBiasDeltaWeightForConnection(const size_t hiddenLayer, const size_t connection, const ValueType& deltaWeight)
+        {
+            if((NeuralNetworkNumberOfHiddenLayers - 1) == hiddenLayer)
+            {
+                this->mLastHiddenLayer.setBiasNeuronDeltaWeightForConnection(connection, deltaWeight);
+            }
+            else
+            {
+                ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::setBiasNeuronDeltaWeightForConnection(this->mInnerHiddenLayerChain, hiddenLayer, connection, deltaWeight);
+            }
+        }
+
+        void setHiddenLayerDeltaWeightForNeuronAndConnection(const size_t hiddenLayer, const size_t neuron, const size_t connection, const ValueType& deltaWeight)
+        {
+            if((NeuralNetworkNumberOfHiddenLayers - 1) == hiddenLayer)
+            {
+                this->mLastHiddenLayer.setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
+            }
+            else
+            {
+                ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::setDeltaWeightForNeuronAndConnection(this->mInnerHiddenLayerChain, hiddenLayer, neuron, connection, deltaWeight);
+            }
+        }
+
+        void setHiddenLayerWeightForNeuronAndConnection(const size_t hiddenLayer, const size_t neuron, const size_t connection, const ValueType& weight)
+        {
+            if((NeuralNetworkNumberOfHiddenLayers - 1) == hiddenLayer)
+            {
+                this->mLastHiddenLayer.setWeightForNeuronAndConnection(neuron, connection, weight);
+            }
+            else
+            {
+                ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::setWeightForNeuronAndConnection(this->mInnerHiddenLayerChain, hiddenLayer, neuron, connection, weight);
+            }
+        }
+
+        void setInputLayerBiasWeightForConnection(const size_t connection, const ValueType& weight)
+        {
+            this->mInputLayer.setBiasNeuronWeightForConnection(connection, weight);
+        }
+
+        void setInputLayerBiasDeltaWeightForConnection(const size_t connection, const ValueType& deltaWeight)
+        {
+            this->mInputLayer.setBiasNeuronDeltaWeightForConnection(connection, deltaWeight);
+        }
+
+        void setInputLayerDeltaWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& deltaWeight)
+        {
+            this->mInputLayer.setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
+        }
+
+        void setInputLayerWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& weight)
+        {
+            this->mInputLayer.setWeightForNeuronAndConnection(neuron, connection, weight);
+        }
+
+        void setOutputLayerDeltaWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& deltaWeight)
+        {
+            this->mOutputLayer.setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
+        }
+
+        void setOutputLayerWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& weight)
+        {
+            this->mOutputLayer.setWeightForNeuronAndConnection(neuron, connection, weight);
+        }
+
+        void setWeights(NeuralNetworkType& other)
+        {
+            typedef HiddenLayerSizeAccessor<HiddenLayersDescriptor> SizeAccessor;
+            ValueType weightValue;
+
+            const size_t firstHiddenLayerSize = SizeAccessor::getSize(0);
+
+            for(size_t i = 0;i < NumberOfInputLayerNeurons;++i)
+            {
+                for(size_t h = 0;h < firstHiddenLayerSize;++h)
+                {
+                    weightValue = other.getInputLayerWeightForNeuronAndConnection(i, h);
+                    this->setInputLayerWeightForNeuronAndConnection(i, h, weightValue);
+                }
+            }
+
+            for(size_t h = 0;h < firstHiddenLayerSize;++h)
+            {
+                weightValue = other.getInputLayerBiasNeuronWeightForConnection(h);
+                this->setInputLayerBiasWeightForConnection(h, weightValue);
+            }
+
+            for(size_t hiddenLayer = 0;hiddenLayer < (NeuralNetworkNumberOfHiddenLayers - 1);++hiddenLayer)
+            {
+                const size_t neuronsInThisLayer = SizeAccessor::getSize(hiddenLayer);
+                const size_t neuronsInNextLayer = SizeAccessor::getSize(hiddenLayer + 1);
+
+                for(size_t h = 0;h < neuronsInThisLayer;++h)
+                {
+                    for(size_t h1 = 0;h1 < neuronsInNextLayer;++h1)
+                    {
+                        weightValue = other.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1);
+                        this->setHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1, weightValue);
+                    }
+                }
+
+                for(size_t h1 = 0;h1 < neuronsInNextLayer;++h1)
+                {
+                    weightValue = other.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1);
+                    this->setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1, weightValue);
+                }
+            }
+
+            const size_t lastHiddenLayer = NeuralNetworkNumberOfHiddenLayers - 1;
+
+            for(size_t hiddenNeuron = 0;hiddenNeuron < NumberOfHiddenLayerNeurons;++hiddenNeuron)
+            {
+                for(size_t outputNeuron = 0;outputNeuron < NumberOfOutputLayerNeurons;++outputNeuron)
+                {
+                    weightValue = other.getHiddenLayerWeightForNeuronAndConnection(lastHiddenLayer, hiddenNeuron, outputNeuron);
+                    this->setHiddenLayerWeightForNeuronAndConnection(lastHiddenLayer, hiddenNeuron, outputNeuron, weightValue);
+                }
+            }
+
+            for(size_t outputNeuron = 0;outputNeuron < NumberOfOutputLayerNeurons;++outputNeuron)
+            {
+                weightValue = other.getHiddenLayerBiasNeuronWeightForConnection(lastHiddenLayer, outputNeuron);
+                this->setHiddenLayerBiasNeuronWeightForConnection(lastHiddenLayer, outputNeuron, weightValue);
+            }
+        }
+
+        void trainNetwork(ValueType const* const targetValues)
+        {
+            this->mTrainingPolicy.trainNetwork(*this, targetValues);
+        }
+
+    protected:
+        void feedForwardHiddenLayers()
+        {
+            ChainFeedForwardDispatcher<HasRecurrentLayer>::template feedForward<InnerHiddenLayerChainType>(this->mInputLayer, this->mInnerHiddenLayerChain, this->mLastHiddenLayer, this->mRecurrentLayer);
+        }
+
+        void feedForwardInputLayer(ValueType const* const values)
+        {
+            this->mInputLayer.feedForward(values);
+        }
+
+        void feedForwardOutputLayer()
+        {
+            this->mOutputLayer.feedForward(this->mLastHiddenLayer);
+        }
+
+    protected:
+        InputLayerType mInputLayer;
+        InnerHiddenLayerChainType mInnerHiddenLayerChain;
+        LastHiddenLayerType mLastHiddenLayer;
+        NeuralNetworkOutputLayerType mOutputLayer;
+        NeuralNetworkRecurrentLayerType mRecurrentLayer;
+        TrainingPolicyType mTrainingPolicy;
+        GradientsManagerType mGradientsManager;
+    private:
+        unsigned char mLearnedValuesBuffer[NumberOfOutputLayerNeurons * sizeof(ValueType)];
+
+        NeuralNetwork(const NeuralNetwork&) {} // hide copy constructor
+        NeuralNetwork& operator=(const NeuralNetwork&) {} // hide assignment operator
+
+        static_assert(NumberOfInputs > 0, "Invalid number of inputs.");
+        static_assert(HiddenLayersDescriptor::Count > 0, "Must have at least one hidden layer.");
+        static_assert(NumberOfOutputs > 0, "Invalid number of outputs.");
+        static_assert(NumberOfOutputLayerNeurons == TransferFunctionsPolicy::NumberOfTransferFunctionsOutputNeurons, "TransferFunctionPolicy NumberOfOutputNeurons is incorrect.");
+    };
+
+    /**
+     * Recurrent Neural Network
+     *
+     * Equivalent of RecurrentMultilayerPerceptron for the NeuralNetwork class.
+     * Supports heterogeneous hidden layers via HiddenLayers<S0, S1, ...>.
+     */
+    template<
+            typename ValueType,
+            size_t NumberOfInputs,
+            typename HiddenLayersDescriptor,
+            size_t NumberOfOutputs,
+            typename TransferFunctionsPolicy,
+            bool IsTrainable = true,
+            size_t BatchSize = 1,
+            size_t RecurrentConnectionDepth = 1,
+            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
+            >
+    class RecurrentNeuralNetwork : public NeuralNetwork< ValueType,
+                                                          NumberOfInputs,
+                                                          HiddenLayersDescriptor,
+                                                          NumberOfOutputs,
+                                                          TransferFunctionsPolicy,
+                                                          IsTrainable,
+                                                          BatchSize,
+                                                          true,
+                                                          RecurrentHiddenLayerConfig,
+                                                          RecurrentConnectionDepth,
+                                                          OutputLayerConfiguration>
+    {
+    private:
+        static_assert(RecurrentConnectionDepth > 0, "Invalid recurrent connection depth.");
+    };
+
+    /**
+     * Elman Neural Network
+     *
+     * Equivalent of ElmanNetwork for the NeuralNetwork class.
+     * Single hidden layer with recurrent connection depth of 1.
+     */
+    template<
+            typename ValueType,
+            size_t NumberOfInputs,
+            size_t NumberOfNeuronsInHiddenLayer,
+            size_t NumberOfOutputs,
+            typename TransferFunctionsPolicy,
+            bool IsTrainable = true,
+            size_t BatchSize = 1,
+            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
+            >
+    class ElmanNeuralNetwork : public RecurrentNeuralNetwork< ValueType,
+                                                               NumberOfInputs,
+                                                               HiddenLayers<NumberOfNeuronsInHiddenLayer>,
+                                                               NumberOfOutputs,
+                                                               TransferFunctionsPolicy,
+                                                               IsTrainable,
+                                                               BatchSize,
+                                                               1,
+                                                               OutputLayerConfiguration>
+    {
+    };
 }
