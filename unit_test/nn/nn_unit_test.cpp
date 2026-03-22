@@ -2819,4 +2819,97 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_sequential_inputs)
     BOOST_TEST(output1[0] != output2[0]);
 }
 
+BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_char_sequence_prediction)
+{
+    // Train an LSTM to predict the next character in the repeating sequence "ABCD".
+    // Characters are one-hot encoded with 4 inputs and 4 outputs.
+    // The network should learn: A->B, B->C, C->D, D->A.
+    static const size_t SEQUENCE_LENGTH = 4;
+    static const size_t NUMBER_OF_INPUTS = SEQUENCE_LENGTH;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 8;
+    static const size_t NUMBER_OF_OUTPUTS = SEQUENCE_LENGTH;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::SigmoidActivationPolicy,
+                                            tinymind::ZeroToleranceCalculator,
+                                            NUMBER_OF_OUTPUTS> TransferFunctionsType;
+    typedef tinymind::LstmNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<NUMBER_OF_NEURONS_PER_HIDDEN_LAYER>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> LstmCharNNType;
+    srand(RANDOM_SEED);
+    LstmCharNNType nn;
+
+    ValueType input[LstmCharNNType::NumberOfInputLayerNeurons];
+    ValueType target[LstmCharNNType::NumberOfOutputLayerNeurons];
+    ValueType learnedValues[LstmCharNNType::NumberOfOutputLayerNeurons];
+
+    // Train: feed characters sequentially through the repeating sequence
+    static const int CHAR_TRAINING_ITERATIONS = 5000;
+    for (int epoch = 0; epoch < CHAR_TRAINING_ITERATIONS; ++epoch)
+    {
+        for (size_t pos = 0; pos < SEQUENCE_LENGTH; ++pos)
+        {
+            // One-hot encode the current character
+            for (size_t j = 0; j < SEQUENCE_LENGTH; ++j)
+            {
+                input[j] = (j == pos) ? 1.0 : 0.0;
+            }
+
+            // Target is the next character in the sequence (wraps around)
+            const size_t nextPos = (pos + 1) % SEQUENCE_LENGTH;
+            for (size_t j = 0; j < SEQUENCE_LENGTH; ++j)
+            {
+                target[j] = (j == nextPos) ? 1.0 : 0.0;
+            }
+
+            nn.feedForward(&input[0]);
+            const ValueType error = nn.calculateError(&target[0]);
+            if (!LstmCharNNType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
+            {
+                nn.trainNetwork(&target[0]);
+            }
+        }
+    }
+
+    // Verify: for each character, the predicted next character should have the highest output
+    size_t correctPredictions = 0;
+    for (size_t pos = 0; pos < SEQUENCE_LENGTH; ++pos)
+    {
+        for (size_t j = 0; j < SEQUENCE_LENGTH; ++j)
+        {
+            input[j] = (j == pos) ? 1.0 : 0.0;
+        }
+
+        nn.feedForward(&input[0]);
+        nn.getLearnedValues(&learnedValues[0]);
+
+        // Find the output neuron with the highest activation
+        size_t predicted = 0;
+        ValueType maxVal = learnedValues[0];
+        for (size_t j = 1; j < SEQUENCE_LENGTH; ++j)
+        {
+            if (learnedValues[j] > maxVal)
+            {
+                maxVal = learnedValues[j];
+                predicted = j;
+            }
+        }
+
+        const size_t expected = (pos + 1) % SEQUENCE_LENGTH;
+        if (predicted == expected)
+        {
+            ++correctPredictions;
+        }
+    }
+
+    // The LSTM should correctly predict at least 3 out of 4 next characters
+    BOOST_TEST(correctPredictions >= 3u);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
