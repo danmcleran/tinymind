@@ -2552,4 +2552,101 @@ BOOST_AUTO_TEST_CASE(test_case_new_nn_not_trainable)
     BOOST_TEST(true);
 }
 
+// =========================================================================
+// Tests for RecurrentNeuralNetwork and ElmanNeuralNetwork
+// =========================================================================
+
+BOOST_AUTO_TEST_CASE(test_case_elman_neural_network_floating_point)
+{
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::ElmanNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> FloatingPointElmanNeuralNetworkType;
+    srand(RANDOM_SEED);
+    char const* const path = "nn_float_elman_neural_network.txt";
+    FloatingPointElmanNeuralNetworkType nn;
+
+    testFloatingPointNeuralNetwork_Recurrent(nn, path);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_elman_neural_network_fixed_point)
+{
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    static const size_t NUMBER_OF_FIXED_BITS = 8;
+    static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+    typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
+    typedef tinymind::FixedPointTransferFunctions<
+                                                    ValueType,
+                                                    UniformRealRandomNumberGenerator<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>> TransferFunctionsType;
+    typedef tinymind::ElmanNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> FixedPointElmanNeuralNetworkType;
+    srand(RANDOM_SEED);
+    char const* const path = "nn_fixed_elman_neural_network.txt";
+    FixedPointElmanNeuralNetworkType nn;
+
+    testNeuralNetwork_Recurrent(nn, path);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_recurrent_neural_network_floating_point)
+{
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::RecurrentNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<3>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> RecurrentNNType;
+    srand(RANDOM_SEED);
+    char const* const path = "nn_float_recurrent_neural_network.txt";
+    RecurrentNNType nn;
+
+    testFloatingPointNeuralNetwork_Recurrent(nn, path);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_recurrent_neural_network_heterogeneous_layers)
+{
+    // RecurrentNeuralNetwork with heterogeneous hidden layers
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::RecurrentNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<4, 3>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> RecurrentNNType;
+    srand(RANDOM_SEED);
+    char const* const path = "nn_float_recurrent_nn_hetero.txt";
+    RecurrentNNType nn;
+
+    testFloatingPointNeuralNetwork_Recurrent(nn, path);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

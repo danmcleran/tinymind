@@ -4124,7 +4124,8 @@ namespace tinymind {
     {
         typedef typename LayerType::ValueType ValueType;
 
-        static ValueType getBiasNeuronWeightForConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t connection)
+        template<typename VT = ValueType>
+        static VT getBiasNeuronWeightForConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t connection)
         {
             if(layerIndex == 0)
             {
@@ -4133,7 +4134,8 @@ namespace tinymind {
             return ChainHiddenLayerAccessor<RestChainType>::template getBiasNeuronWeightForConnection<ValueType>(chain.rest, layerIndex - 1, connection);
         }
 
-        static ValueType getWeightForNeuronAndConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t neuron, size_t connection)
+        template<typename VT = ValueType>
+        static VT getWeightForNeuronAndConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t neuron, size_t connection)
         {
             if(layerIndex == 0)
             {
@@ -4396,7 +4398,7 @@ namespace tinymind {
             }
             else
             {
-                return ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::getBiasNeuronWeightForConnection(this->mInnerHiddenLayerChain, hiddenLayer, connection);
+                return ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::template getBiasNeuronWeightForConnection<ValueType>(this->mInnerHiddenLayerChain, hiddenLayer, connection);
             }
         }
 
@@ -4408,7 +4410,7 @@ namespace tinymind {
             }
             else
             {
-                return ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::getWeightForNeuronAndConnection(this->mInnerHiddenLayerChain, hiddenLayer, neuron, connection);
+                return ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::template getWeightForNeuronAndConnection<ValueType>(this->mInnerHiddenLayerChain, hiddenLayer, neuron, connection);
             }
         }
 
@@ -4643,5 +4645,66 @@ namespace tinymind {
         static_assert(HiddenLayersDescriptor::Count > 0, "Must have at least one hidden layer.");
         static_assert(NumberOfOutputs > 0, "Invalid number of outputs.");
         static_assert(NumberOfOutputLayerNeurons == TransferFunctionsPolicy::NumberOfTransferFunctionsOutputNeurons, "TransferFunctionPolicy NumberOfOutputNeurons is incorrect.");
+    };
+
+    /**
+     * Recurrent Neural Network
+     *
+     * Equivalent of RecurrentMultilayerPerceptron for the NeuralNetwork class.
+     * Supports heterogeneous hidden layers via HiddenLayers<S0, S1, ...>.
+     */
+    template<
+            typename ValueType,
+            size_t NumberOfInputs,
+            typename HiddenLayersDescriptor,
+            size_t NumberOfOutputs,
+            typename TransferFunctionsPolicy,
+            bool IsTrainable = true,
+            size_t BatchSize = 1,
+            size_t RecurrentConnectionDepth = 1,
+            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
+            >
+    class RecurrentNeuralNetwork : public NeuralNetwork< ValueType,
+                                                          NumberOfInputs,
+                                                          HiddenLayersDescriptor,
+                                                          NumberOfOutputs,
+                                                          TransferFunctionsPolicy,
+                                                          IsTrainable,
+                                                          BatchSize,
+                                                          true,
+                                                          RecurrentHiddenLayerConfig,
+                                                          RecurrentConnectionDepth,
+                                                          OutputLayerConfiguration>
+    {
+    private:
+        static_assert(RecurrentConnectionDepth > 0, "Invalid recurrent connection depth.");
+    };
+
+    /**
+     * Elman Neural Network
+     *
+     * Equivalent of ElmanNetwork for the NeuralNetwork class.
+     * Single hidden layer with recurrent connection depth of 1.
+     */
+    template<
+            typename ValueType,
+            size_t NumberOfInputs,
+            size_t NumberOfNeuronsInHiddenLayer,
+            size_t NumberOfOutputs,
+            typename TransferFunctionsPolicy,
+            bool IsTrainable = true,
+            size_t BatchSize = 1,
+            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
+            >
+    class ElmanNeuralNetwork : public RecurrentNeuralNetwork< ValueType,
+                                                               NumberOfInputs,
+                                                               HiddenLayers<NumberOfNeuronsInHiddenLayer>,
+                                                               NumberOfOutputs,
+                                                               TransferFunctionsPolicy,
+                                                               IsTrainable,
+                                                               BatchSize,
+                                                               1,
+                                                               OutputLayerConfiguration>
+    {
     };
 }
