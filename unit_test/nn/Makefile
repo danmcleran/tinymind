@@ -12,7 +12,7 @@ nn_unit_test:
 	$(MKDIR)
 	$(CC) -ggdb $(WARN) -o $(OUT) $(SOURCES) $(DEFINES) $(INCLUDES)
 run :
-	cd ./output && ./nn_unit_test && cd ../
+	./output/nn_unit_test
 
 clean:
 	rm -f ./output/*
