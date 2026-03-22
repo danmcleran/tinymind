@@ -3410,6 +3410,64 @@ namespace tinymind {
     };
 
     // =========================================================================
+    // Chain-based recurrent feed-forward helper
+    // Same as ChainFeedForwardHelper but passes the recurrent layer to the
+    // last hidden layer's feedForward call.
+    // =========================================================================
+
+    template<typename ChainType>
+    struct ChainRecurrentFeedForwardHelper;
+
+    template<>
+    struct ChainRecurrentFeedForwardHelper<EmptyLayerChain>
+    {
+        template<typename PrevLayerType, typename LastHiddenLayerType, typename RecurrentLayerType>
+        static void feedForward(PrevLayerType& prev, EmptyLayerChain& chain, LastHiddenLayerType& lastHidden, RecurrentLayerType& recurrentLayer)
+        {
+            (void)chain;
+            lastHidden.feedForward(prev, recurrentLayer);
+        }
+    };
+
+    template<typename LayerType, typename RestChainType>
+    struct ChainRecurrentFeedForwardHelper<LayerChain<LayerType, RestChainType> >
+    {
+        template<typename PrevLayerType, typename LastHiddenLayerType, typename RecurrentLayerType>
+        static void feedForward(PrevLayerType& prev, LayerChain<LayerType, RestChainType>& chain, LastHiddenLayerType& lastHidden, RecurrentLayerType& recurrentLayer)
+        {
+            chain.layer.feedForward(prev);
+            ChainRecurrentFeedForwardHelper<RestChainType>::feedForward(chain.layer, chain.rest, lastHidden, recurrentLayer);
+        }
+    };
+
+    // =========================================================================
+    // Compile-time dispatch for feed-forward: recurrent vs non-recurrent
+    // =========================================================================
+
+    template<bool HasRecurrentLayer>
+    struct ChainFeedForwardDispatcher;
+
+    template<>
+    struct ChainFeedForwardDispatcher<false>
+    {
+        template<typename ChainType, typename InputType, typename InnerChainType, typename LastHiddenType, typename RecurrentType>
+        static void feedForward(InputType& input, InnerChainType& chain, LastHiddenType& lastHidden, RecurrentType&)
+        {
+            ChainFeedForwardHelper<ChainType>::feedForward(input, chain, lastHidden);
+        }
+    };
+
+    template<>
+    struct ChainFeedForwardDispatcher<true>
+    {
+        template<typename ChainType, typename InputType, typename InnerChainType, typename LastHiddenType, typename RecurrentType>
+        static void feedForward(InputType& input, InnerChainType& chain, LastHiddenType& lastHidden, RecurrentType& recurrentLayer)
+        {
+            ChainRecurrentFeedForwardHelper<ChainType>::feedForward(input, chain, lastHidden, recurrentLayer);
+        }
+    };
+
+    // =========================================================================
     // Chain-based backward delta calculation
     // Processes from output toward input (right-to-left through the chain).
     // =========================================================================
@@ -3738,6 +3796,107 @@ namespace tinymind {
     };
 
     // =========================================================================
+    // Chain-based recurrent training calculators
+    // These mirror the chain-based non-recurrent calculators but include
+    // recurrent layer processing for backpropagation through time.
+    // =========================================================================
+
+    template<typename NeuralNetworkType>
+    struct ChainRecurrentNetworkDeltasCalculator
+    {
+        typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
+        typedef typename NeuralNetworkType::InputLayerType InputLayerType;
+        typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
+        typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkRecurrentLayerType RecurrentLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkOutputLayerType OutputLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy TransferFunctionsPolicy;
+        typedef NodeDeltasCalculator<TransferFunctionsPolicy> NodeDeltasCalculatorType;
+        typedef typename OutputLayerNodeDeltasCalculatorChooser<
+                        TransferFunctionsPolicy,
+                        OutputLayerType,
+                        NeuralNetworkType::NeuralNetworkOutputLayerConfiguration>::OutputLayerNodeDeltasCalculatorType OutputLayerNodeDeltasCalculatorType;
+
+        static void calculateNetworkDeltas(NeuralNetworkType& nn, ValueType const* const targetValues)
+        {
+            InputLayerType& inputLayer = nn.getInputLayer();
+            InnerChainType& innerChain = nn.getInnerHiddenLayerChain();
+            LastHiddenLayerType& lastHiddenLayer = nn.getLastHiddenLayer();
+            RecurrentLayerType& recurrentLayer = nn.getRecurrentLayer();
+            OutputLayerType& outputLayer = nn.getOutputLayer();
+
+            OutputLayerNodeDeltasCalculatorType::calculateOutputLayerNodeDeltas(outputLayer, targetValues);
+
+            NodeDeltasCalculatorType::calculateAndSetNodeDeltas(lastHiddenLayer, outputLayer);
+
+            NodeDeltasCalculatorType::calculateAndSetNodeDeltas(recurrentLayer, lastHiddenLayer);
+
+            ChainBackwardDeltaCalculator<InnerChainType>::template calculate<NodeDeltasCalculatorType>(innerChain, lastHiddenLayer);
+
+            InputLayerDeltaConnector<InnerChainType>::template connect<NodeDeltasCalculatorType>(inputLayer, innerChain, lastHiddenLayer);
+        }
+    };
+
+    template<typename NeuralNetworkType>
+    struct ChainRecurrentNetworkGradientsCalculator
+    {
+        typedef typename NeuralNetworkType::InputLayerType InputLayerType;
+        typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
+        typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkRecurrentLayerType RecurrentLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkOutputLayerType OutputLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy TransferFunctionsPolicy;
+        typedef typename NeuralNetworkType::GradientsManagerType GradientsManagerType;
+        typedef GradientsCalculator<TransferFunctionsPolicy, GradientsManagerType> GradientsCalculatorType;
+
+        static void calculateNetworkGradients(NeuralNetworkType& nn)
+        {
+            InputLayerType& inputLayer = nn.getInputLayer();
+            InnerChainType& innerChain = nn.getInnerHiddenLayerChain();
+            LastHiddenLayerType& lastHiddenLayer = nn.getLastHiddenLayer();
+            RecurrentLayerType& recurrentLayer = nn.getRecurrentLayer();
+            OutputLayerType& outputLayer = nn.getOutputLayer();
+            GradientsManagerType& gradientsManager = nn.getGradientsManager();
+
+            GradientsCalculatorType::calculateAndUpdateOutputLayerGradients(lastHiddenLayer, outputLayer, gradientsManager);
+
+            GradientsCalculatorType::calculateAndUpdateGradients(recurrentLayer, lastHiddenLayer, gradientsManager);
+
+            ChainBackwardGradientCalculator<InnerChainType>::template calculate<GradientsCalculatorType>(innerChain, lastHiddenLayer, gradientsManager);
+
+            InputLayerGradientConnector<InnerChainType>::template connect<GradientsCalculatorType>(inputLayer, innerChain, lastHiddenLayer, gradientsManager);
+        }
+    };
+
+    template<typename NeuralNetworkType>
+    struct ChainRecurrentBackPropConnectionWeightUpdater
+    {
+        typedef typename NeuralNetworkType::NeuralNetworkOutputLayerType OutputLayerType;
+        typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
+        typedef typename NeuralNetworkType::NeuralNetworkRecurrentLayerType RecurrentLayerType;
+        typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
+        typedef typename NeuralNetworkType::InputLayerType InputLayerType;
+
+        template<typename TrainingPolicyType>
+        static void updateConnectionWeights(TrainingPolicyType& trainingPolicy, NeuralNetworkType& nn)
+        {
+            OutputLayerType& outputLayer = nn.getOutputLayer();
+            LastHiddenLayerType& lastHiddenLayer = nn.getLastHiddenLayer();
+            RecurrentLayerType& recurrentLayer = nn.getRecurrentLayer();
+            InnerChainType& innerChain = nn.getInnerHiddenLayerChain();
+            InputLayerType& inputLayer = nn.getInputLayer();
+
+            trainingPolicy.updateConnectionWeights(outputLayer, lastHiddenLayer);
+
+            trainingPolicy.updateConnectionWeights(lastHiddenLayer, recurrentLayer);
+
+            ChainBackwardWeightUpdater<InnerChainType>::update(trainingPolicy, innerChain, lastHiddenLayer);
+
+            InputLayerWeightUpdateConnector<InnerChainType>::connect(trainingPolicy, inputLayer, innerChain, lastHiddenLayer);
+        }
+    };
+
+    // =========================================================================
     // Chain-based gradients manager
     // =========================================================================
 
@@ -3830,31 +3989,87 @@ namespace tinymind {
         }
     };
 
-    template<typename TransferFunctionsPolicy, size_t BatchSize, bool IsTrainable, outputLayerConfiguration_e OutputLayerConfiguration>
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainBackPropagationThruTimePolicy : public BackPropagationParent<TransferFunctionsPolicy, BatchSize>
+    {
+        typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
+
+        template<typename NNType>
+        void trainNetwork(NNType& nn, ValueType const* const targetValues)
+        {
+            ChainRecurrentNetworkDeltasCalculator<NNType>::calculateNetworkDeltas(nn, targetValues);
+
+            ChainRecurrentNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
+
+            ChainRecurrentBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+        }
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainClassifierBackPropagationThruTimePolicy : public BackPropagationParent<TransferFunctionsPolicy, BatchSize>
+    {
+        typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
+
+        template<typename NNType>
+        void trainNetwork(NNType& nn, ValueType const* const targetValues)
+        {
+            ChainRecurrentNetworkDeltasCalculator<NNType>::calculateNetworkDeltas(nn, targetValues);
+
+            ChainRecurrentNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
+
+            ChainRecurrentBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+        }
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize, bool HasRecurrentLayer, bool IsTrainable, outputLayerConfiguration_e OutputLayerConfiguration>
     struct ChainTrainingPolicySelector
     {
     };
 
     template<typename TransferFunctionsPolicy, size_t BatchSize>
-    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, true, FeedForwardOutputLayerConfiguration>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, false, true, FeedForwardOutputLayerConfiguration>
     {
         typedef ChainBackPropagationPolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
     };
 
     template<typename TransferFunctionsPolicy, size_t BatchSize>
-    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, true, ClassifierOutputLayerConfiguration>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, false, true, ClassifierOutputLayerConfiguration>
     {
         typedef ChainClassifierBackPropagationPolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
     };
 
     template<typename TransferFunctionsPolicy, size_t BatchSize>
-    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, false, FeedForwardOutputLayerConfiguration>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, true, true, FeedForwardOutputLayerConfiguration>
+    {
+        typedef ChainBackPropagationThruTimePolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, true, true, ClassifierOutputLayerConfiguration>
+    {
+        typedef ChainClassifierBackPropagationThruTimePolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, false, false, FeedForwardOutputLayerConfiguration>
     {
         typedef NullTrainingPolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
     };
 
     template<typename TransferFunctionsPolicy, size_t BatchSize>
-    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, false, ClassifierOutputLayerConfiguration>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, false, false, ClassifierOutputLayerConfiguration>
+    {
+        typedef NullTrainingPolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, true, false, FeedForwardOutputLayerConfiguration>
+    {
+        typedef NullTrainingPolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
+    };
+
+    template<typename TransferFunctionsPolicy, size_t BatchSize>
+    struct ChainTrainingPolicySelector<TransferFunctionsPolicy, BatchSize, true, false, ClassifierOutputLayerConfiguration>
     {
         typedef NullTrainingPolicy<TransferFunctionsPolicy, BatchSize> TrainingPolicyType;
     };
@@ -3878,6 +4093,9 @@ namespace tinymind {
             typename TransferFunctionsPolicy,
             bool IsTrainable = true,
             size_t BatchSize = 1,
+            bool HasRecurrentLayer = false,
+            hiddenLayerConfiguration_e HiddenLayerConfig = NonRecurrentHiddenLayerConfig,
+            size_t RecurrentConnectionDepth = 0,
             outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
             >
     class NeuralNetwork
@@ -3890,6 +4108,9 @@ namespace tinymind {
                                 TransferFunctionsPolicy,
                                 IsTrainable,
                                 BatchSize,
+                                HasRecurrentLayer,
+                                HiddenLayerConfig,
+                                RecurrentConnectionDepth,
                                 OutputLayerConfiguration> NeuralNetworkType;
 
         typedef ValueType NeuralNetworkValueType;
@@ -3901,11 +4122,19 @@ namespace tinymind {
         typedef InputLayer<InputLayerNeuronType, NumberOfInputs> InputLayerType;
 
         // Inner hidden layer chain (all hidden layers except the last)
-        typedef typename InnerLayerChainBuilder<ConnectionType, TransferFunctionsPolicy, IsTrainable, NonRecurrentHiddenLayerConfig, HiddenLayersDescriptor>::ChainType InnerHiddenLayerChainType;
+        typedef typename InnerLayerChainBuilder<ConnectionType, TransferFunctionsPolicy, IsTrainable, HiddenLayerConfig, HiddenLayersDescriptor>::ChainType InnerHiddenLayerChainType;
 
         // Last hidden layer: neurons connect to the output layer
-        typedef typename HiddenLayerNeuronTypeSelector<ConnectionType, NumberOfOutputs, TransferFunctionsPolicy, ConnectionType::IsTrainable, NonRecurrentHiddenLayerConfig>::HiddenLayerNeuronType LastHiddenLayerNeuronType;
+        typedef typename HiddenLayerNeuronTypeSelector<ConnectionType, NumberOfOutputs, TransferFunctionsPolicy, ConnectionType::IsTrainable, HiddenLayerConfig>::HiddenLayerNeuronType LastHiddenLayerNeuronType;
         typedef HiddenLayer<LastHiddenLayerNeuronType, HiddenLayersDescriptor::LastLayerSize> LastHiddenLayerType;
+
+        // Recurrent layer
+        typedef RecurrentLayerTypeSelector< ConnectionType,
+                                            HiddenLayersDescriptor::LastLayerSize,
+                                            TransferFunctionsPolicy,
+                                            RecurrentConnectionDepth,
+                                            HasRecurrentLayer> RecurrentLayerTypeSelectorType;
+        typedef typename RecurrentLayerTypeSelectorType::RecurrentLayerType NeuralNetworkRecurrentLayerType;
 
         // Output layer
         typedef typename OutputLayerNeuronTypeSelector<ConnectionType, TransferFunctionsPolicy, IsTrainable>::OutputLayerNeuronType OutputLayerNeuronType;
@@ -3921,12 +4150,14 @@ namespace tinymind {
         typedef typename ChainTrainingPolicySelector<
                             TransferFunctionsPolicy,
                             BatchSize,
+                            HasRecurrentLayer,
                             IsTrainable,
                             OutputLayerConfiguration>::TrainingPolicyType TrainingPolicyType;
 
         static const size_t NeuralNetworkNumberOfHiddenLayers = HiddenLayersDescriptor::Count;
         static const size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
         static const size_t NumberOfOutputLayerNeurons = NeuralNetworkOutputLayerType::NumberOfNeuronsInLayer;
+        static const size_t NeuralNetworkRecurrentConnectionDepth = NeuralNetworkRecurrentLayerType::RecurrentLayerRecurrentConnectionDepth;
         static const size_t NeuralNetworkBatchSize = BatchSize;
         static const outputLayerConfiguration_e NeuralNetworkOutputLayerConfiguration = OutputLayerConfiguration;
 
@@ -3941,6 +4172,8 @@ namespace tinymind {
             this->mLastHiddenLayer.initializeNeurons();
 
             this->mOutputLayer.initializeNeurons();
+
+            this->mRecurrentLayer.initializeNeurons();
 
             this->mTrainingPolicy.initialize();
 
@@ -3965,6 +4198,8 @@ namespace tinymind {
             this->mLastHiddenLayer.initializeWeights();
 
             this->mOutputLayer.initializeWeights();
+
+            this->mRecurrentLayer.initializeWeights();
         }
 
         ValueType calculateError(ValueType const* const targetValues)
@@ -3980,7 +4215,7 @@ namespace tinymind {
         {
             this->mInputLayer.feedForward(values);
 
-            ChainFeedForwardHelper<InnerHiddenLayerChainType>::feedForward(this->mInputLayer, this->mInnerHiddenLayerChain, this->mLastHiddenLayer);
+            ChainFeedForwardDispatcher<HasRecurrentLayer>::template feedForward<InnerHiddenLayerChainType>(this->mInputLayer, this->mInnerHiddenLayerChain, this->mLastHiddenLayer, this->mRecurrentLayer);
 
             this->mOutputLayer.feedForward(this->mLastHiddenLayer);
         }
@@ -3998,6 +4233,11 @@ namespace tinymind {
         ValueType getMomentumRate() const
         {
             return this->mTrainingPolicy.getMomentumRate();
+        }
+
+        NeuralNetworkRecurrentLayerType& getRecurrentLayer()
+        {
+            return this->mRecurrentLayer;
         }
 
         GradientsManagerType& getGradientsManager()
@@ -4078,6 +4318,7 @@ namespace tinymind {
         InnerHiddenLayerChainType mInnerHiddenLayerChain;
         LastHiddenLayerType mLastHiddenLayer;
         NeuralNetworkOutputLayerType mOutputLayer;
+        NeuralNetworkRecurrentLayerType mRecurrentLayer;
         TrainingPolicyType mTrainingPolicy;
         GradientsManagerType mGradientsManager;
     private:
