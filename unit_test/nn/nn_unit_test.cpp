@@ -68,6 +68,22 @@ namespace tinymind {
 
 namespace tinymind {
     template<>
+    struct SigmoidActivationPolicy<double>
+    {
+        static double activationFunction(const double& value)
+        {
+            return (1.0 / (1.0 + exp(-value)));
+        }
+
+        static double activationFunctionDerivative(const double& value)
+        {
+            return (value * (1.0 - value));
+        }
+    };
+}
+
+namespace tinymind {
+    template<>
     struct ZeroToleranceCalculator<double>
     {
         static bool isWithinZeroTolerance(const double& value)
@@ -2647,6 +2663,160 @@ BOOST_AUTO_TEST_CASE(test_case_recurrent_neural_network_heterogeneous_layers)
     RecurrentNNType nn;
 
     testFloatingPointNeuralNetwork_Recurrent(nn, path);
+}
+
+// =========================================================================
+// Tests for LstmNeuralNetwork
+// =========================================================================
+
+BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_floating_point)
+{
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 4;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::SigmoidActivationPolicy> TransferFunctionsType;
+    typedef tinymind::LstmNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<NUMBER_OF_NEURONS_PER_HIDDEN_LAYER>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> FloatingPointLstmNeuralNetworkType;
+    srand(RANDOM_SEED);
+    char const* const path = "nn_float_lstm_neural_network.txt";
+    FloatingPointLstmNeuralNetworkType nn;
+
+    testFloatingPointNeuralNetwork_Recurrent(nn, path);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point)
+{
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 4;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::FixedPointTransferFunctions<
+                                                    ValueType,
+                                                    UniformRealRandomNumberGenerator<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>> TransferFunctionsType;
+    typedef tinymind::LstmNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<NUMBER_OF_NEURONS_PER_HIDDEN_LAYER>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> FixedPointLstmNeuralNetworkType;
+    srand(RANDOM_SEED);
+    FixedPointLstmNeuralNetworkType nn;
+
+    ValueType values[FixedPointLstmNeuralNetworkType::NumberOfInputLayerNeurons];
+    ValueType output[FixedPointLstmNeuralNetworkType::NumberOfOutputLayerNeurons];
+    ValueType learnedValues[FixedPointLstmNeuralNetworkType::NumberOfOutputLayerNeurons];
+    ValueType error;
+    ValueType firstError;
+    bool firstErrorCaptured = false;
+
+    for (int i = 0; i < TRAINING_ITERATIONS; ++i)
+    {
+        generateFixedPointRecurrentValues(values, output);
+
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+
+        if (!firstErrorCaptured)
+        {
+            firstError = error;
+            firstErrorCaptured = true;
+        }
+
+        if (!FixedPointLstmNeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
+        {
+            nn.trainNetwork(&output[0]);
+        }
+        nn.getLearnedValues(&learnedValues[0]);
+    }
+
+    // Verify feedforward produces valid output
+    nn.feedForward(&values[0]);
+    nn.getLearnedValues(&learnedValues[0]);
+    BOOST_TEST(learnedValues[0].getValue() != 0);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_feedforward_produces_output)
+{
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::SigmoidActivationPolicy> TransferFunctionsType;
+    typedef tinymind::LstmNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<NUMBER_OF_NEURONS_PER_HIDDEN_LAYER>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> LstmNNType;
+    srand(RANDOM_SEED);
+    LstmNNType nn;
+
+    ValueType values[LstmNNType::NumberOfInputLayerNeurons];
+    ValueType output[LstmNNType::NumberOfOutputLayerNeurons];
+
+    values[0] = 1.0;
+    values[1] = 0.0;
+
+    nn.feedForward(&values[0]);
+    nn.getLearnedValues(&output[0]);
+
+    // After feedForward with initialized weights, the output should be a valid number
+    BOOST_TEST(!std::isnan(output[0]));
+    BOOST_TEST(!std::isinf(output[0]));
+}
+
+BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_sequential_inputs)
+{
+    // Test that LSTM maintains state across sequential feedForward calls
+    static const size_t NUMBER_OF_INPUTS = 1;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 3;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::SigmoidActivationPolicy> TransferFunctionsType;
+    typedef tinymind::LstmNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<NUMBER_OF_NEURONS_PER_HIDDEN_LAYER>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> LstmNNType;
+    srand(RANDOM_SEED);
+    LstmNNType nn;
+
+    ValueType values[LstmNNType::NumberOfInputLayerNeurons];
+    ValueType output1[LstmNNType::NumberOfOutputLayerNeurons];
+    ValueType output2[LstmNNType::NumberOfOutputLayerNeurons];
+
+    // First feedForward
+    values[0] = 1.0;
+    nn.feedForward(&values[0]);
+    nn.getLearnedValues(&output1[0]);
+
+    // Second feedForward with same input - output should differ due to recurrent state
+    nn.feedForward(&values[0]);
+    nn.getLearnedValues(&output2[0]);
+
+    BOOST_TEST(!std::isnan(output1[0]));
+    BOOST_TEST(!std::isnan(output2[0]));
+    // Due to LSTM cell state, the same input should produce different outputs
+    BOOST_TEST(output1[0] != output2[0]);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
