@@ -2987,9 +2987,9 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_float_sinusoid_prediction)
     // and within the network's output range.
     //
     // Training input: (sin[i-1], sin[i]) -> sin[i+1]
-    // After training, feed the last training pair and auto-regressively
-    // predict the next PREDICTION_LENGTH values. Verify each predicted
-    // value is close to the true sinusoid value.
+    // After training, a priming pass runs the full training sequence through
+    // the network (without training) to set a consistent LSTM cell state
+    // before auto-regressive prediction begins.
     static const size_t NUMBER_OF_INPUTS = 2;
     static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 16;
     static const size_t NUMBER_OF_OUTPUTS = 1;
@@ -3029,7 +3029,7 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_float_sinusoid_prediction)
     std::deque<double> errors;
     ValueType error;
 
-    // Train the network over the sinusoid sequence multiple epochs
+    // Train the network over one full period of the sinusoid per epoch
     for (int epoch = 0; epoch < SIN_TRAINING_ITERATIONS; ++epoch)
     {
         for (size_t i = 1; i < SEQUENCE_LENGTH - 1; ++i)
