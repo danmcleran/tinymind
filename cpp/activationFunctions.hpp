@@ -57,7 +57,7 @@ namespace tinymind {
         static ValueType activationFunctionDerivative(const ValueType& value)
         {
             (void)value; // suppress unused parameter warning
-            return 0;
+            return 1;
         }
     };
     

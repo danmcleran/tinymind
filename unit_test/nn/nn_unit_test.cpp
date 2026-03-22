@@ -2982,14 +2982,11 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sequence_predicti
 BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_float_sinusoid_prediction)
 {
     // Train a floating-point LSTM on a sampled sinusoid and verify it can
-    // predict the next few values in the sequence. The sinusoid is sampled
-    // at regular intervals and scaled to [0, 1] so all values are positive
-    // and within the network's output range.
+    // predict the next values in the sequence.
     //
     // Training input: (sin[i-1], sin[i]) -> sin[i+1]
-    // After training, a priming pass runs the full training sequence through
-    // the network (without training) to set a consistent LSTM cell state
-    // before auto-regressive prediction begins.
+    // Training input: (sin[i-1], sin[i]) -> sin[i+1]
+    // After training, auto-regressively predict PREDICTION_LENGTH values.
     static const size_t NUMBER_OF_INPUTS = 2;
     static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 16;
     static const size_t NUMBER_OF_OUTPUTS = 1;

@@ -1990,6 +1990,12 @@ namespace tinymind {
         {
             return p;
         }
+        NeuronType* getNeuron(const size_t neuron)
+        {
+            const size_t bufferIndex = neuron * sizeof(NeuronType);
+            return reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
+        }
+
     protected:
         Layer()
         {
@@ -4760,6 +4766,28 @@ namespace tinymind {
                                                       RecurrentConnectionDepth,
                                                       OutputLayerConfiguration>
     {
+    public:
+        typedef NeuralNetwork<  ValueType,
+                                NumberOfInputs,
+                                HiddenLayersDescriptor,
+                                NumberOfOutputs,
+                                TransferFunctionsPolicy,
+                                IsTrainable,
+                                BatchSize,
+                                true,
+                                LSTMHiddenLayerConfig,
+                                RecurrentConnectionDepth,
+                                OutputLayerConfiguration> BaseType;
+        typedef typename BaseType::LastHiddenLayerNeuronType LastHiddenLayerNeuronType;
+
+        void resetState()
+        {
+            for (size_t neuron = 0; neuron < BaseType::NumberOfHiddenLayerNeurons; ++neuron)
+            {
+                this->getLastHiddenLayer().getNeuron(neuron)->setState(ValueType{});
+            }
+        }
+
     private:
         static_assert(RecurrentConnectionDepth > 0, "Invalid recurrent connection depth.");
     };
