@@ -2822,10 +2822,17 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_sequential_inputs)
 BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_char_sequence_prediction)
 {
     // Train a floating-point LSTM to predict the next value in a repeating
-    // sequence: -1, 0, 1, -1, 0, 1, ...
-    // Uses 2 inputs (current, previous) and 1 output (next value).
+    // sequence of 3 values: 0.2, 0.5, 0.8, 0.2, 0.5, 0.8, ...
+    // Input is (previous, current), target is the next value.
+    // The 3 training pairs are:
+    //   (0.8, 0.2) -> 0.5
+    //   (0.2, 0.5) -> 0.8
+    //   (0.5, 0.8) -> 0.2
+    // After training, verify the average error over the last samples is
+    // below a threshold, confirming the network has learned the pattern.
+    static const size_t SEQUENCE_LENGTH = 3;
     static const size_t NUMBER_OF_INPUTS = 2;
-    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 4;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 8;
     static const size_t NUMBER_OF_OUTPUTS = 1;
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
@@ -2842,40 +2849,52 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_char_sequence_prediction)
     srand(RANDOM_SEED);
     LstmSeqNNType nn;
 
+    // Repeating sequence values
+    const ValueType sequence[SEQUENCE_LENGTH] = {0.2, 0.5, 0.8};
+
     ValueType values[LstmSeqNNType::NumberOfInputLayerNeurons];
-    ValueType output[LstmSeqNNType::NumberOfOutputLayerNeurons];
+    ValueType target[LstmSeqNNType::NumberOfOutputLayerNeurons];
     ValueType learnedValues[LstmSeqNNType::NumberOfOutputLayerNeurons];
+    std::deque<double> errors;
     ValueType error;
-    ValueType firstError = 0;
-    bool firstErrorCaptured = false;
-    static const int SEQ_TRAINING_ITERATIONS = 5000;
+    static const int SEQ_TRAINING_ITERATIONS = 20000;
+    size_t seqIndex = 0;
 
     for (int i = 0; i < SEQ_TRAINING_ITERATIONS; ++i)
     {
-        generateRecurrentValues(values, output);
+        const size_t prevIndex = (seqIndex + SEQUENCE_LENGTH - 1) % SEQUENCE_LENGTH;
+        const size_t nextIndex = (seqIndex + 1) % SEQUENCE_LENGTH;
+
+        values[0] = sequence[prevIndex];
+        values[1] = sequence[seqIndex];
+        target[0] = sequence[nextIndex];
 
         nn.feedForward(&values[0]);
-        error = nn.calculateError(&output[0]);
-
-        if (!firstErrorCaptured)
-        {
-            firstError = error;
-            firstErrorCaptured = true;
-        }
+        error = nn.calculateError(&target[0]);
 
         if (!LstmSeqNNType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
         {
-            nn.trainNetwork(&output[0]);
+            nn.trainNetwork(&target[0]);
         }
         nn.getLearnedValues(&learnedValues[0]);
+
+        errors.push_front(error);
+        if (errors.size() > NUM_SAMPLES_AVG_ERROR)
+        {
+            errors.pop_back();
+        }
+
+        seqIndex = nextIndex;
     }
 
-    // Verify the network produces valid output and error has decreased
-    nn.feedForward(&values[0]);
-    nn.getLearnedValues(&learnedValues[0]);
-    BOOST_TEST(!std::isnan(learnedValues[0]));
-    BOOST_TEST(!std::isinf(learnedValues[0]));
-    BOOST_TEST(error < firstError);
+    // Verify: the average error over the last NUM_SAMPLES_AVG_ERROR samples
+    // should be below the error limit, confirming the LSTM learned the
+    // repeating sequence pattern.
+    const double totalError = std::accumulate(errors.begin(), errors.end(), 0.0);
+    const double averageError = (totalError / static_cast<double>(NUM_SAMPLES_AVG_ERROR));
+    static const double SEQ_ERROR_LIMIT = 0.15;
+
+    BOOST_TEST(averageError <= SEQ_ERROR_LIMIT);
 }
 
 BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sequence_prediction)
