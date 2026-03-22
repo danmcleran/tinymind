@@ -4075,6 +4075,147 @@ namespace tinymind {
     };
 
     // =========================================================================
+    // Chain-based hidden layer accessor
+    // Provides runtime-indexed access to hidden layers stored in a chain.
+    // Used by NeuralNetwork to implement layer-indexed weight get/set methods.
+    // =========================================================================
+
+    template<typename ChainType>
+    struct ChainHiddenLayerAccessor;
+
+    template<>
+    struct ChainHiddenLayerAccessor<EmptyLayerChain>
+    {
+        template<typename ValueType>
+        static ValueType getBiasNeuronWeightForConnection(EmptyLayerChain&, size_t, size_t)
+        {
+            return ValueType();
+        }
+
+        template<typename ValueType>
+        static ValueType getWeightForNeuronAndConnection(EmptyLayerChain&, size_t, size_t, size_t)
+        {
+            return ValueType();
+        }
+
+        template<typename ValueType>
+        static void setBiasNeuronWeightForConnection(EmptyLayerChain&, size_t, size_t, const ValueType&)
+        {
+        }
+
+        template<typename ValueType>
+        static void setBiasNeuronDeltaWeightForConnection(EmptyLayerChain&, size_t, size_t, const ValueType&)
+        {
+        }
+
+        template<typename ValueType>
+        static void setWeightForNeuronAndConnection(EmptyLayerChain&, size_t, size_t, size_t, const ValueType&)
+        {
+        }
+
+        template<typename ValueType>
+        static void setDeltaWeightForNeuronAndConnection(EmptyLayerChain&, size_t, size_t, size_t, const ValueType&)
+        {
+        }
+    };
+
+    template<typename LayerType, typename RestChainType>
+    struct ChainHiddenLayerAccessor<LayerChain<LayerType, RestChainType> >
+    {
+        typedef typename LayerType::ValueType ValueType;
+
+        static ValueType getBiasNeuronWeightForConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t connection)
+        {
+            if(layerIndex == 0)
+            {
+                return chain.layer.getBiasNeuronWeightForConnection(connection);
+            }
+            return ChainHiddenLayerAccessor<RestChainType>::template getBiasNeuronWeightForConnection<ValueType>(chain.rest, layerIndex - 1, connection);
+        }
+
+        static ValueType getWeightForNeuronAndConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t neuron, size_t connection)
+        {
+            if(layerIndex == 0)
+            {
+                return chain.layer.getWeightForNeuronAndConnection(neuron, connection);
+            }
+            return ChainHiddenLayerAccessor<RestChainType>::template getWeightForNeuronAndConnection<ValueType>(chain.rest, layerIndex - 1, neuron, connection);
+        }
+
+        static void setBiasNeuronWeightForConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t connection, const ValueType& weight)
+        {
+            if(layerIndex == 0)
+            {
+                chain.layer.setBiasNeuronWeightForConnection(connection, weight);
+                return;
+            }
+            ChainHiddenLayerAccessor<RestChainType>::template setBiasNeuronWeightForConnection<ValueType>(chain.rest, layerIndex - 1, connection, weight);
+        }
+
+        static void setBiasNeuronDeltaWeightForConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t connection, const ValueType& deltaWeight)
+        {
+            if(layerIndex == 0)
+            {
+                chain.layer.setBiasNeuronDeltaWeightForConnection(connection, deltaWeight);
+                return;
+            }
+            ChainHiddenLayerAccessor<RestChainType>::template setBiasNeuronDeltaWeightForConnection<ValueType>(chain.rest, layerIndex - 1, connection, deltaWeight);
+        }
+
+        static void setWeightForNeuronAndConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t neuron, size_t connection, const ValueType& weight)
+        {
+            if(layerIndex == 0)
+            {
+                chain.layer.setWeightForNeuronAndConnection(neuron, connection, weight);
+                return;
+            }
+            ChainHiddenLayerAccessor<RestChainType>::template setWeightForNeuronAndConnection<ValueType>(chain.rest, layerIndex - 1, neuron, connection, weight);
+        }
+
+        static void setDeltaWeightForNeuronAndConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t neuron, size_t connection, const ValueType& deltaWeight)
+        {
+            if(layerIndex == 0)
+            {
+                chain.layer.setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
+                return;
+            }
+            ChainHiddenLayerAccessor<RestChainType>::template setDeltaWeightForNeuronAndConnection<ValueType>(chain.rest, layerIndex - 1, neuron, connection, deltaWeight);
+        }
+    };
+
+    // =========================================================================
+    // Hidden layer size accessor
+    // Provides runtime-indexed access to hidden layer sizes from
+    // a HiddenLayers descriptor. Used by setWeights to determine
+    // iteration bounds for each layer.
+    // =========================================================================
+
+    template<typename HiddenLayersDescriptorType>
+    struct HiddenLayerSizeAccessor;
+
+    template<size_t S>
+    struct HiddenLayerSizeAccessor<HiddenLayers<S> >
+    {
+        static size_t getSize(size_t)
+        {
+            return S;
+        }
+    };
+
+    template<size_t S, size_t... Rest>
+    struct HiddenLayerSizeAccessor<HiddenLayers<S, Rest...> >
+    {
+        static size_t getSize(size_t index)
+        {
+            if(index == 0)
+            {
+                return S;
+            }
+            return HiddenLayerSizeAccessor<HiddenLayers<Rest...> >::getSize(index - 1);
+        }
+    };
+
+    // =========================================================================
     // NeuralNetwork: MLP with heterogeneous hidden layers
     //
     // Usage:
@@ -4155,7 +4296,9 @@ namespace tinymind {
                             OutputLayerConfiguration>::TrainingPolicyType TrainingPolicyType;
 
         static const size_t NeuralNetworkNumberOfHiddenLayers = HiddenLayersDescriptor::Count;
+        static const size_t NumberOfInnerHiddenLayers = HiddenLayersDescriptor::Count - 1;
         static const size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
+        static const size_t NumberOfHiddenLayerNeurons = LastHiddenLayerType::NumberOfNeuronsInLayer;
         static const size_t NumberOfOutputLayerNeurons = NeuralNetworkOutputLayerType::NumberOfNeuronsInLayer;
         static const size_t NeuralNetworkRecurrentConnectionDepth = NeuralNetworkRecurrentLayerType::RecurrentLayerRecurrentConnectionDepth;
         static const size_t NeuralNetworkBatchSize = BatchSize;
@@ -4245,6 +4388,30 @@ namespace tinymind {
             return this->mGradientsManager;
         }
 
+        ValueType getHiddenLayerBiasNeuronWeightForConnection(const size_t hiddenLayer, const size_t connection)
+        {
+            if((NeuralNetworkNumberOfHiddenLayers - 1) == hiddenLayer)
+            {
+                return this->mLastHiddenLayer.getBiasNeuronWeightForConnection(connection);
+            }
+            else
+            {
+                return ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::getBiasNeuronWeightForConnection(this->mInnerHiddenLayerChain, hiddenLayer, connection);
+            }
+        }
+
+        ValueType getHiddenLayerWeightForNeuronAndConnection(const size_t hiddenLayer, const size_t neuron, const size_t connection)
+        {
+            if((NeuralNetworkNumberOfHiddenLayers - 1) == hiddenLayer)
+            {
+                return this->mLastHiddenLayer.getWeightForNeuronAndConnection(neuron, connection);
+            }
+            else
+            {
+                return ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::getWeightForNeuronAndConnection(this->mInnerHiddenLayerChain, hiddenLayer, neuron, connection);
+            }
+        }
+
         InputLayerType& getInputLayer()
         {
             return this->mInputLayer;
@@ -4298,9 +4465,67 @@ namespace tinymind {
             this->mTrainingPolicy.setMomentumRate(value);
         }
 
+        void setHiddenLayerBiasNeuronWeightForConnection(const size_t hiddenLayer, const size_t connection, const ValueType& weight)
+        {
+            if((NeuralNetworkNumberOfHiddenLayers - 1) == hiddenLayer)
+            {
+                this->mLastHiddenLayer.setBiasNeuronWeightForConnection(connection, weight);
+            }
+            else
+            {
+                ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::setBiasNeuronWeightForConnection(this->mInnerHiddenLayerChain, hiddenLayer, connection, weight);
+            }
+        }
+
+        void setHiddenLayerBiasDeltaWeightForConnection(const size_t hiddenLayer, const size_t connection, const ValueType& deltaWeight)
+        {
+            if((NeuralNetworkNumberOfHiddenLayers - 1) == hiddenLayer)
+            {
+                this->mLastHiddenLayer.setBiasNeuronDeltaWeightForConnection(connection, deltaWeight);
+            }
+            else
+            {
+                ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::setBiasNeuronDeltaWeightForConnection(this->mInnerHiddenLayerChain, hiddenLayer, connection, deltaWeight);
+            }
+        }
+
+        void setHiddenLayerDeltaWeightForNeuronAndConnection(const size_t hiddenLayer, const size_t neuron, const size_t connection, const ValueType& deltaWeight)
+        {
+            if((NeuralNetworkNumberOfHiddenLayers - 1) == hiddenLayer)
+            {
+                this->mLastHiddenLayer.setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
+            }
+            else
+            {
+                ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::setDeltaWeightForNeuronAndConnection(this->mInnerHiddenLayerChain, hiddenLayer, neuron, connection, deltaWeight);
+            }
+        }
+
+        void setHiddenLayerWeightForNeuronAndConnection(const size_t hiddenLayer, const size_t neuron, const size_t connection, const ValueType& weight)
+        {
+            if((NeuralNetworkNumberOfHiddenLayers - 1) == hiddenLayer)
+            {
+                this->mLastHiddenLayer.setWeightForNeuronAndConnection(neuron, connection, weight);
+            }
+            else
+            {
+                ChainHiddenLayerAccessor<InnerHiddenLayerChainType>::setWeightForNeuronAndConnection(this->mInnerHiddenLayerChain, hiddenLayer, neuron, connection, weight);
+            }
+        }
+
         void setInputLayerBiasWeightForConnection(const size_t connection, const ValueType& weight)
         {
             this->mInputLayer.setBiasNeuronWeightForConnection(connection, weight);
+        }
+
+        void setInputLayerBiasDeltaWeightForConnection(const size_t connection, const ValueType& deltaWeight)
+        {
+            this->mInputLayer.setBiasNeuronDeltaWeightForConnection(connection, deltaWeight);
+        }
+
+        void setInputLayerDeltaWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& deltaWeight)
+        {
+            this->mInputLayer.setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
         }
 
         void setInputLayerWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& weight)
@@ -4308,9 +4533,96 @@ namespace tinymind {
             this->mInputLayer.setWeightForNeuronAndConnection(neuron, connection, weight);
         }
 
+        void setOutputLayerDeltaWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& deltaWeight)
+        {
+            this->mOutputLayer.setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
+        }
+
+        void setOutputLayerWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& weight)
+        {
+            this->mOutputLayer.setWeightForNeuronAndConnection(neuron, connection, weight);
+        }
+
+        void setWeights(NeuralNetworkType& other)
+        {
+            typedef HiddenLayerSizeAccessor<HiddenLayersDescriptor> SizeAccessor;
+            ValueType weightValue;
+
+            const size_t firstHiddenLayerSize = SizeAccessor::getSize(0);
+
+            for(size_t i = 0;i < NumberOfInputLayerNeurons;++i)
+            {
+                for(size_t h = 0;h < firstHiddenLayerSize;++h)
+                {
+                    weightValue = other.getInputLayerWeightForNeuronAndConnection(i, h);
+                    this->setInputLayerWeightForNeuronAndConnection(i, h, weightValue);
+                }
+            }
+
+            for(size_t h = 0;h < firstHiddenLayerSize;++h)
+            {
+                weightValue = other.getInputLayerBiasNeuronWeightForConnection(h);
+                this->setInputLayerBiasWeightForConnection(h, weightValue);
+            }
+
+            for(size_t hiddenLayer = 0;hiddenLayer < (NeuralNetworkNumberOfHiddenLayers - 1);++hiddenLayer)
+            {
+                const size_t neuronsInThisLayer = SizeAccessor::getSize(hiddenLayer);
+                const size_t neuronsInNextLayer = SizeAccessor::getSize(hiddenLayer + 1);
+
+                for(size_t h = 0;h < neuronsInThisLayer;++h)
+                {
+                    for(size_t h1 = 0;h1 < neuronsInNextLayer;++h1)
+                    {
+                        weightValue = other.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1);
+                        this->setHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1, weightValue);
+                    }
+                }
+
+                for(size_t h1 = 0;h1 < neuronsInNextLayer;++h1)
+                {
+                    weightValue = other.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1);
+                    this->setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1, weightValue);
+                }
+            }
+
+            const size_t lastHiddenLayer = NeuralNetworkNumberOfHiddenLayers - 1;
+
+            for(size_t hiddenNeuron = 0;hiddenNeuron < NumberOfHiddenLayerNeurons;++hiddenNeuron)
+            {
+                for(size_t outputNeuron = 0;outputNeuron < NumberOfOutputLayerNeurons;++outputNeuron)
+                {
+                    weightValue = other.getHiddenLayerWeightForNeuronAndConnection(lastHiddenLayer, hiddenNeuron, outputNeuron);
+                    this->setHiddenLayerWeightForNeuronAndConnection(lastHiddenLayer, hiddenNeuron, outputNeuron, weightValue);
+                }
+            }
+
+            for(size_t outputNeuron = 0;outputNeuron < NumberOfOutputLayerNeurons;++outputNeuron)
+            {
+                weightValue = other.getHiddenLayerBiasNeuronWeightForConnection(lastHiddenLayer, outputNeuron);
+                this->setHiddenLayerBiasNeuronWeightForConnection(lastHiddenLayer, outputNeuron, weightValue);
+            }
+        }
+
         void trainNetwork(ValueType const* const targetValues)
         {
             this->mTrainingPolicy.trainNetwork(*this, targetValues);
+        }
+
+    protected:
+        void feedForwardHiddenLayers()
+        {
+            ChainFeedForwardDispatcher<HasRecurrentLayer>::template feedForward<InnerHiddenLayerChainType>(this->mInputLayer, this->mInnerHiddenLayerChain, this->mLastHiddenLayer, this->mRecurrentLayer);
+        }
+
+        void feedForwardInputLayer(ValueType const* const values)
+        {
+            this->mInputLayer.feedForward(values);
+        }
+
+        void feedForwardOutputLayer()
+        {
+            this->mOutputLayer.feedForward(this->mLastHiddenLayer);
         }
 
     protected:
