@@ -1,0 +1,255 @@
+# TinyMind
+
+A header-only C++ template library for neural networks, LSTM recurrent networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
+
+Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design), TinyMind uses template metaprogramming to produce zero-overhead abstractions where network topology, value type, activation functions, and training policies are all compile-time parameters.
+
+## Features
+
+### Neural Networks
+
+- **Feed-forward networks** with arbitrary depth and width
+- **Recurrent neural networks** (Elman) with configurable recurrent connection depth
+- **LSTM networks** with gated cell state, supporting single and multi-layer configurations
+- **Heterogeneous hidden layers** via `HiddenLayers<N0, N1, ...>` for different neuron counts per layer
+- **Batch training** with configurable batch size
+- **Softmax output** for multi-class classification
+- **Xavier weight initialization** (uniform and normal distributions)
+- **Weight import/export** in CSV and binary formats (interoperable with PyTorch)
+
+### Fixed-Point Arithmetic
+
+- `QValue<IntegerBits, FractionalBits, IsSigned>` template supporting Q8.8, Q16.16, Q24.8, Q32.32, and other formats up to 128-bit
+- Full operator overloading (`+`, `-`, `*`, `/`, comparisons)
+- Configurable rounding (`TruncatePolicy`, `RoundUpPolicy`) and saturation (`WrapPolicy`, `MinMaxSaturatePolicy`) policies
+- Pre-computed lookup tables for sigmoid, tanh, exp, and log across all supported bit-widths
+- Also supports `float` and `double` as value types for prototyping
+
+### Activation Functions
+
+| Function | Policy Class | Range |
+|----------|-------------|-------|
+| Linear | `LinearActivationPolicy` | (-inf, inf) |
+| ReLU | `ReluActivationPolicy` | [0, inf) |
+| Capped ReLU | `CappedReluActivationPolicy` | [0, max] |
+| Sigmoid | `SigmoidActivationPolicy` | (0, 1) |
+| Tanh | `TanhActivationPolicy` | (-1, 1) |
+| Softmax | `SoftmaxActivationPolicy` | (0, 1) per class |
+
+Fixed-point activations use pre-computed lookup tables for speed. Floating-point activations use standard math functions.
+
+### Q-Learning
+
+- Tabular Q-learning with configurable reward and learning policies
+- Deep Q-Network (DQN) with neural network function approximation
+- Experience replay buffer for DQN training
+- Dyna-Q hybrid model-free/model-based learning
+
+## Quick Start
+
+### Feed-Forward Network (XOR)
+
+```cpp
+#include "neuralnet.hpp"
+#include "activationFunctions.hpp"
+
+// Define a Q8.8 fixed-point XOR network
+typedef tinymind::QValue<8, 8, true> ValueType;
+typedef tinymind::FixedPointTransferFunctions<
+    ValueType,
+    RandomNumberGenerator<ValueType>,
+    tinymind::TanhActivationPolicy<ValueType>,
+    tinymind::TanhActivationPolicy<ValueType>> TransferFunctions;
+
+// 2 inputs, 3 hidden neurons, 1 output
+typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<3>, 1,
+    TransferFunctions> XorNetwork;
+
+XorNetwork nn;
+ValueType inputs[2], target[1];
+
+// Training loop
+for (int epoch = 0; epoch < 10000; ++epoch) {
+    inputs[0] = 1; inputs[1] = 0; target[0] = 1;
+    nn.feedForward(inputs);
+    nn.trainNetwork(target);
+}
+
+// Inference
+nn.feedForward(inputs);
+ValueType output[1];
+nn.getLearnedValues(output);
+```
+
+### LSTM Network (Sequence Prediction)
+
+```cpp
+#include "neuralnet.hpp"
+
+// Floating-point LSTM with 16 hidden neurons
+typedef tinymind::LstmNeuralNetwork<double, 1,
+    tinymind::HiddenLayers<16>, 1,
+    FloatTransferFunctions> LstmNetwork;
+
+LstmNetwork nn;
+double input[1], target[1], output[1];
+
+// Sequential training: feed one timestep at a time
+for (int epoch = 0; epoch < 100000; ++epoch) {
+    nn.resetState();  // clean state each epoch
+    for (int t = 0; t < sequenceLength - 1; ++t) {
+        input[0] = sequence[t];
+        target[0] = sequence[t + 1];
+        nn.feedForward(input);
+        nn.trainNetwork(target);
+    }
+}
+```
+
+### Multi-Layer LSTM
+
+```cpp
+// Two LSTM hidden layers: 16 neurons -> 8 neurons -> output
+typedef tinymind::LstmNeuralNetwork<double, 2,
+    tinymind::HiddenLayers<16, 8>, 1,
+    FloatTransferFunctions> DeepLstmNetwork;
+
+// Three LSTM hidden layers
+typedef tinymind::LstmNeuralNetwork<double, 2,
+    tinymind::HiddenLayers<32, 16, 8>, 1,
+    FloatTransferFunctions> DeeperLstmNetwork;
+```
+
+### Q-Learning (Maze)
+
+```cpp
+#include "qlearn.hpp"
+
+typedef tinymind::QLearningEnvironment<
+    uint8_t,    // state type
+    uint8_t,    // action type
+    double,     // value type
+    6,          // number of states
+    6,          // number of actions
+    RandomPolicy,
+    LearningPolicy> MazeEnvironment;
+
+MazeEnvironment env;
+// Run episodes, update Q-values...
+```
+
+## Network Types
+
+| Type | Class | Description |
+|------|-------|-------------|
+| Feed-forward | `NeuralNetwork` | Standard MLP with configurable layers |
+| Feed-forward (uniform) | `MultilayerPerceptron` | MLP with equal-sized hidden layers |
+| Elman RNN | `ElmanNeuralNetwork` | Simple recurrent with depth-1 feedback |
+| Recurrent | `RecurrentNeuralNetwork` | Configurable recurrent connection depth |
+| LSTM | `LstmNeuralNetwork` | Long Short-Term Memory with gates |
+
+All network types support both fixed-point and floating-point value types.
+
+## Architecture
+
+### Policy-Based Design
+
+Every aspect of the network is controlled by template parameters:
+
+```
+NeuralNetwork<
+    ValueType,              // QValue<8,8,true>, double, float
+    NumberOfInputs,         // compile-time input count
+    HiddenLayersDescriptor, // HiddenLayers<N0, N1, ...>
+    NumberOfOutputs,        // compile-time output count
+    TransferFunctionsPolicy,// activation + training policy
+    IsTrainable,            // true/false (inference-only mode)
+    BatchSize,              // gradient accumulation batch size
+    HasRecurrentLayer,      // enables recurrent connections
+    HiddenLayerConfig,      // NonRecurrent/Recurrent/LSTM/GRU
+    RecurrentConnectionDepth,
+    OutputLayerConfiguration // FeedForward/Classifier(softmax)
+>
+```
+
+### Zero Overhead
+
+The heterogeneous layer chain (`LayerChain`/`EmptyLayerChain`) compiles to the exact same binary size as uniform array-based storage:
+
+| Configuration | Size (bytes) |
+|---|---|
+| 2 -> 5 -> 1 (1 hidden) | 1,000 |
+| 2 -> 5 -> 5 -> 1 (2 hidden) | 2,104 |
+| 10 -> 20 -> 20 -> 5 (large) | 25,480 |
+| 2 -> 3 -> 1 (Elman RNN) | 1,048 |
+| 2 -> 5 -> 1 (non-trainable) | 360 |
+
+## Building
+
+### Requirements
+
+- C++14 or later
+- [Boost.Test](https://www.boost.org/doc/libs/release/libs/test/) (for unit tests only)
+- Set `BOOST_HOME` environment variable to your Boost installation path
+
+### Build and Run Tests
+
+```bash
+# Build and run everything
+make check
+
+# Individual test suites
+cd unit_test/nn && make clean && make && make run
+cd unit_test/qformat && make clean && make && make run
+cd unit_test/qlearn && make clean && make && make run
+```
+
+### Build Examples
+
+```bash
+cd examples/xor && make clean && make
+cd examples/maze && make clean && make
+cd examples/dqn_maze && make clean && make
+```
+
+### Compiler Flags
+
+- Debug: `-Wall -Wextra -Werror -Wpedantic -ggdb`
+- Release: `-Wall -Wextra -Werror -Wpedantic -O3`
+
+## Project Structure
+
+```
+tinymind/
+  cpp/                          # Core library headers
+    neuralnet.hpp               # Neural network templates (~5200 lines)
+    qformat.hpp                 # Fixed-point arithmetic
+    qlearn.hpp                  # Q-learning and DQN
+    activationFunctions.hpp     # Activation function policies
+    fixedPointTransferFunctions.hpp
+    xavier.hpp                  # Xavier weight initialization
+    lookupTables.cpp            # Pre-computed activation tables (~3MB)
+    include/                    # Support headers
+      nnproperties.hpp          # Network property/weight file manager
+      constants.hpp, limits.hpp, random.hpp, ...
+  examples/
+    xor/                        # XOR gate learning
+    maze/                       # Tabular Q-learning maze solver
+    dqn_maze/                   # Deep Q-Network maze solver
+    pytorch/                    # PyTorch weight import for inference
+  unit_test/
+    nn/                         # Neural network tests (62 test cases)
+    qformat/                    # Fixed-point type tests (static_assert)
+    qlearn/                     # Q-learning tests
+  apps/
+    activation/                 # Lookup table generator tool
+```
+
+## Documentation
+
+- [CLAUDE.md](CLAUDE.md) -- Architecture overview and build commands
+- [LSTM.md](LSTM.md) -- LSTM implementation analysis and improvement roadmap
+
+## License
+
+MIT License. See individual source files for copyright notices.
