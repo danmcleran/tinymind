@@ -1,6 +1,6 @@
 # TinyMind
 
-A header-only C++ template library for neural networks, LSTM recurrent networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
+A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM recurrent networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
 
 Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design), TinyMind uses template metaprogramming to produce zero-overhead abstractions where network topology, value type, activation functions, and training policies are all compile-time parameters.
 
@@ -9,6 +9,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 ### Neural Networks
 
 - **Feed-forward networks** with arbitrary depth and width
+- **Kolmogorov-Arnold Networks (KAN)** with learnable B-spline activation functions on edges
 - **Recurrent neural networks** (Elman) with configurable recurrent connection depth
 - **LSTM networks** with gated cell state, supporting single and multi-layer configurations
 - **Heterogeneous hidden layers** via `HiddenLayers<N0, N1, ...>` for different neuron counts per layer
@@ -16,6 +17,17 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **Softmax output** for multi-class classification
 - **Xavier weight initialization** (uniform and normal distributions)
 - **Weight import/export** in CSV and binary formats (interoperable with PyTorch)
+
+### Kolmogorov-Arnold Networks (KAN)
+
+- Based on the [Kolmogorov-Arnold representation theorem](https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Arnold_representation_theorem)
+- Learnable B-spline activation functions on edges, pure summation at nodes
+- Edge function: `phi(x) = w_b * SiLU(x) + w_s * spline(x)`
+- Configurable spline degree (`SplineDegree`) and grid resolution (`GridSize`)
+- Piecewise linear specialization (`SplineDegree=1`) for fixed-point targets
+- SiLU activation reuses existing sigmoid lookup tables -- no new tables needed
+- Supports both training and inference-only modes via `IsTrainable` template parameter
+- Same user-facing API as `MultilayerPerceptron`: `feedForward`, `trainNetwork`, `calculateError`, `getLearnedValues`
 
 ### Fixed-Point Arithmetic
 
@@ -34,6 +46,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 | Capped ReLU | `CappedReluActivationPolicy` | [0, max] |
 | Sigmoid | `SigmoidActivationPolicy` | (0, 1) |
 | Tanh | `TanhActivationPolicy` | (-1, 1) |
+| SiLU | `SiLUActivationPolicy` | (-0.28, inf) |
 | Softmax | `SoftmaxActivationPolicy` | (0, 1) per class |
 
 Fixed-point activations use pre-computed lookup tables for speed. Floating-point activations use standard math functions.
@@ -79,6 +92,44 @@ for (int epoch = 0; epoch < 10000; ++epoch) {
 nn.feedForward(inputs);
 ValueType output[1];
 nn.getLearnedValues(output);
+```
+
+### Kolmogorov-Arnold Network (XOR)
+
+```cpp
+#include "kan.hpp"
+
+// Define a Q8.8 fixed-point KAN
+typedef tinymind::QValue<8, 8, true> ValueType;
+typedef tinymind::KanTransferFunctions<
+    ValueType,
+    RandomNumberGenerator,
+    1> TransferFunctions;  // 1 output neuron
+
+// 2 inputs, 5 hidden neurons, 1 output
+// GridSize=5, SplineDegree=1 (piecewise linear, best for fixed-point)
+typedef tinymind::KolmogorovArnoldNetwork<
+    ValueType, 2, 1, 5, 1,
+    TransferFunctions,
+    true,  // trainable
+    1,     // batch size
+    5,     // grid size
+    1      // spline degree
+> KanNetwork;
+
+KanNetwork kan;
+ValueType inputs[2], target[1], output[1];
+
+// Training loop (same API as MultilayerPerceptron)
+for (int epoch = 0; epoch < 10000; ++epoch) {
+    inputs[0] = 1; inputs[1] = 0; target[0] = 1;
+    kan.feedForward(inputs);
+    kan.trainNetwork(target);
+}
+
+// Inference
+kan.feedForward(inputs);
+kan.getLearnedValues(output);
 ```
 
 ### LSTM Network (Sequence Prediction)
@@ -144,6 +195,7 @@ MazeEnvironment env;
 |------|-------|-------------|
 | Feed-forward | `NeuralNetwork` | Standard MLP with configurable layers |
 | Feed-forward (uniform) | `MultilayerPerceptron` | MLP with equal-sized hidden layers |
+| KAN | `KolmogorovArnoldNetwork` | Learnable B-spline activations on edges |
 | Elman RNN | `ElmanNeuralNetwork` | Simple recurrent with depth-1 feedback |
 | Recurrent | `RecurrentNeuralNetwork` | Configurable recurrent connection depth |
 | LSTM | `LstmNeuralNetwork` | Long Short-Term Memory with gates |
@@ -176,6 +228,8 @@ NeuralNetwork<
 
 The heterogeneous layer chain (`LayerChain`/`EmptyLayerChain`) compiles to the exact same binary size as uniform array-based storage:
 
+**MLP sizes (Q8.8):**
+
 | Configuration | Size (bytes) |
 |---|---|
 | 2 -> 5 -> 1 (1 hidden) | 1,000 |
@@ -183,6 +237,15 @@ The heterogeneous layer chain (`LayerChain`/`EmptyLayerChain`) compiles to the e
 | 10 -> 20 -> 20 -> 5 (large) | 25,480 |
 | 2 -> 3 -> 1 (Elman RNN) | 1,048 |
 | 2 -> 5 -> 1 (non-trainable) | 360 |
+
+**KAN vs MLP XOR comparison (Q8.8):**
+
+| | MLP [2]->[3]->[1] | KAN [2]->[5]->[1] G=5 k=1 |
+|---|---|---|
+| Trainable | 328 bytes | 1,192 bytes |
+| Inference-only | 144 bytes | 416 bytes |
+| Trainable params | 13 weights | 120 (coefficients + edge weights) |
+| Params per edge | 1 scalar | 8 (6 spline coefficients + w_b + w_s) |
 
 ## Building
 
@@ -208,6 +271,7 @@ cd unit_test/qlearn && make clean && make && make run
 
 ```bash
 cd examples/xor && make clean && make
+cd examples/kan_xor && make clean && make
 cd examples/maze && make clean && make
 cd examples/dqn_maze && make clean && make
 ```
@@ -223,6 +287,9 @@ cd examples/dqn_maze && make clean && make
 tinymind/
   cpp/                          # Core library headers
     neuralnet.hpp               # Neural network templates (~5200 lines)
+    kan.hpp                     # Kolmogorov-Arnold Network templates
+    bspline.hpp                 # B-spline evaluation engine (De Boor algorithm)
+    kanTransferFunctions.hpp    # KAN transfer functions and SiLU activation
     qformat.hpp                 # Fixed-point arithmetic
     qlearn.hpp                  # Q-learning and DQN
     activationFunctions.hpp     # Activation function policies
@@ -233,12 +300,14 @@ tinymind/
       nnproperties.hpp          # Network property/weight file manager
       constants.hpp, limits.hpp, random.hpp, ...
   examples/
-    xor/                        # XOR gate learning
+    xor/                        # MLP XOR gate learning
+    kan_xor/                    # KAN XOR gate learning
     maze/                       # Tabular Q-learning maze solver
     dqn_maze/                   # Deep Q-Network maze solver
     pytorch/                    # PyTorch weight import for inference
   unit_test/
     nn/                         # Neural network tests (62 test cases)
+    kan/                        # KAN tests (15 test cases)
     qformat/                    # Fixed-point type tests (static_assert)
     qlearn/                     # Q-learning tests
   apps/
@@ -248,6 +317,7 @@ tinymind/
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md) -- Architecture overview and build commands
+- [KAN.md](KAN.md) -- KAN implementation plan and summary
 - [LSTM.md](LSTM.md) -- LSTM implementation analysis and improvement roadmap
 
 ## License
