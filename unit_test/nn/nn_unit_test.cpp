@@ -3043,13 +3043,17 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sequence_predicti
 
 BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_float_sinusoid_prediction)
 {
-    // Train a floating-point LSTM on a sampled sinusoid and verify it can
-    // predict the next values in the sequence.
+    // Train a floating-point LSTM on a sampled sinusoid using sequential
+    // input processing: one value per timestep, with LSTM hidden state
+    // carrying temporal context between steps.
     //
-    // Training input: (sin[i-1], sin[i]) -> sin[i+1]
-    // Training input: (sin[i-1], sin[i]) -> sin[i+1]
-    // After training, auto-regressively predict PREDICTION_LENGTH values.
-    static const size_t NUMBER_OF_INPUTS = 2;
+    // Training: feed sin[i], target sin[i+1], for each step in the sequence.
+    // LSTM state is reset at the start of each epoch so the network learns
+    // the dynamics from a clean state each time.
+    //
+    // Prediction: prime the LSTM with the training sequence, then
+    // auto-regressively predict PREDICTION_LENGTH values.
+    static const size_t NUMBER_OF_INPUTS = 1;
     static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 16;
     static const size_t NUMBER_OF_OUTPUTS = 1;
     static const size_t SEQUENCE_LENGTH = 10;
@@ -3089,13 +3093,15 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_float_sinusoid_prediction)
     std::deque<double> errors;
     ValueType error;
 
-    // Train the network over one full period of the sinusoid per epoch
+    // Train: feed one value per timestep, LSTM state carries context.
+    // Reset state at the start of each epoch for clean temporal learning.
     for (int epoch = 0; epoch < SIN_TRAINING_ITERATIONS; ++epoch)
     {
-        for (size_t i = 1; i < SEQUENCE_LENGTH - 1; ++i)
+        nn.resetState();
+
+        for (size_t i = 0; i < SEQUENCE_LENGTH - 1; ++i)
         {
-            values[0] = sinSamples[i - 1];
-            values[1] = sinSamples[i];
+            values[0] = sinSamples[i];
             target[0] = sinSamples[i + 1];
 
             nn.feedForward(&values[0]);
@@ -3119,9 +3125,16 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_float_sinusoid_prediction)
     const double averageError = (totalError / static_cast<double>(NUM_SAMPLES_AVG_ERROR));
     BOOST_TEST(averageError <= SIN_TRAINING_ERROR_LIMIT);
 
-    // Now predict the next PREDICTION_LENGTH values auto-regressively
-    // Start from the last two training samples
-    double prev = sinSamples[SEQUENCE_LENGTH - 2];
+    // Prime the LSTM by feeding the training sequence (no training)
+    nn.resetState();
+    for (size_t i = 0; i < SEQUENCE_LENGTH - 1; ++i)
+    {
+        values[0] = sinSamples[i];
+        nn.feedForward(&values[0]);
+    }
+
+    // Auto-regressively predict: feed last known value, get prediction,
+    // feed prediction as next input
     double curr = sinSamples[SEQUENCE_LENGTH - 1];
 
     ofstream predictionOutput("output/nn_float_lstm_sinusoid_prediction.txt");
@@ -3133,8 +3146,7 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_float_sinusoid_prediction)
 
     for (size_t p = 0; p < PREDICTION_LENGTH; ++p)
     {
-        values[0] = prev;
-        values[1] = curr;
+        values[0] = curr;
 
         nn.feedForward(&values[0]);
         nn.getLearnedValues(&learnedValues[0]);
@@ -3147,22 +3159,17 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_float_sinusoid_prediction)
 
         BOOST_TEST(predictionError <= SIN_PREDICTION_TOLERANCE);
 
-        // Shift window for next prediction
-        prev = curr;
+        // Feed prediction as next input
         curr = predicted;
     }
 }
 
 BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sinusoid_prediction)
 {
-    // Train a Q16.16 fixed-point LSTM on a sampled sinusoid and verify it
-    // can predict the next few values. The sinusoid is sampled at regular
-    // intervals and scaled to [0, 1] for the network's output range.
-    //
-    // Training input: (sin[i-1], sin[i]) -> sin[i+1]
-    // After training, auto-regressively predict PREDICTION_LENGTH values
-    // and verify each is close to the true sinusoid value.
-    static const size_t NUMBER_OF_INPUTS = 2;
+    // Train a Q16.16 fixed-point LSTM on a sampled sinusoid using sequential
+    // input processing: one value per timestep with LSTM state carrying
+    // temporal context. State is reset at the start of each epoch.
+    static const size_t NUMBER_OF_INPUTS = 1;
     static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 16;
     static const size_t NUMBER_OF_OUTPUTS = 1;
     static const size_t SEQUENCE_LENGTH = 10;
@@ -3202,13 +3209,14 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sinusoid_predicti
     std::deque<FullWidthValueType> errors;
     ValueType error;
 
-    // Train the network over the sinusoid sequence multiple epochs
+    // Train: feed one value per timestep, reset state each epoch
     for (int epoch = 0; epoch < FP_SIN_TRAINING_ITERATIONS; ++epoch)
     {
-        for (size_t i = 1; i < SEQUENCE_LENGTH - 1; ++i)
+        nn.resetState();
+
+        for (size_t i = 0; i < SEQUENCE_LENGTH - 1; ++i)
         {
-            values[0] = sinSamples[i - 1];
-            values[1] = sinSamples[i];
+            values[0] = sinSamples[i];
             target[0] = sinSamples[i + 1];
 
             nn.feedForward(&values[0]);
@@ -3234,8 +3242,15 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sinusoid_predicti
     const FullWidthValueType averageError = (totalError / static_cast<FullWidthValueType>(NUM_SAMPLES_AVG_ERROR));
     BOOST_TEST(averageError <= FP_SIN_ERROR_LIMIT);
 
-    // Now predict the next PREDICTION_LENGTH values auto-regressively
-    ValueType prev = sinSamples[SEQUENCE_LENGTH - 2];
+    // Prime the LSTM with the training sequence
+    nn.resetState();
+    for (size_t i = 0; i < SEQUENCE_LENGTH - 1; ++i)
+    {
+        values[0] = sinSamples[i];
+        nn.feedForward(&values[0]);
+    }
+
+    // Auto-regressively predict
     ValueType curr = sinSamples[SEQUENCE_LENGTH - 1];
     // Prediction tolerance in fixed-point: ~0.90 = 0.90 * 65536 ≈ 58982
     static const FullWidthValueType FP_SIN_PREDICTION_TOLERANCE = static_cast<FullWidthValueType>(0.90 * (1 << ValueType::NumberOfFractionalBits));
@@ -3249,8 +3264,7 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sinusoid_predicti
 
     for (size_t p = 0; p < PREDICTION_LENGTH; ++p)
     {
-        values[0] = prev;
-        values[1] = curr;
+        values[0] = curr;
 
         nn.feedForward(&values[0]);
         nn.getLearnedValues(&learnedValues[0]);
@@ -3263,8 +3277,7 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sinusoid_predicti
 
         BOOST_TEST(predictionError <= FP_SIN_PREDICTION_TOLERANCE);
 
-        // Shift window for next prediction
-        prev = curr;
+        // Feed prediction as next input
         curr = learnedValues[0];
     }
 }

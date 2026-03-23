@@ -41,6 +41,20 @@ namespace tinymind {
         LSTMHiddenLayerConfig,
     } hiddenLayerConfiguration_e;
 
+    static const size_t LSTM_NUMBER_OF_GATES = 4;
+
+    template<size_t LayerSize, hiddenLayerConfiguration_e Config>
+    struct GateConnectionCount
+    {
+        static const size_t value = LayerSize;
+    };
+
+    template<size_t LayerSize>
+    struct GateConnectionCount<LayerSize, LSTMHiddenLayerConfig>
+    {
+        static const size_t value = LayerSize * LSTM_NUMBER_OF_GATES;
+    };
+
     template<typename ValueType, size_t NumberOfGradients, size_t BatchSize>
     struct GradientsHolder
     {
@@ -380,6 +394,8 @@ namespace tinymind {
         typedef typename NeuralNetworkType::InnerHiddenLayerType InnerHiddenLayerType;
         typedef typename NeuralNetworkType::InputLayerType InputLayerType;
 
+        static const size_t GateMultiplier = NeuralNetworkType::HiddenLayerGateMultiplier;
+
         template<typename TrainingPolicyType>
         static void updateConnectionWeights(TrainingPolicyType& trainingPolicy, NeuralNetworkType& nn)
         {
@@ -390,9 +406,9 @@ namespace tinymind {
 
             trainingPolicy.updateConnectionWeights(outputLayer, lastHiddenLayer);
 
-            trainingPolicy.updateConnectionWeights(lastHiddenLayer, recurrentLayer);
+            trainingPolicy.template updateConnectionWeightsGated<LastHiddenLayerType, RecurrentLayerType, GateMultiplier>(lastHiddenLayer, recurrentLayer);
 
-            trainingPolicy.updateConnectionWeights(lastHiddenLayer, inputLayer);
+            trainingPolicy.template updateConnectionWeightsGated<LastHiddenLayerType, InputLayerType, GateMultiplier>(lastHiddenLayer, inputLayer);
         }
 
     private:
@@ -439,13 +455,13 @@ namespace tinymind {
     struct NodeDeltasCalculator
     {
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
-        
+
         template<typename LayerType, typename NextLayerType>
         static void calculateAndSetNodeDeltas(LayerType& layer, const NextLayerType& nextLayer)
         {
             ValueType sum;
             ValueType nodeDelta;
-                
+
             for(size_t neuron = 0; neuron < LayerType::NumberOfNeuronsInLayer;++neuron)
             {
                 sum = 0;
@@ -453,9 +469,52 @@ namespace tinymind {
                 {
                     sum += (layer.getWeightForNeuronAndConnection(neuron, nextNeuron) * nextLayer.getNodeDeltaForNeuron(nextNeuron));
                 }
-                
+
                 nodeDelta = sum * TransferFunctionsPolicy::hiddenNeuronActivationFunctionDerivative(layer.getOutputValueForNeuron(neuron));
-                
+
+                layer.setNodeDeltaForNeuron(neuron, nodeDelta);
+            }
+        }
+
+        // Compute raw delta for LSTM hidden layer: just the weighted sum of output
+        // deltas, WITHOUT multiplying by the activation derivative. The LSTM gate
+        // derivatives are handled separately by computeGateDeltas().
+        template<typename LayerType, typename NextLayerType>
+        static void calculateAndSetRawNodeDeltas(LayerType& layer, const NextLayerType& nextLayer)
+        {
+            ValueType sum;
+
+            for(size_t neuron = 0; neuron < LayerType::NumberOfNeuronsInLayer;++neuron)
+            {
+                sum = 0;
+                for (size_t nextNeuron = 0; nextNeuron < NextLayerType::NumberOfNeuronsInLayer; ++nextNeuron)
+                {
+                    sum += (layer.getWeightForNeuronAndConnection(neuron, nextNeuron) * nextLayer.getNodeDeltaForNeuron(nextNeuron));
+                }
+                layer.setNodeDeltaForNeuron(neuron, sum);
+            }
+        }
+
+        template<typename LayerType, typename NextLayerType, size_t GateMultiplier>
+        static void calculateAndSetNodeDeltasGated(LayerType& layer, const NextLayerType& nextLayer)
+        {
+            ValueType sum;
+            ValueType nodeDelta;
+
+            for(size_t neuron = 0; neuron < LayerType::NumberOfNeuronsInLayer;++neuron)
+            {
+                sum = 0;
+                for (size_t nextNeuron = 0; nextNeuron < NextLayerType::NumberOfNeuronsInLayer; ++nextNeuron)
+                {
+                    const ValueType nextDelta = nextLayer.getNodeDeltaForNeuron(nextNeuron);
+                    for (size_t gate = 0; gate < GateMultiplier; ++gate)
+                    {
+                        sum += (layer.getWeightForNeuronAndConnection(neuron, nextNeuron * GateMultiplier + gate) * nextDelta);
+                    }
+                }
+
+                nodeDelta = sum * TransferFunctionsPolicy::hiddenNeuronActivationFunctionDerivative(layer.getOutputValueForNeuron(neuron));
+
                 layer.setNodeDeltaForNeuron(neuron, nodeDelta);
             }
         }
@@ -639,6 +698,7 @@ namespace tinymind {
                         NeuralNetworkType::NeuralNetworkOutputLayerConfiguration>::OutputLayerNodeDeltasCalculatorType OutputLayerNodeDeltasCalculatorType;
 
         static const size_t RecurrentConnectionDepth = RecurrentLayerType::RecurrentLayerRecurrentConnectionDepth;
+        static const size_t GateMultiplier = NeuralNetworkType::HiddenLayerGateMultiplier;
 
         static void calculateNetworkDeltas(NeuralNetworkType& nn, ValueType const* const targetValues)
         {
@@ -649,11 +709,39 @@ namespace tinymind {
 
             OutputLayerNodeDeltasCalculatorType::calculateOutputLayerNodeDeltas(outputLayer, targetValues);
 
-            NodeDeltasCalculatorType::calculateAndSetNodeDeltas(lastHiddenLayer, outputLayer);
+            // Compute raw dL/dh_t for each hidden neuron (WITHOUT activation derivative,
+            // since LSTM gate derivatives are handled by computeGateDeltas)
+            NodeDeltasCalculatorType::calculateAndSetRawNodeDeltas(lastHiddenLayer, outputLayer);
 
-            NodeDeltasCalculatorType::calculateAndSetNodeDeltas(recurrentLayer, lastHiddenLayer);
+            // Decompose dL/dh_t into per-gate deltas through LSTM cell equations
+            lastHiddenLayer.computeGateDeltas();
 
-            NodeDeltasCalculatorType::calculateAndSetNodeDeltas(inputLayer, lastHiddenLayer);
+            // Backpropagate per-gate deltas to recurrent and input layers
+            calculateNodeDeltasFromGateDeltas(recurrentLayer, lastHiddenLayer);
+            calculateNodeDeltasFromGateDeltas(inputLayer, lastHiddenLayer);
+        }
+
+        template<typename LayerType, typename LstmLayerType>
+        static void calculateNodeDeltasFromGateDeltas(LayerType& layer, const LstmLayerType& lstmLayer)
+        {
+            ValueType sum;
+            ValueType nodeDelta;
+
+            for (size_t neuron = 0; neuron < LayerType::NumberOfNeuronsInLayer; ++neuron)
+            {
+                sum = 0;
+                for (size_t hiddenNeuron = 0; hiddenNeuron < LstmLayerType::NumberOfNeuronsInLayer; ++hiddenNeuron)
+                {
+                    for (size_t gate = 0; gate < GateMultiplier; ++gate)
+                    {
+                        const size_t conn = hiddenNeuron * GateMultiplier + gate;
+                        sum += (layer.getWeightForNeuronAndConnection(neuron, conn) * lstmLayer.getGateDeltaForNeuron(hiddenNeuron, gate));
+                    }
+                }
+
+                nodeDelta = sum * TransferFunctionsPolicy::hiddenNeuronActivationFunctionDerivative(layer.getOutputValueForNeuron(neuron));
+                layer.setNodeDeltaForNeuron(neuron, nodeDelta);
+            }
         }
     };    
 
@@ -748,6 +836,42 @@ namespace tinymind {
         }
     };
 
+    template<typename ValueType, typename GradientsManagerType, size_t NumberOfBiasNeurons>
+    struct GatedBiasGradientsHelper
+    {
+    };
+
+    template<typename ValueType, typename GradientsManagerType>
+    struct GatedBiasGradientsHelper<ValueType, GradientsManagerType, 1>
+    {
+        template<typename LayerType, typename LstmLayerType, size_t GateMultiplier>
+        static void calculate(LayerType& layer, const LstmLayerType& lstmLayer, GradientsManagerType& gradientsManager)
+        {
+            const ValueType biasOutput = layer.getBiasNeuronOutputValue();
+            for (size_t hiddenNeuron = 0; hiddenNeuron < LstmLayerType::NumberOfNeuronsInLayer; ++hiddenNeuron)
+            {
+                for (size_t gate = 0; gate < GateMultiplier; ++gate)
+                {
+                    const size_t conn = hiddenNeuron * GateMultiplier + gate;
+                    const ValueType gradient = (biasOutput * lstmLayer.getGateDeltaForNeuron(hiddenNeuron, gate));
+                    gradientsManager.updateBiasGradients(layer, conn, gradient);
+                }
+            }
+        }
+    };
+
+    template<typename ValueType, typename GradientsManagerType>
+    struct GatedBiasGradientsHelper<ValueType, GradientsManagerType, 0>
+    {
+        template<typename LayerType, typename LstmLayerType, size_t GateMultiplier>
+        static void calculate(LayerType& layer, const LstmLayerType& lstmLayer, GradientsManagerType& gradientsManager)
+        {
+            (void)layer;
+            (void)lstmLayer;
+            (void)gradientsManager;
+        }
+    };
+
     template<typename TransferFunctionsPolicy, typename GradientsManagerType>
     struct GradientsCalculator
     {
@@ -773,6 +897,31 @@ namespace tinymind {
             }
 
             BiasGradientsCalculatorType::calculateAndUpdateGradients(layer, nextLayer, gradientsManager);
+        }
+
+        template<typename LayerType, typename LstmLayerType, size_t GateMultiplier>
+        static void calculateAndUpdateGradientsGated(LayerType& layer, const LstmLayerType& lstmLayer, GradientsManagerType& gradientsManager)
+        {
+            ValueType outputValue;
+            ValueType gradient;
+
+            for (size_t neuron = 0; neuron < LayerType::NumberOfNeuronsInLayer; ++neuron)
+            {
+                outputValue = layer.getOutputValueForNeuron(neuron);
+                for (size_t hiddenNeuron = 0; hiddenNeuron < LstmLayerType::NumberOfNeuronsInLayer; ++hiddenNeuron)
+                {
+                    for (size_t gate = 0; gate < GateMultiplier; ++gate)
+                    {
+                        const size_t conn = hiddenNeuron * GateMultiplier + gate;
+                        gradient = (outputValue * lstmLayer.getGateDeltaForNeuron(hiddenNeuron, gate));
+                        gradientsManager.updateGradients(layer, neuron, conn, gradient);
+                    }
+                }
+            }
+
+            // Update bias gradients for all gate connections
+            GatedBiasGradientsHelper<ValueType, GradientsManagerType, LayerType::NumberOfBiasNeuronsInLayer>::template
+                calculate<LayerType, LstmLayerType, GateMultiplier>(layer, lstmLayer, gradientsManager);
         }
 
         template<typename LayerType, typename NextLayerType>
@@ -892,6 +1041,8 @@ namespace tinymind {
         typedef typename NeuralNetworkType::GradientsManagerType GradientsManagerType;
         typedef GradientsCalculator<TransferFunctionsPolicy, GradientsManagerType> GradientsCalculatorType;
 
+        static const size_t GateMultiplier = NeuralNetworkType::HiddenLayerGateMultiplier;
+
         static void calculateNetworkGradients(NeuralNetworkType& nn)
         {
             InputLayerType& inputLayer = nn.getInputLayer();
@@ -902,9 +1053,9 @@ namespace tinymind {
 
             GradientsCalculatorType::calculateAndUpdateGradients(lastHiddenLayer, outputLayer, gradientsManager);
 
-            GradientsCalculatorType::calculateAndUpdateGradients(recurrentLayer, lastHiddenLayer, gradientsManager);
+            GradientsCalculatorType::template calculateAndUpdateGradientsGated<RecurrentLayerType, LastHiddenLayerType, GateMultiplier>(recurrentLayer, lastHiddenLayer, gradientsManager);
 
-            GradientsCalculatorType::calculateAndUpdateGradients(inputLayer, lastHiddenLayer, gradientsManager);
+            GradientsCalculatorType::template calculateAndUpdateGradientsGated<InputLayerType, LastHiddenLayerType, GateMultiplier>(inputLayer, lastHiddenLayer, gradientsManager);
         }
     };
 
@@ -977,6 +1128,50 @@ namespace tinymind {
 
                 //Update bias values
                 BiasNeuronConnectionWeightUpdaterType::updateBiasConnectionWeights(previousLayer, neuron, this->mLearningRate, this->mMomentumRate, this->mAccelerationRate);
+            }
+        }
+
+        template<typename LayerType, typename PreviousLayerType, size_t GateMultiplier>
+        void updateConnectionWeightsGated(LayerType& layer, PreviousLayerType& previousLayer)
+        {
+            (void)layer; // Suppress unused parameter warning
+            typedef BiasNeuronConnectionWeightUpdater<ValueType, PreviousLayerType::NumberOfBiasNeuronsInLayer> BiasNeuronConnectionWeightUpdaterType;
+            ValueType previousDeltaWeight;
+            ValueType currentDeltaWeight;
+            ValueType newDeltaWeight;
+            ValueType currentWeight;
+            ValueType gradient;
+
+            for (size_t neuron = 0; neuron < LayerType::NumberOfNeuronsInLayer; ++neuron)
+            {
+                for (size_t previousNeuron = 0; previousNeuron < PreviousLayerType::NumberOfNeuronsInLayer; ++previousNeuron)
+                {
+                    for (size_t gate = 0; gate < GateMultiplier; ++gate)
+                    {
+                        const size_t conn = neuron * GateMultiplier + gate;
+                        previousDeltaWeight = previousLayer.getPreviousDeltaWeightForNeuronAndConnection(previousNeuron, conn);
+                        currentDeltaWeight = previousLayer.getDeltaWeightForNeuronAndConnection(previousNeuron, conn);
+
+                        // Clip gradient to [-1, 1] to prevent exploding gradients
+                        gradient = previousLayer.getGradientForNeuronAndConnection(previousNeuron, conn);
+                        if (gradient > ValueType(1)) gradient = ValueType(1);
+                        if (gradient < ValueType(-1)) gradient = ValueType(-1);
+
+                        newDeltaWeight =    (this->mLearningRate * gradient) +
+                                            (this->mMomentumRate * currentDeltaWeight) +
+                                            (this->mAccelerationRate * previousDeltaWeight);
+                        currentWeight = previousLayer.getWeightForNeuronAndConnection(previousNeuron, conn);
+
+                        previousLayer.setDeltaWeightForNeuronAndConnection(previousNeuron, conn, newDeltaWeight);
+                        previousLayer.setWeightForNeuronAndConnection(previousNeuron, conn, (currentWeight + newDeltaWeight));
+                    }
+                }
+
+                //Update bias values for each gate connection
+                for (size_t gate = 0; gate < GateMultiplier; ++gate)
+                {
+                    BiasNeuronConnectionWeightUpdaterType::updateBiasConnectionWeights(previousLayer, neuron * GateMultiplier + gate, this->mLearningRate, this->mMomentumRate, this->mAccelerationRate);
+                }
             }
         }   
     protected:
@@ -1580,17 +1775,33 @@ namespace tinymind {
 
         static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
 
-        ValueType getState(void) const
+        ValueType getState(void) const { return this->mState; }
+        void setState(const ValueType& state) { this->mState = state; }
+
+        void setGateActivations(const ValueType& cellCandidate, const ValueType& inputGate,
+                                const ValueType& forgetGate, const ValueType& outputGate,
+                                const ValueType& prevCellState)
         {
-            return this->mState;
+            mCellCandidateActivation = cellCandidate;
+            mInputGateActivation = inputGate;
+            mForgetGateActivation = forgetGate;
+            mOutputGateActivation = outputGate;
+            mPreviousCellState = prevCellState;
         }
 
-        void setState(const ValueType& state)
-        {
-            this->mState = state;
-        }
+        ValueType getCellCandidateActivation() const { return mCellCandidateActivation; }
+        ValueType getInputGateActivation() const { return mInputGateActivation; }
+        ValueType getForgetGateActivation() const { return mForgetGateActivation; }
+        ValueType getOutputGateActivation() const { return mOutputGateActivation; }
+        ValueType getPreviousCellState() const { return mPreviousCellState; }
+
     private:
         ValueType mState;
+        ValueType mCellCandidateActivation;
+        ValueType mInputGateActivation;
+        ValueType mForgetGateActivation;
+        ValueType mOutputGateActivation;
+        ValueType mPreviousCellState;
     };
 
     template<
@@ -1606,17 +1817,37 @@ namespace tinymind {
 
         static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
 
-        ValueType getState(void) const
+        ValueType getState(void) const { return this->mState; }
+        void setState(const ValueType& state) { this->mState = state; }
+
+        void setGateActivations(const ValueType& cellCandidate, const ValueType& inputGate,
+                                const ValueType& forgetGate, const ValueType& outputGate,
+                                const ValueType& prevCellState)
         {
-            return this->mState;
+            mCellCandidateActivation = cellCandidate;
+            mInputGateActivation = inputGate;
+            mForgetGateActivation = forgetGate;
+            mOutputGateActivation = outputGate;
+            mPreviousCellState = prevCellState;
         }
 
-        void setState(const ValueType& state)
-        {
-            this->mState = state;
-        }
+        ValueType getCellCandidateActivation() const { return mCellCandidateActivation; }
+        ValueType getInputGateActivation() const { return mInputGateActivation; }
+        ValueType getForgetGateActivation() const { return mForgetGateActivation; }
+        ValueType getOutputGateActivation() const { return mOutputGateActivation; }
+        ValueType getPreviousCellState() const { return mPreviousCellState; }
+
+        ValueType getGateDelta(const size_t gate) const { return mGateDeltas[gate]; }
+        void setGateDelta(const size_t gate, const ValueType& delta) { mGateDeltas[gate] = delta; }
+
     private:
         ValueType mState;
+        ValueType mCellCandidateActivation;
+        ValueType mInputGateActivation;
+        ValueType mForgetGateActivation;
+        ValueType mOutputGateActivation;
+        ValueType mPreviousCellState;
+        ValueType mGateDeltas[LSTM_NUMBER_OF_GATES];
     };
 
     template<
@@ -2126,6 +2357,15 @@ namespace tinymind {
         static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
         static const size_t NumberOfBiasNeuronsInLayer = 1;
 
+        // Fallback for non-LSTM hidden layers: gate deltas equal the node delta
+        void computeGateDeltas() {}
+
+        ValueType getGateDeltaForNeuron(const size_t neuron, const size_t gate) const
+        {
+            (void)gate;
+            return this->getNodeDeltaForNeuron(neuron);
+        }
+
         template<typename PreviousLayerType>
         void feedForward(const PreviousLayerType& previousLayer)
         {
@@ -2292,6 +2532,10 @@ namespace tinymind {
         {
             size_t bufferIndex;
             NeuronType* pNeuron;
+            ValueType cellCandidateInput;
+            ValueType inputGateInput;
+            ValueType forgetGateInput;
+            ValueType outputGateInput;
             ValueType inputActivation;
             ValueType inputGateActivation;
             ValueType forgetGateActivation;
@@ -2299,8 +2543,6 @@ namespace tinymind {
             ValueType output;
             ValueType cellState;
             ValueType previousCellState;
-            ValueType input;
-            ValueType forget;
 
             for (size_t neuron = 0; neuron < NumberOfNeurons; ++neuron)
             {
@@ -2308,46 +2550,134 @@ namespace tinymind {
                 pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
 
                 previousCellState = pNeuron->getState();
-                cellState = previousCellState;
 
-                input = previousLayer.getBiasNeuronValueForOutgoingConnection(neuron);
+                // Each gate has independent weights via separate connection indices.
+                // For hidden neuron n, connections are:
+                //   n*4 + 0 = cell candidate
+                //   n*4 + 1 = input gate
+                //   n*4 + 2 = forget gate
+                //   n*4 + 3 = output gate
+                const size_t cellCandidateConn = neuron * LSTM_NUMBER_OF_GATES + 0;
+                const size_t inputGateConn     = neuron * LSTM_NUMBER_OF_GATES + 1;
+                const size_t forgetGateConn    = neuron * LSTM_NUMBER_OF_GATES + 2;
+                const size_t outputGateConn    = neuron * LSTM_NUMBER_OF_GATES + 3;
 
-                input += previousLayer.getOutputValueForOutgoingConnection(neuron);
+                // Cell candidate: independent weighted sum
+                cellCandidateInput = previousLayer.getBiasNeuronValueForOutgoingConnection(cellCandidateConn);
+                cellCandidateInput += previousLayer.getOutputValueForOutgoingConnection(cellCandidateConn);
+                cellCandidateInput += recurrentLayer.getOutputValueForOutgoingConnection(cellCandidateConn);
 
-                input += recurrentLayer.getOutputValueForOutgoingConnection(neuron);
+                // Input gate: independent weighted sum
+                inputGateInput = previousLayer.getBiasNeuronValueForOutgoingConnection(inputGateConn);
+                inputGateInput += previousLayer.getOutputValueForOutgoingConnection(inputGateConn);
+                inputGateInput += recurrentLayer.getOutputValueForOutgoingConnection(inputGateConn);
 
-                forget = (input + previousCellState);
-                forgetGateActivation = ForgetGateActivationPolicy::activationFunction(forget);
+                // Forget gate: independent weighted sum
+                forgetGateInput = previousLayer.getBiasNeuronValueForOutgoingConnection(forgetGateConn);
+                forgetGateInput += previousLayer.getOutputValueForOutgoingConnection(forgetGateConn);
+                forgetGateInput += recurrentLayer.getOutputValueForOutgoingConnection(forgetGateConn);
 
-                inputActivation = TransferFunctionsPolicy::hiddenNeuronActivationFunction(input);
-                inputGateActivation = InputGateActivationPolicy::activationFunction(input);
-                outputGateActivation = OutputGateActivationPolicy::activationFunction(input);
+                // Output gate: independent weighted sum
+                outputGateInput = previousLayer.getBiasNeuronValueForOutgoingConnection(outputGateConn);
+                outputGateInput += previousLayer.getOutputValueForOutgoingConnection(outputGateConn);
+                outputGateInput += recurrentLayer.getOutputValueForOutgoingConnection(outputGateConn);
 
-                input = (inputActivation * inputGateActivation);
-                forget = (forgetGateActivation * previousCellState);
-                cellState = (input + forget);
+                // Apply gate activations
+                inputActivation = TransferFunctionsPolicy::hiddenNeuronActivationFunction(cellCandidateInput);
+                inputGateActivation = InputGateActivationPolicy::activationFunction(inputGateInput);
+                forgetGateActivation = ForgetGateActivationPolicy::activationFunction(forgetGateInput);
+                outputGateActivation = OutputGateActivationPolicy::activationFunction(outputGateInput);
+
+                // Save gate activations for backpropagation
+                pNeuron->setGateActivations(inputActivation, inputGateActivation,
+                                            forgetGateActivation, outputGateActivation,
+                                            previousCellState);
+
+                // Update cell state: c_t = f_t * c_{t-1} + i_t * c_hat_t
+                cellState = (forgetGateActivation * previousCellState) + (inputActivation * inputGateActivation);
                 pNeuron->setState(cellState);
+
+                // Compute output: o_t * tanh(c_t)
                 output = CellStateActivationPolicy::activationFunction(cellState);
                 output *= outputGateActivation;
 
                 pNeuron->setOutputValue(output);
-                
+
                 recurrentLayer.setOutputValueForOutgoingConnection(neuron, output);
             }
         }
 
-        ValueType getOutputValueForOutgoingConnection(const size_t connection) const
+        // NOTE: getOutputValueForOutgoingConnection is inherited from Layer,
+        // which correctly iterates over ALL neurons to compute the weighted sum.
+        // A previous override here only accessed a single neuron, which was a bug.
+
+        /**
+         * Compute per-gate deltas for LSTM backpropagation.
+         * Must be called after the standard hidden layer delta (dL/dh_t) has been
+         * computed and stored in each neuron's mNodeDelta.
+         *
+         * For each neuron, decomposes dL/dh_t through the LSTM cell equations:
+         *   h_t = o_t * tanh(c_t)
+         *   c_t = f_t * c_{t-1} + i_t * c_hat_t
+         *
+         * Produces 4 gate-input deltas stored in the neuron's mGateDeltas[]:
+         *   [0] = dL/d(cellCandidateInput)  = dL/dc_t * i_t * tanh'(cellCandidateInput)
+         *   [1] = dL/d(inputGateInput)      = dL/dc_t * c_hat_t * sigmoid'(inputGateInput)
+         *   [2] = dL/d(forgetGateInput)     = dL/dc_t * c_{t-1} * sigmoid'(forgetGateInput)
+         *   [3] = dL/d(outputGateInput)     = dL/dh_t * tanh(c_t) * sigmoid'(outputGateInput)
+         */
+        void computeGateDeltas()
         {
-            const size_t bufferIndex = connection * sizeof(NeuronType);
-            const NeuronType* pNeuron = reinterpret_cast<const NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
-            return pNeuron->getOutputValueForConnection(connection);
+            size_t bufferIndex;
+            NeuronType* pNeuron;
+
+            for (size_t neuron = 0; neuron < NumberOfNeurons; ++neuron)
+            {
+                bufferIndex = neuron * sizeof(NeuronType);
+                pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
+
+                const ValueType dLdh = pNeuron->getNodeDelta();
+
+                // Retrieve stored gate activations
+                const ValueType cHat = pNeuron->getCellCandidateActivation();  // tanh(cellCandidateInput)
+                const ValueType iGate = pNeuron->getInputGateActivation();     // sigmoid(inputGateInput)
+                const ValueType fGate = pNeuron->getForgetGateActivation();    // sigmoid(forgetGateInput)
+                const ValueType oGate = pNeuron->getOutputGateActivation();    // sigmoid(outputGateInput)
+                const ValueType prevC = pNeuron->getPreviousCellState();
+                const ValueType cellState = pNeuron->getState();
+
+                // h_t = o_t * tanh(c_t)
+                const ValueType tanhC = CellStateActivationPolicy::activationFunction(cellState);
+
+                // dL/do_t = dL/dh_t * tanh(c_t)
+                const ValueType dLdo = dLdh * tanhC;
+
+                // dL/dc_t = dL/dh_t * o_t * (1 - tanh(c_t)^2)
+                const ValueType dLdc = dLdh * oGate * (ValueType(1) - tanhC * tanhC);
+
+                // Gate-input deltas through activation derivatives:
+                // sigmoid'(x) = sigmoid(x) * (1 - sigmoid(x)), where sigmoid(x) is the stored activation
+                // tanh'(x) = 1 - tanh(x)^2, where tanh(x) is the stored activation
+
+                // Cell candidate: dL/d(cellCandidateInput) = dL/dc_t * i_t * (1 - cHat^2)
+                pNeuron->setGateDelta(0, dLdc * iGate * (ValueType(1) - cHat * cHat));
+
+                // Input gate: dL/d(inputGateInput) = dL/dc_t * cHat * i_t * (1 - i_t)
+                pNeuron->setGateDelta(1, dLdc * cHat * iGate * (ValueType(1) - iGate));
+
+                // Forget gate: dL/d(forgetGateInput) = dL/dc_t * c_{t-1} * f_t * (1 - f_t)
+                pNeuron->setGateDelta(2, dLdc * prevC * fGate * (ValueType(1) - fGate));
+
+                // Output gate: dL/d(outputGateInput) = dL/do_t * o_t * (1 - o_t)
+                pNeuron->setGateDelta(3, dLdo * oGate * (ValueType(1) - oGate));
+            }
         }
-        
-        void setOutputValueForOutgoingConnection(const size_t connection, const ValueType& value)
+
+        ValueType getGateDeltaForNeuron(const size_t neuron, const size_t gate) const
         {
-            const size_t bufferIndex = connection * sizeof(NeuronType);
-            NeuronType* pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
-            pNeuron->setOutputValue(value);
+            const size_t bufferIndex = neuron * sizeof(NeuronType);
+            const NeuronType* pNeuron = reinterpret_cast<const NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
+            return pNeuron->getGateDelta(gate);
         }
     };
 
@@ -2400,16 +2730,24 @@ namespace tinymind {
     struct RecurrentLayer : public Layer<NeuronType, NumberOfNeurons>
     {
         typedef typename NeuronType::ValueType ValueType;
-        
+
         static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
         static const size_t NumberOfBiasNeuronsInLayer = 0;
         static const size_t RecurrentLayerRecurrentConnectionDepth = RecurrentConnectionDepth;
 
         ValueType getOutputValueForOutgoingConnection(const size_t connection) const
         {
-            const size_t bufferIndex = connection * sizeof(NeuronType);
-            const NeuronType* pNeuron = reinterpret_cast<const NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
-            return pNeuron->getOutputValueForConnection(connection);
+            size_t bufferIndex;
+            ValueType sum(0);
+
+            for (size_t neuron = 0; neuron < NumberOfNeurons; ++neuron)
+            {
+                bufferIndex = neuron * sizeof(NeuronType);
+                const NeuronType* pNeuron = reinterpret_cast<const NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
+                sum += pNeuron->getOutputValueForConnection(connection);
+            }
+
+            return sum;
         }
         
         void setOutputValueForOutgoingConnection(const size_t connection, const ValueType& value)
@@ -2720,21 +3058,21 @@ namespace tinymind {
         }
     };
 
-    template<typename ConnectionType, size_t NumberOfNeuronsInHiddenLayers, typename TransferFunctionsPolicy, size_t RecurrentConnectionDepth, bool HasRecurrentLayer>
+    template<typename ConnectionType, size_t NumberOfNeuronsInHiddenLayers, size_t NumberOfOutgoingConnectionsPerNeuron, typename TransferFunctionsPolicy, size_t RecurrentConnectionDepth, bool HasRecurrentLayer>
     struct RecurrentLayerTypeSelector
     {
     };
 
-    template<typename ConnectionType, size_t NumberOfNeuronsInHiddenLayers, typename TransferFunctionsPolicy, size_t RecurrentConnectionDepth>
-    struct RecurrentLayerTypeSelector<ConnectionType, NumberOfNeuronsInHiddenLayers, TransferFunctionsPolicy, RecurrentConnectionDepth, false>
+    template<typename ConnectionType, size_t NumberOfNeuronsInHiddenLayers, size_t NumberOfOutgoingConnectionsPerNeuron, typename TransferFunctionsPolicy, size_t RecurrentConnectionDepth>
+    struct RecurrentLayerTypeSelector<ConnectionType, NumberOfNeuronsInHiddenLayers, NumberOfOutgoingConnectionsPerNeuron, TransferFunctionsPolicy, RecurrentConnectionDepth, false>
     {
         typedef NullRecurrentLayer RecurrentLayerType;
     };
 
-    template<typename ConnectionType, size_t NumberOfNeuronsInHiddenLayers, typename TransferFunctionsPolicy, size_t RecurrentConnectionDepth>
-    struct RecurrentLayerTypeSelector<ConnectionType, NumberOfNeuronsInHiddenLayers, TransferFunctionsPolicy, RecurrentConnectionDepth, true>
+    template<typename ConnectionType, size_t NumberOfNeuronsInHiddenLayers, size_t NumberOfOutgoingConnectionsPerNeuron, typename TransferFunctionsPolicy, size_t RecurrentConnectionDepth>
+    struct RecurrentLayerTypeSelector<ConnectionType, NumberOfNeuronsInHiddenLayers, NumberOfOutgoingConnectionsPerNeuron, TransferFunctionsPolicy, RecurrentConnectionDepth, true>
     {
-        typedef typename RecurrentLayerNeuronTypeSelector<ConnectionType, NumberOfNeuronsInHiddenLayers, TransferFunctionsPolicy, ConnectionType::IsTrainable>::RecurrentLayerNeuronType RecurrentLayerNeuronType;
+        typedef typename RecurrentLayerNeuronTypeSelector<ConnectionType, NumberOfOutgoingConnectionsPerNeuron, TransferFunctionsPolicy, ConnectionType::IsTrainable>::RecurrentLayerNeuronType RecurrentLayerNeuronType;
         typedef RecurrentLayer<RecurrentLayerNeuronType, NumberOfNeuronsInHiddenLayers, RecurrentConnectionDepth> RecurrentLayerType;
     };
 
@@ -2804,13 +3142,16 @@ namespace tinymind {
                                         HiddenLayerConfig> HiddenLayerTypeSelectorType;
         typedef typename HiddenLayerTypeSelectorType::InnerHiddenLayerType InnerHiddenLayerType;
         typedef typename HiddenLayerTypeSelectorType::LastHiddenLayerType LastHiddenLayerType;
+        static const size_t MlpInputToHiddenConnections = GateConnectionCount<NumberOfNeuronsInHiddenLayers, HiddenLayerConfig>::value;
+        static const size_t HiddenLayerGateMultiplier = GateConnectionCount<1, HiddenLayerConfig>::value;
         typedef RecurrentLayerTypeSelector< ConnectionType,
                                             NumberOfNeuronsInHiddenLayers,
+                                            MlpInputToHiddenConnections,
                                             TransferFunctionsPolicy,
                                             RecurrentConnectionDepth,
                                             HasRecurrentLayer> RecurrentLayerTypeSelectorType;
         typedef typename RecurrentLayerTypeSelectorType::RecurrentLayerType NeuralNetworkRecurrentLayerType;
-        typedef typename InputLayerNeuronTypeSelector<ConnectionType, NumberOfNeuronsInHiddenLayers, TransferFunctionsPolicy, IsTrainable>::InputLayerNeuronType InputLayerNeuronType;
+        typedef typename InputLayerNeuronTypeSelector<ConnectionType, MlpInputToHiddenConnections, TransferFunctionsPolicy, IsTrainable>::InputLayerNeuronType InputLayerNeuronType;
         typedef typename OutputLayerNeuronTypeSelector<ConnectionType, TransferFunctionsPolicy, IsTrainable>::OutputLayerNeuronType OutputLayerNeuronType;
         typedef InputLayer<InputLayerNeuronType, NumberOfInputs> InputLayerType;
         typedef OutputLayerTypeSelector<OutputLayerNeuronType,
@@ -4342,8 +4683,13 @@ namespace tinymind {
         typedef typename ConnectionTypeSelector<ValueType, IsTrainable>::ConnectionType ConnectionType;
         typedef TransferFunctionsPolicy NeuralNetworkTransferFunctionsPolicy;
 
+        // Gate multiplier: 4 for LSTM (one weight set per gate), 1 for non-LSTM
+        static const size_t HiddenLayerGateMultiplier = GateConnectionCount<1, HiddenLayerConfig>::value;
+
         // Input layer: neurons have outgoing connections to the first hidden layer
-        typedef typename InputLayerNeuronTypeSelector<ConnectionType, HiddenLayersDescriptor::FirstLayerSize, TransferFunctionsPolicy, IsTrainable>::InputLayerNeuronType InputLayerNeuronType;
+        // For LSTM networks, each hidden neuron needs 4 connections (one per gate)
+        static const size_t InputToHiddenConnections = GateConnectionCount<HiddenLayersDescriptor::FirstLayerSize, HiddenLayerConfig>::value;
+        typedef typename InputLayerNeuronTypeSelector<ConnectionType, InputToHiddenConnections, TransferFunctionsPolicy, IsTrainable>::InputLayerNeuronType InputLayerNeuronType;
         typedef InputLayer<InputLayerNeuronType, NumberOfInputs> InputLayerType;
 
         // Inner hidden layer chain (all hidden layers except the last)
@@ -4354,8 +4700,11 @@ namespace tinymind {
         typedef typename LastHiddenLayerTypeSelector<LastHiddenLayerNeuronType, HiddenLayersDescriptor::LastLayerSize, HiddenLayerConfig>::LastHiddenLayerType LastHiddenLayerType;
 
         // Recurrent layer for the last hidden layer
+        // For LSTM, recurrent neurons need 4x connections (one per gate)
+        static const size_t RecurrentToHiddenConnections = GateConnectionCount<HiddenLayersDescriptor::LastLayerSize, HiddenLayerConfig>::value;
         typedef RecurrentLayerTypeSelector< ConnectionType,
                                             HiddenLayersDescriptor::LastLayerSize,
+                                            RecurrentToHiddenConnections,
                                             TransferFunctionsPolicy,
                                             RecurrentConnectionDepth,
                                             HasRecurrentLayer> RecurrentLayerTypeSelectorType;
