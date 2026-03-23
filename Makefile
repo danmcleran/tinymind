@@ -8,4 +8,6 @@ check :
 	cd examples/xor && make clean && make && make release && cd -
 	cd examples/maze && make clean && make && make release && cd -
 	cd examples/dqn_maze && make clean && make && make release && cd -
+	cd unit_test/kan && make clean && make && make run && cd -
+	cd examples/kan_xor && make clean && make && make release && cd -
 	cd apps/activation && make clean && make && make release && cd -

@@ -268,3 +268,28 @@ Training loop identical to the MLP XOR example: `feedForward`, `calculateError`,
 3. **XOR convergence**: Train KAN on XOR problem, verify error converges below threshold (both fixed-point and float)
 4. **Inference consistency**: Pre-set coefficients, verify forward pass output matches expected values
 5. **Build integration**: `make check` runs all KAN tests alongside existing tests
+
+---
+
+## Implementation Summary
+
+**Branch:** `kan_implementation`
+
+### New Files (2,716 lines added)
+
+| File | Purpose |
+|------|---------|
+| `cpp/bspline.hpp` | B-spline engine — De Boor's algorithm, uniform knot vectors, k=0/1/2/3+ support |
+| `cpp/kan.hpp` | Core KAN — connections, neurons, layers, training (backprop), `KolmogorovArnoldNetwork` class |
+| `cpp/kanTransferFunctions.hpp` | SiLU activation policy, KAN transfer functions |
+| `examples/kan_xor/` | XOR example with Q8.8 fixed-point |
+| `unit_test/kan/` | 15 Boost.Test cases — all passing |
+
+### Key Design Decisions
+
+- **Parallel class** to `MultilayerPerceptron`, same user-facing API
+- **Same template policy patterns** as existing codebase (type selectors, placement new buffers, no dynamic allocation)
+- **SplineDegree=1 specialization** reduces to `linearInterpolation()` — ideal for fixed-point
+- **SiLU reuses existing sigmoid lookup tables** — zero new tables needed
+- **Training verified** with double precision (XOR converges to error 0.00025)
+- **All existing `make check` tests continue to pass**
