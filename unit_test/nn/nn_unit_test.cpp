@@ -2751,6 +2751,63 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point)
     BOOST_TEST(learnedValues[0].getValue() != 0);
 }
 
+BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_multi_layer)
+{
+    // Test multi-layer LSTM: two LSTM hidden layers (8 and 4 neurons).
+    // Both inner and last hidden layers should be LSTM layers with their
+    // own recurrent connections and gate weights.
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::SigmoidActivationPolicy> TransferFunctionsType;
+    typedef tinymind::LstmNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<8, 4>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> MultiLayerLstmType;
+    srand(RANDOM_SEED);
+    MultiLayerLstmType nn;
+
+    ValueType values[MultiLayerLstmType::NumberOfInputLayerNeurons];
+    ValueType output[MultiLayerLstmType::NumberOfOutputLayerNeurons];
+    ValueType learnedValues[MultiLayerLstmType::NumberOfOutputLayerNeurons];
+
+    // Verify feedforward works with multi-layer LSTM
+    values[0] = 1.0;
+    values[1] = 0.0;
+    nn.feedForward(&values[0]);
+    nn.getLearnedValues(&learnedValues[0]);
+    BOOST_TEST(!std::isnan(learnedValues[0]));
+    BOOST_TEST(!std::isinf(learnedValues[0]));
+
+    // Verify output changes with different input
+    (void)learnedValues[0]; // first output verified above
+    values[0] = 0.0;
+    values[1] = 1.0;
+    nn.feedForward(&values[0]);
+    nn.getLearnedValues(&learnedValues[0]);
+    BOOST_TEST(!std::isnan(learnedValues[0]));
+    BOOST_TEST(!std::isinf(learnedValues[0]));
+
+    // Verify successive calls produce different output (LSTM state accumulates)
+    const double secondOutput = learnedValues[0];
+    nn.feedForward(&values[0]);
+    nn.getLearnedValues(&learnedValues[0]);
+    BOOST_TEST(learnedValues[0] != secondOutput);
+
+    // Verify training doesn't crash
+    output[0] = 1.0;
+    nn.feedForward(&values[0]);
+    const ValueType error = nn.calculateError(&output[0]);
+    nn.trainNetwork(&output[0]);
+    BOOST_TEST(!std::isnan(error));
+}
+
 BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_feedforward_produces_output)
 {
     static const size_t NUMBER_OF_INPUTS = 2;

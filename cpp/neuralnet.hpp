@@ -3741,13 +3741,49 @@ namespace tinymind {
     };
 
     // Two or more hidden layers: recursive construction
+    // Inner layers use the proper layer type based on HLC (e.g., LstmHiddenLayer for LSTM)
     template<typename CT, typename TF, bool IT, hiddenLayerConfiguration_e HLC, size_t S0, size_t S1, size_t... Rest>
     struct InnerLayerChainBuilder<CT, TF, IT, HLC, HiddenLayers<S0, S1, Rest...> >
     {
         typedef typename HiddenLayerNeuronTypeSelector<CT, S1, TF, CT::IsTrainable, HLC>::HiddenLayerNeuronType NeuronType;
-        typedef HiddenLayer<NeuronType, S0> CurrentLayerType;
+        typedef typename LastHiddenLayerTypeSelector<NeuronType, S0, HLC>::LastHiddenLayerType CurrentLayerType;
         typedef typename InnerLayerChainBuilder<CT, TF, IT, HLC, HiddenLayers<S1, Rest...> >::ChainType RestChainType;
         typedef LayerChain<CurrentLayerType, RestChainType> ChainType;
+    };
+
+    // =========================================================================
+    // RecurrentLayerChainBuilder: builds a parallel chain of recurrent layers
+    // for multi-layer recurrent/LSTM networks. Each inner hidden layer gets
+    // its own recurrent connection.
+    // =========================================================================
+
+    template<typename ConnectionType, typename TransferFunctionsPolicy,
+             size_t RecurrentConnectionDepth, bool HasRecurrentLayer,
+             typename HiddenLayerSizes>
+    struct RecurrentLayerChainBuilder;
+
+    // Single hidden layer: no inner recurrent layers needed
+    template<typename CT, typename TF, size_t RCD, bool HRL, size_t S0>
+    struct RecurrentLayerChainBuilder<CT, TF, RCD, HRL, HiddenLayers<S0> >
+    {
+        typedef EmptyLayerChain ChainType;
+    };
+
+    // Two or more hidden layers: create recurrent layer for each inner layer
+    template<typename CT, typename TF, size_t RCD, size_t S0, size_t S1, size_t... Rest>
+    struct RecurrentLayerChainBuilder<CT, TF, RCD, true, HiddenLayers<S0, S1, Rest...> >
+    {
+        typedef typename RecurrentLayerNeuronTypeSelector<CT, S0, TF, CT::IsTrainable>::RecurrentLayerNeuronType RecurrentNeuronType;
+        typedef RecurrentLayer<RecurrentNeuronType, S0, RCD> CurrentRecurrentLayerType;
+        typedef typename RecurrentLayerChainBuilder<CT, TF, RCD, true, HiddenLayers<S1, Rest...> >::ChainType RestChainType;
+        typedef LayerChain<CurrentRecurrentLayerType, RestChainType> ChainType;
+    };
+
+    // No recurrent layer: empty chain
+    template<typename CT, typename TF, size_t RCD, size_t S0, size_t S1, size_t... Rest>
+    struct RecurrentLayerChainBuilder<CT, TF, RCD, false, HiddenLayers<S0, S1, Rest...> >
+    {
+        typedef EmptyLayerChain ChainType;
     };
 
     // =========================================================================
@@ -3781,32 +3817,49 @@ namespace tinymind {
 
     // =========================================================================
     // Chain-based recurrent feed-forward helper
-    // Same as ChainFeedForwardHelper but passes the recurrent layer to the
-    // last hidden layer's feedForward call.
+    // Walks the inner hidden layer chain and recurrent layer chain in
+    // parallel, passing each inner layer its corresponding recurrent
+    // connection. The last hidden layer gets the main recurrent layer.
     // =========================================================================
 
-    template<typename ChainType>
+    template<typename HiddenChainType, typename RecurrentChainType>
     struct ChainRecurrentFeedForwardHelper;
 
+    // Base case: empty inner chains, feed forward to last hidden layer
     template<>
-    struct ChainRecurrentFeedForwardHelper<EmptyLayerChain>
+    struct ChainRecurrentFeedForwardHelper<EmptyLayerChain, EmptyLayerChain>
     {
         template<typename PrevLayerType, typename LastHiddenLayerType, typename RecurrentLayerType>
-        static void feedForward(PrevLayerType& prev, EmptyLayerChain& chain, LastHiddenLayerType& lastHidden, RecurrentLayerType& recurrentLayer)
+        static void feedForward(PrevLayerType& prev, EmptyLayerChain& hiddenChain, EmptyLayerChain& recurrentChain, LastHiddenLayerType& lastHidden, RecurrentLayerType& recurrentLayer)
         {
-            (void)chain;
+            (void)hiddenChain;
+            (void)recurrentChain;
             lastHidden.feedForward(prev, recurrentLayer);
         }
     };
 
-    template<typename LayerType, typename RestChainType>
-    struct ChainRecurrentFeedForwardHelper<LayerChain<LayerType, RestChainType> >
+    // Recursive case: feed forward inner LSTM layer with its recurrent connection
+    template<typename HiddenLayerType, typename HiddenRestType, typename RecurrentLayerType, typename RecurrentRestType>
+    struct ChainRecurrentFeedForwardHelper<LayerChain<HiddenLayerType, HiddenRestType>, LayerChain<RecurrentLayerType, RecurrentRestType> >
+    {
+        template<typename PrevLayerType, typename LastHiddenLayerType, typename LastRecurrentLayerType>
+        static void feedForward(PrevLayerType& prev, LayerChain<HiddenLayerType, HiddenRestType>& hiddenChain, LayerChain<RecurrentLayerType, RecurrentRestType>& recurrentChain, LastHiddenLayerType& lastHidden, LastRecurrentLayerType& lastRecurrentLayer)
+        {
+            hiddenChain.layer.feedForward(prev, recurrentChain.layer);
+            ChainRecurrentFeedForwardHelper<HiddenRestType, RecurrentRestType>::feedForward(hiddenChain.layer, hiddenChain.rest, recurrentChain.rest, lastHidden, lastRecurrentLayer);
+        }
+    };
+
+    // Mixed case: inner hidden chain but no recurrent chain (non-recurrent inner layers)
+    template<typename HiddenLayerType, typename HiddenRestType>
+    struct ChainRecurrentFeedForwardHelper<LayerChain<HiddenLayerType, HiddenRestType>, EmptyLayerChain>
     {
         template<typename PrevLayerType, typename LastHiddenLayerType, typename RecurrentLayerType>
-        static void feedForward(PrevLayerType& prev, LayerChain<LayerType, RestChainType>& chain, LastHiddenLayerType& lastHidden, RecurrentLayerType& recurrentLayer)
+        static void feedForward(PrevLayerType& prev, LayerChain<HiddenLayerType, HiddenRestType>& hiddenChain, EmptyLayerChain& recurrentChain, LastHiddenLayerType& lastHidden, RecurrentLayerType& recurrentLayer)
         {
-            chain.layer.feedForward(prev);
-            ChainRecurrentFeedForwardHelper<RestChainType>::feedForward(chain.layer, chain.rest, lastHidden, recurrentLayer);
+            (void)recurrentChain;
+            hiddenChain.layer.feedForward(prev);
+            ChainRecurrentFeedForwardHelper<HiddenRestType, EmptyLayerChain>::feedForward(hiddenChain.layer, hiddenChain.rest, recurrentChain, lastHidden, recurrentLayer);
         }
     };
 
@@ -3820,8 +3873,8 @@ namespace tinymind {
     template<>
     struct ChainFeedForwardDispatcher<false>
     {
-        template<typename ChainType, typename InputType, typename InnerChainType, typename LastHiddenType, typename RecurrentType>
-        static void feedForward(InputType& input, InnerChainType& chain, LastHiddenType& lastHidden, RecurrentType&)
+        template<typename ChainType, typename RecurrentChainType, typename InputType, typename InnerChainType, typename InnerRecurrentChainType, typename LastHiddenType, typename RecurrentType>
+        static void feedForward(InputType& input, InnerChainType& chain, InnerRecurrentChainType&, LastHiddenType& lastHidden, RecurrentType&)
         {
             ChainFeedForwardHelper<ChainType>::feedForward(input, chain, lastHidden);
         }
@@ -3830,10 +3883,10 @@ namespace tinymind {
     template<>
     struct ChainFeedForwardDispatcher<true>
     {
-        template<typename ChainType, typename InputType, typename InnerChainType, typename LastHiddenType, typename RecurrentType>
-        static void feedForward(InputType& input, InnerChainType& chain, LastHiddenType& lastHidden, RecurrentType& recurrentLayer)
+        template<typename ChainType, typename RecurrentChainType, typename InputType, typename InnerChainType, typename InnerRecurrentChainType, typename LastHiddenType, typename RecurrentType>
+        static void feedForward(InputType& input, InnerChainType& chain, InnerRecurrentChainType& recurrentChain, LastHiddenType& lastHidden, RecurrentType& recurrentLayer)
         {
-            ChainRecurrentFeedForwardHelper<ChainType>::feedForward(input, chain, lastHidden, recurrentLayer);
+            ChainRecurrentFeedForwardHelper<ChainType, RecurrentChainType>::feedForward(input, chain, recurrentChain, lastHidden, recurrentLayer);
         }
     };
 
@@ -4646,7 +4699,8 @@ namespace tinymind {
         typedef typename HiddenLayerNeuronTypeSelector<ConnectionType, NumberOfOutputs, TransferFunctionsPolicy, ConnectionType::IsTrainable, HiddenLayerConfig>::HiddenLayerNeuronType LastHiddenLayerNeuronType;
         typedef typename LastHiddenLayerTypeSelector<LastHiddenLayerNeuronType, HiddenLayersDescriptor::LastLayerSize, HiddenLayerConfig>::LastHiddenLayerType LastHiddenLayerType;
 
-        // Recurrent layer: for LSTM, recurrent neurons need 4x connections (one per gate)
+        // Recurrent layer for the last hidden layer
+        // For LSTM, recurrent neurons need 4x connections (one per gate)
         static const size_t RecurrentToHiddenConnections = GateConnectionCount<HiddenLayersDescriptor::LastLayerSize, HiddenLayerConfig>::value;
         typedef RecurrentLayerTypeSelector< ConnectionType,
                                             HiddenLayersDescriptor::LastLayerSize,
@@ -4655,6 +4709,9 @@ namespace tinymind {
                                             RecurrentConnectionDepth,
                                             HasRecurrentLayer> RecurrentLayerTypeSelectorType;
         typedef typename RecurrentLayerTypeSelectorType::RecurrentLayerType NeuralNetworkRecurrentLayerType;
+
+        // Recurrent layer chain for inner hidden layers (multi-layer LSTM)
+        typedef typename RecurrentLayerChainBuilder<ConnectionType, TransferFunctionsPolicy, RecurrentConnectionDepth, HasRecurrentLayer, HiddenLayersDescriptor>::ChainType InnerRecurrentLayerChainType;
 
         // Output layer
         typedef typename OutputLayerNeuronTypeSelector<ConnectionType, TransferFunctionsPolicy, IsTrainable>::OutputLayerNeuronType OutputLayerNeuronType;
@@ -4737,7 +4794,7 @@ namespace tinymind {
         {
             this->mInputLayer.feedForward(values);
 
-            ChainFeedForwardDispatcher<HasRecurrentLayer>::template feedForward<InnerHiddenLayerChainType>(this->mInputLayer, this->mInnerHiddenLayerChain, this->mLastHiddenLayer, this->mRecurrentLayer);
+            ChainFeedForwardDispatcher<HasRecurrentLayer>::template feedForward<InnerHiddenLayerChainType, InnerRecurrentLayerChainType>(this->mInputLayer, this->mInnerHiddenLayerChain, this->mInnerRecurrentLayerChain, this->mLastHiddenLayer, this->mRecurrentLayer);
 
             this->mOutputLayer.feedForward(this->mLastHiddenLayer);
         }
@@ -5007,6 +5064,7 @@ namespace tinymind {
     protected:
         InputLayerType mInputLayer;
         InnerHiddenLayerChainType mInnerHiddenLayerChain;
+        InnerRecurrentLayerChainType mInnerRecurrentLayerChain;
         LastHiddenLayerType mLastHiddenLayer;
         NeuralNetworkOutputLayerType mOutputLayer;
         NeuralNetworkRecurrentLayerType mRecurrentLayer;
