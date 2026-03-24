@@ -25,10 +25,10 @@ import sys
 
 import matplotlib.pyplot as plt
 
-if __name__ == '__main__':
-    assert len(sys.argv) == 2, "Usage: python plot_sinusoid_prediction.py <path/to/sinusoid_prediction.txt>"
+DEFAULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output', 'nn_float_lstm_sinusoid_prediction.txt')
 
-    dataPath = sys.argv[1]
+if __name__ == '__main__':
+    dataPath = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_PATH
     assert os.path.exists(dataPath), "File not found: %s" % dataPath
 
     steps = []
