@@ -214,8 +214,9 @@ namespace tinymind {
             // Number of derivative coefficients = numberOfBasisFunctions - 1
             const size_t numDerivCoeffs = numberOfBasisFunctions - 1;
             // Stack array for derivative coefficients (at most GridSize + SplineDegree - 1)
-            // We use a reasonable upper bound
-            ValueType derivCoeffs[SplineDegree > 0 ? (numberOfBasisFunctions > 1 ? 64 : 1) : 1];
+            // We use a reasonable upper bound since numberOfBasisFunctions is runtime
+            static const size_t MAX_DERIV_COEFFS = 64;
+            ValueType derivCoeffs[MAX_DERIV_COEFFS];
 
             const ValueType degree = static_cast<ValueType>(SplineDegree);
 

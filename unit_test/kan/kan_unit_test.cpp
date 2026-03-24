@@ -34,6 +34,9 @@ TINYMIND_DISABLE_WARNING_POP
 #include <cstdlib>
 #include <cmath>
 #include <iostream>
+#include <fstream>
+#include <deque>
+#include <numeric>
 #include <random>
 
 #include "qformat.hpp"
@@ -455,6 +458,163 @@ BOOST_AUTO_TEST_CASE(silu_derivative_at_zero)
     // SiLU'(0) = sigmoid(0) * (1 + 0 * (1 - sigmoid(0))) = 0.5 * 1 = 0.5
     double result = tinymind::SiLUActivationPolicy<double>::activationFunctionDerivative(0.0);
     BOOST_CHECK_CLOSE(result, 0.5, 0.1);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+// =========================================================================
+// KAN Sinusoid Prediction Tests
+// =========================================================================
+
+static const size_t NUM_SAMPLES_AVG_ERROR = 100;
+
+struct SinusoidZeroToleranceCalculator
+{
+    static bool isWithinZeroTolerance(const double& value)
+    {
+        static const double zeroTolerance(0.001);
+        return (fabs(value) < zeroTolerance);
+    }
+};
+
+struct SinusoidRandomNumberGenerator
+{
+    static double generateRandomWeight()
+    {
+        static std::default_random_engine generator(RANDOM_SEED);
+        static std::uniform_real_distribution<double> distribution(-0.1, 0.1);
+        return distribution(generator);
+    }
+};
+
+BOOST_AUTO_TEST_SUITE(kan_sinusoid_prediction_tests)
+
+BOOST_AUTO_TEST_CASE(kan_sinusoid_prediction_double)
+{
+    // Train a KAN to predict sinusoid values using a sliding window approach.
+    // Since KAN is a feedforward network (no recurrent state), we feed
+    // WINDOW_SIZE past samples as inputs and predict the next sample.
+    //
+    // Training: input [sin[i]..sin[i+WINDOW_SIZE-1]], target sin[i+WINDOW_SIZE]
+    // Prediction: prime with training data, then auto-regressively predict
+    // PREDICTION_LENGTH values by shifting the window.
+    static const size_t WINDOW_SIZE = 10;
+    static const size_t SAMPLES_PER_PERIOD = 50;
+    static const size_t TRAINING_PERIODS = 3;
+    static const size_t SEQUENCE_LENGTH = SAMPLES_PER_PERIOD * TRAINING_PERIODS;
+    static const size_t PREDICTION_LENGTH = 50;
+    static const int TRAINING_ITERATIONS = 200000;
+    static const double TRAINING_ERROR_LIMIT = 0.15;
+    static const double PREDICTION_TOLERANCE = 0.90;
+
+    typedef tinymind::KanTransferFunctions<double, SinusoidRandomNumberGenerator, 1,
+        DoubleNetworkInitializer,
+        tinymind::MeanSquaredErrorCalculator<double, 1>,
+        tinymind::ZeroToleranceCalculator<double>> SinTransferFunctions;
+
+    // KAN: WINDOW_SIZE inputs, 1 hidden layer, 8 neurons, piecewise linear splines
+    typedef tinymind::KolmogorovArnoldNetwork<double, WINDOW_SIZE, 1, 8, 1,
+        SinTransferFunctions, true, 1, 5, 1> SinKanType;
+
+    srand(RANDOM_SEED);
+
+    SinKanType kan;
+    // Generate sinusoid samples scaled to [0, 1]
+    // Use same step size as LSTM test (one period = SAMPLES_PER_PERIOD steps)
+    const size_t totalSamples = SEQUENCE_LENGTH + PREDICTION_LENGTH;
+    const double step = 2.0 * M_PI / static_cast<double>(SAMPLES_PER_PERIOD);
+    double sinSamples[SEQUENCE_LENGTH + PREDICTION_LENGTH];
+    for (size_t i = 0; i < totalSamples; ++i)
+    {
+        sinSamples[i] = (sin(static_cast<double>(i) * step) + 1.0) / 2.0;
+    }
+
+    // Number of training windows in the training sequence
+    const size_t numTrainingWindows = SEQUENCE_LENGTH - WINDOW_SIZE;
+
+    double values[WINDOW_SIZE];
+    double target[1];
+    double learnedValues[1];
+    std::deque<double> errors;
+    double error;
+
+    kan.setLearningRate(0.001);
+    kan.setMomentumRate(0.05);
+    kan.setAccelerationRate(0.001);
+
+    // Train: slide a window across the training sequence
+    for (int epoch = 0; epoch < TRAINING_ITERATIONS; ++epoch)
+    {
+        for (size_t w = 0; w < numTrainingWindows; ++w)
+        {
+            for (size_t j = 0; j < WINDOW_SIZE; ++j)
+            {
+                values[j] = sinSamples[w + j];
+            }
+            target[0] = sinSamples[w + WINDOW_SIZE];
+
+            kan.feedForward(values);
+            error = kan.calculateError(target);
+
+            if (!SinTransferFunctions::isWithinZeroTolerance(error))
+            {
+                kan.trainNetwork(target);
+            }
+
+            errors.push_front(error);
+            if (errors.size() > NUM_SAMPLES_AVG_ERROR)
+            {
+                errors.pop_back();
+            }
+        }
+    }
+
+    // Verify training converged
+    const double totalError = std::accumulate(errors.begin(), errors.end(), 0.0);
+    const double averageError = (totalError / static_cast<double>(NUM_SAMPLES_AVG_ERROR));
+    BOOST_TEST(averageError <= TRAINING_ERROR_LIMIT);
+    std::cout << "KAN sinusoid training average error: " << averageError << std::endl;
+
+    // Auto-regressive prediction: start with the last training window,
+    // predict next value, shift window forward using the prediction
+    double window[WINDOW_SIZE];
+    for (size_t j = 0; j < WINDOW_SIZE; ++j)
+    {
+        window[j] = sinSamples[SEQUENCE_LENGTH - WINDOW_SIZE + j];
+    }
+
+    std::ofstream predictionOutput("output/kan_float_sinusoid_prediction.txt");
+    predictionOutput << "Step,Actual,Predicted\n";
+
+    // Write the training sequence (no predictions)
+    for (size_t i = 0; i < SEQUENCE_LENGTH; ++i)
+    {
+        predictionOutput << i << "," << sinSamples[i] << ",\n";
+    }
+
+    // Predict future values
+    for (size_t p = 0; p < PREDICTION_LENGTH; ++p)
+    {
+        kan.feedForward(window);
+        kan.getLearnedValues(learnedValues);
+
+        const double predicted = learnedValues[0];
+        const double expected = sinSamples[SEQUENCE_LENGTH + p];
+        const double predictionError = fabs(predicted - expected);
+
+        predictionOutput << (SEQUENCE_LENGTH + p) << "," << expected << "," << predicted << "\n";
+
+        BOOST_TEST(predictionError <= PREDICTION_TOLERANCE);
+
+        // Shift window: drop oldest, append prediction
+        for (size_t j = 0; j < WINDOW_SIZE - 1; ++j)
+        {
+            window[j] = window[j + 1];
+        }
+        window[WINDOW_SIZE - 1] = predicted;
+    }
+
+    std::cout << "KAN sinusoid prediction output written to output/kan_float_sinusoid_prediction.txt" << std::endl;
 }
 
 BOOST_AUTO_TEST_SUITE_END()

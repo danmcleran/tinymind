@@ -26,7 +26,7 @@ import sys
 import matplotlib.pyplot as plt
 
 if __name__ == '__main__':
-    assert len(sys.argv) == 2, "Usage: python plot_sinusoid_prediction.py <path/to/nn_float_lstm_sinusoid_prediction.txt>"
+    assert len(sys.argv) == 2, "Usage: python plot_sinusoid_prediction.py <path/to/sinusoid_prediction.txt>"
 
     dataPath = sys.argv[1]
     assert os.path.exists(dataPath), "File not found: %s" % dataPath
@@ -57,7 +57,14 @@ if __name__ == '__main__':
 
     ax.set_xlabel('Step')
     ax.set_ylabel('Value')
-    ax.set_title('LSTM Sinusoid Prediction\n%s' % os.path.basename(dataPath))
+    basename = os.path.basename(dataPath)
+    if 'kan' in basename.lower():
+        title = 'KAN Sinusoid Prediction'
+    elif 'lstm' in basename.lower():
+        title = 'LSTM Sinusoid Prediction'
+    else:
+        title = 'Sinusoid Prediction'
+    ax.set_title('%s\n%s' % (title, basename))
     ax.legend()
     ax.grid(True)
 
