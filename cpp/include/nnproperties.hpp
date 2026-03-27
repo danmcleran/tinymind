@@ -22,6 +22,80 @@
 
 #pragma once
 
+/**
+ * @file nnproperties.hpp
+ * @brief Neural network weight serialization for offline-trained model import.
+ *
+ * NetworkPropertiesFileManager stores and restores neural network weights in
+ * both text and binary formats. This enables a workflow where a network is
+ * trained offline (e.g. in PyTorch) and the learned weights are loaded into
+ * an untrainable TinyMind network for inference on a target device.
+ *
+ * === Weight File Format (text) ===
+ *
+ * One value per line. Fixed-point values are stored as their raw integer
+ * representation (e.g. Q16.16 value 2.5 is stored as 163840). Floating-point
+ * values are stored as decimal strings.
+ *
+ * The values appear in the following order:
+ *
+ * 1. Input-to-first-hidden-layer weights
+ *    For each input neuron i (0 .. NumberOfInputs-1):
+ *      For each hidden neuron h (0 .. NumberOfHiddenNeurons-1):
+ *        weight[i][h]
+ *    Count: NumberOfInputs * NumberOfHiddenNeurons
+ *
+ * 2. Input layer bias weights (one per first-hidden-layer neuron)
+ *    For each hidden neuron h (0 .. NumberOfHiddenNeurons-1):
+ *      bias[h]
+ *    Count: NumberOfHiddenNeurons
+ *
+ * 3. Hidden-to-hidden layer weights (only when NumberOfHiddenLayers > 1)
+ *    For each inner hidden layer l (0 .. NumberOfHiddenLayers-2):
+ *      For each neuron h in layer l (0 .. NumberOfHiddenNeurons-1):
+ *        For each neuron h1 in layer l+1 (0 .. NumberOfHiddenNeurons-1):
+ *          weight[l][h][h1]
+ *      Bias weights for layer l:
+ *        For each neuron h1 in layer l+1 (0 .. NumberOfHiddenNeurons-1):
+ *          bias[l][h1]
+ *    Count per layer: NumberOfHiddenNeurons^2 + NumberOfHiddenNeurons
+ *
+ * 4. Last-hidden-layer-to-output weights
+ *    For each hidden neuron h (0 .. NumberOfHiddenNeurons-1):
+ *      For each output neuron o (0 .. NumberOfOutputs-1):
+ *        weight[h][o]
+ *    Count: NumberOfHiddenNeurons * NumberOfOutputs
+ *
+ * 5. Output layer bias weights
+ *    For each output neuron o (0 .. NumberOfOutputs-1):
+ *      bias[o]
+ *    Count: NumberOfOutputs
+ *
+ * === Weight File Format (binary) ===
+ *
+ * Same value order as text format. Each value is written as a FullWidthValueType
+ * in platform-native byte order using sizeof(FullWidthValueType) bytes per value.
+ *
+ * === Example: 2-input, 1-hidden-layer (3 neurons), 1-output network ===
+ *
+ * Line  1: weight input[0] -> hidden[0]
+ * Line  2: weight input[0] -> hidden[1]
+ * Line  3: weight input[0] -> hidden[2]
+ * Line  4: weight input[1] -> hidden[0]
+ * Line  5: weight input[1] -> hidden[1]
+ * Line  6: weight input[1] -> hidden[2]
+ * Line  7: bias -> hidden[0]
+ * Line  8: bias -> hidden[1]
+ * Line  9: bias -> hidden[2]
+ * Line 10: weight hidden[0] -> output[0]
+ * Line 11: weight hidden[1] -> output[0]
+ * Line 12: weight hidden[2] -> output[0]
+ * Line 13: bias -> output[0]
+ *
+ * Total values = I*H + H + H*O + O  (single hidden layer)
+ * Total values = I*H + H + (L-1)*(H^2 + H) + H*O + O  (L hidden layers)
+ */
+
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
@@ -188,7 +262,7 @@ namespace tinymind {
 
             if (NumberOfHiddenLayers > 1)
             {
-                for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
+                for (hiddenLayer = 0; hiddenLayer < (NumberOfHiddenLayers - 1); ++hiddenLayer)
                 {
                     for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
                     {
@@ -209,9 +283,9 @@ namespace tinymind {
                         neuralNetwork.setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1, weightValue);
                     }
                 }
-
-                --hiddenLayer;
             }
+
+            hiddenLayer = NumberOfHiddenLayers - 1;
 
             for (uint32_t hiddenNeuron = 0; hiddenNeuron < NumberOfHiddenLayerNeurons; ++hiddenNeuron)
             {
@@ -292,7 +366,7 @@ namespace tinymind {
 
             if (NumberOfHiddenLayers > 1)
             {
-                for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
+                for (hiddenLayer = 0; hiddenLayer < (NumberOfHiddenLayers - 1); ++hiddenLayer)
                 {
                     for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
                     {
@@ -307,9 +381,9 @@ namespace tinymind {
                         outFile << neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1) << delimiter;
                     }
                 }
-
-                --hiddenLayer;
             }
+
+            hiddenLayer = NumberOfHiddenLayers - 1;
 
             for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
             {
@@ -347,25 +421,29 @@ namespace tinymind {
                 outFile.write(reinterpret_cast<char*>(&value), sizeof(value));
             }
 
-            for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
+            if (NumberOfHiddenLayers > 1)
             {
-                for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+                for (hiddenLayer = 0; hiddenLayer < (NumberOfHiddenLayers - 1); ++hiddenLayer)
                 {
+                    for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+                    {
+                        for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
+                        {
+                            value = neuralNetwork.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1).getValue();
+                            outFile.write(reinterpret_cast<char*>(&value), sizeof(value));
+                        }
+                    }
+
                     for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
                     {
-                        value = neuralNetwork.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1).getValue();
+                        value = neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1).getValue();
                         outFile.write(reinterpret_cast<char*>(&value), sizeof(value));
                     }
                 }
-
-                for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                {
-                    value = neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1).getValue();
-                    outFile.write(reinterpret_cast<char*>(&value), sizeof(value));
-                }
             }
 
-            --hiddenLayer;
+            hiddenLayer = NumberOfHiddenLayers - 1;
+
             for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
             {
                 for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
@@ -401,7 +479,7 @@ namespace tinymind {
 
             if (NumberOfHiddenLayers > 1)
             {
-                for (hiddenLayer = 0; hiddenLayer < NumberOfHiddenLayers; ++hiddenLayer)
+                for (hiddenLayer = 0; hiddenLayer < (NumberOfHiddenLayers - 1); ++hiddenLayer)
                 {
                     for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
                     {
@@ -413,12 +491,12 @@ namespace tinymind {
 
                     for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
                     {
-                        outFile << "Hidden0ToHidden1Bias" << h1 << "Weight,";
+                        outFile << "Hidden" << hiddenLayer << "ToHidden" << (hiddenLayer + 1) << "Bias" << h1 << "Weight,";
                     }
                 }
-
-                --hiddenLayer;
             }
+
+            hiddenLayer = NumberOfHiddenLayers - 1;
 
             for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
             {
