@@ -3979,6 +3979,35 @@ BOOST_AUTO_TEST_CASE(test_case_conv1d_static_sizes)
     BOOST_TEST(true); // test counts toward suite
 }
 
+BOOST_AUTO_TEST_CASE(test_case_conv1d_fixed_point)
+{
+    // Verify Conv1D works with Q8.8 fixed-point
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::Conv1D<ValueType, 5, 3, 1, 1> conv;
+
+    // Set kernel [1, 0, -1], bias=0
+    conv.setFilterWeight(0, 0, ValueType(1, 0));
+    conv.setFilterWeight(0, 1, ValueType(0));
+    conv.setFilterWeight(0, 2, ValueType(-1, 0));
+    conv.setFilterWeight(0, 3, ValueType(0)); // bias
+
+    ValueType input[5];
+    input[0] = ValueType(1, 0);
+    input[1] = ValueType(2, 0);
+    input[2] = ValueType(3, 0);
+    input[3] = ValueType(4, 0);
+    input[4] = ValueType(5, 0);
+
+    ValueType output[3];
+    conv.forward(input, output);
+
+    // kernel [1, 0, -1]: each output should be -2
+    ValueType expected(-2, 0);
+    BOOST_TEST(output[0].getValue() == expected.getValue());
+    BOOST_TEST(output[1].getValue() == expected.getValue());
+    BOOST_TEST(output[2].getValue() == expected.getValue());
+}
+
 BOOST_AUTO_TEST_CASE(test_case_truncated_bptt)
 {
     // Test that TruncatedBPTT accumulates steps before training
