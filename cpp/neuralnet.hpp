@@ -25,8 +25,55 @@
 #include <cstddef>
 
 #include "activationFunctions.hpp"
+#include "gradientClipping.hpp"
+#include "weightDecay.hpp"
+#include "learningRateSchedule.hpp"
 
 namespace tinymind {
+    namespace detail {
+        template<typename...>
+        struct make_void { typedef void type; };
+
+        template<typename... Ts>
+        using void_t = typename make_void<Ts...>::type;
+
+        template<typename T, typename = void>
+        struct gradient_clipping_policy_of
+        {
+            typedef NullGradientClippingPolicy<typename T::TransferFunctionsValueType> type;
+        };
+
+        template<typename T>
+        struct gradient_clipping_policy_of<T, void_t<typename T::GradientClippingPolicyType> >
+        {
+            typedef typename T::GradientClippingPolicyType type;
+        };
+
+        template<typename T, typename = void>
+        struct weight_decay_policy_of
+        {
+            typedef NullWeightDecayPolicy<typename T::TransferFunctionsValueType> type;
+        };
+
+        template<typename T>
+        struct weight_decay_policy_of<T, void_t<typename T::WeightDecayPolicyType> >
+        {
+            typedef typename T::WeightDecayPolicyType type;
+        };
+
+        template<typename T, typename = void>
+        struct learning_rate_schedule_policy_of
+        {
+            typedef FixedLearningRatePolicy<typename T::TransferFunctionsValueType> type;
+        };
+
+        template<typename T>
+        struct learning_rate_schedule_policy_of<T, void_t<typename T::LearningRateSchedulePolicyType> >
+        {
+            typedef typename T::LearningRateSchedulePolicyType type;
+        };
+    } // namespace detail
+
     typedef enum
     {
         FeedForwardOutputLayerConfiguration,
@@ -41,12 +88,19 @@ namespace tinymind {
         LSTMHiddenLayerConfig,
     } hiddenLayerConfiguration_e;
 
+    static const size_t GRU_NUMBER_OF_GATES = 3;
     static const size_t LSTM_NUMBER_OF_GATES = 4;
 
     template<size_t LayerSize, hiddenLayerConfiguration_e Config>
     struct GateConnectionCount
     {
         static const size_t value = LayerSize;
+    };
+
+    template<size_t LayerSize>
+    struct GateConnectionCount<LayerSize, GRUHiddenLayerConfig>
+    {
+        static const size_t value = LayerSize * GRU_NUMBER_OF_GATES;
     };
 
     template<size_t LayerSize>
@@ -1063,12 +1117,15 @@ namespace tinymind {
     struct BackPropagationParent
     {
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
-        
+        typedef typename detail::gradient_clipping_policy_of<TransferFunctionsPolicy>::type GradientClippingPolicy;
+        typedef typename detail::weight_decay_policy_of<TransferFunctionsPolicy>::type WeightDecayPolicy;
+        typedef typename detail::learning_rate_schedule_policy_of<TransferFunctionsPolicy>::type LearningRateSchedulePolicy;
+
         ValueType getAccelerationRate() const
         {
             return this->mAccelerationRate;
         }
-        
+
         ValueType getLearningRate() const
         {
             return this->mLearningRate;
@@ -1084,21 +1141,27 @@ namespace tinymind {
             this->mLearningRate = TransferFunctionsPolicy::initialLearningRate();
             this->mMomentumRate = TransferFunctionsPolicy::initialMomentumRate();
             this->mAccelerationRate = TransferFunctionsPolicy::initialAccelerationRate();
+            this->mLearningRateSchedule.initialize(this->mLearningRate);
         }
-        
+
         void setAccelerationRate(const ValueType& value)
         {
             this->mAccelerationRate = value;
         }
-        
+
         void setLearningRate(const ValueType& value)
         {
             this->mLearningRate = value;
         }
-        
+
         void setMomentumRate(const ValueType& value)
         {
             this->mMomentumRate = value;
+        }
+
+        void stepLearningRate()
+        {
+            this->mLearningRate = this->mLearningRateSchedule.step(this->mLearningRate);
         }
 
         template<typename LayerType, typename PreviousLayerType>
@@ -1110,6 +1173,7 @@ namespace tinymind {
             ValueType currentDeltaWeight;
             ValueType newDeltaWeight;
             ValueType currentWeight;
+            ValueType gradient;
 
             for (size_t neuron = 0; neuron < LayerType::NumberOfNeuronsInLayer; ++neuron)
             {
@@ -1117,10 +1181,11 @@ namespace tinymind {
                 {
                     previousDeltaWeight = previousLayer.getPreviousDeltaWeightForNeuronAndConnection(previousNeuron, neuron);
                     currentDeltaWeight = previousLayer.getDeltaWeightForNeuronAndConnection(previousNeuron, neuron);
-                    newDeltaWeight =    (this->mLearningRate * previousLayer.getGradientForNeuronAndConnection(previousNeuron, neuron)) +
+                    gradient = GradientClippingPolicy::clip(previousLayer.getGradientForNeuronAndConnection(previousNeuron, neuron));
+                    newDeltaWeight =    (this->mLearningRate * gradient) +
                                         (this->mMomentumRate * currentDeltaWeight) +
                                         (this->mAccelerationRate * previousDeltaWeight);
-                    currentWeight = previousLayer.getWeightForNeuronAndConnection(previousNeuron, neuron);
+                    currentWeight = WeightDecayPolicy::applyDecay(previousLayer.getWeightForNeuronAndConnection(previousNeuron, neuron), this->mLearningRate);
 
                     previousLayer.setDeltaWeightForNeuronAndConnection(previousNeuron, neuron, newDeltaWeight);
                     previousLayer.setWeightForNeuronAndConnection(previousNeuron, neuron, (currentWeight + newDeltaWeight));
@@ -1152,15 +1217,12 @@ namespace tinymind {
                         previousDeltaWeight = previousLayer.getPreviousDeltaWeightForNeuronAndConnection(previousNeuron, conn);
                         currentDeltaWeight = previousLayer.getDeltaWeightForNeuronAndConnection(previousNeuron, conn);
 
-                        // Clip gradient to [-1, 1] to prevent exploding gradients
-                        gradient = previousLayer.getGradientForNeuronAndConnection(previousNeuron, conn);
-                        if (gradient > ValueType(1)) gradient = ValueType(1);
-                        if (gradient < ValueType(-1)) gradient = ValueType(-1);
+                        gradient = GradientClippingPolicy::clip(previousLayer.getGradientForNeuronAndConnection(previousNeuron, conn));
 
                         newDeltaWeight =    (this->mLearningRate * gradient) +
                                             (this->mMomentumRate * currentDeltaWeight) +
                                             (this->mAccelerationRate * previousDeltaWeight);
-                        currentWeight = previousLayer.getWeightForNeuronAndConnection(previousNeuron, conn);
+                        currentWeight = WeightDecayPolicy::applyDecay(previousLayer.getWeightForNeuronAndConnection(previousNeuron, conn), this->mLearningRate);
 
                         previousLayer.setDeltaWeightForNeuronAndConnection(previousNeuron, conn, newDeltaWeight);
                         previousLayer.setWeightForNeuronAndConnection(previousNeuron, conn, (currentWeight + newDeltaWeight));
@@ -1173,17 +1235,18 @@ namespace tinymind {
                     BiasNeuronConnectionWeightUpdaterType::updateBiasConnectionWeights(previousLayer, neuron * GateMultiplier + gate, this->mLearningRate, this->mMomentumRate, this->mAccelerationRate);
                 }
             }
-        }   
+        }
     protected:
         BackPropagationParent() : mLearningRate(0), mMomentumRate(0), mAccelerationRate(0)
         {
         }
-        
+
         ~BackPropagationParent(){}
 
         ValueType mLearningRate;
         ValueType mMomentumRate;
         ValueType mAccelerationRate;
+        LearningRateSchedulePolicy mLearningRateSchedule;
 
     private:
         BackPropagationParent(const BackPropagationParent&) {} // hide copy constructor
@@ -1195,7 +1258,7 @@ namespace tinymind {
     struct BackPropagationPolicy : public BackPropagationParent<TransferFunctionsPolicy, BatchSize>
     {
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
-        
+
         template<typename NNType>
         void trainNetwork(NNType& nn, ValueType const* const targetValues)
         {
@@ -1206,8 +1269,10 @@ namespace tinymind {
             NetworkDeltasCalculatorType::calculateNetworkDeltas(nn, targetValues);
 
             NetworkGradientsCalculatorType::calculateNetworkGradients(nn);
-                
+
             BackPropConnectionWeightUpdaterType::updateConnectionWeights(*this, nn);
+
+            this->stepLearningRate();
         }
     };
 
@@ -1228,6 +1293,8 @@ namespace tinymind {
             NetworkGradientsCalculatorType::calculateNetworkGradients(nn);
 
             BackPropConnectionWeightUpdaterType::updateConnectionWeights(*this, nn);
+
+            this->stepLearningRate();
         }
     };
 
@@ -1246,8 +1313,10 @@ namespace tinymind {
             NetworkDeltasCalculatorType::calculateNetworkDeltas(nn, targetValues);
 
             NetworkGradientsCalculatorType::calculateNetworkGradients(nn);
-                
+
             BackPropConnectionWeightUpdaterType::updateConnectionWeights(*this, nn);
+
+            this->stepLearningRate();
         }
     };
 
@@ -1268,6 +1337,8 @@ namespace tinymind {
             NetworkGradientsCalculatorType::calculateNetworkGradients(nn);
 
             BackPropConnectionWeightUpdaterType::updateConnectionWeights(*this, nn);
+
+            this->stepLearningRate();
         }
     };
 
@@ -1742,8 +1813,33 @@ namespace tinymind {
         typedef typename NeuronTransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
         static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+
+        ValueType getState(void) const { return this->mPreviousOutput; }
+        void setState(const ValueType& state) { this->mPreviousOutput = state; }
+
+        void setGateActivations(const ValueType& updateGate, const ValueType& resetGate,
+                                const ValueType& candidateActivation, const ValueType& prevOutput,
+                                const ValueType& recurrentSum)
+        {
+            mUpdateGateActivation = updateGate;
+            mResetGateActivation = resetGate;
+            mCandidateActivation = candidateActivation;
+            mPreviousOutput = prevOutput;
+            mRecurrentSum = recurrentSum;
+        }
+
+        ValueType getUpdateGateActivation() const { return mUpdateGateActivation; }
+        ValueType getResetGateActivation() const { return mResetGateActivation; }
+        ValueType getCandidateActivation() const { return mCandidateActivation; }
+        ValueType getPreviousOutput() const { return mPreviousOutput; }
+        ValueType getRecurrentSum() const { return mRecurrentSum; }
+
     private:
-        ValueType mState;
+        ValueType mUpdateGateActivation;
+        ValueType mResetGateActivation;
+        ValueType mCandidateActivation;
+        ValueType mPreviousOutput;
+        ValueType mRecurrentSum;
     };
 
     template<
@@ -1758,8 +1854,37 @@ namespace tinymind {
         typedef typename NeuronTransferFunctionsPolicy::TransferFunctionsValueType ValueType;
 
         static const size_t NumberOfOutgoingConnectionsFromNeuron = NumberOfOutgoingConnections;
+
+        ValueType getState(void) const { return this->mPreviousOutput; }
+        void setState(const ValueType& state) { this->mPreviousOutput = state; }
+
+        void setGateActivations(const ValueType& updateGate, const ValueType& resetGate,
+                                const ValueType& candidateActivation, const ValueType& prevOutput,
+                                const ValueType& recurrentSum)
+        {
+            mUpdateGateActivation = updateGate;
+            mResetGateActivation = resetGate;
+            mCandidateActivation = candidateActivation;
+            mPreviousOutput = prevOutput;
+            mRecurrentSum = recurrentSum;
+        }
+
+        ValueType getUpdateGateActivation() const { return mUpdateGateActivation; }
+        ValueType getResetGateActivation() const { return mResetGateActivation; }
+        ValueType getCandidateActivation() const { return mCandidateActivation; }
+        ValueType getPreviousOutput() const { return mPreviousOutput; }
+        ValueType getRecurrentSum() const { return mRecurrentSum; }
+
+        ValueType getGateDelta(const size_t gate) const { return mGateDeltas[gate]; }
+        void setGateDelta(const size_t gate, const ValueType& delta) { mGateDeltas[gate] = delta; }
+
     private:
-        ValueType mState;
+        ValueType mUpdateGateActivation;
+        ValueType mResetGateActivation;
+        ValueType mCandidateActivation;
+        ValueType mPreviousOutput;
+        ValueType mRecurrentSum;
+        ValueType mGateDeltas[GRU_NUMBER_OF_GATES];
     };
 
     template<
@@ -2451,15 +2576,26 @@ namespace tinymind {
 
     /**
      * Hidden neural net layer with GRU neurons.
+     *
+     * GRU equations (reset-after variant, compatible with PyTorch default):
+     *   z_t = sigmoid(W_z * x_t + U_z * h_{t-1})       -- update gate
+     *   r_t = sigmoid(W_r * x_t + U_r * h_{t-1})       -- reset gate
+     *   h_hat_t = tanh(W_h * x_t + r_t * (U_h * h_{t-1}))  -- candidate
+     *   h_t = (1 - z_t) * h_{t-1} + z_t * h_hat_t      -- output
+     *
+     * Each gate has independent weights via GateConnectionCount (3x connections):
+     *   n*3 + 0 = update gate
+     *   n*3 + 1 = reset gate
+     *   n*3 + 2 = candidate
      */
     template<typename NeuronType, size_t NumberOfNeurons>
     struct GruHiddenLayer : public HiddenLayer<NeuronType, NumberOfNeurons>
     {
         typedef typename NeuronType::ValueType ValueType;
         typedef typename NeuronType::NeuronTransferFunctionsPolicy TransferFunctionsPolicy;
-        typedef SigmoidActivationPolicy<ValueType> ResetGateActivationPolicy;
         typedef SigmoidActivationPolicy<ValueType> UpdateGateActivationPolicy;
-        typedef TanhActivationPolicy<ValueType> CellStateActivationPolicy;
+        typedef SigmoidActivationPolicy<ValueType> ResetGateActivationPolicy;
+        typedef TanhActivationPolicy<ValueType> CandidateActivationPolicy;
 
         static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
         static const size_t NumberOfBiasNeuronsInLayer = 0;
@@ -2469,45 +2605,112 @@ namespace tinymind {
         {
             size_t bufferIndex;
             NeuronType* pNeuron;
-            ValueType inputActivation;
-            ValueType resetGateActivation;
+            ValueType updateGateInput;
+            ValueType resetGateInput;
+            ValueType candidateInput;
             ValueType updateGateActivation;
-            ValueType sum;
+            ValueType resetGateActivation;
+            ValueType candidateActivation;
+            ValueType recurrentSum;
+            ValueType output;
+            ValueType previousOutput;
 
             for (size_t neuron = 0; neuron < NumberOfNeurons; ++neuron)
             {
-                sum = previousLayer.getBiasNeuronValueForOutgoingConnection(neuron);
-
-                sum += previousLayer.getOutputValueForOutgoingConnection(neuron);
-
-                sum += recurrentLayer.getOutputValueForOutgoingConnection(neuron);
-
                 bufferIndex = neuron * sizeof(NeuronType);
                 pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
-                pNeuron->setState(sum);
 
-                inputActivation = TransferFunctionsPolicy::hiddenNeuronActivationFunction(sum);
-                resetGateActivation = ResetGateActivationPolicy::activationFunction(sum);
-                updateGateActivation = UpdateGateActivationPolicy::activationFunction(sum);
-                
-                pNeuron->setOutputValue(inputActivation);
-                
-                recurrentLayer.setOutputValueForOutgoingConnection(neuron, inputActivation);
+                previousOutput = pNeuron->getOutputValue();
+
+                const size_t updateGateConn   = neuron * GRU_NUMBER_OF_GATES + 0;
+                const size_t resetGateConn    = neuron * GRU_NUMBER_OF_GATES + 1;
+                const size_t candidateConn    = neuron * GRU_NUMBER_OF_GATES + 2;
+
+                // Update gate: z_t = sigmoid(W_z * x_t + U_z * h_{t-1})
+                updateGateInput = previousLayer.getBiasNeuronValueForOutgoingConnection(updateGateConn);
+                updateGateInput += previousLayer.getOutputValueForOutgoingConnection(updateGateConn);
+                updateGateInput += recurrentLayer.getOutputValueForOutgoingConnection(updateGateConn);
+
+                // Reset gate: r_t = sigmoid(W_r * x_t + U_r * h_{t-1})
+                resetGateInput = previousLayer.getBiasNeuronValueForOutgoingConnection(resetGateConn);
+                resetGateInput += previousLayer.getOutputValueForOutgoingConnection(resetGateConn);
+                resetGateInput += recurrentLayer.getOutputValueForOutgoingConnection(resetGateConn);
+
+                // Candidate: h_hat_t = tanh(W_h * x_t + r_t * (U_h * h_{t-1}))
+                // First compute the recurrent sum for the candidate gate
+                recurrentSum = recurrentLayer.getOutputValueForOutgoingConnection(candidateConn);
+                candidateInput = previousLayer.getBiasNeuronValueForOutgoingConnection(candidateConn);
+                candidateInput += previousLayer.getOutputValueForOutgoingConnection(candidateConn);
+
+                // Apply gate activations
+                updateGateActivation = UpdateGateActivationPolicy::activationFunction(updateGateInput);
+                resetGateActivation = ResetGateActivationPolicy::activationFunction(resetGateInput);
+
+                // Modulate recurrent contribution by reset gate (reset-after variant)
+                candidateInput += resetGateActivation * recurrentSum;
+                candidateActivation = CandidateActivationPolicy::activationFunction(candidateInput);
+
+                // Save gate activations for backpropagation
+                pNeuron->setGateActivations(updateGateActivation, resetGateActivation,
+                                            candidateActivation, previousOutput, recurrentSum);
+
+                // h_t = (1 - z_t) * h_{t-1} + z_t * h_hat_t
+                output = (ValueType(1) - updateGateActivation) * previousOutput + updateGateActivation * candidateActivation;
+
+                pNeuron->setOutputValue(output);
+
+                recurrentLayer.setOutputValueForOutgoingConnection(neuron, output);
             }
         }
 
-        ValueType getOutputValueForOutgoingConnection(const size_t connection) const
+        /**
+         * Compute per-gate deltas for GRU backpropagation.
+         * Must be called after the standard hidden layer delta (dL/dh_t)
+         * has been computed and stored in each neuron's mNodeDelta.
+         *
+         * Produces 3 gate-input deltas stored in the neuron's mGateDeltas[]:
+         *   [0] = dL/d(updateGateInput) = dL/dh_t * (hHat - prevH) * z * (1-z)
+         *   [1] = dL/d(resetGateInput)  = dL/d(candidateInput) * recurrentSum * r * (1-r)
+         *   [2] = dL/d(candidateInput)  = dL/dh_t * z * (1 - hHat^2)
+         */
+        void computeGateDeltas()
         {
-            const size_t bufferIndex = connection * sizeof(NeuronType);
-            const NeuronType* pNeuron = reinterpret_cast<const NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
-            return pNeuron->getOutputValueForConnection(connection);
+            size_t bufferIndex;
+            NeuronType* pNeuron;
+
+            for (size_t neuron = 0; neuron < NumberOfNeurons; ++neuron)
+            {
+                bufferIndex = neuron * sizeof(NeuronType);
+                pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
+
+                const ValueType dLdh = pNeuron->getNodeDelta();
+
+                // Retrieve stored gate activations
+                const ValueType z = pNeuron->getUpdateGateActivation();
+                const ValueType r = pNeuron->getResetGateActivation();
+                const ValueType hHat = pNeuron->getCandidateActivation();
+                const ValueType prevH = pNeuron->getPreviousOutput();
+                const ValueType recurrentSum = pNeuron->getRecurrentSum();
+
+                // dL/d(candidateInput) = dL/dh_t * z_t * (1 - hHat^2)
+                const ValueType dLdCandidateInput = dLdh * z * (ValueType(1) - hHat * hHat);
+
+                // Update gate: dL/d(updateGateInput) = dL/dh_t * (hHat - prevH) * z * (1-z)
+                pNeuron->setGateDelta(0, dLdh * (hHat - prevH) * z * (ValueType(1) - z));
+
+                // Reset gate: dL/d(resetGateInput) = dL/d(candidateInput) * recurrentSum * r * (1-r)
+                pNeuron->setGateDelta(1, dLdCandidateInput * recurrentSum * r * (ValueType(1) - r));
+
+                // Candidate: dL/d(candidateInput)
+                pNeuron->setGateDelta(2, dLdCandidateInput);
+            }
         }
-        
-        void setOutputValueForOutgoingConnection(const size_t connection, const ValueType& value)
+
+        ValueType getGateDeltaForNeuron(const size_t neuron, const size_t gate) const
         {
-            const size_t bufferIndex = connection * sizeof(NeuronType);
-            NeuronType* pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
-            pNeuron->setOutputValue(value);
+            const size_t bufferIndex = neuron * sizeof(NeuronType);
+            const NeuronType* pNeuron = reinterpret_cast<const NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
+            return pNeuron->getGateDelta(gate);
         }
     };
 
@@ -4260,6 +4463,100 @@ namespace tinymind {
         }
     };
 
+    // Compile-time dispatcher: use gated gradient calculation when GateMultiplier > 1
+    template<size_t GateMultiplier>
+    struct GatedGradientDispatcher
+    {
+        template<typename GradCalcType, typename LayerType, typename HiddenLayerType, typename GradientsManagerType>
+        static void calculate(LayerType& layer, const HiddenLayerType& hiddenLayer, GradientsManagerType& gradientsManager)
+        {
+            GradCalcType::template calculateAndUpdateGradientsGated<LayerType, HiddenLayerType, GateMultiplier>(layer, hiddenLayer, gradientsManager);
+        }
+    };
+
+    template<>
+    struct GatedGradientDispatcher<1>
+    {
+        template<typename GradCalcType, typename LayerType, typename HiddenLayerType, typename GradientsManagerType>
+        static void calculate(LayerType& layer, const HiddenLayerType& hiddenLayer, GradientsManagerType& gradientsManager)
+        {
+            GradCalcType::calculateAndUpdateGradients(layer, hiddenLayer, gradientsManager);
+        }
+    };
+
+    // Compile-time dispatcher: use gated weight update when GateMultiplier > 1
+    template<size_t GateMultiplier>
+    struct GatedWeightUpdateDispatcher
+    {
+        template<typename TrainingPolicyType, typename LayerType, typename PreviousLayerType>
+        static void update(TrainingPolicyType& trainingPolicy, LayerType& layer, PreviousLayerType& previousLayer)
+        {
+            trainingPolicy.template updateConnectionWeightsGated<LayerType, PreviousLayerType, GateMultiplier>(layer, previousLayer);
+        }
+    };
+
+    template<>
+    struct GatedWeightUpdateDispatcher<1>
+    {
+        template<typename TrainingPolicyType, typename LayerType, typename PreviousLayerType>
+        static void update(TrainingPolicyType& trainingPolicy, LayerType& layer, PreviousLayerType& previousLayer)
+        {
+            trainingPolicy.updateConnectionWeights(layer, previousLayer);
+        }
+    };
+
+    // Gated-aware input layer gradient connector
+    template<typename InnerChainType, size_t GateMultiplier>
+    struct GatedInputLayerGradientConnector;
+
+    template<size_t GateMultiplier>
+    struct GatedInputLayerGradientConnector<EmptyLayerChain, GateMultiplier>
+    {
+        template<typename GradCalcType, typename GradientsManagerType, typename InputLayerType, typename LastHiddenLayerType>
+        static void connect(InputLayerType& input, EmptyLayerChain& chain, LastHiddenLayerType& lastHidden, GradientsManagerType& gm)
+        {
+            (void)chain;
+            GatedGradientDispatcher<GateMultiplier>::template calculate<GradCalcType>(input, lastHidden, gm);
+        }
+    };
+
+    template<typename LayerType, typename RestChainType, size_t GateMultiplier>
+    struct GatedInputLayerGradientConnector<LayerChain<LayerType, RestChainType>, GateMultiplier>
+    {
+        template<typename GradCalcType, typename GradientsManagerType, typename InputLayerType, typename LastHiddenLayerType>
+        static void connect(InputLayerType& input, LayerChain<LayerType, RestChainType>& chain, LastHiddenLayerType& lastHidden, GradientsManagerType& gm)
+        {
+            (void)lastHidden;
+            GatedGradientDispatcher<GateMultiplier>::template calculate<GradCalcType>(input, chain.layer, gm);
+        }
+    };
+
+    // Gated-aware input layer weight update connector
+    template<typename InnerChainType, size_t GateMultiplier>
+    struct GatedInputLayerWeightUpdateConnector;
+
+    template<size_t GateMultiplier>
+    struct GatedInputLayerWeightUpdateConnector<EmptyLayerChain, GateMultiplier>
+    {
+        template<typename TrainingPolicyType, typename InputLayerType, typename LastHiddenLayerType>
+        static void connect(TrainingPolicyType& tp, InputLayerType& input, EmptyLayerChain& chain, LastHiddenLayerType& lastHidden)
+        {
+            (void)chain;
+            GatedWeightUpdateDispatcher<GateMultiplier>::update(tp, lastHidden, input);
+        }
+    };
+
+    template<typename LayerType, typename RestChainType, size_t GateMultiplier>
+    struct GatedInputLayerWeightUpdateConnector<LayerChain<LayerType, RestChainType>, GateMultiplier>
+    {
+        template<typename TrainingPolicyType, typename InputLayerType, typename LastHiddenLayerType>
+        static void connect(TrainingPolicyType& tp, InputLayerType& input, LayerChain<LayerType, RestChainType>& chain, LastHiddenLayerType& lastHidden)
+        {
+            (void)lastHidden;
+            GatedWeightUpdateDispatcher<GateMultiplier>::update(tp, chain.layer, input);
+        }
+    };
+
     template<typename NeuralNetworkType>
     struct ChainRecurrentNetworkGradientsCalculator
     {
@@ -4272,6 +4569,8 @@ namespace tinymind {
         typedef typename NeuralNetworkType::GradientsManagerType GradientsManagerType;
         typedef GradientsCalculator<TransferFunctionsPolicy, GradientsManagerType> GradientsCalculatorType;
 
+        static const size_t GateMultiplier = NeuralNetworkType::HiddenLayerGateMultiplier;
+
         static void calculateNetworkGradients(NeuralNetworkType& nn)
         {
             InputLayerType& inputLayer = nn.getInputLayer();
@@ -4283,11 +4582,11 @@ namespace tinymind {
 
             GradientsCalculatorType::calculateAndUpdateOutputLayerGradients(lastHiddenLayer, outputLayer, gradientsManager);
 
-            GradientsCalculatorType::calculateAndUpdateGradients(recurrentLayer, lastHiddenLayer, gradientsManager);
+            GatedGradientDispatcher<GateMultiplier>::template calculate<GradientsCalculatorType>(recurrentLayer, lastHiddenLayer, gradientsManager);
 
             ChainBackwardGradientCalculator<InnerChainType>::template calculate<GradientsCalculatorType>(innerChain, lastHiddenLayer, gradientsManager);
 
-            InputLayerGradientConnector<InnerChainType>::template connect<GradientsCalculatorType>(inputLayer, innerChain, lastHiddenLayer, gradientsManager);
+            GatedInputLayerGradientConnector<InnerChainType, GateMultiplier>::template connect<GradientsCalculatorType>(inputLayer, innerChain, lastHiddenLayer, gradientsManager);
         }
     };
 
@@ -4300,6 +4599,8 @@ namespace tinymind {
         typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
         typedef typename NeuralNetworkType::InputLayerType InputLayerType;
 
+        static const size_t GateMultiplier = NeuralNetworkType::HiddenLayerGateMultiplier;
+
         template<typename TrainingPolicyType>
         static void updateConnectionWeights(TrainingPolicyType& trainingPolicy, NeuralNetworkType& nn)
         {
@@ -4311,11 +4612,11 @@ namespace tinymind {
 
             trainingPolicy.updateConnectionWeights(outputLayer, lastHiddenLayer);
 
-            trainingPolicy.updateConnectionWeights(lastHiddenLayer, recurrentLayer);
+            GatedWeightUpdateDispatcher<GateMultiplier>::update(trainingPolicy, lastHiddenLayer, recurrentLayer);
 
             ChainBackwardWeightUpdater<InnerChainType>::update(trainingPolicy, innerChain, lastHiddenLayer);
 
-            InputLayerWeightUpdateConnector<InnerChainType>::connect(trainingPolicy, inputLayer, innerChain, lastHiddenLayer);
+            GatedInputLayerWeightUpdateConnector<InnerChainType, GateMultiplier>::connect(trainingPolicy, inputLayer, innerChain, lastHiddenLayer);
         }
     };
 
@@ -4393,6 +4694,8 @@ namespace tinymind {
             ChainNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
 
             ChainBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+
+            this->stepLearningRate();
         }
     };
 
@@ -4409,6 +4712,8 @@ namespace tinymind {
             ChainNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
 
             ChainBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+
+            this->stepLearningRate();
         }
     };
 
@@ -4425,6 +4730,8 @@ namespace tinymind {
             ChainRecurrentNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
 
             ChainRecurrentBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+
+            this->stepLearningRate();
         }
     };
 
@@ -4441,6 +4748,8 @@ namespace tinymind {
             ChainRecurrentNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
 
             ChainRecurrentBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+
+            this->stepLearningRate();
         }
     };
 
@@ -5191,6 +5500,65 @@ namespace tinymind {
             for (size_t neuron = 0; neuron < BaseType::NumberOfHiddenLayerNeurons; ++neuron)
             {
                 this->getLastHiddenLayer().getNeuron(neuron)->setState(ValueType{});
+            }
+        }
+
+    private:
+        static_assert(RecurrentConnectionDepth > 0, "Invalid recurrent connection depth.");
+    };
+
+    /**
+     * GRU Neural Network
+     *
+     * Recurrent neural network with GRU hidden layer.
+     * Uses 3 gates (update, reset, candidate) instead of LSTM's 4,
+     * resulting in ~25% less memory and compute per hidden neuron.
+     * Supports heterogeneous hidden layers via HiddenLayers<S0, S1, ...>.
+     */
+    template<
+            typename ValueType,
+            size_t NumberOfInputs,
+            typename HiddenLayersDescriptor,
+            size_t NumberOfOutputs,
+            typename TransferFunctionsPolicy,
+            bool IsTrainable = true,
+            size_t BatchSize = 1,
+            size_t RecurrentConnectionDepth = 1,
+            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
+            >
+    class GruNeuralNetwork : public NeuralNetwork< ValueType,
+                                                     NumberOfInputs,
+                                                     HiddenLayersDescriptor,
+                                                     NumberOfOutputs,
+                                                     TransferFunctionsPolicy,
+                                                     IsTrainable,
+                                                     BatchSize,
+                                                     true,
+                                                     GRUHiddenLayerConfig,
+                                                     RecurrentConnectionDepth,
+                                                     OutputLayerConfiguration>
+    {
+    public:
+        typedef NeuralNetwork<  ValueType,
+                                NumberOfInputs,
+                                HiddenLayersDescriptor,
+                                NumberOfOutputs,
+                                TransferFunctionsPolicy,
+                                IsTrainable,
+                                BatchSize,
+                                true,
+                                GRUHiddenLayerConfig,
+                                RecurrentConnectionDepth,
+                                OutputLayerConfiguration> BaseType;
+        typedef typename BaseType::LastHiddenLayerNeuronType LastHiddenLayerNeuronType;
+
+        void resetState()
+        {
+            for (size_t neuron = 0; neuron < BaseType::NumberOfHiddenLayerNeurons; ++neuron)
+            {
+                this->getLastHiddenLayer().getNeuron(neuron)->setState(ValueType{});
+                this->getLastHiddenLayer().getNeuron(neuron)->setOutputValue(ValueType{});
+                this->getRecurrentLayer().setOutputValueForOutgoingConnection(neuron, ValueType{});
             }
         }
 

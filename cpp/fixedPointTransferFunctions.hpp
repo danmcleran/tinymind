@@ -31,6 +31,9 @@
 #include "nninit.hpp"
 #include "zeroTolerance.hpp"
 #include "constants.hpp"
+#include "gradientClipping.hpp"
+#include "weightDecay.hpp"
+#include "learningRateSchedule.hpp"
 
 namespace tinymind {
     template<
@@ -41,7 +44,10 @@ namespace tinymind {
             unsigned NumberOfOutputNeurons = 1,
             class TransferFunctionNetworkInitializationPolicy = tinymind::DefaultNetworkInitializer<ValueType>,
             class TransferFunctionErrorCalculatorPolicy = tinymind::MeanSquaredErrorCalculator<ValueType, NumberOfOutputNeurons>,
-            class TransferFunctionZeroTolerancePolicy = tinymind::ZeroToleranceCalculator<ValueType> >
+            class TransferFunctionZeroTolerancePolicy = tinymind::ZeroToleranceCalculator<ValueType>,
+            class TransferFunctionGradientClippingPolicy = tinymind::NullGradientClippingPolicy<ValueType>,
+            class TransferFunctionWeightDecayPolicy = tinymind::NullWeightDecayPolicy<ValueType>,
+            class TransferFunctionLearningRateSchedulePolicy = tinymind::FixedLearningRatePolicy<ValueType> >
     struct FixedPointTransferFunctions
     {
         typedef ValueType TransferFunctionsValueType;
@@ -51,6 +57,9 @@ namespace tinymind {
         typedef TransferFunctionNetworkInitializationPolicy  NetworkIntializationPolicy;
         typedef TransferFunctionErrorCalculatorPolicy        ErrorCalulatorPolicy;
         typedef TransferFunctionZeroTolerancePolicy          ZeroToleranceCalculatorPolicy;
+        typedef TransferFunctionGradientClippingPolicy       GradientClippingPolicyType;
+        typedef TransferFunctionWeightDecayPolicy            WeightDecayPolicyType;
+        typedef TransferFunctionLearningRateSchedulePolicy   LearningRateSchedulePolicyType;
 
         static const unsigned NumberOfTransferFunctionsOutputNeurons = NumberOfOutputNeurons;
 

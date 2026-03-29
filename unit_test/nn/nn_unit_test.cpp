@@ -37,6 +37,9 @@ TINYMIND_DISABLE_WARNING_POP
 #include "neuralnet.hpp"
 #include "activationFunctions.hpp"
 #include "fixedPointTransferFunctions.hpp"
+#include "gradientClipping.hpp"
+#include "weightDecay.hpp"
+#include "learningRateSchedule.hpp"
 #include "random.hpp"
 #include "nnproperties.hpp"
 #include "xavier.hpp"
@@ -3280,6 +3283,304 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point_sinusoid_predicti
         // Feed prediction as next input
         curr = learnedValues[0];
     }
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+// =========================================================================
+// Test suite for Tier 1 features: gradient clipping, weight decay,
+// learning rate scheduling, and GRU networks.
+// =========================================================================
+BOOST_AUTO_TEST_SUITE(test_suite_tier1_features)
+
+BOOST_AUTO_TEST_CASE(test_case_gradient_clipping_policy_fixed_point)
+{
+    // Verify GradientClipByValue clips Q8.8 gradients correctly
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::GradientClipByValue<ValueType> ClipPolicy;
+
+    // Value within range [-1, 1] should pass through
+    ValueType small(0, 128); // 0.5
+    ValueType clipped = ClipPolicy::clip(small);
+    BOOST_TEST(clipped.getValue() == small.getValue());
+
+    // Null policy should pass through unchanged
+    ValueType large(2, 0); // 2.0
+    ValueType unchanged = tinymind::NullGradientClippingPolicy<ValueType>::clip(large);
+    BOOST_TEST(unchanged.getValue() == large.getValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_weight_decay_policy_fixed_point)
+{
+    // Verify L2WeightDecay reduces weight magnitude for Q16.16
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+
+    ValueType weight(2, 0); // 2.0
+    ValueType lr(0, (1 << 14)); // ~0.25
+    // Use lambda = (0, 256) = 256/65536 ≈ 0.004 for Q16.16
+    ValueType result = tinymind::L2WeightDecay<ValueType, 0, 256>::applyDecay(weight, lr);
+
+    // Weight should be reduced (decay pulls toward zero)
+    BOOST_TEST(result.getValue() < weight.getValue());
+
+    // Null policy should leave weight unchanged
+    ValueType unchanged = tinymind::NullWeightDecayPolicy<ValueType>::applyDecay(weight, lr);
+    BOOST_TEST(unchanged.getValue() == weight.getValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_learning_rate_schedule_fixed_point)
+{
+    // Verify FixedLearningRatePolicy never changes the rate
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::FixedLearningRatePolicy<ValueType> schedule;
+
+    ValueType rate(0, (1 << 6)); // ~0.25
+    schedule.initialize(rate);
+
+    for (int i = 0; i < 100; ++i)
+    {
+        rate = schedule.step(rate);
+    }
+    BOOST_TEST(rate.getValue() == ValueType(0, (1 << 6)).getValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_step_decay_schedule_fixed_point)
+{
+    // Verify StepDecaySchedule reduces rate after interval for Q8.8
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    // Decay factor: 0, 230 => 230/256 ≈ 0.898, interval 3 steps
+    tinymind::StepDecaySchedule<ValueType, 3, 0, 230> schedule;
+
+    ValueType rate(0, 128); // 0.5
+    schedule.initialize(rate);
+
+    // Steps 1-2: unchanged
+    ValueType r1 = schedule.step(rate);
+    BOOST_TEST(r1.getValue() == rate.getValue());
+    ValueType r2 = schedule.step(rate);
+    BOOST_TEST(r2.getValue() == rate.getValue());
+
+    // Step 3: decays
+    ValueType r3 = schedule.step(rate);
+    BOOST_TEST(r3.getValue() < rate.getValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_fixed_point_gradient_clipping_xor)
+{
+    // Verify fixed-point XOR training with gradient clipping enabled via FixedPointTransferFunctions
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+
+    typedef tinymind::FixedPointTransferFunctions<
+                                                    ValueType,
+                                                    UniformRealRandomNumberGenerator<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>,
+                                                    NUMBER_OF_OUTPUTS,
+                                                    tinymind::DefaultNetworkInitializer<ValueType>,
+                                                    tinymind::MeanSquaredErrorCalculator<ValueType, NUMBER_OF_OUTPUTS>,
+                                                    tinymind::ZeroToleranceCalculator<ValueType>,
+                                                    tinymind::GradientClipByValue<ValueType>> TransferFunctionsType;
+
+    typedef tinymind::MultilayerPerceptron< ValueType,
+                                            NUMBER_OF_INPUTS,
+                                            1, 3,
+                                            NUMBER_OF_OUTPUTS,
+                                            TransferFunctionsType> NNType;
+    srand(RANDOM_SEED);
+    NNType nn;
+
+    ValueType values[2];
+    ValueType output[1];
+    ValueType error;
+
+    for (int i = 0; i < TRAINING_ITERATIONS; ++i)
+    {
+        generateFixedPointXorValues(&values[0], &output[0]);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        nn.trainNetwork(&output[0]);
+    }
+
+    // Network should have learned XOR to some degree
+    BOOST_TEST(error.getValue() < ValueHelper<ValueType>::getErrorLimit());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_gru_neural_network_floating_point)
+{
+    // Verify GRU network can be instantiated, trained, and produce valid output
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 4;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::SigmoidActivationPolicy> TransferFunctionsType;
+    typedef tinymind::GruNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<NUMBER_OF_NEURONS_PER_HIDDEN_LAYER>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> FloatingPointGruNeuralNetworkType;
+    srand(RANDOM_SEED);
+    FloatingPointGruNeuralNetworkType nn;
+
+    ValueType values[2];
+    ValueType output[1];
+    ValueType learnedValues[1];
+    ValueType error;
+
+    for (int i = 0; i < TRAINING_ITERATIONS; ++i)
+    {
+        generateXorValues(&values[0], &output[0]);
+
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+
+        nn.trainNetwork(&output[0]);
+        nn.getLearnedValues(&learnedValues[0]);
+    }
+
+    // Verify feedforward produces valid, finite output
+    nn.feedForward(&values[0]);
+    nn.getLearnedValues(&learnedValues[0]);
+    BOOST_TEST(!std::isnan(learnedValues[0]));
+    BOOST_TEST(!std::isinf(learnedValues[0]));
+    BOOST_TEST(!std::isnan(error));
+    BOOST_TEST(!std::isinf(error));
+}
+
+BOOST_AUTO_TEST_CASE(test_case_gru_neural_network_fixed_point)
+{
+    // Verify GRU network works with fixed-point arithmetic
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 4;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::FixedPointTransferFunctions<
+                                                    ValueType,
+                                                    UniformRealRandomNumberGenerator<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>,
+                                                    tinymind::TanhActivationPolicy<ValueType>> TransferFunctionsType;
+    typedef tinymind::GruNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<NUMBER_OF_NEURONS_PER_HIDDEN_LAYER>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> FixedPointGruNeuralNetworkType;
+    srand(RANDOM_SEED);
+    FixedPointGruNeuralNetworkType nn;
+
+    ValueType values[FixedPointGruNeuralNetworkType::NumberOfInputLayerNeurons];
+    ValueType output[FixedPointGruNeuralNetworkType::NumberOfOutputLayerNeurons];
+    ValueType learnedValues[FixedPointGruNeuralNetworkType::NumberOfOutputLayerNeurons];
+    ValueType error;
+    ValueType firstError;
+    bool firstErrorCaptured = false;
+
+    for (int i = 0; i < TRAINING_ITERATIONS; ++i)
+    {
+        generateFixedPointRecurrentValues(values, output);
+
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+
+        if (!firstErrorCaptured)
+        {
+            firstError = error;
+            firstErrorCaptured = true;
+        }
+
+        if (!FixedPointGruNeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
+        {
+            nn.trainNetwork(&output[0]);
+        }
+        nn.getLearnedValues(&learnedValues[0]);
+    }
+
+    // Verify feedforward produces valid output
+    nn.feedForward(&values[0]);
+    nn.getLearnedValues(&learnedValues[0]);
+    BOOST_TEST(learnedValues[0].getValue() != 0);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_gru_reset_state)
+{
+    // Verify GRU resetState clears accumulated state so a second
+    // reset+feedforward pair produces the same output as the first.
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::SigmoidActivationPolicy> TransferFunctionsType;
+    typedef tinymind::GruNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<4>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType> GruType;
+
+    srand(RANDOM_SEED);
+    GruType nn;
+
+    ValueType values[2] = {0.5, 0.3};
+    ValueType output1[1];
+    ValueType output2[1];
+
+    // Reset, then feedforward to get baseline
+    nn.resetState();
+    nn.feedForward(&values[0]);
+    nn.getLearnedValues(&output1[0]);
+
+    // Feed forward multiple times to accumulate state
+    nn.feedForward(&values[0]);
+    nn.feedForward(&values[0]);
+    nn.feedForward(&values[0]);
+
+    // Reset and feedforward again — should match baseline
+    nn.resetState();
+    nn.feedForward(&values[0]);
+    nn.getLearnedValues(&output2[0]);
+
+    BOOST_TEST(fabs(output1[0] - output2[0]) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_gru_non_trainable)
+{
+    // Verify GRU network can be instantiated as non-trainable (inference only)
+    static const size_t NUMBER_OF_INPUTS = 2;
+    static const size_t NUMBER_OF_OUTPUTS = 1;
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::SigmoidActivationPolicy> TransferFunctionsType;
+    typedef tinymind::GruNeuralNetwork< ValueType,
+                                    NUMBER_OF_INPUTS,
+                                    tinymind::HiddenLayers<4>,
+                                    NUMBER_OF_OUTPUTS,
+                                    TransferFunctionsType,
+                                    false> NonTrainableGruType;
+
+    NonTrainableGruType nn;
+
+    ValueType values[2] = {0.5, 0.3};
+    ValueType output[1];
+
+    // Should be able to feed forward without crash
+    nn.feedForward(&values[0]);
+    nn.getLearnedValues(&output[0]);
+
+    // Output should be finite
+    BOOST_TEST(!std::isnan(output[0]));
+    BOOST_TEST(!std::isinf(output[0]));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
