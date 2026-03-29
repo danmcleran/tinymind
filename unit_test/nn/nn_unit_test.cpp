@@ -42,6 +42,10 @@ TINYMIND_DISABLE_WARNING_POP
 #include "learningRateSchedule.hpp"
 #include "adam.hpp"
 #include "earlyStopping.hpp"
+#include "teacherForcing.hpp"
+#include "truncatedBPTT.hpp"
+#include "conv1d.hpp"
+#include "networkStats.hpp"
 #include "random.hpp"
 #include "nnproperties.hpp"
 #include "xavier.hpp"
@@ -3829,6 +3833,184 @@ BOOST_AUTO_TEST_CASE(test_case_gru_weight_serialization)
     nn2.getLearnedValues(&out2[0]);
 
     BOOST_TEST(fabs(out1[0] - out2[0]) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_elu_activation_fixed_point)
+{
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::EluActivationPolicy<ValueType> EluPolicy;
+
+    // Positive values: f(x) = x
+    ValueType pos(0, 128); // 0.5
+    ValueType result = EluPolicy::activationFunction(pos);
+    BOOST_TEST(result.getValue() == pos.getValue());
+
+    // Derivative for positive: f'(x) = 1
+    ValueType deriv = EluPolicy::activationFunctionDerivative(pos);
+    BOOST_TEST(deriv.getValue() == tinymind::Constants<ValueType>::one().getValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_gelu_activation_fixed_point)
+{
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::GeluActivationPolicy<ValueType> GeluPolicy;
+
+    // GELU(0) should be ~0 (x * sigmoid(0) = 0 * 0.5 = 0)
+    ValueType zero(0);
+    ValueType result = GeluPolicy::activationFunction(zero);
+    BOOST_TEST(result.getValue() == 0);
+
+    // GELU for positive input should be positive
+    ValueType pos(1, 0); // 1.0
+    ValueType posResult = GeluPolicy::activationFunction(pos);
+    BOOST_TEST(posResult.getValue() > 0);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_network_stats)
+{
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::FixedPointTransferFunctions<
+        ValueType,
+        UniformRealRandomNumberGenerator<ValueType>,
+        tinymind::TanhActivationPolicy<ValueType>,
+        tinymind::TanhActivationPolicy<ValueType>> TF;
+    typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<5>, 1, TF> NNType;
+    typedef tinymind::NetworkStats<NNType> Stats;
+
+    // Use static_assert for compile-time verification (no ODR-use issues)
+    static_assert(Stats::NumberOfInputs == 2, "Wrong input count");
+    static_assert(Stats::NumberOfHiddenNeurons == 5, "Wrong hidden count");
+    static_assert(Stats::NumberOfOutputs == 1, "Wrong output count");
+    static_assert(Stats::NumberOfHiddenLayers == 1, "Wrong layer count");
+    static_assert(Stats::ValueSizeBytes == sizeof(ValueType), "Wrong value size");
+    static_assert(Stats::InstanceSizeBytes == sizeof(NNType), "Wrong instance size");
+    static_assert(Stats::InstanceSizeBytes > 0, "Instance size must be positive");
+    BOOST_TEST(true); // test counts toward suite
+}
+
+BOOST_AUTO_TEST_CASE(test_case_teacher_forcing)
+{
+    tinymind::ScheduledSampling<double> sampler(100);
+
+    // At step 0, teacher forcing ratio should be 1.0 (always ground truth)
+    BOOST_TEST(fabs(sampler.getTeacherForcingRatio() - 1.0) < 0.01);
+
+    // Advance halfway
+    for (int i = 0; i < 50; ++i) sampler.step();
+    BOOST_TEST(fabs(sampler.getTeacherForcingRatio() - 0.5) < 0.01);
+
+    // Advance to end
+    for (int i = 0; i < 50; ++i) sampler.step();
+    BOOST_TEST(fabs(sampler.getTeacherForcingRatio() - 0.0) < 0.01);
+
+    // After decay, selectInput should return prediction
+    double result = sampler.selectInput(1.0, 0.5);
+    BOOST_TEST(fabs(result - 0.5) < 0.001);
+
+    // Reset should restore ratio to 1.0
+    sampler.reset();
+    BOOST_TEST(fabs(sampler.getTeacherForcingRatio() - 1.0) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_conv1d_forward)
+{
+    // Conv1D with 5-point input, kernel=3, stride=1, 1 filter
+    tinymind::Conv1D<double, 5, 3, 1, 1> conv;
+
+    // Set known kernel weights: [1, 0, -1] with bias=0
+    conv.setFilterWeight(0, 0, 1.0);
+    conv.setFilterWeight(0, 1, 0.0);
+    conv.setFilterWeight(0, 2, -1.0);
+    conv.setFilterWeight(0, 3, 0.0); // bias
+
+    double input[5] = {1.0, 2.0, 3.0, 4.0, 5.0};
+    double output[3]; // (5 - 3) / 1 + 1 = 3
+
+    conv.forward(input, output);
+
+    // kernel [1, 0, -1]:
+    // pos 0: 1*1 + 0*2 + (-1)*3 = -2
+    // pos 1: 1*2 + 0*3 + (-1)*4 = -2
+    // pos 2: 1*3 + 0*4 + (-1)*5 = -2
+    BOOST_TEST(fabs(output[0] - (-2.0)) < 0.001);
+    BOOST_TEST(fabs(output[1] - (-2.0)) < 0.001);
+    BOOST_TEST(fabs(output[2] - (-2.0)) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_conv1d_multi_filter)
+{
+    // Conv1D with 4-point input, kernel=2, stride=1, 2 filters
+    tinymind::Conv1D<double, 4, 2, 1, 2> conv;
+
+    // Filter 0: [1, 1], bias=0 (sum filter)
+    conv.setFilterWeight(0, 0, 1.0);
+    conv.setFilterWeight(0, 1, 1.0);
+    conv.setFilterWeight(0, 2, 0.0);
+
+    // Filter 1: [1, -1], bias=0 (difference filter)
+    conv.setFilterWeight(1, 0, 1.0);
+    conv.setFilterWeight(1, 1, -1.0);
+    conv.setFilterWeight(1, 2, 0.0);
+
+    double input[4] = {1.0, 3.0, 2.0, 4.0};
+    double output[6]; // 2 filters * 3 positions
+
+    conv.forward(input, output);
+
+    // Filter 0 (sum): [4, 5, 6]
+    BOOST_TEST(fabs(output[0] - 4.0) < 0.001);
+    BOOST_TEST(fabs(output[1] - 5.0) < 0.001);
+    BOOST_TEST(fabs(output[2] - 6.0) < 0.001);
+
+    // Filter 1 (diff): [-2, 1, -2]
+    BOOST_TEST(fabs(output[3] - (-2.0)) < 0.001);
+    BOOST_TEST(fabs(output[4] - 1.0) < 0.001);
+    BOOST_TEST(fabs(output[5] - (-2.0)) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_conv1d_static_sizes)
+{
+    typedef tinymind::Conv1D<double, 100, 5, 2, 8> ConvType;
+
+    // OutputLength = (100 - 5) / 2 + 1 = 48
+    static_assert(ConvType::OutputLength == 48, "Wrong output length");
+    static_assert(ConvType::OutputSize == 384, "Wrong output size"); // 8 * 48
+    static_assert(ConvType::TotalWeights == 48, "Wrong total weights"); // 8 * (5 + 1)
+    BOOST_TEST(true); // test counts toward suite
+}
+
+BOOST_AUTO_TEST_CASE(test_case_truncated_bptt)
+{
+    // Test that TruncatedBPTT accumulates steps before training
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+        ValueType,
+        UniformRealRandomNumberGenerator,
+        tinymind::TanhActivationPolicy,
+        tinymind::TanhActivationPolicy,
+        tinymind::SigmoidActivationPolicy> TF;
+    typedef tinymind::LstmNeuralNetwork<ValueType, 1, tinymind::HiddenLayers<4>, 1, TF> LstmType;
+
+    LstmType nn;
+    tinymind::TruncatedBPTT<LstmType, 3> trainer;
+
+    ValueType input[1] = {0.5};
+    ValueType target[1] = {0.8};
+
+    // Steps 1-2: accumulate, no training yet
+    trainer.step(nn, input, target);
+    BOOST_TEST(trainer.getStepCount() == 1u);
+    trainer.step(nn, input, target);
+    BOOST_TEST(trainer.getStepCount() == 2u);
+
+    // Step 3: window full, trains and resets
+    trainer.step(nn, input, target);
+    BOOST_TEST(trainer.getStepCount() == 0u);
+
+    // Flush with partial window
+    trainer.step(nn, input, target);
+    trainer.flush(nn);
+    BOOST_TEST(trainer.getStepCount() == 0u);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

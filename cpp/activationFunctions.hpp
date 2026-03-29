@@ -227,4 +227,104 @@ namespace tinymind {
 
     template<typename ValueType>
     const typename ExpValuesTableSelector<ValueType::NumberOfFixedBits, ValueType::NumberOfFractionalBits, ValueType::IsSigned>::ExpTableType SoftmaxActivationPolicy<ValueType>::expActivationTable;
+
+    /**
+     * ELU (Exponential Linear Unit) activation function.
+     * f(x) = x              if x > 0
+     * f(x) = exp(x) - 1     if x <= 0
+     *
+     * Avoids the "dying ReLU" problem with smooth negative outputs.
+     * Uses the existing exp lookup table for fixed-point.
+     */
+    template<typename ValueType>
+    struct EluActivationPolicy
+    {
+        typedef typename ValueType::FullWidthFieldType FullWidthFieldType;
+        typedef LookupTable<ValueType> LookupTableType;
+        typedef typename ExpValuesTableSelector<ValueType::NumberOfFixedBits, ValueType::NumberOfFractionalBits, ValueType::IsSigned>::ExpTableType ExpTableType;
+
+        static ValueType activationFunction(const ValueType& value)
+        {
+            if (value > Constants<ValueType>::zero())
+            {
+                return value;
+            }
+
+            static const ptrdiff_t MAX_ACTIVATION_INDEX = (((sizeof(FullWidthFieldType) * NUMBER_OF_ACTIVATION_TABLE_VALUES) / sizeof(expActivationTable.values[0])) - 1);
+
+            const ValueType expValue = LookupTableType::getValue(value, &expActivationTable.values[0], MAX_ACTIVATION_INDEX);
+            return expValue - Constants<ValueType>::one();
+        }
+
+        static ValueType activationFunctionDerivative(const ValueType& value)
+        {
+            if (value > Constants<ValueType>::zero())
+            {
+                return Constants<ValueType>::one();
+            }
+
+            // For x <= 0: f'(x) = f(x) + 1 = exp(x)
+            return value + Constants<ValueType>::one();
+        }
+    private:
+        static const ExpTableType expActivationTable;
+        static_assert(ValueType::IsSigned, "ELU activation requires a signed type.");
+    };
+
+    template<typename ValueType>
+    const typename ExpValuesTableSelector<ValueType::NumberOfFixedBits, ValueType::NumberOfFractionalBits, ValueType::IsSigned>::ExpTableType EluActivationPolicy<ValueType>::expActivationTable;
+
+    /**
+     * GELU (Gaussian Error Linear Unit) activation function.
+     * Uses the sigmoid approximation: GELU(x) ≈ x * sigmoid(1.702 * x)
+     *
+     * This approximation reuses the existing sigmoid lookup table.
+     * For the derivative: f'(x) ≈ sigmoid(1.702*x) + 1.702*x*sigmoid(1.702*x)*(1 - sigmoid(1.702*x))
+     *
+     * The constant 1.702 is represented as (1, FractionalBits * 0.702) for fixed-point.
+     * For Q8.8: 1 + 180/256 ≈ 1.703.  For Q16.16: 1 + 46006/65536 ≈ 1.702.
+     */
+    template<typename ValueType>
+    struct GeluActivationPolicy
+    {
+        typedef LookupTable<ValueType> LookupTableType;
+        typedef typename SigmoidValuesTableSelector<ValueType::NumberOfFixedBits, ValueType::NumberOfFractionalBits, ValueType::IsSigned>::SigmoidTableType SigmoidTableType;
+
+        static ValueType activationFunction(const ValueType& value)
+        {
+            static const ptrdiff_t MAX_ACTIVATION_INDEX = ((sizeof(sigmoidActivationTable.values) / sizeof(sigmoidActivationTable.values[0])) - 1);
+            static const ValueType scale = geluScale();
+
+            const ValueType scaled = scale * value;
+            const ValueType sig = LookupTableType::getValue(scaled, &sigmoidActivationTable.values[0], MAX_ACTIVATION_INDEX);
+
+            return value * sig;
+        }
+
+        static ValueType activationFunctionDerivative(const ValueType& value)
+        {
+            static const ptrdiff_t MAX_ACTIVATION_INDEX = ((sizeof(sigmoidActivationTable.values) / sizeof(sigmoidActivationTable.values[0])) - 1);
+            static const ValueType scale = geluScale();
+
+            const ValueType scaled = scale * value;
+            const ValueType sig = LookupTableType::getValue(scaled, &sigmoidActivationTable.values[0], MAX_ACTIVATION_INDEX);
+
+            // f'(x) = sig(s*x) + s*x * sig(s*x) * (1 - sig(s*x))
+            return sig + scaled * sig * (Constants<ValueType>::one() - sig);
+        }
+    private:
+        static ValueType geluScale()
+        {
+            // 1.702 ≈ 1 + (0.702 * 2^FractionalBits)
+            const unsigned frac = static_cast<unsigned>(
+                (702ULL * (1ULL << ValueType::NumberOfFractionalBits)) / 1000ULL);
+            return ValueType(1, frac);
+        }
+
+        static const SigmoidTableType sigmoidActivationTable;
+        static_assert(ValueType::IsSigned, "GELU activation requires a signed type.");
+    };
+
+    template<typename ValueType>
+    const typename SigmoidValuesTableSelector<ValueType::NumberOfFixedBits, ValueType::NumberOfFractionalBits, ValueType::IsSigned>::SigmoidTableType GeluActivationPolicy<ValueType>::sigmoidActivationTable;
 }
