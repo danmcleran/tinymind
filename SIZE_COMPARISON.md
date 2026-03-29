@@ -23,7 +23,7 @@ Instance sizes in bytes for XOR-class network configurations using `double` as t
 | Architecture | Hidden Neurons | Trainable | Non-trainable | Training Overhead |
 |---|---|---|---|---|
 | MLP (2→5→1) | 5 | 1,008 | 360 | +648 (+180%) |
-| Elman RNN (2→3→1) | 3 | 1,056 | — | — |
+| Elman RNN (2→3→1) | 3 | 1,056 | 384 | +672 (+175%) |
 | LSTM (2→3→1) | 3 | 3,024 | 960 | +2,064 (+215%) |
 | GRU (2→3→1) | 3 | 2,400 | 792 | +1,608 (+203%) |
 | KAN (2→5→1, G=5, k=1) | 5 | 4,208 | 1,256 | +2,952 (+235%) |
@@ -35,6 +35,7 @@ Instance sizes in bytes for XOR network configurations using `QValue<8,8,true>` 
 | Architecture | Hidden Neurons | Trainable | Non-trainable | Training Overhead |
 |---|---|---|---|---|
 | MLP (2→3→1) | 3 | 328 | 144 | +184 (+128%) |
+| Elman RNN (2→3→1) | 3 | 472 | 192 | +280 (+146%) |
 | LSTM (2→3→1) | 3 | 952 | 384 | +568 (+148%) |
 | GRU (2→3→1) | 3 | 808 | 336 | +472 (+140%) |
 | KAN (2→5→1, G=5, k=1) | 5 | 1,192 | 416 | +776 (+187%) |
@@ -44,10 +45,12 @@ Instance sizes in bytes for XOR network configurations using `QValue<8,8,true>` 
 | | Trainable | Non-trainable |
 |---|---|---|
 | **double** | | |
+| Elman / MLP | 1.0x | 1.1x |
 | LSTM / MLP | 3.0x | 2.7x |
 | GRU / MLP | 2.4x | 2.2x |
 | KAN / MLP | 4.2x | 3.5x |
 | **Q8.8** | | |
+| Elman / MLP | 1.4x | 1.3x |
 | LSTM / MLP | 2.9x | 2.7x |
 | GRU / MLP | 2.5x | 2.3x |
 | KAN / MLP | 3.6x | 2.9x |
@@ -64,6 +67,7 @@ GRU uses 3 gates (update, reset, candidate) versus LSTM's 4 gates (input, forget
 ### Why Each Architecture is Larger
 
 - **MLP**: One weight per connection. Minimal storage.
+- **Elman RNN**: Same connection weights as MLP, plus a recurrent layer that stores previous hidden outputs and feeds them back as additional inputs.
 - **LSTM**: 4 gates (input, forget, output, cell) multiply connection weights by 4x, plus recurrent state and cell memory.
 - **GRU**: 3 gates (update, reset, candidate) multiply connection weights by 3x, plus recurrent state. ~20% smaller than LSTM.
 - **KAN**: Each edge stores B-spline coefficients (`GridSize + SplineDegree` = 6 per edge with G=5, k=1), plus a base weight and spline weight. Training adds gradient, delta weight, and previous delta weight for every learnable parameter.
