@@ -28,6 +28,7 @@
 #include "gradientClipping.hpp"
 #include "weightDecay.hpp"
 #include "learningRateSchedule.hpp"
+#include "adam.hpp"
 
 namespace tinymind {
     namespace detail {
@@ -71,6 +72,30 @@ namespace tinymind {
         struct learning_rate_schedule_policy_of<T, void_t<typename T::LearningRateSchedulePolicyType> >
         {
             typedef typename T::LearningRateSchedulePolicyType type;
+        };
+
+        template<typename T, typename = void>
+        struct optimizer_policy_of
+        {
+            typedef NullOptimizerPolicy<typename T::TransferFunctionsValueType> type;
+        };
+
+        template<typename T>
+        struct optimizer_policy_of<T, void_t<typename T::OptimizerPolicyType> >
+        {
+            typedef typename T::OptimizerPolicyType type;
+        };
+
+        template<bool Condition, typename TrueType, typename FalseType>
+        struct conditional
+        {
+            typedef TrueType type;
+        };
+
+        template<typename TrueType, typename FalseType>
+        struct conditional<false, TrueType, FalseType>
+        {
+            typedef FalseType type;
         };
     } // namespace detail
 
@@ -1120,6 +1145,7 @@ namespace tinymind {
         typedef typename detail::gradient_clipping_policy_of<TransferFunctionsPolicy>::type GradientClippingPolicy;
         typedef typename detail::weight_decay_policy_of<TransferFunctionsPolicy>::type WeightDecayPolicy;
         typedef typename detail::learning_rate_schedule_policy_of<TransferFunctionsPolicy>::type LearningRateSchedulePolicy;
+        typedef typename detail::optimizer_policy_of<TransferFunctionsPolicy>::type OptimizerPolicy;
 
         ValueType getAccelerationRate() const
         {
@@ -1142,6 +1168,7 @@ namespace tinymind {
             this->mMomentumRate = TransferFunctionsPolicy::initialMomentumRate();
             this->mAccelerationRate = TransferFunctionsPolicy::initialAccelerationRate();
             this->mLearningRateSchedule.initialize(this->mLearningRate);
+            this->mOptimizer.initialize();
         }
 
         void setAccelerationRate(const ValueType& value)
@@ -1167,7 +1194,39 @@ namespace tinymind {
         template<typename LayerType, typename PreviousLayerType>
         void updateConnectionWeights(LayerType& layer, PreviousLayerType& previousLayer)
         {
-            (void)layer; // Suppress unused parameter warning
+            updateConnectionWeightsImpl<LayerType, PreviousLayerType>(layer, previousLayer, OptimizerIsAdam());
+        }
+
+        template<typename LayerType, typename PreviousLayerType, size_t GateMultiplier>
+        void updateConnectionWeightsGated(LayerType& layer, PreviousLayerType& previousLayer)
+        {
+            updateConnectionWeightsGatedImpl<LayerType, PreviousLayerType, GateMultiplier>(layer, previousLayer, OptimizerIsAdam());
+        }
+
+    protected:
+        BackPropagationParent() : mLearningRate(0), mMomentumRate(0), mAccelerationRate(0)
+        {
+        }
+
+        ~BackPropagationParent(){}
+
+        ValueType mLearningRate;
+        ValueType mMomentumRate;
+        ValueType mAccelerationRate;
+        LearningRateSchedulePolicy mLearningRateSchedule;
+        OptimizerPolicy mOptimizer;
+
+    private:
+        // Tag types for compile-time dispatch
+        struct AdamTag {};
+        struct SgdTag {};
+        typedef typename detail::conditional<OptimizerPolicy::IsAdam, AdamTag, SgdTag>::type OptimizerIsAdam;
+
+        // SGD weight update (default)
+        template<typename LayerType, typename PreviousLayerType>
+        void updateConnectionWeightsImpl(LayerType& layer, PreviousLayerType& previousLayer, SgdTag)
+        {
+            (void)layer;
             typedef BiasNeuronConnectionWeightUpdater<ValueType, PreviousLayerType::NumberOfBiasNeuronsInLayer> BiasNeuronConnectionWeightUpdaterType;
             ValueType previousDeltaWeight;
             ValueType currentDeltaWeight;
@@ -1191,15 +1250,34 @@ namespace tinymind {
                     previousLayer.setWeightForNeuronAndConnection(previousNeuron, neuron, (currentWeight + newDeltaWeight));
                 }
 
-                //Update bias values
                 BiasNeuronConnectionWeightUpdaterType::updateBiasConnectionWeights(previousLayer, neuron, this->mLearningRate, this->mMomentumRate, this->mAccelerationRate);
             }
         }
 
-        template<typename LayerType, typename PreviousLayerType, size_t GateMultiplier>
-        void updateConnectionWeightsGated(LayerType& layer, PreviousLayerType& previousLayer)
+        // Adam weight update
+        template<typename LayerType, typename PreviousLayerType>
+        void updateConnectionWeightsImpl(LayerType& layer, PreviousLayerType& previousLayer, AdamTag)
         {
-            (void)layer; // Suppress unused parameter warning
+            (void)layer;
+            ValueType gradient;
+
+            this->mOptimizer.step();
+
+            for (size_t neuron = 0; neuron < LayerType::NumberOfNeuronsInLayer; ++neuron)
+            {
+                for (size_t previousNeuron = 0; previousNeuron < PreviousLayerType::NumberOfNeuronsInLayer; ++previousNeuron)
+                {
+                    gradient = GradientClippingPolicy::clip(previousLayer.getGradientForNeuronAndConnection(previousNeuron, neuron));
+                    this->mOptimizer.template updateWeights<LayerType>(previousLayer, previousNeuron, neuron, gradient, this->mLearningRate);
+                }
+            }
+        }
+
+        // SGD gated weight update (default)
+        template<typename LayerType, typename PreviousLayerType, size_t GateMultiplier>
+        void updateConnectionWeightsGatedImpl(LayerType& layer, PreviousLayerType& previousLayer, SgdTag)
+        {
+            (void)layer;
             typedef BiasNeuronConnectionWeightUpdater<ValueType, PreviousLayerType::NumberOfBiasNeuronsInLayer> BiasNeuronConnectionWeightUpdaterType;
             ValueType previousDeltaWeight;
             ValueType currentDeltaWeight;
@@ -1229,24 +1307,35 @@ namespace tinymind {
                     }
                 }
 
-                //Update bias values for each gate connection
                 for (size_t gate = 0; gate < GateMultiplier; ++gate)
                 {
                     BiasNeuronConnectionWeightUpdaterType::updateBiasConnectionWeights(previousLayer, neuron * GateMultiplier + gate, this->mLearningRate, this->mMomentumRate, this->mAccelerationRate);
                 }
             }
         }
-    protected:
-        BackPropagationParent() : mLearningRate(0), mMomentumRate(0), mAccelerationRate(0)
+
+        // Adam gated weight update
+        template<typename LayerType, typename PreviousLayerType, size_t GateMultiplier>
+        void updateConnectionWeightsGatedImpl(LayerType& layer, PreviousLayerType& previousLayer, AdamTag)
         {
+            (void)layer;
+            ValueType gradient;
+
+            this->mOptimizer.step();
+
+            for (size_t neuron = 0; neuron < LayerType::NumberOfNeuronsInLayer; ++neuron)
+            {
+                for (size_t previousNeuron = 0; previousNeuron < PreviousLayerType::NumberOfNeuronsInLayer; ++previousNeuron)
+                {
+                    for (size_t gate = 0; gate < GateMultiplier; ++gate)
+                    {
+                        const size_t conn = neuron * GateMultiplier + gate;
+                        gradient = GradientClippingPolicy::clip(previousLayer.getGradientForNeuronAndConnection(previousNeuron, conn));
+                        this->mOptimizer.template updateWeights<LayerType>(previousLayer, previousNeuron, conn, gradient, this->mLearningRate);
+                    }
+                }
+            }
         }
-
-        ~BackPropagationParent(){}
-
-        ValueType mLearningRate;
-        ValueType mMomentumRate;
-        ValueType mAccelerationRate;
-        LearningRateSchedulePolicy mLearningRateSchedule;
 
     private:
         BackPropagationParent(const BackPropagationParent&) {} // hide copy constructor
@@ -1495,7 +1584,7 @@ namespace tinymind {
     struct TrainableConnection : public Connection<ValueType>
     {
         typedef ValueType ConnectionValueType;
-        
+
         static const bool IsTrainable = true;
 
         TrainableConnection() : mDeltaWeight(0), mPreviousDeltaWeight(0), mGradient(0)
@@ -1527,6 +1616,15 @@ namespace tinymind {
         {
             this->mGradient = value;
         }
+
+        // Adam moment accessors: reuse mDeltaWeight as first moment (m)
+        // and mPreviousDeltaWeight as second moment (v). These bypass the
+        // auto-copy in setDeltaWeight so Adam can update m and v independently.
+        ValueType getFirstMoment() const { return this->mDeltaWeight; }
+        void setFirstMoment(const ValueType& value) { this->mDeltaWeight = value; }
+        ValueType getSecondMoment() const { return this->mPreviousDeltaWeight; }
+        void setSecondMoment(const ValueType& value) { this->mPreviousDeltaWeight = value; }
+
     protected:
         ValueType mDeltaWeight;
         ValueType mPreviousDeltaWeight;
@@ -1690,6 +1788,34 @@ namespace tinymind {
             const size_t bufferIndex = connection * sizeof(ConnectionType);
             ConnectionType* pConnection = reinterpret_cast<ConnectionType*>(&this->mOutgoingConnectionsBuffer[bufferIndex]);
             pConnection->setDeltaWeight(deltaWeight);
+        }
+
+        ValueType getFirstMomentForConnection(const size_t connection) const
+        {
+            const size_t bufferIndex = connection * sizeof(ConnectionType);
+            const ConnectionType* pConnection = reinterpret_cast<const ConnectionType*>(&this->mOutgoingConnectionsBuffer[bufferIndex]);
+            return pConnection->getFirstMoment();
+        }
+
+        void setFirstMomentForConnection(const size_t connection, const ValueType& value)
+        {
+            const size_t bufferIndex = connection * sizeof(ConnectionType);
+            ConnectionType* pConnection = reinterpret_cast<ConnectionType*>(&this->mOutgoingConnectionsBuffer[bufferIndex]);
+            pConnection->setFirstMoment(value);
+        }
+
+        ValueType getSecondMomentForConnection(const size_t connection) const
+        {
+            const size_t bufferIndex = connection * sizeof(ConnectionType);
+            const ConnectionType* pConnection = reinterpret_cast<const ConnectionType*>(&this->mOutgoingConnectionsBuffer[bufferIndex]);
+            return pConnection->getSecondMoment();
+        }
+
+        void setSecondMomentForConnection(const size_t connection, const ValueType& value)
+        {
+            const size_t bufferIndex = connection * sizeof(ConnectionType);
+            ConnectionType* pConnection = reinterpret_cast<ConnectionType*>(&this->mOutgoingConnectionsBuffer[bufferIndex]);
+            pConnection->setSecondMoment(value);
         }
 
         void setGradientForConnection(const size_t connection, const ValueType& gradient)
@@ -2320,7 +2446,35 @@ namespace tinymind {
             NeuronType* pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
             pNeuron->setDeltaWeightForConnection(connection, value);
         }
-        
+
+        ValueType getFirstMomentForNeuronAndConnection(const size_t neuron, const size_t connection) const
+        {
+            const size_t bufferIndex = neuron * sizeof(NeuronType);
+            const NeuronType* pNeuron = reinterpret_cast<const NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
+            return pNeuron->getFirstMomentForConnection(connection);
+        }
+
+        void setFirstMomentForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& value)
+        {
+            const size_t bufferIndex = neuron * sizeof(NeuronType);
+            NeuronType* pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
+            pNeuron->setFirstMomentForConnection(connection, value);
+        }
+
+        ValueType getSecondMomentForNeuronAndConnection(const size_t neuron, const size_t connection) const
+        {
+            const size_t bufferIndex = neuron * sizeof(NeuronType);
+            const NeuronType* pNeuron = reinterpret_cast<const NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
+            return pNeuron->getSecondMomentForConnection(connection);
+        }
+
+        void setSecondMomentForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& value)
+        {
+            const size_t bufferIndex = neuron * sizeof(NeuronType);
+            NeuronType* pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
+            pNeuron->setSecondMomentForConnection(connection, value);
+        }
+
         void setGradientForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& value)
         {
             const size_t bufferIndex = neuron * sizeof(NeuronType);

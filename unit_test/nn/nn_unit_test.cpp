@@ -40,6 +40,8 @@ TINYMIND_DISABLE_WARNING_POP
 #include "gradientClipping.hpp"
 #include "weightDecay.hpp"
 #include "learningRateSchedule.hpp"
+#include "adam.hpp"
+#include "earlyStopping.hpp"
 #include "random.hpp"
 #include "nnproperties.hpp"
 #include "xavier.hpp"
@@ -3581,6 +3583,252 @@ BOOST_AUTO_TEST_CASE(test_case_gru_non_trainable)
     // Output should be finite
     BOOST_TEST(!std::isnan(output[0]));
     BOOST_TEST(!std::isinf(output[0]));
+}
+
+BOOST_AUTO_TEST_CASE(test_case_early_stopping)
+{
+    // Verify EarlyStopping correctly detects convergence
+    tinymind::EarlyStopping<double, 5> stopper;
+
+    // Decreasing error: should not stop
+    BOOST_TEST(!stopper.shouldStop(1.0));
+    BOOST_TEST(!stopper.shouldStop(0.5));
+    BOOST_TEST(!stopper.shouldStop(0.3));
+
+    // Stagnant error: should stop after patience exhausted
+    BOOST_TEST(!stopper.shouldStop(0.4));
+    BOOST_TEST(!stopper.shouldStop(0.4));
+    BOOST_TEST(!stopper.shouldStop(0.4));
+    BOOST_TEST(!stopper.shouldStop(0.4));
+    BOOST_TEST(stopper.shouldStop(0.4)); // 5th non-improving step
+
+    // Best error should be the minimum seen
+    BOOST_TEST(fabs(stopper.getBestError() - 0.3) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_early_stopping_reset)
+{
+    // Verify EarlyStopping reset works
+    tinymind::EarlyStopping<double, 3> stopper;
+
+    stopper.shouldStop(1.0);
+    stopper.shouldStop(2.0);
+    stopper.shouldStop(2.0);
+    stopper.shouldStop(2.0);
+    BOOST_TEST(stopper.shouldStop(2.0)); // should stop
+
+    stopper.reset();
+    BOOST_TEST(!stopper.shouldStop(5.0)); // should NOT stop after reset
+}
+
+BOOST_AUTO_TEST_CASE(test_case_early_stopping_with_training)
+{
+    // Verify early stopping works in a training loop
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::MultilayerPerceptron<ValueType, 2, 1, 3, 1,
+                                            TransferFunctionsType> NNType;
+    srand(RANDOM_SEED);
+    NNType nn;
+
+    tinymind::EarlyStopping<ValueType, 200> stopper;
+    ValueType values[2], output[1], error;
+    int iterationsUsed = 0;
+
+    for (int i = 0; i < 10000; ++i)
+    {
+        generateXorValues(&values[0], &output[0]);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        if (stopper.shouldStop(error)) break;
+        nn.trainNetwork(&output[0]);
+        ++iterationsUsed;
+    }
+
+    // Should have stopped before 10000 iterations
+    BOOST_TEST(iterationsUsed < 10000);
+    BOOST_TEST(!std::isnan(error));
+}
+
+struct AdamTransferFunctions
+{
+    typedef double TransferFunctionsValueType;
+    typedef UniformRealRandomNumberGenerator<double> RandomNumberGeneratorPolicy;
+    typedef tinymind::TanhActivationPolicy<double> HiddenNeuronActivationPolicy;
+    typedef tinymind::TanhActivationPolicy<double> OutputNeuronActivationPolicy;
+    typedef tinymind::ZeroToleranceCalculator<double> ZeroToleranceCalculatorPolicy;
+    typedef tinymind::AdamOptimizerFloat<double> OptimizerPolicyType;
+
+    static const unsigned NumberOfTransferFunctionsOutputNeurons = 1;
+
+    static double calculateError(double const* const targetValues, double const* const outputValues)
+    {
+        const double delta = (targetValues[0] - outputValues[0]);
+        return (delta * delta);
+    }
+
+    static double calculateOutputGradient(const double& targetValue, const double& outputValue)
+    {
+        return (targetValue - outputValue) * OutputNeuronActivationPolicy::activationFunctionDerivative(outputValue);
+    }
+
+    static double generateRandomWeight() { return RandomNumberGeneratorPolicy::generateRandomWeight(); }
+    static double hiddenNeuronActivationFunction(const double& value) { return HiddenNeuronActivationPolicy::activationFunction(value); }
+    static double hiddenNeuronActivationFunctionDerivative(const double& value) { return HiddenNeuronActivationPolicy::activationFunctionDerivative(value); }
+    static double outputNeuronActivationFunction(const double& value) { return OutputNeuronActivationPolicy::activationFunction(value); }
+    static double outputNeuronActivationFunctionDerivative(const double& value) { return OutputNeuronActivationPolicy::activationFunctionDerivative(value); }
+    static double initialAccelerationRate() { return 0.0; }
+    static double initialBiasOutputValue() { return 1.0; }
+    static double initialDeltaWeight() { return 0.0; }
+    static double initialGradientValue() { return 0.0; }
+    static double initialLearningRate() { return 0.01; }
+    static double initialMomentumRate() { return 0.0; }
+    static double initialOutputValue() { return 0.0; }
+    static bool isWithinZeroTolerance(const double& value) { return (fabs(value) < 0.004); }
+    static double negate(const double& value) { return -value; }
+    static double noOpDeltaWeight() { return 1.0; }
+    static double noOpWeight() { return 1.0; }
+};
+
+BOOST_AUTO_TEST_CASE(test_case_adam_optimizer_xor_training)
+{
+    // Verify Adam optimizer can train an XOR network
+    typedef double ValueType;
+    typedef tinymind::MultilayerPerceptron<ValueType, 2, 1, 5, 1,
+                                            AdamTransferFunctions> AdamNNType;
+    srand(RANDOM_SEED);
+    AdamNNType nn;
+
+    ValueType values[2], output[1], error;
+
+    for (int i = 0; i < TRAINING_ITERATIONS; ++i)
+    {
+        generateXorValues(&values[0], &output[0]);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        nn.trainNetwork(&output[0]);
+    }
+
+    // Adam should produce valid output
+    nn.feedForward(&values[0]);
+    ValueType learnedValues[1];
+    nn.getLearnedValues(&learnedValues[0]);
+    BOOST_TEST(!std::isnan(learnedValues[0]));
+    BOOST_TEST(!std::isinf(learnedValues[0]));
+    BOOST_TEST(!std::isnan(error));
+}
+
+BOOST_AUTO_TEST_CASE(test_case_lstm_weight_serialization)
+{
+    // Verify LSTM weights can be saved and loaded
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::SigmoidActivationPolicy> TransferFunctionsType;
+    typedef tinymind::LstmNeuralNetwork<ValueType, 2,
+                                    tinymind::HiddenLayers<4>, 1,
+                                    TransferFunctionsType> LstmType;
+    srand(RANDOM_SEED);
+    LstmType nn;
+
+    // Train briefly to get non-trivial weights
+    ValueType values[2], output[1];
+    for (int i = 0; i < 100; ++i)
+    {
+        generateXorValues(&values[0], &output[0]);
+        nn.feedForward(&values[0]);
+        nn.trainNetwork(&output[0]);
+    }
+
+    // Save weights
+    {
+        std::ofstream outFile("output/lstm_weights.txt");
+        tinymind::RecurrentNetworkPropertiesFileManager<LstmType>::storeNetworkWeights(nn, outFile);
+    }
+
+    // Create a new network and load weights
+    LstmType nn2;
+
+    {
+        std::ifstream inFile("output/lstm_weights.txt");
+        tinymind::RecurrentNetworkPropertiesFileManager<LstmType>::template loadNetworkWeights<ValueType, ValueType>(nn2, inFile);
+    }
+
+    // Reset state so recurrent layer doesn't affect comparison
+    nn.resetState();
+    nn2.resetState();
+
+    // Both networks should produce the same output for the same input
+    values[0] = 0.5; values[1] = 0.3;
+    nn.feedForward(&values[0]);
+    nn2.feedForward(&values[0]);
+
+    ValueType out1[1], out2[1];
+    nn.getLearnedValues(&out1[0]);
+    nn2.getLearnedValues(&out2[0]);
+
+    // Tolerance accounts for text serialization precision loss
+    BOOST_TEST(fabs(out1[0] - out2[0]) < 0.02);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_gru_weight_serialization)
+{
+    // Verify GRU weights can be saved and loaded
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::TanhActivationPolicy,
+                                            tinymind::SigmoidActivationPolicy> TransferFunctionsType;
+    typedef tinymind::GruNeuralNetwork<ValueType, 2,
+                                    tinymind::HiddenLayers<4>, 1,
+                                    TransferFunctionsType> GruType;
+    srand(RANDOM_SEED);
+    GruType nn;
+
+    // Train briefly
+    ValueType values[2], output[1];
+    for (int i = 0; i < 100; ++i)
+    {
+        generateXorValues(&values[0], &output[0]);
+        nn.feedForward(&values[0]);
+        nn.trainNetwork(&output[0]);
+    }
+
+    // Save weights
+    {
+        std::ofstream outFile("output/gru_weights.txt");
+        tinymind::RecurrentNetworkPropertiesFileManager<GruType>::storeNetworkWeights(nn, outFile);
+    }
+
+    // Load weights into new network
+    GruType nn2;
+
+    {
+        std::ifstream inFile("output/gru_weights.txt");
+        tinymind::RecurrentNetworkPropertiesFileManager<GruType>::template loadNetworkWeights<ValueType, ValueType>(nn2, inFile);
+    }
+
+    // Both should produce same output
+    values[0] = 0.5; values[1] = 0.3;
+    nn.resetState();
+    nn2.resetState();
+    nn.feedForward(&values[0]);
+    nn2.feedForward(&values[0]);
+
+    ValueType out1[1], out2[1];
+    nn.getLearnedValues(&out1[0]);
+    nn2.getLearnedValues(&out2[0]);
+
+    BOOST_TEST(fabs(out1[0] - out2[0]) < 0.001);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

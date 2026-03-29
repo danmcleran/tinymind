@@ -526,4 +526,254 @@ namespace tinymind {
         }
 
     };
+
+    /**
+     * Weight serialization for gated recurrent networks (LSTM, GRU).
+     *
+     * Weight file format (text, one value per line):
+     *
+     * 1. Input-to-hidden weights (gated: each input neuron has H*G connections)
+     *    Count: NumberOfInputs * NumberOfHiddenNeurons * GateMultiplier
+     *
+     * 2. Input layer bias weights (gated)
+     *    Count: NumberOfHiddenNeurons * GateMultiplier
+     *
+     * 3. Recurrent-to-hidden weights (gated: each recurrent neuron has H*G connections)
+     *    Count: NumberOfHiddenNeurons * NumberOfHiddenNeurons * GateMultiplier
+     *
+     * 4. Last-hidden-to-output weights (NOT gated)
+     *    Count: NumberOfHiddenNeurons * NumberOfOutputs
+     *
+     * 5. Output layer bias weights (from last hidden layer bias, if present)
+     *    Count: NumberOfOutputs
+     */
+    template<typename NeuralNetworkType>
+    struct RecurrentNetworkPropertiesFileManager
+    {
+        typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
+        static const size_t NumberOfInputLayerNeurons = NeuralNetworkType::NumberOfInputLayerNeurons;
+        static const size_t NumberOfHiddenLayerNeurons = NeuralNetworkType::NumberOfHiddenLayerNeurons;
+        static const size_t NumberOfOutputLayerNeurons = NeuralNetworkType::NumberOfOutputLayerNeurons;
+        static const size_t InputToHiddenConnections = NeuralNetworkType::InputToHiddenConnections;
+        static const size_t RecurrentToHiddenConnections = NeuralNetworkType::RecurrentToHiddenConnections;
+        static const size_t GateMultiplier = NeuralNetworkType::HiddenLayerGateMultiplier;
+
+        template<typename SourceType, typename DestinationType>
+        static void loadNetworkWeights(NeuralNetworkType& neuralNetwork, std::ifstream& inFile)
+        {
+            typedef ValueParser<SourceType> ValueParserType;
+            typedef ValueConverter<SourceType, DestinationType> ValueConverterType;
+            typedef typename ValueParserType::ParsedValueType ParsedValueType;
+            char buffer[256];
+            ParsedValueType weight;
+            ValueType weightValue;
+
+            // 1. Input-to-hidden weights (gated)
+            for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
+            {
+                for (uint32_t conn = 0; conn < InputToHiddenConnections; ++conn)
+                {
+                    inFile.getline(buffer, 255);
+                    weight = ValueParserType::parseValue(buffer);
+                    weightValue = ValueConverterType::convertToDestinationType(weight);
+                    neuralNetwork.setInputLayerWeightForNeuronAndConnection(i, conn, weightValue);
+                }
+            }
+
+            // 2. Input layer bias weights (gated)
+            for (uint32_t conn = 0; conn < InputToHiddenConnections; ++conn)
+            {
+                inFile.getline(buffer, 255);
+                weight = ValueParserType::parseValue(buffer);
+                weightValue = ValueConverterType::convertToDestinationType(weight);
+                neuralNetwork.setInputLayerBiasWeightForConnection(conn, weightValue);
+            }
+
+            // 3. Recurrent-to-hidden weights (gated)
+            for (uint32_t r = 0; r < NumberOfHiddenLayerNeurons; ++r)
+            {
+                for (uint32_t conn = 0; conn < RecurrentToHiddenConnections; ++conn)
+                {
+                    inFile.getline(buffer, 255);
+                    weight = ValueParserType::parseValue(buffer);
+                    weightValue = ValueConverterType::convertToDestinationType(weight);
+                    neuralNetwork.getRecurrentLayer().setWeightForNeuronAndConnection(r, conn, weightValue);
+                }
+            }
+
+            // 4. Last-hidden-to-output weights (not gated)
+            const size_t hiddenLayer = neuralNetwork.NeuralNetworkNumberOfHiddenLayers - 1;
+            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+            {
+                for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+                {
+                    inFile.getline(buffer, 255);
+                    weight = ValueParserType::parseValue(buffer);
+                    weightValue = ValueConverterType::convertToDestinationType(weight);
+                    neuralNetwork.setHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, o, weightValue);
+                }
+            }
+
+            // 5. Output bias weights
+            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+            {
+                inFile.getline(buffer, 255);
+                weight = ValueParserType::parseValue(buffer);
+                weightValue = ValueConverterType::convertToDestinationType(weight);
+                neuralNetwork.setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, o, weightValue);
+            }
+        }
+
+        static void storeNetworkWeights(NeuralNetworkType& neuralNetwork, std::ofstream& outFile, char const* const delimiter = "\n")
+        {
+            // 1. Input-to-hidden weights (gated)
+            for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
+            {
+                for (uint32_t conn = 0; conn < InputToHiddenConnections; ++conn)
+                {
+                    outFile << neuralNetwork.getInputLayerWeightForNeuronAndConnection(i, conn) << delimiter;
+                }
+            }
+
+            // 2. Input layer bias weights (gated)
+            for (uint32_t conn = 0; conn < InputToHiddenConnections; ++conn)
+            {
+                outFile << neuralNetwork.getInputLayerBiasNeuronWeightForConnection(conn) << delimiter;
+            }
+
+            // 3. Recurrent-to-hidden weights (gated)
+            for (uint32_t r = 0; r < NumberOfHiddenLayerNeurons; ++r)
+            {
+                for (uint32_t conn = 0; conn < RecurrentToHiddenConnections; ++conn)
+                {
+                    outFile << neuralNetwork.getRecurrentLayer().getWeightForNeuronAndConnection(r, conn) << delimiter;
+                }
+            }
+
+            // 4. Last-hidden-to-output weights (not gated)
+            const size_t hiddenLayer = NeuralNetworkType::NeuralNetworkNumberOfHiddenLayers - 1;
+            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+            {
+                for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+                {
+                    outFile << neuralNetwork.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, o) << delimiter;
+                }
+            }
+
+            // 5. Output bias weights
+            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+            {
+                outFile << neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, o) << delimiter;
+            }
+        }
+    };
+
+    /**
+     * Weight serialization for Kolmogorov-Arnold Networks (KAN).
+     *
+     * Weight file format (text, one value per line):
+     *
+     * For each layer (input, inner hidden layers, last hidden):
+     *   For each neuron in the layer:
+     *     For each outgoing KAN connection:
+     *       - Base weight (w_b)
+     *       - Spline weight (w_s)
+     *       - Spline coefficients (GridSize + SplineDegree values)
+     *
+     * Values per connection: 2 + GridSize + SplineDegree
+     */
+    template<typename KanNetworkType>
+    struct KanNetworkPropertiesFileManager
+    {
+        typedef typename KanNetworkType::KanValueType ValueType;
+        static const size_t NumberOfInputLayerNeurons = KanNetworkType::NumberOfInputLayerNeurons;
+        static const size_t NumberOfHiddenLayerNeurons = KanNetworkType::NumberOfHiddenLayerNeurons;
+        static const size_t NumberOfOutputLayerNeurons = KanNetworkType::NumberOfOutputLayerNeurons;
+        static const size_t NumberOfInnerHiddenLayers = KanNetworkType::NumberOfInnerHiddenLayers;
+        static const size_t GridSize = KanNetworkType::KanGridSize;
+        static const size_t SplineDegree = KanNetworkType::KanSplineDegree;
+        static const size_t NumberOfCoefficients = GridSize + SplineDegree;
+
+        template<typename SourceType, typename DestinationType>
+        static void loadNetworkWeights(KanNetworkType& network, std::ifstream& inFile)
+        {
+            char buffer[256];
+
+            // Input layer: each neuron has NumberOfHiddenLayerNeurons outgoing KAN connections
+            for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
+            {
+                for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+                {
+                    loadKanConnection(network.getInputLayer().getNeuron(i)->getConnection(h),
+                                     inFile, buffer);
+                }
+            }
+
+            // Last hidden layer: each neuron has NumberOfOutputLayerNeurons outgoing KAN connections
+            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+            {
+                for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+                {
+                    loadKanConnection(network.getLastHiddenLayer().getNeuron(h)->getConnection(o),
+                                     inFile, buffer);
+                }
+            }
+        }
+
+        static void storeNetworkWeights(KanNetworkType& network, std::ofstream& outFile, char const* const delimiter = "\n")
+        {
+            // Input layer
+            for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
+            {
+                for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+                {
+                    storeKanConnection(network.getInputLayer().getNeuron(i)->getConnection(h),
+                                      outFile, delimiter);
+                }
+            }
+
+            // Last hidden layer
+            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+            {
+                for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
+                {
+                    storeKanConnection(network.getLastHiddenLayer().getNeuron(h)->getConnection(o),
+                                      outFile, delimiter);
+                }
+            }
+        }
+
+    private:
+        template<typename ConnectionType>
+        static void loadKanConnection(ConnectionType* conn, std::ifstream& inFile, char* buffer)
+        {
+            typedef ValueParser<ValueType> ValueParserType;
+
+            // Base weight
+            inFile.getline(buffer, 255);
+            conn->setBaseWeight(ValueParserType::parseValue(buffer));
+
+            // Spline weight
+            inFile.getline(buffer, 255);
+            conn->setSplineWeight(ValueParserType::parseValue(buffer));
+
+            // Spline coefficients
+            for (uint32_t c = 0; c < NumberOfCoefficients; ++c)
+            {
+                inFile.getline(buffer, 255);
+                conn->setCoefficient(c, ValueParserType::parseValue(buffer));
+            }
+        }
+
+        template<typename ConnectionType>
+        static void storeKanConnection(const ConnectionType* conn, std::ofstream& outFile, char const* const delimiter)
+        {
+            outFile << conn->getBaseWeight() << delimiter;
+            outFile << conn->getSplineWeight() << delimiter;
+            for (uint32_t c = 0; c < NumberOfCoefficients; ++c)
+            {
+                outFile << conn->getCoefficient(c) << delimiter;
+            }
+        }
+    };
 }

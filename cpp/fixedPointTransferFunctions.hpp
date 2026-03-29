@@ -34,6 +34,7 @@
 #include "gradientClipping.hpp"
 #include "weightDecay.hpp"
 #include "learningRateSchedule.hpp"
+#include "adam.hpp"
 
 namespace tinymind {
     template<
@@ -47,7 +48,8 @@ namespace tinymind {
             class TransferFunctionZeroTolerancePolicy = tinymind::ZeroToleranceCalculator<ValueType>,
             class TransferFunctionGradientClippingPolicy = tinymind::NullGradientClippingPolicy<ValueType>,
             class TransferFunctionWeightDecayPolicy = tinymind::NullWeightDecayPolicy<ValueType>,
-            class TransferFunctionLearningRateSchedulePolicy = tinymind::FixedLearningRatePolicy<ValueType> >
+            class TransferFunctionLearningRateSchedulePolicy = tinymind::FixedLearningRatePolicy<ValueType>,
+            class TransferFunctionOptimizerPolicy = tinymind::NullOptimizerPolicy<ValueType> >
     struct FixedPointTransferFunctions
     {
         typedef ValueType TransferFunctionsValueType;
@@ -60,6 +62,7 @@ namespace tinymind {
         typedef TransferFunctionGradientClippingPolicy       GradientClippingPolicyType;
         typedef TransferFunctionWeightDecayPolicy            WeightDecayPolicyType;
         typedef TransferFunctionLearningRateSchedulePolicy   LearningRateSchedulePolicyType;
+        typedef TransferFunctionOptimizerPolicy              OptimizerPolicyType;
 
         static const unsigned NumberOfTransferFunctionsOutputNeurons = NumberOfOutputNeurons;
 
