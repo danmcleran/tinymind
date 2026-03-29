@@ -3,8 +3,10 @@ apps/activation/output/
 examples/dqn_maze/output/
 examples/maze/output/
 examples/xor/output/
+examples/kan_xor/output/
 examples/pytorch/xor/input/
 examples/pytorch/xor/output/
 unit_test/qformat/output/
 unit_test/qlearn/output/
 unit_test/nn/output/
+unit_test/kan/output/
