@@ -1,8 +1,40 @@
 # LSTM Sinusoid Prediction: Lessons Learned
 
+## Architecture
+
+TinyMind's LSTM now implements the standard LSTM architecture with **4 independent gate weight matrices**. Each gate (cell candidate, input, forget, output) computes its own weighted sum from input, bias, and recurrent connections:
+
+```cpp
+// For hidden neuron n, connections are indexed as:
+//   n*4 + 0 = cell candidate
+//   n*4 + 1 = input gate
+//   n*4 + 2 = forget gate
+//   n*4 + 3 = output gate
+
+// Each gate has independent weights:
+cellCandidateInput = bias[n*4+0] + W_c * x_t + U_c * h_{t-1}
+inputGateInput     = bias[n*4+1] + W_i * x_t + U_i * h_{t-1}
+forgetGateInput    = bias[n*4+2] + W_f * x_t + U_f * h_{t-1}
+outputGateInput    = bias[n*4+3] + W_o * x_t + U_o * h_{t-1}
+
+// Standard LSTM equations:
+c_hat_t = tanh(cellCandidateInput)
+i_t     = sigmoid(inputGateInput)
+f_t     = sigmoid(forgetGateInput)
+o_t     = sigmoid(outputGateInput)
+c_t     = f_t * c_{t-1} + i_t * c_hat_t
+h_t     = o_t * tanh(c_t)
+```
+
+The backpropagation decomposes the output delta through each gate using the chain rule and stored gate activations, producing 4 independent gate deltas used for per-gate gradient computation and weight updates.
+
+### Previous Architecture (Historical)
+
+An earlier version of TinyMind's LSTM used a shared pre-activation value for all gates — a single weighted sum fed to all gates rather than independent projections. This caused severe training instability (narrow hyperparameter window, collapse to constant predictions under most configurations). The independent gate architecture resolved these issues.
+
 ## Working Configuration
 
-The only configuration that produces sinusoidal predictions (rather than collapsing to a constant) is:
+The following configuration produces sinusoidal auto-regressive predictions with phase drift that worsens over ~20 steps:
 
 | Parameter | Value |
 |-----------|-------|
@@ -19,11 +51,9 @@ The only configuration that produces sinusoidal predictions (rather than collaps
 | Momentum | 0.5 (default) |
 | LSTM state reset | None (state accumulates across epochs) |
 
-This produces sinusoidal auto-regressive predictions with phase drift that worsens over ~20 steps.
-
 ## Changes That Cause Collapse to Constant Prediction
 
-Every one of the following changes, tested individually and in combination, caused the network to stop learning sinusoidal dynamics and instead predict a fixed constant (~0.5 for sigmoid output, ~-0.5 for tanh/linear output):
+The following changes were tested under the old shared pre-activation architecture. With the new independent gate weights, some of these may now work. They are preserved here as a record of the original experiments and as starting points for re-evaluation.
 
 ### Output Activation Changes
 - **Tanh output activation** with [-1, 1] data: Tanh derivative vanishes near +/-1, killing gradients at the sine wave extrema.
@@ -34,7 +64,7 @@ Every one of the following changes, tested individually and in combination, caus
 - **Training on multiple periods** (30 or 150 samples covering 3 periods): Same issue as above, amplified.
 
 ### State Management Changes
-- **Resetting LSTM cell state between epochs**: Prevents the network from building up useful temporal context. The accumulated state across epochs appears to act as implicit regularization that is essential for this implementation.
+- **Resetting LSTM cell state between epochs**: Prevents the network from building up useful temporal context. The accumulated state across epochs appears to act as implicit regularization.
 
 ### Hyperparameter Changes
 - **Increasing hidden neurons to 32**: Too many parameters for the small training set, causes overfitting to the mean.
@@ -44,7 +74,7 @@ Every one of the following changes, tested individually and in combination, caus
 
 ## Root Cause Analysis
 
-The auto-regressive phase drift is inherent to this architecture because:
+The auto-regressive phase drift is inherent to this training approach because:
 
 1. **Only 8 unique training pairs** from 10 samples per period is too few for the LSTM to precisely learn the sinusoidal mapping.
 2. **No LSTM state reset between epochs** means the cell state is an accumulation from all training, not a clean traversal of one sequence. This makes the state at prediction time inconsistent with any single training pass.
@@ -53,90 +83,45 @@ The auto-regressive phase drift is inherent to this architecture because:
 
 ## Library Improvements Made
 
-The following additions to the library are useful for future experimentation:
+The following additions to the library address previously documented issues:
 
-- **`LstmNeuralNetwork::resetState()`** — Public method to reset all LSTM hidden layer cell states to zero. Located in `cpp/neuralnet.hpp`.
-- **`Layer::getNeuron(index)`** — Public accessor to retrieve a pointer to an individual neuron by index. Located in `cpp/neuralnet.hpp`.
-- **`LinearActivationPolicy` derivative fix** — Corrected `activationFunctionDerivative()` to return 1 instead of 0 (the mathematically correct derivative of f(x) = x). Located in `cpp/activationFunctions.hpp`.
+### Architectural Fixes
+- **Independent gate weight matrices** — Each of the 4 LSTM gates (cell candidate, input, forget, output) now has its own set of input weights, recurrent weights, and bias via `GateConnectionCount` with a 4x connection multiplier. Located in `LstmHiddenLayer::feedForward()` in `cpp/neuralnet.hpp`.
+- **Gate-aware backpropagation** — `LstmHiddenLayer::computeGateDeltas()` decomposes the output delta through the LSTM cell equations to produce 4 independent gate-input deltas. Gradient computation and weight updates use `GatedGradientDispatcher` and `GatedWeightUpdateDispatcher` to process per-gate connections correctly.
+
+### Training Infrastructure
+- **Configurable gradient clipping** — `GradientClipByValue` policy clips gradients to a configurable range, preventing exploding gradients during training. Replaces the previous hardcoded [-1, 1] clip. Located in `cpp/gradientClipping.hpp`.
+- **L2 weight decay** — `L2WeightDecay` policy applies regularization to prevent weight overflow, especially important for fixed-point arithmetic. Located in `cpp/weightDecay.hpp`.
+- **Learning rate scheduling** — `StepDecaySchedule` policy reduces the learning rate by a configurable factor every N training steps. Located in `cpp/learningRateSchedule.hpp`.
+
+### API Improvements
+- **`LstmNeuralNetwork::resetState()`** — Public method to reset all LSTM hidden layer cell states to zero.
+- **`Layer::getNeuron(index)`** — Public accessor to retrieve a pointer to an individual neuron by index.
+- **`LinearActivationPolicy` derivative fix** — Corrected `activationFunctionDerivative()` to return 1 instead of 0 (the mathematically correct derivative of f(x) = x).
+
+## Current Status
+
+| Feature | Status |
+|---------|--------|
+| Independent gate weight matrices | Implemented |
+| Gate-aware backpropagation | Implemented |
+| Gradient clipping | Implemented (configurable policy) |
+| L2 weight decay | Implemented (configurable policy) |
+| Learning rate scheduling | Implemented (step decay) |
+| Multi-layer LSTM | Supported via `HiddenLayers<N0, N1, ...>` |
+| GRU alternative | Implemented (3-gate, ~25% less memory) |
+| Teacher forcing / scheduled sampling | Not implemented |
+| Adam / RMSProp optimizer | Not implemented (SGD with momentum only) |
+| Truncated BPTT | Not implemented |
+| LSTM/GRU weight serialization | Not implemented |
 
 ## Recommendations for Future Improvement
 
-To significantly improve auto-regressive prediction accuracy, changes deeper in the LSTM training algorithm would be needed:
+To further improve auto-regressive prediction accuracy:
 
-1. **Teacher forcing / scheduled sampling**: During training, randomly feed the model's own prediction (instead of the true value) as input. This teaches the model to recover from its own errors.
+1. **Teacher forcing / scheduled sampling**: During training, randomly feed the model's own prediction (instead of the true value) as input. This teaches the model to recover from its own errors and directly addresses phase drift.
 2. **Multi-step training loss**: Unroll the auto-regressive prediction for K steps during training and compute loss on all K steps.
-3. **Gradient clipping**: Prevent exploding gradients during BPTT by clipping gradient magnitudes.
-4. **BPTT truncation**: Limit backpropagation through time to a fixed window to stabilize training with longer sequences.
+3. **Adam optimizer**: Replace SGD-with-momentum with Adam or RMSProp. Adaptive per-parameter learning rates are particularly important when different gates need to learn at different rates.
+4. **Truncated BPTT**: Limit backpropagation through time to a fixed window to enable learning temporal dependencies spanning multiple timesteps while keeping memory bounded.
 5. **More inputs**: Using 3-4 previous values instead of 2 would give the network more context to determine phase position.
-
-## Critical Architectural Finding
-
-### Shared Pre-Activation Across All Gates
-
-The root cause of TinyMind's LSTM instability is that all gates share a single pre-activation value rather than having independent weight matrices per gate.
-
-In `cpp/neuralnet.hpp` (lines 2313-2324), the LSTM feedforward computes a single `input` value from the previous layer and recurrent connection, then passes that same value to all three gates:
-
-```cpp
-input = previousLayer.getBiasNeuronValueForOutgoingConnection(neuron);
-input += previousLayer.getOutputValueForOutgoingConnection(neuron);
-input += recurrentLayer.getOutputValueForOutgoingConnection(neuron);
-
-forgetGateActivation = ForgetGateActivationPolicy::activationFunction(input + previousCellState);
-inputGateActivation  = InputGateActivationPolicy::activationFunction(input);
-outputGateActivation = OutputGateActivationPolicy::activationFunction(input);
-```
-
-### How a Standard LSTM Works
-
-A standard LSTM has **4 independent weight matrices**, each with its own weights and biases. For an input `x_t` and previous hidden state `h_{t-1}`, a standard LSTM computes:
-
-- **Forget gate**: `f_t = sigmoid(W_f * x_t + U_f * h_{t-1} + b_f)`
-- **Input gate**: `i_t = sigmoid(W_i * x_t + U_i * h_{t-1} + b_i)`
-- **Cell candidate**: `c_hat_t = tanh(W_c * x_t + U_c * h_{t-1} + b_c)`
-- **Output gate**: `o_t = sigmoid(W_o * x_t + U_o * h_{t-1} + b_o)`
-
-Each gate learns **different** linear projections of the input and recurrent state, allowing each gate to respond to different features. TinyMind computes a single linear projection and feeds it to all gates, which means:
-
-- The input gate, output gate, and cell candidate all see the exact same pre-activation value.
-- The forget gate sees that value plus the previous cell state, but still has no independent learned weights.
-- The gates cannot learn independent behaviors. For example, the forget gate cannot learn to retain information while the input gate simultaneously learns to suppress new input, because both are driven by the same projection.
-
-### Why This Explains All Observed Collapse Behavior
-
-Every failure mode documented above traces back to this shared-weight architecture:
-
-1. **Narrow hyperparameter window**: With shared weights, only a very specific learning rate, momentum, and network size produce the right balance where the single shared projection happens to drive all gates in a useful way. Any change disturbs this fragile equilibrium.
-
-2. **Collapse on LSTM state reset**: The accumulated cell state is the only source of differentiation between the forget gate and the other gates (via `input + previousCellState`). Resetting state removes this differentiation, making the forget gate behave nearly identically to the input and output gates.
-
-3. **Collapse with more training data**: More data points per epoch push the shared projection through more updates per epoch, causing the single set of weights to be pulled in too many directions at once. Independent gate weights would allow each gate to specialize.
-
-4. **Collapse with different activations**: Tanh and linear output activations expose the instability more directly. Sigmoid output with [0, 1] data happens to compress errors into a narrow range that masks the architectural limitation.
-
-### Comparison: Standard LSTM vs TinyMind LSTM
-
-| Feature | Standard LSTM | TinyMind LSTM |
-|---------|---------------|---------------|
-| **Gate weight matrices** | 4 independent (W_f, W_i, W_c, W_o), each with own input and recurrent weights | 1 shared pre-activation for all gates |
-| **Gate biases** | Independent per gate (b_f, b_i, b_c, b_o) | Single shared bias |
-| **Input format** | Sequential: one timestep per forward pass, state carried across steps | Parallel: all inputs presented simultaneously as a vector |
-| **Training data** | Full sequences with BPTT through time | Standard backpropagation, no true BPTT |
-| **Output activation** | Typically linear or task-specific | Sigmoid/tanh/linear (sigmoid is only stable option) |
-| **Optimizer** | Adam or RMSProp (adaptive learning rates) | SGD with momentum only |
-| **Gradient clipping** | Standard practice (clip by norm or value) | Not implemented |
-| **Parameter count (16 hidden)** | ~4x more (independent weights per gate) | ~1/4 of standard (shared weights) |
-
-### Prioritized Recommended Fixes
-
-Listed in order of expected impact:
-
-1. **Independent gate weight matrices** (highest priority): Each gate (input, forget, output, cell candidate) needs its own set of input weights, recurrent weights, and bias. This is the fundamental fix. Without it, the LSTM cannot learn to independently control information flow. Each neuron would need 4 separate weighted sums computed from the input layer and recurrent layer, rather than sharing a single `input` value.
-
-2. **Sequential input processing**: Feed one timestep per forward pass and carry hidden/cell state across timesteps within a sequence. The current architecture feeds all inputs as a flat vector, which conflates spatial and temporal dimensions. True sequential processing is required for the LSTM to learn temporal patterns properly.
-
-3. **Gradient clipping**: Implement gradient clipping by norm or value during backpropagation. LSTMs are prone to exploding gradients during BPTT, and without clipping, gradients can destabilize training or cause NaN values. This is especially critical for fixed-point implementations where overflow is catastrophic.
-
-4. **Adam optimizer**: Replace SGD-with-momentum with Adam or RMSProp. Adaptive learning rate optimizers maintain per-parameter learning rates, which is particularly important when different gates need to learn at different rates. Adam also provides better convergence for recurrent networks in general.
-
-5. **Proper BPTT implementation**: Once sequential input and independent gates are in place, implement truncated backpropagation through time so gradients flow back through the unrolled timesteps, enabling the network to learn temporal dependencies beyond a single step.
+6. **LSTM/GRU weight serialization**: Extend `NetworkPropertiesFileManager` to support gated connection layouts (4x for LSTM, 3x for GRU) so trained models can be saved and loaded.
