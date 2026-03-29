@@ -9,6 +9,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 ### Neural Networks
 
 - **Feed-forward networks** with arbitrary depth and width
+- **1D convolution layer** for time-series feature extraction (sensor data, IMU, ECG)
 - **Kolmogorov-Arnold Networks (KAN)** with learnable B-spline activation functions on edges
 - **Recurrent neural networks** (Elman) with configurable recurrent connection depth
 - **LSTM networks** with gated cell state, supporting single and multi-layer configurations
@@ -17,13 +18,17 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **Batch training** with configurable batch size
 - **Softmax output** for multi-class classification
 - **Xavier weight initialization** (uniform and normal distributions)
-- **Weight import/export** in CSV and binary formats (interoperable with PyTorch)
+- **Weight import/export** in CSV and binary formats for all network types (MLP, LSTM, GRU, KAN; interoperable with PyTorch)
 
 ### Training Policies
 
+- **Adam optimizer** with per-parameter adaptive learning rates (`AdamOptimizerFloat` for double, `AdamOptimizer` for fixed-point)
 - **Gradient clipping** via configurable `GradientClipByValue` policy to prevent exploding gradients (especially critical for fixed-point)
 - **L2 weight decay** (ridge regularization) via `L2WeightDecay` policy to prevent weight overflow and reduce overfitting
 - **Learning rate scheduling** with `StepDecaySchedule` (multiply by decay factor every N steps) and `FixedLearningRatePolicy` (default)
+- **Early stopping** via `EarlyStopping<ValueType, Patience>` to detect convergence and save compute cycles
+- **Teacher forcing / scheduled sampling** via `ScheduledSampling` for recurrent training -- linearly decays from ground truth to model predictions
+- **Truncated BPTT** via `TruncatedBPTT<NNType, WindowSize>` -- accumulates recurrent state over K timesteps before weight update
 - All policies are optional template parameters with null/no-op defaults for full backward compatibility
 - Policies are extracted from `TransferFunctionsPolicy` via SFINAE traits -- existing user code compiles unchanged
 
@@ -55,6 +60,8 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 | Capped ReLU | `CappedReluActivationPolicy` | [0, max] |
 | Sigmoid | `SigmoidActivationPolicy` | (0, 1) |
 | Tanh | `TanhActivationPolicy` | (-1, 1) |
+| ELU | `EluActivationPolicy` | (-1, inf) |
+| GELU | `GeluActivationPolicy` | (-0.17, inf) |
 | SiLU | `SiLUActivationPolicy` | (-0.28, inf) |
 | Softmax | `SoftmaxActivationPolicy` | (0, 1) per class |
 
@@ -232,6 +239,55 @@ typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<5>, 1,
     TransferFunctions> RegularizedNetwork;
 ```
 
+### 1D Convolution (Sensor Feature Extraction)
+
+```cpp
+#include "conv1d.hpp"
+
+// 100-point sensor input, kernel=5, stride=2, 8 filters
+typedef tinymind::Conv1D<double, 100, 5, 2, 8> ConvType;
+// Output: 8 filters * 48 positions = 384 features
+
+ConvType conv;
+conv.initializeWeights<RandomNumberGenerator>();
+
+double sensorData[100];
+double features[ConvType::OutputSize];  // 384
+
+conv.forward(sensorData, features);
+
+// Feed features into a classifier
+typedef tinymind::NeuralNetwork<double, 384, tinymind::HiddenLayers<32>, 4,
+    TransferFunctions> Classifier;
+Classifier nn;
+nn.feedForward(features);
+```
+
+### Truncated BPTT (Recurrent Training)
+
+```cpp
+#include "truncatedBPTT.hpp"
+
+// LSTM with truncated BPTT over 5-step windows
+typedef tinymind::LstmNeuralNetwork<double, 1,
+    tinymind::HiddenLayers<16>, 1,
+    FloatTransferFunctions> LstmNetwork;
+
+LstmNetwork nn;
+tinymind::TruncatedBPTT<LstmNetwork, 5> trainer;
+
+for (int epoch = 0; epoch < 10000; ++epoch) {
+    nn.resetState();
+    trainer.reset();
+    for (int t = 0; t < sequenceLength - 1; ++t) {
+        input[0] = sequence[t];
+        target[0] = sequence[t + 1];
+        trainer.step(nn, input, target);  // trains every 5 steps
+    }
+    trainer.flush(nn);  // train on remaining steps
+}
+```
+
 ### Q-Learning (Maze)
 
 ```cpp
@@ -256,6 +312,7 @@ MazeEnvironment env;
 |------|-------|-------------|
 | Feed-forward | `NeuralNetwork` | Standard MLP with configurable layers |
 | Feed-forward (uniform) | `MultilayerPerceptron` | MLP with equal-sized hidden layers |
+| 1D Convolution | `Conv1D` | Time-series feature extraction with configurable kernel/stride/filters |
 | KAN | `KolmogorovArnoldNetwork` | Learnable B-spline activations on edges |
 | Elman RNN | `ElmanNeuralNetwork` | Simple recurrent with depth-1 feedback |
 | Recurrent | `RecurrentNeuralNetwork` | Configurable recurrent connection depth |
@@ -290,14 +347,12 @@ NeuralNetwork<
 
 The heterogeneous layer chain (`LayerChain`/`EmptyLayerChain`) compiles to the exact same binary size as uniform array-based storage:
 
-**MLP sizes (Q8.8):**
+**MLP sizes (double):**
 
 | Configuration | Size (bytes) |
 |---|---|
-| 2 -> 5 -> 1 (1 hidden) | 1,000 |
-| 2 -> 5 -> 5 -> 1 (2 hidden) | 2,104 |
-| 10 -> 20 -> 20 -> 5 (large) | 25,480 |
-| 2 -> 3 -> 1 (Elman RNN) | 1,048 |
+| 2 -> 5 -> 1 (1 hidden) | 1,008 |
+| 2 -> 3 -> 1 (Elman RNN) | 1,056 |
 | 2 -> 5 -> 1 (non-trainable) | 360 |
 
 **KAN vs MLP XOR comparison (Q8.8):**
@@ -334,6 +389,8 @@ cd unit_test/qlearn && make clean && make && make run
 ```bash
 cd examples/xor && make clean && make
 cd examples/kan_xor && make clean && make
+cd examples/gru_xor && make clean && make
+cd examples/lstm_sinusoid && make clean && make
 cd examples/maze && make clean && make
 cd examples/dqn_maze && make clean && make
 ```
@@ -348,30 +405,38 @@ cd examples/dqn_maze && make clean && make
 ```
 tinymind/
   cpp/                          # Core library headers
-    neuralnet.hpp               # Neural network templates (~5600 lines)
+    neuralnet.hpp               # Neural network templates (~5700 lines)
     kan.hpp                     # Kolmogorov-Arnold Network templates
     bspline.hpp                 # B-spline evaluation engine (De Boor algorithm)
     kanTransferFunctions.hpp    # KAN transfer functions and SiLU activation
+    conv1d.hpp                  # 1D convolution layer
     qformat.hpp                 # Fixed-point arithmetic
     qlearn.hpp                  # Q-learning and DQN
-    activationFunctions.hpp     # Activation function policies
+    activationFunctions.hpp     # Activation function policies (9 functions)
     fixedPointTransferFunctions.hpp
+    adam.hpp                    # Adam optimizer policy
     gradientClipping.hpp        # Gradient clipping policies
     weightDecay.hpp             # L2 weight decay policies
     learningRateSchedule.hpp    # Learning rate scheduling policies
+    earlyStopping.hpp           # Early stopping convergence monitor
+    teacherForcing.hpp          # Scheduled sampling for recurrent training
+    truncatedBPTT.hpp           # Truncated BPTT training utility
+    networkStats.hpp            # Compile-time network statistics
     xavier.hpp                  # Xavier weight initialization
     lookupTables.cpp            # Pre-computed activation tables (~3MB)
     include/                    # Support headers
-      nnproperties.hpp          # Network property/weight file manager
+      nnproperties.hpp          # Weight file manager (MLP, LSTM, GRU, KAN)
       constants.hpp, limits.hpp, random.hpp, ...
   examples/
     xor/                        # MLP XOR gate learning
     kan_xor/                    # KAN XOR gate learning
+    gru_xor/                    # GRU XOR gate learning
+    lstm_sinusoid/              # LSTM sinusoid prediction
     maze/                       # Tabular Q-learning maze solver
     dqn_maze/                   # Deep Q-Network maze solver
-    pytorch/                    # PyTorch weight import for inference
+    pytorch/                    # PyTorch weight import (MLP + GRU export)
   unit_test/
-    nn/                         # Neural network tests (71 test cases)
+    nn/                         # Neural network tests (85 test cases)
     kan/                        # KAN tests (16 test cases)
     qformat/                    # Fixed-point type tests (static_assert)
     qlearn/                     # Q-learning tests
