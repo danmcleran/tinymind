@@ -1,6 +1,6 @@
 # TinyMind
 
-A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM recurrent networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
+A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
 
 Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design), TinyMind uses template metaprogramming to produce zero-overhead abstractions where network topology, value type, activation functions, and training policies are all compile-time parameters.
 
@@ -12,11 +12,20 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **Kolmogorov-Arnold Networks (KAN)** with learnable B-spline activation functions on edges
 - **Recurrent neural networks** (Elman) with configurable recurrent connection depth
 - **LSTM networks** with gated cell state, supporting single and multi-layer configurations
+- **GRU networks** (Gated Recurrent Unit) with 3-gate architecture -- ~25% less memory than LSTM per hidden neuron
 - **Heterogeneous hidden layers** via `HiddenLayers<N0, N1, ...>` for different neuron counts per layer
 - **Batch training** with configurable batch size
 - **Softmax output** for multi-class classification
 - **Xavier weight initialization** (uniform and normal distributions)
 - **Weight import/export** in CSV and binary formats (interoperable with PyTorch)
+
+### Training Policies
+
+- **Gradient clipping** via configurable `GradientClipByValue` policy to prevent exploding gradients (especially critical for fixed-point)
+- **L2 weight decay** (ridge regularization) via `L2WeightDecay` policy to prevent weight overflow and reduce overfitting
+- **Learning rate scheduling** with `StepDecaySchedule` (multiply by decay factor every N steps) and `FixedLearningRatePolicy` (default)
+- All policies are optional template parameters with null/no-op defaults for full backward compatibility
+- Policies are extracted from `TransferFunctionsPolicy` via SFINAE traits -- existing user code compiles unchanged
 
 ### Kolmogorov-Arnold Networks (KAN)
 
@@ -171,6 +180,58 @@ typedef tinymind::LstmNeuralNetwork<double, 2,
     FloatTransferFunctions> DeeperLstmNetwork;
 ```
 
+### GRU Network
+
+```cpp
+#include "neuralnet.hpp"
+
+// GRU with 8 hidden neurons -- ~25% smaller than equivalent LSTM
+typedef tinymind::GruNeuralNetwork<double, 2,
+    tinymind::HiddenLayers<8>, 1,
+    FloatTransferFunctions> GruNetwork;
+
+GruNetwork nn;
+double input[2], target[1], output[1];
+
+// Sequential training (same API as LSTM)
+for (int epoch = 0; epoch < 10000; ++epoch) {
+    nn.resetState();
+    for (int t = 0; t < sequenceLength - 1; ++t) {
+        input[0] = sequence[t];
+        input[1] = sequence[t + 1];
+        target[0] = sequence[t + 2];
+        nn.feedForward(input);
+        nn.trainNetwork(target);
+    }
+}
+```
+
+### Training with Gradient Clipping and Weight Decay
+
+```cpp
+#include "fixedPointTransferFunctions.hpp"
+
+typedef tinymind::QValue<8, 8, true> ValueType;
+
+// Enable gradient clipping [-1, 1] and L2 weight decay (lambda ~ 1/256)
+typedef tinymind::FixedPointTransferFunctions<
+    ValueType,
+    RandomNumberGenerator<ValueType>,
+    tinymind::TanhActivationPolicy<ValueType>,
+    tinymind::TanhActivationPolicy<ValueType>,
+    1,                                                  // NumberOfOutputNeurons
+    tinymind::DefaultNetworkInitializer<ValueType>,     // initializer
+    tinymind::MeanSquaredErrorCalculator<ValueType, 1>, // error calculator
+    tinymind::ZeroToleranceCalculator<ValueType>,       // zero tolerance
+    tinymind::GradientClipByValue<ValueType>,           // gradient clipping
+    tinymind::L2WeightDecay<ValueType>,                 // weight decay
+    tinymind::StepDecaySchedule<ValueType, 5000>        // LR decay every 5000 steps
+> TransferFunctions;
+
+typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<5>, 1,
+    TransferFunctions> RegularizedNetwork;
+```
+
 ### Q-Learning (Maze)
 
 ```cpp
@@ -198,7 +259,8 @@ MazeEnvironment env;
 | KAN | `KolmogorovArnoldNetwork` | Learnable B-spline activations on edges |
 | Elman RNN | `ElmanNeuralNetwork` | Simple recurrent with depth-1 feedback |
 | Recurrent | `RecurrentNeuralNetwork` | Configurable recurrent connection depth |
-| LSTM | `LstmNeuralNetwork` | Long Short-Term Memory with gates |
+| LSTM | `LstmNeuralNetwork` | Long Short-Term Memory with 4 gates |
+| GRU | `GruNeuralNetwork` | Gated Recurrent Unit with 3 gates |
 
 All network types support both fixed-point and floating-point value types.
 
@@ -218,7 +280,7 @@ NeuralNetwork<
     IsTrainable,            // true/false (inference-only mode)
     BatchSize,              // gradient accumulation batch size
     HasRecurrentLayer,      // enables recurrent connections
-    HiddenLayerConfig,      // NonRecurrent/Recurrent/LSTM/GRU
+    HiddenLayerConfig,      // NonRecurrent/Recurrent/GRU/LSTM
     RecurrentConnectionDepth,
     OutputLayerConfiguration // FeedForward/Classifier(softmax)
 >
@@ -286,7 +348,7 @@ cd examples/dqn_maze && make clean && make
 ```
 tinymind/
   cpp/                          # Core library headers
-    neuralnet.hpp               # Neural network templates (~5200 lines)
+    neuralnet.hpp               # Neural network templates (~5600 lines)
     kan.hpp                     # Kolmogorov-Arnold Network templates
     bspline.hpp                 # B-spline evaluation engine (De Boor algorithm)
     kanTransferFunctions.hpp    # KAN transfer functions and SiLU activation
@@ -294,6 +356,9 @@ tinymind/
     qlearn.hpp                  # Q-learning and DQN
     activationFunctions.hpp     # Activation function policies
     fixedPointTransferFunctions.hpp
+    gradientClipping.hpp        # Gradient clipping policies
+    weightDecay.hpp             # L2 weight decay policies
+    learningRateSchedule.hpp    # Learning rate scheduling policies
     xavier.hpp                  # Xavier weight initialization
     lookupTables.cpp            # Pre-computed activation tables (~3MB)
     include/                    # Support headers
@@ -306,8 +371,8 @@ tinymind/
     dqn_maze/                   # Deep Q-Network maze solver
     pytorch/                    # PyTorch weight import for inference
   unit_test/
-    nn/                         # Neural network tests (62 test cases)
-    kan/                        # KAN tests (15 test cases)
+    nn/                         # Neural network tests (71 test cases)
+    kan/                        # KAN tests (16 test cases)
     qformat/                    # Fixed-point type tests (static_assert)
     qlearn/                     # Q-learning tests
   apps/
