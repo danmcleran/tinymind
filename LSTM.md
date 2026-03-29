@@ -111,9 +111,10 @@ The following additions to the library address previously documented issues:
 | Multi-layer LSTM | Supported via `HiddenLayers<N0, N1, ...>` |
 | GRU alternative | Implemented (3-gate, ~25% less memory) |
 | Teacher forcing / scheduled sampling | Not implemented |
-| Adam / RMSProp optimizer | Not implemented (SGD with momentum only) |
+| Adam optimizer | Implemented (`AdamOptimizerFloat`, `AdamOptimizer` for fixed-point) |
 | Truncated BPTT | Not implemented |
-| LSTM/GRU weight serialization | Not implemented |
+| LSTM/GRU weight serialization | Implemented (`RecurrentNetworkPropertiesFileManager`) |
+| Early stopping | Implemented (`EarlyStopping<ValueType, Patience>`) |
 
 ## Recommendations for Future Improvement
 
@@ -121,7 +122,5 @@ To further improve auto-regressive prediction accuracy:
 
 1. **Teacher forcing / scheduled sampling**: During training, randomly feed the model's own prediction (instead of the true value) as input. This teaches the model to recover from its own errors and directly addresses phase drift.
 2. **Multi-step training loss**: Unroll the auto-regressive prediction for K steps during training and compute loss on all K steps.
-3. **Adam optimizer**: Replace SGD-with-momentum with Adam or RMSProp. Adaptive per-parameter learning rates are particularly important when different gates need to learn at different rates.
-4. **Truncated BPTT**: Limit backpropagation through time to a fixed window to enable learning temporal dependencies spanning multiple timesteps while keeping memory bounded.
-5. **More inputs**: Using 3-4 previous values instead of 2 would give the network more context to determine phase position.
-6. **LSTM/GRU weight serialization**: Extend `NetworkPropertiesFileManager` to support gated connection layouts (4x for LSTM, 3x for GRU) so trained models can be saved and loaded.
+3. **Truncated BPTT**: Limit backpropagation through time to a fixed window to enable learning temporal dependencies spanning multiple timesteps while keeping memory bounded.
+4. **More inputs**: Using 3-4 previous values instead of 2 would give the network more context to determine phase position.
