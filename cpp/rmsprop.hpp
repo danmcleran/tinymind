@@ -113,21 +113,21 @@ namespace tinymind {
             static const ValueType one(1, 0);
 
             // Get current second moment (running average of squared gradients)
-            ValueType v = previousLayer.getSecondMomentForNeuronAndConnection(conn, neuron);
+            ValueType v = previousLayer.getSecondMomentForNeuronAndConnection(neuron, conn);
 
             // Update second moment: v = decay * v + (1 - decay) * gradient^2
             v = decay * v + (one - decay) * gradient * gradient;
 
             // Store updated moment
-            previousLayer.setSecondMomentForNeuronAndConnection(conn, neuron, v);
+            previousLayer.setSecondMomentForNeuronAndConnection(neuron, conn, v);
 
             // Compute update: lr * gradient / (sqrt(v) + epsilon)
             const ValueType sqrtV = detail::FixedPointSqrt<ValueType>::sqrt(v);
             const ValueType update = learningRate * gradient / (sqrtV + epsilon);
 
             // Apply weight update
-            const ValueType currentWeight = previousLayer.getWeightForNeuronAndConnection(conn, neuron);
-            previousLayer.setWeightForNeuronAndConnection(conn, neuron, currentWeight + update);
+            const ValueType currentWeight = previousLayer.getWeightForNeuronAndConnection(neuron, conn);
+            previousLayer.setWeightForNeuronAndConnection(neuron, conn, currentWeight + update);
         }
 
     private:
@@ -166,21 +166,21 @@ namespace tinymind {
         void updateWeights(PreviousLayerType& previousLayer, const size_t neuron, const size_t conn, const ValueType& gradient, const ValueType& learningRate)
         {
             // Get current second moment
-            ValueType v = previousLayer.getSecondMomentForNeuronAndConnection(conn, neuron);
+            ValueType v = previousLayer.getSecondMomentForNeuronAndConnection(neuron, conn);
 
             // Update second moment: v = decay * v + (1 - decay) * gradient^2
             v = static_cast<ValueType>(mDecay) * v + static_cast<ValueType>(1.0 - mDecay) * gradient * gradient;
 
             // Store updated moment
-            previousLayer.setSecondMomentForNeuronAndConnection(conn, neuron, v);
+            previousLayer.setSecondMomentForNeuronAndConnection(neuron, conn, v);
 
             // Compute update: lr * gradient / (sqrt(v) + epsilon)
             const ValueType sqrtV = static_cast<ValueType>(std::sqrt(static_cast<double>(v)));
             const ValueType update = learningRate * gradient / (sqrtV + static_cast<ValueType>(mEpsilon));
 
             // Apply weight update
-            const ValueType currentWeight = previousLayer.getWeightForNeuronAndConnection(conn, neuron);
-            previousLayer.setWeightForNeuronAndConnection(conn, neuron, currentWeight + update);
+            const ValueType currentWeight = previousLayer.getWeightForNeuronAndConnection(neuron, conn);
+            previousLayer.setWeightForNeuronAndConnection(neuron, conn, currentWeight + update);
         }
 
     private:

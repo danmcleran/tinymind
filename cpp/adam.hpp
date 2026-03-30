@@ -110,8 +110,8 @@ namespace tinymind {
             static const ValueType one(1, 0);
 
             // Get current moments
-            ValueType m = previousLayer.getFirstMomentForNeuronAndConnection(conn, neuron);
-            ValueType v = previousLayer.getSecondMomentForNeuronAndConnection(conn, neuron);
+            ValueType m = previousLayer.getFirstMomentForNeuronAndConnection(neuron, conn);
+            ValueType v = previousLayer.getSecondMomentForNeuronAndConnection(neuron, conn);
 
             // Update biased first moment: m = beta1 * m + (1 - beta1) * gradient
             m = beta1 * m + (one - beta1) * gradient;
@@ -120,8 +120,8 @@ namespace tinymind {
             v = beta2 * v + (one - beta2) * gradient * gradient;
 
             // Store updated moments
-            previousLayer.setFirstMomentForNeuronAndConnection(conn, neuron, m);
-            previousLayer.setSecondMomentForNeuronAndConnection(conn, neuron, v);
+            previousLayer.setFirstMomentForNeuronAndConnection(neuron, conn, m);
+            previousLayer.setSecondMomentForNeuronAndConnection(neuron, conn, v);
 
             // Bias correction
             ValueType mHat = m;
@@ -154,8 +154,8 @@ namespace tinymind {
             const ValueType update = learningRate * mHat / (sqrtV + epsilon);
 
             // Apply weight update
-            const ValueType currentWeight = previousLayer.getWeightForNeuronAndConnection(conn, neuron);
-            previousLayer.setWeightForNeuronAndConnection(conn, neuron, currentWeight + update);
+            const ValueType currentWeight = previousLayer.getWeightForNeuronAndConnection(neuron, conn);
+            previousLayer.setWeightForNeuronAndConnection(neuron, conn, currentWeight + update);
         }
 
     private:
@@ -194,16 +194,16 @@ namespace tinymind {
         void updateWeights(PreviousLayerType& previousLayer, const size_t neuron, const size_t conn, const ValueType& gradient, const ValueType& learningRate)
         {
             // Get current moments
-            ValueType m = previousLayer.getFirstMomentForNeuronAndConnection(conn, neuron);
-            ValueType v = previousLayer.getSecondMomentForNeuronAndConnection(conn, neuron);
+            ValueType m = previousLayer.getFirstMomentForNeuronAndConnection(neuron, conn);
+            ValueType v = previousLayer.getSecondMomentForNeuronAndConnection(neuron, conn);
 
             // Update biased moments
             m = static_cast<ValueType>(mBeta1) * m + static_cast<ValueType>(1.0 - mBeta1) * gradient;
             v = static_cast<ValueType>(mBeta2) * v + static_cast<ValueType>(1.0 - mBeta2) * gradient * gradient;
 
             // Store updated moments
-            previousLayer.setFirstMomentForNeuronAndConnection(conn, neuron, m);
-            previousLayer.setSecondMomentForNeuronAndConnection(conn, neuron, v);
+            previousLayer.setFirstMomentForNeuronAndConnection(neuron, conn, m);
+            previousLayer.setSecondMomentForNeuronAndConnection(neuron, conn, v);
 
             // Bias correction
             const double beta1Power = std::pow(mBeta1, static_cast<double>(mTimestep));
@@ -216,8 +216,8 @@ namespace tinymind {
             const ValueType update = learningRate * mHat / (sqrtV + static_cast<ValueType>(mEpsilon));
 
             // Apply weight update
-            const ValueType currentWeight = previousLayer.getWeightForNeuronAndConnection(conn, neuron);
-            previousLayer.setWeightForNeuronAndConnection(conn, neuron, currentWeight + update);
+            const ValueType currentWeight = previousLayer.getWeightForNeuronAndConnection(neuron, conn);
+            previousLayer.setWeightForNeuronAndConnection(neuron, conn, currentWeight + update);
         }
 
     private:

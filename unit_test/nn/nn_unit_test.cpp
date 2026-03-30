@@ -3703,30 +3703,40 @@ struct AdamTransferFunctions
 
 BOOST_AUTO_TEST_CASE(test_case_adam_optimizer_xor_training)
 {
-    // Verify Adam optimizer can train an XOR network
+    // Verify Adam optimizer converges on XOR
     typedef double ValueType;
     typedef tinymind::MultilayerPerceptron<ValueType, 2, 1, 5, 1,
                                             AdamTransferFunctions> AdamNNType;
     srand(RANDOM_SEED);
     AdamNNType nn;
 
+    static const double ERROR_LIMIT = ValueHelper<double>::getErrorLimit();
     ValueType values[2], output[1], error;
+    std::deque<double> errors;
 
-    for (int i = 0; i < TRAINING_ITERATIONS; ++i)
+    static const int ADAM_TRAINING_ITERATIONS = 10000;
+
+    for (int i = 0; i < ADAM_TRAINING_ITERATIONS; ++i)
     {
         generateXorValues(&values[0], &output[0]);
         nn.feedForward(&values[0]);
         error = nn.calculateError(&output[0]);
-        nn.trainNetwork(&output[0]);
+
+        if (!AdamTransferFunctions::isWithinZeroTolerance(error))
+        {
+            nn.trainNetwork(&output[0]);
+        }
+
+        errors.push_front(error);
+        if (errors.size() > NUM_SAMPLES_AVG_ERROR)
+        {
+            errors.pop_back();
+        }
     }
 
-    // Adam should produce valid output
-    nn.feedForward(&values[0]);
-    ValueType learnedValues[1];
-    nn.getLearnedValues(&learnedValues[0]);
-    BOOST_TEST(!std::isnan(learnedValues[0]));
-    BOOST_TEST(!std::isinf(learnedValues[0]));
-    BOOST_TEST(!std::isnan(error));
+    const double totalError = std::accumulate(errors.begin(), errors.end(), 0.0);
+    const double averageError = (totalError / static_cast<double>(NUM_SAMPLES_AVG_ERROR));
+    BOOST_TEST(averageError <= ERROR_LIMIT);
 }
 
 BOOST_AUTO_TEST_CASE(test_case_lstm_weight_serialization)
@@ -4373,7 +4383,7 @@ BOOST_AUTO_TEST_CASE(test_case_dropout_mode_toggle)
 
 BOOST_AUTO_TEST_CASE(test_case_rmsprop_float_xor)
 {
-    // Verify RMSprop optimizer can train an XOR network (floating-point)
+    // Verify RMSprop optimizer converges on XOR (floating-point)
     typedef double ValueType;
     typedef FloatingPointTransferFunctions<
         ValueType,
@@ -4391,29 +4401,36 @@ BOOST_AUTO_TEST_CASE(test_case_rmsprop_float_xor)
     srand(RANDOM_SEED);
     NNType nn;
 
+    static const double ERROR_LIMIT = ValueHelper<double>::getErrorLimit();
     ValueType values[2], output[1], error;
+    std::deque<double> errors;
 
-    for (int i = 0; i < TRAINING_ITERATIONS; ++i)
+    for (int i = 0; i < 10000; ++i)
     {
         generateXorValues(&values[0], &output[0]);
         nn.feedForward(&values[0]);
         error = nn.calculateError(&output[0]);
         nn.trainNetwork(&output[0]);
+
+        errors.push_front(error);
+        if (errors.size() > NUM_SAMPLES_AVG_ERROR)
+        {
+            errors.pop_back();
+        }
     }
 
-    // RMSprop should produce valid (non-NaN, non-Inf) output
-    nn.feedForward(&values[0]);
-    ValueType learnedValues[1];
-    nn.getLearnedValues(&learnedValues[0]);
-    BOOST_TEST(!std::isnan(learnedValues[0]));
-    BOOST_TEST(!std::isinf(learnedValues[0]));
-    BOOST_TEST(!std::isnan(error));
+    const double totalError = std::accumulate(errors.begin(), errors.end(), 0.0);
+    const double averageError = (totalError / static_cast<double>(NUM_SAMPLES_AVG_ERROR));
+    BOOST_TEST(averageError <= ERROR_LIMIT);
 }
 
 BOOST_AUTO_TEST_CASE(test_case_rmsprop_fixedpoint_xor)
 {
-    // Verify RMSprop optimizer can train a fixed-point XOR network
+    // Verify RMSprop optimizer converges on XOR (fixed-point)
+    // Adaptive optimizers need gradient clipping with fixed-point to
+    // prevent overflow in the moment accumulation
     typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    typedef typename ValueType::FullWidthValueType FullWidthValueType;
 
     typedef tinymind::FixedPointTransferFunctions<
         ValueType,
@@ -4424,7 +4441,7 @@ BOOST_AUTO_TEST_CASE(test_case_rmsprop_fixedpoint_xor)
         tinymind::DefaultNetworkInitializer<ValueType>,
         tinymind::MeanSquaredErrorCalculator<ValueType, 1>,
         tinymind::ZeroToleranceCalculator<ValueType>,
-        tinymind::NullGradientClippingPolicy<ValueType>,
+        tinymind::GradientClipByValue<ValueType>,
         tinymind::NullWeightDecayPolicy<ValueType>,
         tinymind::FixedLearningRatePolicy<ValueType>,
         tinymind::RmsPropOptimizer<ValueType>> TransferFunctionsType;
@@ -4434,9 +4451,13 @@ BOOST_AUTO_TEST_CASE(test_case_rmsprop_fixedpoint_xor)
     srand(RANDOM_SEED);
     NNType nn;
 
+    static const FullWidthValueType ERROR_LIMIT = ValueHelper<ValueType>::getErrorLimit();
     ValueType values[2], output[1], error;
+    std::deque<FullWidthValueType> errors;
 
-    for (int i = 0; i < TRAINING_ITERATIONS; ++i)
+    static const int RMSPROP_FP_ITERATIONS = TRAINING_ITERATIONS;
+
+    for (int i = 0; i < RMSPROP_FP_ITERATIONS; ++i)
     {
         generateFixedPointXorValues(&values[0], &output[0]);
         nn.feedForward(&values[0]);
@@ -4446,14 +4467,17 @@ BOOST_AUTO_TEST_CASE(test_case_rmsprop_fixedpoint_xor)
         {
             nn.trainNetwork(&output[0]);
         }
+
+        errors.push_front(error.getValue());
+        if (errors.size() > NUM_SAMPLES_AVG_ERROR)
+        {
+            errors.pop_back();
+        }
     }
 
-    // Verify network produces output after training with RMSprop
-    nn.feedForward(&values[0]);
-    ValueType learnedValues[1];
-    nn.getLearnedValues(&learnedValues[0]);
-    // Fixed-point value should be non-zero after training
-    BOOST_TEST(true); // compilation and training without crash is the test
+    const FullWidthValueType totalError = std::accumulate(errors.begin(), errors.end(), static_cast<FullWidthValueType>(0));
+    const FullWidthValueType averageError = (totalError / static_cast<FullWidthValueType>(NUM_SAMPLES_AVG_ERROR));
+    BOOST_TEST(averageError <= ERROR_LIMIT);
 }
 
 // ============================================================
