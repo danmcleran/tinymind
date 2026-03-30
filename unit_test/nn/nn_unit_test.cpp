@@ -3739,6 +3739,66 @@ BOOST_AUTO_TEST_CASE(test_case_adam_optimizer_xor_training)
     BOOST_TEST(averageError <= ERROR_LIMIT);
 }
 
+BOOST_AUTO_TEST_CASE(test_case_adam_fixedpoint_xor_training)
+{
+    // Verify Adam optimizer converges on XOR (fixed-point Q16.16)
+    // Q16.16 provides sufficient precision for Adam's moment calculations
+    // and bias correction, which lose accuracy rapidly in Q8.8.
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    typedef typename ValueType::FullWidthValueType FullWidthValueType;
+
+    typedef tinymind::FixedPointTransferFunctions<
+        ValueType,
+        UniformRealRandomNumberGenerator<ValueType>,
+        tinymind::TanhActivationPolicy<ValueType>,
+        tinymind::TanhActivationPolicy<ValueType>,
+        1,
+        tinymind::DefaultNetworkInitializer<ValueType>,
+        tinymind::MeanSquaredErrorCalculator<ValueType, 1>,
+        tinymind::ZeroToleranceCalculator<ValueType>,
+        tinymind::GradientClipByValue<ValueType>,
+        tinymind::NullWeightDecayPolicy<ValueType>,
+        tinymind::FixedLearningRatePolicy<ValueType>,
+        tinymind::AdamOptimizer<ValueType>> TransferFunctionsType;
+
+    typedef tinymind::MultilayerPerceptron<ValueType, 2, 1, 5, 1, TransferFunctionsType> NNType;
+
+    srand(RANDOM_SEED);
+    NNType nn;
+
+    // Adam needs a lower learning rate than the default SGD rate.
+    // QValue(0, 655) ≈ 655/65536 ≈ 0.01
+    nn.setLearningRate(ValueType(0, 655));
+
+    static const FullWidthValueType ERROR_LIMIT = ValueHelper<ValueType>::getErrorLimit();
+    ValueType values[2], output[1], error;
+    std::deque<FullWidthValueType> errors;
+
+    static const int ADAM_FP_ITERATIONS = 10000;
+
+    for (int i = 0; i < ADAM_FP_ITERATIONS; ++i)
+    {
+        generateFixedPointXorValues(&values[0], &output[0]);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+
+        if (!NNType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
+        {
+            nn.trainNetwork(&output[0]);
+        }
+
+        errors.push_front(error.getValue());
+        if (errors.size() > NUM_SAMPLES_AVG_ERROR)
+        {
+            errors.pop_back();
+        }
+    }
+
+    const FullWidthValueType totalError = std::accumulate(errors.begin(), errors.end(), static_cast<FullWidthValueType>(0));
+    const FullWidthValueType averageError = (totalError / static_cast<FullWidthValueType>(NUM_SAMPLES_AVG_ERROR));
+    BOOST_TEST(averageError <= ERROR_LIMIT);
+}
+
 BOOST_AUTO_TEST_CASE(test_case_lstm_weight_serialization)
 {
     // Verify LSTM weights can be saved and loaded
@@ -4256,7 +4316,7 @@ BOOST_AUTO_TEST_CASE(test_case_dropout_inference_passthrough)
 BOOST_AUTO_TEST_CASE(test_case_dropout_training_zeros_some)
 {
     // In training mode, some outputs should be zero
-    srand(42);
+    srand(RANDOM_SEED);
     tinymind::Dropout<double, 100, 50> dropout;
     dropout.setTraining(true);
 
@@ -4293,7 +4353,7 @@ BOOST_AUTO_TEST_CASE(test_case_dropout_inverted_scaling)
 {
     // Verify inverted dropout scaling: survivors should be scaled by 1/(1-p)
     // With 50% dropout, scale = 2.0
-    srand(123);
+    srand(RANDOM_SEED);
     tinymind::Dropout<double, 10, 50> dropout;
     dropout.setTraining(true);
 
@@ -4323,7 +4383,7 @@ BOOST_AUTO_TEST_CASE(test_case_dropout_inverted_scaling)
 
 BOOST_AUTO_TEST_CASE(test_case_dropout_backward_mask)
 {
-    srand(456);
+    srand(RANDOM_SEED);
     tinymind::Dropout<double, 5, 50> dropout;
     dropout.setTraining(true);
 

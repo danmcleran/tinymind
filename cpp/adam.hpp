@@ -39,14 +39,39 @@ namespace tinymind {
     };
 
     /**
-     * Square root approximation for floating-point types.
+     * Square root approximation for fixed-point QValue types.
+     * Converts to double via getValue(), computes sqrt, converts back.
      */
     template<typename ValueType>
     struct SquareRootApproximation
     {
+        typedef typename ValueType::FullWidthValueType FullWidthValueType;
+
         static ValueType sqrt(const ValueType& value)
         {
-            return static_cast<ValueType>(std::sqrt(static_cast<double>(value)));
+            static const double factor = std::pow(2.0, -1.0 * static_cast<double>(ValueType::NumberOfFractionalBits));
+            const double dval = static_cast<double>(value.getValue()) * factor;
+            const double result = std::sqrt(dval >= 0.0 ? dval : 0.0);
+            const FullWidthValueType rawResult = static_cast<FullWidthValueType>(result * static_cast<double>(1ULL << ValueType::NumberOfFractionalBits));
+            return ValueType(rawResult);
+        }
+    };
+
+    template<>
+    struct SquareRootApproximation<float>
+    {
+        static float sqrt(const float& value)
+        {
+            return std::sqrt(value);
+        }
+    };
+
+    template<>
+    struct SquareRootApproximation<double>
+    {
+        static double sqrt(const double& value)
+        {
+            return std::sqrt(value);
         }
     };
 

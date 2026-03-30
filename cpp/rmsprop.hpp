@@ -25,28 +25,9 @@
 #include <cmath>
 #include <cstddef>
 
+#include "adam.hpp"
+
 namespace tinymind {
-    namespace detail {
-        /**
-         * Fixed-point square root approximation.
-         * Converts to double, computes sqrt, then converts back to QValue.
-         */
-        template<typename ValueType>
-        struct FixedPointSqrt
-        {
-            typedef typename ValueType::FullWidthValueType FullWidthValueType;
-
-            static ValueType sqrt(const ValueType& value)
-            {
-                static const double factor = std::pow(2.0, -1.0 * static_cast<double>(ValueType::NumberOfFractionalBits));
-                const double dval = static_cast<double>(value.getValue()) * factor;
-                const double result = std::sqrt(dval >= 0.0 ? dval : 0.0);
-                const FullWidthValueType rawResult = static_cast<FullWidthValueType>(result * static_cast<double>(1ULL << ValueType::NumberOfFractionalBits));
-                return ValueType(rawResult);
-            }
-        };
-    }
-
     /**
      * RMSprop optimizer policy for use with BackPropagationParent.
      *
@@ -122,7 +103,7 @@ namespace tinymind {
             previousLayer.setSecondMomentForNeuronAndConnection(neuron, conn, v);
 
             // Compute update: lr * gradient / (sqrt(v) + epsilon)
-            const ValueType sqrtV = detail::FixedPointSqrt<ValueType>::sqrt(v);
+            const ValueType sqrtV = SquareRootApproximation<ValueType>::sqrt(v);
             const ValueType update = learningRate * gradient / (sqrtV + epsilon);
 
             // Apply weight update
