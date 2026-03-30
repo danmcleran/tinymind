@@ -10,6 +10,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 
 - **Feed-forward networks** with arbitrary depth and width
 - **1D convolution layer** for time-series feature extraction (sensor data, IMU, ECG)
+- **1D pooling layers** (`MaxPool1D`, `AvgPool1D`) for downsampling with multi-channel support and backpropagation
 - **Kolmogorov-Arnold Networks (KAN)** with learnable B-spline activation functions on edges
 - **Recurrent neural networks** (Elman) with configurable recurrent connection depth
 - **LSTM networks** with gated cell state, supporting single and multi-layer configurations
@@ -23,6 +24,8 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 ### Training Policies
 
 - **Adam optimizer** with per-parameter adaptive learning rates (`AdamOptimizerFloat` for double, `AdamOptimizer` for fixed-point)
+- **RMSprop optimizer** with per-parameter adaptive learning rates via running average of squared gradients (`RmsPropOptimizerFloat` for double, `RmsPropOptimizer` for fixed-point) -- often preferred over Adam for recurrent networks
+- **Dropout regularization** via `Dropout<ValueType, Size, DropoutPercent>` -- inverted dropout with training/inference mode toggle, no scaling needed at inference time
 - **Gradient clipping** via configurable `GradientClipByValue` policy to prevent exploding gradients (especially critical for fixed-point)
 - **L2 weight decay** (ridge regularization) via `L2WeightDecay` policy to prevent weight overflow and reduce overfitting
 - **Learning rate scheduling** with `StepDecaySchedule` (multiply by decay factor every N steps) and `FixedLearningRatePolicy` (default)
@@ -263,6 +266,76 @@ Classifier nn;
 nn.feedForward(features);
 ```
 
+### Conv1D + Pool1D + Dropout Pipeline
+
+```cpp
+#include "conv1d.hpp"
+#include "pool1d.hpp"
+#include "dropout.hpp"
+
+// Conv1D: 100-point input, kernel=5, stride=1, 4 filters -> 96 * 4 = 384 outputs
+typedef tinymind::Conv1D<double, 100, 5, 1, 4> ConvType;
+
+// MaxPool1D: pool size 2, stride 2, 4 channels -> 48 * 4 = 192 outputs
+typedef tinymind::MaxPool1D<double, ConvType::OutputLength, 2, 2, 4> PoolType;
+
+// Dropout: 50% dropout on the 192 pooled features
+typedef tinymind::Dropout<double, PoolType::OutputSize, 50> DropoutType;
+
+ConvType conv;
+PoolType pool;
+DropoutType dropout;
+
+double sensorData[100];
+double convOut[ConvType::OutputSize];   // 384
+double poolOut[PoolType::OutputSize];   // 192
+double dropOut[PoolType::OutputSize];   // 192
+
+// Forward pipeline
+conv.forward(sensorData, convOut);
+pool.forward(convOut, poolOut);
+dropout.forward(poolOut, dropOut);  // applies mask during training
+
+// Switch to inference (no dropout)
+dropout.setTraining(false);
+dropout.forward(poolOut, dropOut);  // identity pass-through
+```
+
+### RMSprop Optimizer
+
+```cpp
+#include "rmsprop.hpp"
+
+// Floating-point RMSprop
+typedef FloatingPointTransferFunctions<
+    double, RandomNumberGenerator,
+    tinymind::TanhActivationPolicy,
+    tinymind::TanhActivationPolicy> BaseTF;
+
+struct RmsPropTF : public BaseTF
+{
+    typedef tinymind::RmsPropOptimizerFloat<double> OptimizerPolicyType;
+};
+
+typedef tinymind::MultilayerPerceptron<double, 2, 1, 5, 1, RmsPropTF> Network;
+
+// Fixed-point RMSprop (Q8.8: decay ≈ 230/256 ≈ 0.898, epsilon ≈ 1/256)
+typedef tinymind::QValue<8, 8, true> QType;
+typedef tinymind::FixedPointTransferFunctions<
+    QType, RandomNumberGenerator<QType>,
+    tinymind::TanhActivationPolicy<QType>,
+    tinymind::TanhActivationPolicy<QType>,
+    1,                                                  // NumberOfOutputNeurons
+    tinymind::DefaultNetworkInitializer<QType>,
+    tinymind::MeanSquaredErrorCalculator<QType, 1>,
+    tinymind::ZeroToleranceCalculator<QType>,
+    tinymind::NullGradientClippingPolicy<QType>,
+    tinymind::NullWeightDecayPolicy<QType>,
+    tinymind::FixedLearningRatePolicy<QType>,
+    tinymind::RmsPropOptimizer<QType>                   // RMSprop optimizer
+> FixedPointTF;
+```
+
 ### Truncated BPTT (Recurrent Training)
 
 ```cpp
@@ -313,6 +386,9 @@ MazeEnvironment env;
 | Feed-forward | `NeuralNetwork` | Standard MLP with configurable layers |
 | Feed-forward (uniform) | `MultilayerPerceptron` | MLP with equal-sized hidden layers |
 | 1D Convolution | `Conv1D` | Time-series feature extraction with configurable kernel/stride/filters |
+| Max Pooling | `MaxPool1D` | Downsampling via maximum value selection with argmax tracking |
+| Average Pooling | `AvgPool1D` | Downsampling via mean with uniform gradient distribution |
+| Dropout | `Dropout` | Inverted dropout regularization with training/inference mode |
 | KAN | `KolmogorovArnoldNetwork` | Learnable B-spline activations on edges |
 | Elman RNN | `ElmanNeuralNetwork` | Simple recurrent with depth-1 feedback |
 | Recurrent | `RecurrentNeuralNetwork` | Configurable recurrent connection depth |
@@ -415,6 +491,9 @@ tinymind/
     activationFunctions.hpp     # Activation function policies (9 functions)
     fixedPointTransferFunctions.hpp
     adam.hpp                    # Adam optimizer policy
+    rmsprop.hpp                 # RMSprop optimizer policy
+    pool1d.hpp                  # MaxPool1D and AvgPool1D layers
+    dropout.hpp                 # Inverted dropout regularization layer
     gradientClipping.hpp        # Gradient clipping policies
     weightDecay.hpp             # L2 weight decay policies
     learningRateSchedule.hpp    # Learning rate scheduling policies
@@ -436,7 +515,7 @@ tinymind/
     dqn_maze/                   # Deep Q-Network maze solver
     pytorch/                    # PyTorch weight import (MLP + GRU export)
   unit_test/
-    nn/                         # Neural network tests (85 test cases)
+    nn/                         # Neural network tests (105 test cases)
     kan/                        # KAN tests (16 test cases)
     qformat/                    # Fixed-point type tests (static_assert)
     qlearn/                     # Q-learning tests

@@ -73,3 +73,49 @@ GRU uses 3 gates (update, reset, candidate) versus LSTM's 4 gates (input, forget
 - **KAN**: Each edge stores B-spline coefficients (`GridSize + SplineDegree` = 6 per edge with G=5, k=1), plus a base weight and spline weight. Training adds gradient, delta weight, and previous delta weight for every learnable parameter.
 
 All architectures remain well under 1.2 KB in Q8.8 fixed-point even in trainable form, making them suitable for embedded deployment.
+
+## Signal Processing Pipeline Sizes
+
+Instance sizes in bytes for Conv1D, Pool1D, and Dropout layers. These are standalone composable layers that sit outside the neural network template.
+
+### Conv1D
+
+| Configuration | `double` | Q8.8 |
+|---|---|---|
+| Conv1D (100, kernel=5, stride=2, 8 filters) | 768 | 192 |
+| Conv1D (100, kernel=5, stride=1, 4 filters) | 384 | 96 |
+
+Conv1D stores kernel weights + biases and their gradients. Size = `2 * NumFilters * (KernelSize + 1) * sizeof(ValueType)`.
+
+### MaxPool1D
+
+| Configuration | Size (bytes) |
+|---|---|
+| MaxPool1D (96 input, pool=2, stride=2, 4 channels) | 1,536 |
+| MaxPool1D (48 input, pool=2, stride=2, 1 channel) | 192 |
+| MaxPool1D (6 input, pool=2, stride=2, 1 channel) | 24 |
+
+MaxPool1D stores argmax indices (`size_t` per output) for backpropagation gradient routing. Size is independent of value type: `OutputSize * sizeof(size_t)`.
+
+### AvgPool1D
+
+AvgPool1D is stateless (1 byte). It has no per-instance storage since average gradients are computed directly from the pool size.
+
+### Dropout
+
+| Configuration | Size (bytes) |
+|---|---|
+| Dropout (192 elements, 50%) | 193 |
+| Dropout (32 elements, 50%) | 33 |
+| Dropout (5 elements, 50%) | 6 |
+
+Dropout stores a boolean mask (1 byte per element) plus a training mode flag. Size is independent of value type: `Size + 1` bytes.
+
+### Full Pipeline: Conv1D -> MaxPool1D -> Dropout
+
+| Value Type | Conv1D (100, k=5, s=1, 4 filters) | MaxPool1D (96, p=2, s=2, 4 ch) | Dropout (192, 50%) | Total |
+|---|---|---|---|---|
+| `double` | 384 | 1,536 | 193 | **2,113** |
+| Q8.8 | 96 | 1,536 | 193 | **1,825** |
+
+The MaxPool1D dominates pipeline memory due to argmax index storage. For memory-constrained deployments, AvgPool1D eliminates this overhead entirely (1 byte vs 1,536 bytes for the same configuration).
