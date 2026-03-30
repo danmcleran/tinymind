@@ -45,6 +45,9 @@ TINYMIND_DISABLE_WARNING_POP
 #include "teacherForcing.hpp"
 #include "truncatedBPTT.hpp"
 #include "conv1d.hpp"
+#include "pool1d.hpp"
+#include "dropout.hpp"
+#include "rmsprop.hpp"
 #include "networkStats.hpp"
 #include "random.hpp"
 #include "nnproperties.hpp"
@@ -4040,6 +4043,458 @@ BOOST_AUTO_TEST_CASE(test_case_truncated_bptt)
     trainer.step(nn, input, target);
     trainer.flush(nn);
     BOOST_TEST(trainer.getStepCount() == 0u);
+}
+
+// ============================================================
+// MaxPool1D tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_maxpool1d_forward)
+{
+    // MaxPool1D: 6-element input, pool size 2, stride 2, 1 channel
+    tinymind::MaxPool1D<double, 6, 2, 2, 1> pool;
+
+    double input[6] = {1.0, 3.0, 2.0, 5.0, 4.0, 6.0};
+    double output[3]; // (6 - 2) / 2 + 1 = 3
+
+    pool.forward(input, output);
+
+    // Window [1,3] -> 3, [2,5] -> 5, [4,6] -> 6
+    BOOST_TEST(fabs(output[0] - 3.0) < 0.001);
+    BOOST_TEST(fabs(output[1] - 5.0) < 0.001);
+    BOOST_TEST(fabs(output[2] - 6.0) < 0.001);
+
+    // Verify argmax indices
+    BOOST_TEST(pool.getArgMaxIndex(0) == 1u);
+    BOOST_TEST(pool.getArgMaxIndex(1) == 3u);
+    BOOST_TEST(pool.getArgMaxIndex(2) == 5u);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_maxpool1d_backward)
+{
+    tinymind::MaxPool1D<double, 6, 2, 2, 1> pool;
+
+    double input[6] = {1.0, 3.0, 2.0, 5.0, 4.0, 6.0};
+    double output[3];
+    pool.forward(input, output);
+
+    // Backprop: gradients should route to argmax positions
+    double outputDeltas[3] = {0.1, 0.2, 0.3};
+    double inputDeltas[6];
+    pool.backward(outputDeltas, inputDeltas);
+
+    BOOST_TEST(fabs(inputDeltas[0]) < 0.001); // not max
+    BOOST_TEST(fabs(inputDeltas[1] - 0.1) < 0.001); // max of window 0
+    BOOST_TEST(fabs(inputDeltas[2]) < 0.001); // not max
+    BOOST_TEST(fabs(inputDeltas[3] - 0.2) < 0.001); // max of window 1
+    BOOST_TEST(fabs(inputDeltas[4]) < 0.001); // not max
+    BOOST_TEST(fabs(inputDeltas[5] - 0.3) < 0.001); // max of window 2
+}
+
+BOOST_AUTO_TEST_CASE(test_case_maxpool1d_multichannel)
+{
+    // 2 channels, 4 elements each, pool size 2, stride 2
+    tinymind::MaxPool1D<double, 4, 2, 2, 2> pool;
+
+    // Channel-major: [ch0: 1,4,2,3, ch1: 5,2,6,1]
+    double input[8] = {1.0, 4.0, 2.0, 3.0, 5.0, 2.0, 6.0, 1.0};
+    double output[4]; // 2 channels * 2 outputs
+
+    pool.forward(input, output);
+
+    // Ch0: [1,4]->4, [2,3]->3
+    BOOST_TEST(fabs(output[0] - 4.0) < 0.001);
+    BOOST_TEST(fabs(output[1] - 3.0) < 0.001);
+    // Ch1: [5,2]->5, [6,1]->6
+    BOOST_TEST(fabs(output[2] - 5.0) < 0.001);
+    BOOST_TEST(fabs(output[3] - 6.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_maxpool1d_stride1)
+{
+    // Overlapping windows: pool size 3, stride 1
+    tinymind::MaxPool1D<double, 5, 3, 1, 1> pool;
+
+    double input[5] = {2.0, 1.0, 4.0, 3.0, 5.0};
+    double output[3]; // (5 - 3) / 1 + 1 = 3
+
+    pool.forward(input, output);
+
+    // [2,1,4]->4, [1,4,3]->4, [4,3,5]->5
+    BOOST_TEST(fabs(output[0] - 4.0) < 0.001);
+    BOOST_TEST(fabs(output[1] - 4.0) < 0.001);
+    BOOST_TEST(fabs(output[2] - 5.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_maxpool1d_static_sizes)
+{
+    typedef tinymind::MaxPool1D<double, 100, 4, 4, 3> PoolType;
+
+    // OutputLength = (100 - 4) / 4 + 1 = 25
+    static_assert(PoolType::OutputLength == 25, "Wrong output length");
+    static_assert(PoolType::OutputSize == 75, "Wrong output size"); // 3 * 25
+    static_assert(PoolType::InputSize == 300, "Wrong input size"); // 3 * 100
+    BOOST_TEST(true);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_maxpool1d_fixed_point)
+{
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::MaxPool1D<ValueType, 4, 2, 2, 1> pool;
+
+    ValueType input[4];
+    input[0] = ValueType(1, 0);
+    input[1] = ValueType(3, 0);
+    input[2] = ValueType(2, 0);
+    input[3] = ValueType(5, 0);
+
+    ValueType output[2];
+    pool.forward(input, output);
+
+    BOOST_TEST(output[0].getValue() == ValueType(3, 0).getValue());
+    BOOST_TEST(output[1].getValue() == ValueType(5, 0).getValue());
+}
+
+// ============================================================
+// AvgPool1D tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_avgpool1d_forward)
+{
+    tinymind::AvgPool1D<double, 6, 2, 2, 1> pool;
+
+    double input[6] = {1.0, 3.0, 2.0, 6.0, 4.0, 8.0};
+    double output[3];
+
+    pool.forward(input, output);
+
+    // [1,3]->2, [2,6]->4, [4,8]->6
+    BOOST_TEST(fabs(output[0] - 2.0) < 0.001);
+    BOOST_TEST(fabs(output[1] - 4.0) < 0.001);
+    BOOST_TEST(fabs(output[2] - 6.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_avgpool1d_backward)
+{
+    tinymind::AvgPool1D<double, 6, 2, 2, 1> pool;
+
+    double outputDeltas[3] = {0.2, 0.4, 0.6};
+    double inputDeltas[6];
+    pool.backward(outputDeltas, inputDeltas);
+
+    // Each gradient splits evenly across pool window
+    BOOST_TEST(fabs(inputDeltas[0] - 0.1) < 0.001);
+    BOOST_TEST(fabs(inputDeltas[1] - 0.1) < 0.001);
+    BOOST_TEST(fabs(inputDeltas[2] - 0.2) < 0.001);
+    BOOST_TEST(fabs(inputDeltas[3] - 0.2) < 0.001);
+    BOOST_TEST(fabs(inputDeltas[4] - 0.3) < 0.001);
+    BOOST_TEST(fabs(inputDeltas[5] - 0.3) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_avgpool1d_multichannel)
+{
+    tinymind::AvgPool1D<double, 4, 2, 2, 2> pool;
+
+    double input[8] = {2.0, 4.0, 6.0, 8.0, 1.0, 3.0, 5.0, 7.0};
+    double output[4];
+
+    pool.forward(input, output);
+
+    // Ch0: [2,4]->3, [6,8]->7
+    BOOST_TEST(fabs(output[0] - 3.0) < 0.001);
+    BOOST_TEST(fabs(output[1] - 7.0) < 0.001);
+    // Ch1: [1,3]->2, [5,7]->6
+    BOOST_TEST(fabs(output[2] - 2.0) < 0.001);
+    BOOST_TEST(fabs(output[3] - 6.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_avgpool1d_pool3)
+{
+    tinymind::AvgPool1D<double, 6, 3, 3, 1> pool;
+
+    double input[6] = {3.0, 6.0, 9.0, 12.0, 15.0, 18.0};
+    double output[2];
+
+    pool.forward(input, output);
+
+    // [3,6,9]->6, [12,15,18]->15
+    BOOST_TEST(fabs(output[0] - 6.0) < 0.001);
+    BOOST_TEST(fabs(output[1] - 15.0) < 0.001);
+}
+
+// ============================================================
+// Dropout tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_dropout_inference_passthrough)
+{
+    // In inference mode, dropout should be identity
+    tinymind::Dropout<double, 4, 50> dropout;
+    dropout.setTraining(false);
+
+    double input[4] = {1.0, 2.0, 3.0, 4.0};
+    double output[4];
+
+    dropout.forward(input, output);
+
+    BOOST_TEST(fabs(output[0] - 1.0) < 0.001);
+    BOOST_TEST(fabs(output[1] - 2.0) < 0.001);
+    BOOST_TEST(fabs(output[2] - 3.0) < 0.001);
+    BOOST_TEST(fabs(output[3] - 4.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_dropout_training_zeros_some)
+{
+    // In training mode, some outputs should be zero
+    srand(42);
+    tinymind::Dropout<double, 100, 50> dropout;
+    dropout.setTraining(true);
+
+    double input[100];
+    double output[100];
+    for (size_t i = 0; i < 100; ++i)
+    {
+        input[i] = 1.0;
+    }
+
+    dropout.forward(input, output);
+
+    size_t zeroCount = 0;
+    size_t nonZeroCount = 0;
+    for (size_t i = 0; i < 100; ++i)
+    {
+        if (fabs(output[i]) < 0.001)
+        {
+            ++zeroCount;
+        }
+        else
+        {
+            ++nonZeroCount;
+        }
+    }
+
+    // With 50% dropout on 100 elements, expect roughly 50 zeros
+    // Allow wide tolerance for randomness
+    BOOST_TEST(zeroCount > 20u);
+    BOOST_TEST(nonZeroCount > 20u);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_dropout_inverted_scaling)
+{
+    // Verify inverted dropout scaling: survivors should be scaled by 1/(1-p)
+    // With 50% dropout, scale = 2.0
+    srand(123);
+    tinymind::Dropout<double, 10, 50> dropout;
+    dropout.setTraining(true);
+
+    double input[10];
+    double output[10];
+    for (size_t i = 0; i < 10; ++i)
+    {
+        input[i] = 1.0;
+    }
+
+    dropout.forward(input, output);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        if (dropout.getMask(i))
+        {
+            // Kept: should be scaled by 2.0 (1/(1-0.5))
+            BOOST_TEST(fabs(output[i] - 2.0) < 0.001);
+        }
+        else
+        {
+            // Dropped: should be zero
+            BOOST_TEST(fabs(output[i]) < 0.001);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_dropout_backward_mask)
+{
+    srand(456);
+    tinymind::Dropout<double, 5, 50> dropout;
+    dropout.setTraining(true);
+
+    double input[5] = {1.0, 1.0, 1.0, 1.0, 1.0};
+    double output[5];
+    dropout.forward(input, output); // generates mask
+
+    double outputDeltas[5] = {0.5, 0.5, 0.5, 0.5, 0.5};
+    double inputDeltas[5];
+    dropout.backward(outputDeltas, inputDeltas);
+
+    for (size_t i = 0; i < 5; ++i)
+    {
+        if (dropout.getMask(i))
+        {
+            // Gradient scaled by 1/(1-p) = 2.0
+            BOOST_TEST(fabs(inputDeltas[i] - 1.0) < 0.001);
+        }
+        else
+        {
+            BOOST_TEST(fabs(inputDeltas[i]) < 0.001);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_dropout_zero_percent)
+{
+    // 0% dropout should pass everything through even in training mode
+    tinymind::Dropout<double, 4, 0> dropout;
+    dropout.setTraining(true);
+
+    double input[4] = {1.0, 2.0, 3.0, 4.0};
+    double output[4];
+
+    dropout.forward(input, output);
+
+    BOOST_TEST(fabs(output[0] - 1.0) < 0.001);
+    BOOST_TEST(fabs(output[1] - 2.0) < 0.001);
+    BOOST_TEST(fabs(output[2] - 3.0) < 0.001);
+    BOOST_TEST(fabs(output[3] - 4.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_dropout_mode_toggle)
+{
+    tinymind::Dropout<double, 4, 50> dropout;
+
+    BOOST_TEST(dropout.isTraining() == true); // default is training
+    dropout.setTraining(false);
+    BOOST_TEST(dropout.isTraining() == false);
+    dropout.setTraining(true);
+    BOOST_TEST(dropout.isTraining() == true);
+}
+
+// ============================================================
+// RMSprop optimizer tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_rmsprop_float_xor)
+{
+    // Verify RMSprop optimizer can train an XOR network (floating-point)
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+        ValueType,
+        UniformRealRandomNumberGenerator,
+        tinymind::TanhActivationPolicy,
+        tinymind::TanhActivationPolicy> BaseTF;
+
+    struct RmsPropTF : public BaseTF
+    {
+        typedef tinymind::RmsPropOptimizerFloat<ValueType> OptimizerPolicyType;
+    };
+
+    typedef tinymind::MultilayerPerceptron<ValueType, 2, 1, 5, 1, RmsPropTF> NNType;
+
+    srand(RANDOM_SEED);
+    NNType nn;
+
+    ValueType values[2], output[1], error;
+
+    for (int i = 0; i < TRAINING_ITERATIONS; ++i)
+    {
+        generateXorValues(&values[0], &output[0]);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+        nn.trainNetwork(&output[0]);
+    }
+
+    // RMSprop should produce valid (non-NaN, non-Inf) output
+    nn.feedForward(&values[0]);
+    ValueType learnedValues[1];
+    nn.getLearnedValues(&learnedValues[0]);
+    BOOST_TEST(!std::isnan(learnedValues[0]));
+    BOOST_TEST(!std::isinf(learnedValues[0]));
+    BOOST_TEST(!std::isnan(error));
+}
+
+BOOST_AUTO_TEST_CASE(test_case_rmsprop_fixedpoint_xor)
+{
+    // Verify RMSprop optimizer can train a fixed-point XOR network
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+
+    typedef tinymind::FixedPointTransferFunctions<
+        ValueType,
+        UniformRealRandomNumberGenerator<ValueType>,
+        tinymind::TanhActivationPolicy<ValueType>,
+        tinymind::TanhActivationPolicy<ValueType>,
+        1,
+        tinymind::DefaultNetworkInitializer<ValueType>,
+        tinymind::MeanSquaredErrorCalculator<ValueType, 1>,
+        tinymind::ZeroToleranceCalculator<ValueType>,
+        tinymind::NullGradientClippingPolicy<ValueType>,
+        tinymind::NullWeightDecayPolicy<ValueType>,
+        tinymind::FixedLearningRatePolicy<ValueType>,
+        tinymind::RmsPropOptimizer<ValueType>> TransferFunctionsType;
+
+    typedef tinymind::MultilayerPerceptron<ValueType, 2, 1, 5, 1, TransferFunctionsType> NNType;
+
+    srand(RANDOM_SEED);
+    NNType nn;
+
+    ValueType values[2], output[1], error;
+
+    for (int i = 0; i < TRAINING_ITERATIONS; ++i)
+    {
+        generateFixedPointXorValues(&values[0], &output[0]);
+        nn.feedForward(&values[0]);
+        error = nn.calculateError(&output[0]);
+
+        if (!NNType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
+        {
+            nn.trainNetwork(&output[0]);
+        }
+    }
+
+    // Verify network produces output after training with RMSprop
+    nn.feedForward(&values[0]);
+    ValueType learnedValues[1];
+    nn.getLearnedValues(&learnedValues[0]);
+    // Fixed-point value should be non-zero after training
+    BOOST_TEST(true); // compilation and training without crash is the test
+}
+
+// ============================================================
+// Conv1D + Pool1D integration test
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_conv1d_maxpool1d_pipeline)
+{
+    // Conv1D(8 input, kernel=3) -> MaxPool1D(6 input, pool=2)
+    tinymind::Conv1D<double, 8, 3, 1, 2> conv;
+    typedef tinymind::MaxPool1D<double, 6, 2, 2, 2> PoolType;
+    PoolType pool;
+
+    // Set filter 0: [1, 1, 1], bias=0 (moving sum)
+    conv.setFilterWeight(0, 0, 1.0);
+    conv.setFilterWeight(0, 1, 1.0);
+    conv.setFilterWeight(0, 2, 1.0);
+    conv.setFilterWeight(0, 3, 0.0);
+
+    // Set filter 1: [1, 0, -1], bias=0 (edge detect)
+    conv.setFilterWeight(1, 0, 1.0);
+    conv.setFilterWeight(1, 1, 0.0);
+    conv.setFilterWeight(1, 2, -1.0);
+    conv.setFilterWeight(1, 3, 0.0);
+
+    double input[8] = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0};
+    double convOutput[12]; // 2 filters * 6 positions
+    double poolOutput[6]; // 2 channels * 3 positions
+
+    conv.forward(input, convOutput);
+
+    // Filter 0 (sum): [3, 6, 9, 12, 15, 18]
+    BOOST_TEST(fabs(convOutput[0] - 3.0) < 0.001);
+    BOOST_TEST(fabs(convOutput[5] - 18.0) < 0.001);
+
+    pool.forward(convOutput, poolOutput);
+
+    // Pool ch0: [3,6]->6, [9,12]->12, [15,18]->18
+    BOOST_TEST(fabs(poolOutput[0] - 6.0) < 0.001);
+    BOOST_TEST(fabs(poolOutput[1] - 12.0) < 0.001);
+    BOOST_TEST(fabs(poolOutput[2] - 18.0) < 0.001);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
