@@ -47,6 +47,7 @@ TINYMIND_DISABLE_WARNING_POP
 #include "conv1d.hpp"
 #include "pool1d.hpp"
 #include "dropout.hpp"
+#include "batchnorm.hpp"
 #include "rmsprop.hpp"
 #include "networkStats.hpp"
 #include "random.hpp"
@@ -4579,6 +4580,279 @@ BOOST_AUTO_TEST_CASE(test_case_conv1d_maxpool1d_pipeline)
     BOOST_TEST(fabs(poolOutput[0] - 6.0) < 0.001);
     BOOST_TEST(fabs(poolOutput[1] - 12.0) < 0.001);
     BOOST_TEST(fabs(poolOutput[2] - 18.0) < 0.001);
+}
+
+// ============================================================
+// BatchNorm1D tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_batchnorm_normalizes_output)
+{
+    // BatchNorm should normalize input to approximately zero mean
+    tinymind::BatchNorm1D<double, 4> bn;
+    bn.setTraining(true);
+
+    double input[4] = {2.0, 4.0, 6.0, 8.0};
+    double output[4];
+
+    bn.forward(input, output);
+
+    // Mean of normalized output should be ~0
+    double mean = 0.0;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        mean += output[i];
+    }
+    mean /= 4.0;
+    BOOST_TEST(fabs(mean) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_batchnorm_unit_variance)
+{
+    // With default gamma=1, beta=0, output should have unit variance
+    tinymind::BatchNorm1D<double, 4> bn;
+    bn.setTraining(true);
+
+    double input[4] = {1.0, 3.0, 5.0, 7.0};
+    double output[4];
+
+    bn.forward(input, output);
+
+    // Compute variance of output
+    double mean = 0.0;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        mean += output[i];
+    }
+    mean /= 4.0;
+
+    double variance = 0.0;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        const double diff = output[i] - mean;
+        variance += diff * diff;
+    }
+    variance /= 4.0;
+
+    // Variance should be ~1.0 (normalized)
+    BOOST_TEST(fabs(variance - 1.0) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_batchnorm_gamma_beta)
+{
+    // Custom gamma and beta should scale and shift the normalized output
+    tinymind::BatchNorm1D<double, 4> bn;
+    bn.setTraining(true);
+
+    // Set gamma=2, beta=3 for all elements
+    for (size_t i = 0; i < 4; ++i)
+    {
+        bn.setGamma(i, 2.0);
+        bn.setBeta(i, 3.0);
+    }
+
+    double input[4] = {1.0, 3.0, 5.0, 7.0};
+    double output[4];
+
+    bn.forward(input, output);
+
+    // Output mean should be ~3 (beta) since normalized mean is 0
+    double mean = 0.0;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        mean += output[i];
+    }
+    mean /= 4.0;
+    BOOST_TEST(fabs(mean - 3.0) < 0.01);
+
+    // Output variance should be ~4 (gamma^2 * 1.0)
+    double variance = 0.0;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        const double diff = output[i] - mean;
+        variance += diff * diff;
+    }
+    variance /= 4.0;
+    BOOST_TEST(fabs(variance - 4.0) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_batchnorm_inference_uses_running_stats)
+{
+    // After training, inference should use running mean/variance
+    tinymind::BatchNorm1D<double, 4, 100> bn; // momentum=100% so running stats match batch stats immediately
+
+    double input[4] = {2.0, 4.0, 6.0, 8.0};
+    double trainOutput[4];
+    double inferOutput[4];
+
+    // Training forward pass to populate running stats
+    bn.setTraining(true);
+    bn.forward(input, trainOutput);
+
+    // Switch to inference
+    bn.setTraining(false);
+    bn.forward(input, inferOutput);
+
+    // With 100% momentum, running stats equal batch stats, so outputs should match
+    for (size_t i = 0; i < 4; ++i)
+    {
+        BOOST_TEST(fabs(trainOutput[i] - inferOutput[i]) < 0.01);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_batchnorm_constant_input)
+{
+    // Constant input should produce zero-centered output (all zeros with default gamma=1, beta=0)
+    tinymind::BatchNorm1D<double, 4> bn;
+    bn.setTraining(true);
+
+    double input[4] = {5.0, 5.0, 5.0, 5.0};
+    double output[4];
+
+    bn.forward(input, output);
+
+    // All inputs equal -> variance ~0 -> normalized is ~0 -> output is ~beta=0
+    for (size_t i = 0; i < 4; ++i)
+    {
+        BOOST_TEST(fabs(output[i]) < 0.1);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_batchnorm_backward_gradients)
+{
+    tinymind::BatchNorm1D<double, 4> bn;
+    bn.setTraining(true);
+
+    double input[4] = {1.0, 2.0, 3.0, 4.0};
+    double output[4];
+    bn.forward(input, output);
+
+    // Backward with uniform gradients
+    double outputDeltas[4] = {1.0, 1.0, 1.0, 1.0};
+    double inputDeltas[4];
+    bn.backward(outputDeltas, inputDeltas);
+
+    // Beta gradient should be sum of outputDeltas = 4.0 total, 1.0 per element
+    for (size_t i = 0; i < 4; ++i)
+    {
+        BOOST_TEST(fabs(bn.getBetaGradient(i) - 1.0) < 0.001);
+    }
+
+    // Gamma gradient = outputDelta * normalized, and normalized values
+    // should have zero mean, so gamma gradients should sum to ~0
+    double gammaGradSum = 0.0;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        gammaGradSum += bn.getGammaGradient(i);
+    }
+    BOOST_TEST(fabs(gammaGradSum) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_batchnorm_mode_toggle)
+{
+    tinymind::BatchNorm1D<double, 4> bn;
+
+    BOOST_TEST(bn.isTraining() == true); // default is training
+    bn.setTraining(false);
+    BOOST_TEST(bn.isTraining() == false);
+    bn.setTraining(true);
+    BOOST_TEST(bn.isTraining() == true);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_batchnorm_update_parameters)
+{
+    tinymind::BatchNorm1D<double, 4> bn;
+    bn.setTraining(true);
+
+    double input[4] = {1.0, 2.0, 3.0, 4.0};
+    double output[4];
+    bn.forward(input, output);
+
+    double outputDeltas[4] = {1.0, 1.0, 1.0, 1.0};
+    double inputDeltas[4];
+    bn.backward(outputDeltas, inputDeltas);
+
+    // Update with a learning rate
+    bn.updateParameters(0.01);
+
+    // Gamma should have changed (gradient was non-zero for at least some elements)
+    // Beta should have changed (gradient was 1.0 for all elements)
+    bool betaChanged = false;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        if (fabs(bn.getBeta(i)) > 0.001)
+        {
+            betaChanged = true;
+        }
+    }
+    BOOST_TEST(betaChanged);
+
+    // Gradients should be zeroed after update
+    for (size_t i = 0; i < 4; ++i)
+    {
+        BOOST_TEST(fabs(bn.getGammaGradient(i)) < 0.001);
+        BOOST_TEST(fabs(bn.getBetaGradient(i)) < 0.001);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_batchnorm_fixed_point)
+{
+    // Verify BatchNorm compiles and runs with Q16.16 fixed-point
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::BatchNorm1D<ValueType, 4> bn;
+    bn.setTraining(true);
+
+    ValueType input[4];
+    input[0] = ValueType(1, 0);
+    input[1] = ValueType(3, 0);
+    input[2] = ValueType(5, 0);
+    input[3] = ValueType(7, 0);
+
+    ValueType output[4];
+    bn.forward(input, output);
+
+    // Normalized output should have mean ~0
+    // Sum the raw values - they should roughly cancel out
+    typename ValueType::FullWidthValueType sum = 0;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        sum += output[i].getValue();
+    }
+    // Allow tolerance for fixed-point rounding
+    const typename ValueType::FullWidthValueType tolerance = 1 << (ValueType::NumberOfFractionalBits - 2);
+    BOOST_TEST(std::abs(sum) <= tolerance);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_batchnorm_conv1d_pipeline)
+{
+    // Conv1D -> BatchNorm -> output pipeline
+    tinymind::Conv1D<double, 8, 3, 1, 1> conv;
+    tinymind::BatchNorm1D<double, 6> bn; // Conv output is (8-3)/1+1 = 6
+
+    // Set kernel to [1, 1, 1], bias=0 (moving sum)
+    conv.setFilterWeight(0, 0, 1.0);
+    conv.setFilterWeight(0, 1, 1.0);
+    conv.setFilterWeight(0, 2, 1.0);
+    conv.setFilterWeight(0, 3, 0.0);
+
+    double input[8] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
+    double convOutput[6];
+    double bnOutput[6];
+
+    conv.forward(input, convOutput);
+    // Conv output: [6, 9, 12, 15, 18, 21]
+
+    bn.setTraining(true);
+    bn.forward(convOutput, bnOutput);
+
+    // BatchNorm output should have zero mean
+    double mean = 0.0;
+    for (size_t i = 0; i < 6; ++i)
+    {
+        mean += bnOutput[i];
+    }
+    mean /= 6.0;
+    BOOST_TEST(fabs(mean) < 0.01);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
