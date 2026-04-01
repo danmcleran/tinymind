@@ -1,10 +1,8 @@
-remote_theme: just-the-docs/just-the-docs
+theme: just-the-docs
 title: TinyMind
 description: Header-only C++ template library for neural networks on embedded systems
 baseurl: "/tinymind"
 url: "https://danmcleran.github.io"
-plugins:
-  - jekyll-remote-theme
 aux_links:
   "GitHub": "https://github.com/danmcleran/tinymind"
   "Wiki": "https://github.com/danmcleran/tinymind/wiki"
