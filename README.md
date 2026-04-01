@@ -1,6 +1,6 @@
 # TinyMind
 
-A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
+A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, binary and ternary neural networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
 
 Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design), TinyMind uses template metaprogramming to produce zero-overhead abstractions where network topology, value type, activation functions, and training policies are all compile-time parameters.
 
@@ -15,6 +15,8 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **Recurrent neural networks** (Elman) with configurable recurrent connection depth
 - **LSTM networks** with gated cell state, supporting single and multi-layer configurations
 - **GRU networks** (Gated Recurrent Unit) with 3-gate architecture -- ~25% less memory than LSTM per hidden neuron
+- **Binary neural networks** (`BinaryDense`) with XNOR+popcount forward pass -- 32x weight memory reduction via bit packing, no multiplication needed
+- **Ternary neural networks** (`TernaryDense`) with {-1, 0, +1} weights -- 16x weight memory reduction via 2-bit packing, multiply-free forward pass using conditional add/subtract/skip
 - **Heterogeneous hidden layers** via `HiddenLayers<N0, N1, ...>` for different neuron counts per layer
 - **Batch training** with configurable batch size
 - **Softmax output** for multi-class classification
@@ -301,6 +303,54 @@ dropout.setTraining(false);
 dropout.forward(poolOut, dropOut);  // identity pass-through
 ```
 
+### Binary Dense Layer (Multiplication-Free)
+
+```cpp
+#include "binarylayer.hpp"
+
+// 64 inputs, 16 outputs -- weights stored as packed bits (128 bytes vs 8 KB full-precision)
+tinymind::BinaryDense<double, 64, 16> layer;
+
+// Initialize latent weights (real-valued, used during training)
+layer.setLatentWeight(0, 0, 0.5);   // will binarize to +1
+layer.setLatentWeight(0, 1, -0.3);  // will binarize to -1
+// ... set all latent weights
+
+layer.binarizeWeights();  // pack sign(latent_weight) into bits
+
+double input[64], output[16];
+layer.forward(input, output);  // XNOR + popcount, no multiplication
+
+// Training with straight-through estimator (STE)
+double outputDeltas[16], inputDeltas[64];
+layer.backward(outputDeltas, input, inputDeltas);
+layer.updateWeights(-0.01);  // updates latent weights, then re-binarizes
+```
+
+### Ternary Dense Layer (Multiply-Free with Sparsity)
+
+```cpp
+#include "ternarylayer.hpp"
+
+// 64 inputs, 16 outputs, 50% threshold -- weights are {-1, 0, +1}
+tinymind::TernaryDense<double, 64, 16, 50> layer;
+
+// Initialize latent weights
+layer.setLatentWeight(0, 0, 0.9);   // large magnitude -> +1 or -1
+layer.setLatentWeight(0, 1, 0.01);  // small magnitude -> 0 (pruned)
+// ... set all latent weights
+
+layer.ternarizeWeights();  // threshold-based: |w| < thresh*mean -> 0
+
+double input[64], output[16];
+layer.forward(input, output);  // conditional add/subtract/skip, no multiply
+
+// Training with STE
+double outputDeltas[16], inputDeltas[64];
+layer.backward(outputDeltas, input, inputDeltas);
+layer.updateWeights(-0.01);
+```
+
 ### RMSprop Optimizer
 
 ```cpp
@@ -389,6 +439,8 @@ MazeEnvironment env;
 | Max Pooling | `MaxPool1D` | Downsampling via maximum value selection with argmax tracking |
 | Average Pooling | `AvgPool1D` | Downsampling via mean with uniform gradient distribution |
 | Dropout | `Dropout` | Inverted dropout regularization with training/inference mode |
+| Binary Dense | `BinaryDense` | XNOR+popcount dense layer with 1-bit packed weights |
+| Ternary Dense | `TernaryDense` | Multiply-free dense layer with 2-bit packed {-1,0,+1} weights |
 | KAN | `KolmogorovArnoldNetwork` | Learnable B-spline activations on edges |
 | Elman RNN | `ElmanNeuralNetwork` | Simple recurrent with depth-1 feedback |
 | Recurrent | `RecurrentNeuralNetwork` | Configurable recurrent connection depth |
@@ -486,6 +538,8 @@ tinymind/
     bspline.hpp                 # B-spline evaluation engine (De Boor algorithm)
     kanTransferFunctions.hpp    # KAN transfer functions and SiLU activation
     conv1d.hpp                  # 1D convolution layer
+    binarylayer.hpp             # Binary neural network layer (XNOR+popcount)
+    ternarylayer.hpp            # Ternary neural network layer ({-1,0,+1} weights)
     qformat.hpp                 # Fixed-point arithmetic
     qlearn.hpp                  # Q-learning and DQN
     activationFunctions.hpp     # Activation function policies (9 functions)
@@ -515,7 +569,7 @@ tinymind/
     dqn_maze/                   # Deep Q-Network maze solver
     pytorch/                    # PyTorch weight import (MLP + GRU export)
   unit_test/
-    nn/                         # Neural network tests (105 test cases)
+    nn/                         # Neural network tests (132 test cases)
     kan/                        # KAN tests (16 test cases)
     qformat/                    # Fixed-point type tests (static_assert)
     qlearn/                     # Q-learning tests

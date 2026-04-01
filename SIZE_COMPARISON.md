@@ -119,3 +119,49 @@ Dropout stores a boolean mask (1 byte per element) plus a training mode flag. Si
 | Q8.8 | 96 | 1,536 | 193 | **1,825** |
 
 The MaxPool1D dominates pipeline memory due to argmax index storage. For memory-constrained deployments, AvgPool1D eliminates this overhead entirely (1 byte vs 1,536 bytes for the same configuration).
+
+## Binary and Ternary Dense Layer Sizes
+
+Binary and ternary layers store weights as packed bits (1-bit or 2-bit per weight) for extreme memory reduction. During training, real-valued latent weights and gradients are also maintained. After training, only the packed weights and biases are needed for inference.
+
+### BinaryDense (Trainable)
+
+Trainable instances store packed binary weights, latent weights, latent gradients, biases, and bias gradients.
+
+| Configuration | `double` | Q8.8 |
+|---|---|---|
+| BinaryDense (4, 2) | 168 | 44 |
+| BinaryDense (16, 8) | 2,192 | 560 |
+| BinaryDense (64, 16) | 16,768 | 4,288 |
+| BinaryDense (32, 32) | 17,024 | 4,352 |
+
+### TernaryDense (Trainable)
+
+Trainable instances store packed ternary weights (2-bit), latent weights, latent gradients, biases, and bias gradients.
+
+| Configuration | `double` | Q8.8 |
+|---|---|---|
+| TernaryDense (4, 2, 50%) | 168 | 44 |
+| TernaryDense (16, 8, 50%) | 2,208 | 576 |
+| TernaryDense (64, 16, 50%) | 16,896 | 4,416 |
+| TernaryDense (32, 32, 50%) | 17,152 | 4,480 |
+
+### Inference-Only Packed Weight Storage
+
+After training, only the packed weights and biases are needed. This represents the minimum deployment footprint.
+
+| Configuration | Binary (packed) | Ternary (packed) | Full-precision `double` | Full-precision Q8.8 |
+|---|---|---|---|---|
+| 64x16 weights + biases | 256 | 384 | 8,320 | 2,080 |
+| 32x32 weights + biases | 384 | 512 | 8,448 | 2,112 |
+
+### Weight Storage Compression Ratios (64x16 layer)
+
+| Storage | Bytes | Compression vs `double` | Compression vs Q8.8 |
+|---|---|---|---|
+| Full `double` | 8,192 | 1x | — |
+| Full Q8.8 | 2,048 | 4x | 1x |
+| Packed binary (1-bit) | 128 | **64x** | **16x** |
+| Packed ternary (2-bit) | 256 | **32x** | **8x** |
+
+Binary packing achieves 64x compression over `double` and 16x over Q8.8. Ternary packing achieves 32x over `double` and 8x over Q8.8 while supporting weight sparsity (zero weights are skipped entirely in the forward pass).
