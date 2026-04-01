@@ -49,6 +49,8 @@ TINYMIND_DISABLE_WARNING_POP
 #include "dropout.hpp"
 #include "batchnorm.hpp"
 #include "rmsprop.hpp"
+#include "binarylayer.hpp"
+#include "ternarylayer.hpp"
 #include "networkStats.hpp"
 #include "random.hpp"
 #include "nnproperties.hpp"
@@ -4853,6 +4855,430 @@ BOOST_AUTO_TEST_CASE(test_case_batchnorm_conv1d_pipeline)
     }
     mean /= 6.0;
     BOOST_TEST(fabs(mean) < 0.01);
+}
+
+// ============================================================
+// BinaryDense tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_binary_dense_forward_basic)
+{
+    // 4 inputs, 2 outputs
+    tinymind::BinaryDense<double, 4, 2> layer;
+
+    // Set latent weights: output 0 = [+1, +1, -1, -1], output 1 = [+1, -1, +1, -1]
+    layer.setLatentWeight(0, 0,  0.5);
+    layer.setLatentWeight(0, 1,  0.3);
+    layer.setLatentWeight(0, 2, -0.7);
+    layer.setLatentWeight(0, 3, -0.2);
+
+    layer.setLatentWeight(1, 0,  0.9);
+    layer.setLatentWeight(1, 1, -0.4);
+    layer.setLatentWeight(1, 2,  0.6);
+    layer.setLatentWeight(1, 3, -0.1);
+
+    layer.setBias(0, 0.0);
+    layer.setBias(1, 0.0);
+
+    layer.binarizeWeights();
+
+    // Verify binarization: positive latent -> +1, negative latent -> -1
+    BOOST_TEST(layer.getBinaryWeight(0, 0) ==  1.0);
+    BOOST_TEST(layer.getBinaryWeight(0, 1) ==  1.0);
+    BOOST_TEST(layer.getBinaryWeight(0, 2) == -1.0);
+    BOOST_TEST(layer.getBinaryWeight(0, 3) == -1.0);
+
+    BOOST_TEST(layer.getBinaryWeight(1, 0) ==  1.0);
+    BOOST_TEST(layer.getBinaryWeight(1, 1) == -1.0);
+    BOOST_TEST(layer.getBinaryWeight(1, 2) ==  1.0);
+    BOOST_TEST(layer.getBinaryWeight(1, 3) == -1.0);
+
+    // Input: [1.0, -1.0, 1.0, -1.0] => sign = [+1, -1, +1, -1]
+    double input[4] = {1.0, -1.0, 1.0, -1.0};
+    double output[2];
+    layer.forward(input, output);
+
+    // output[0]: sign(input) dot weights[0] = (+1)(+1) + (-1)(+1) + (+1)(-1) + (-1)(-1)
+    //          = 1 - 1 - 1 + 1 = 0
+    BOOST_TEST(fabs(output[0] - 0.0) < 0.01);
+
+    // output[1]: sign(input) dot weights[1] = (+1)(+1) + (-1)(-1) + (+1)(+1) + (-1)(-1)
+    //          = 1 + 1 + 1 + 1 = 4
+    BOOST_TEST(fabs(output[1] - 4.0) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_binary_dense_forward_with_bias)
+{
+    tinymind::BinaryDense<double, 3, 1> layer;
+
+    // All positive latent weights => binary weights all +1
+    layer.setLatentWeight(0, 0, 0.5);
+    layer.setLatentWeight(0, 1, 0.5);
+    layer.setLatentWeight(0, 2, 0.5);
+    layer.setBias(0, 2.0);
+    layer.binarizeWeights();
+
+    // Input: [1.0, 1.0, 1.0] => sign = [+1, +1, +1]
+    // dot product = 3, plus bias 2 = 5
+    double input[3] = {1.0, 1.0, 1.0};
+    double output[1];
+    layer.forward(input, output);
+
+    BOOST_TEST(fabs(output[0] - 5.0) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_binary_dense_static_sizes)
+{
+    typedef tinymind::BinaryDense<double, 64, 16> BinType;
+
+    // 64 * 16 = 1024 binary weights
+    static_assert(BinType::TotalBinaryWeights == 1024, "Wrong total binary weights");
+    // 1024 / 32 = 32 packed words
+    static_assert(BinType::PackedWeightWords == 32, "Wrong packed weight words");
+    // 64 / 32 = 2 packed input words
+    static_assert(BinType::PackedInputWords == 2, "Wrong packed input words");
+    BOOST_TEST(true);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_binary_dense_packed_storage)
+{
+    // Verify that packed weights use minimal storage
+    typedef tinymind::BinaryDense<double, 33, 1> BinType;
+
+    // 33 bits needs 2 words (ceil(33/32) = 2)
+    static_assert(BinType::PackedWeightWords == 2, "Wrong packed words for 33 bits");
+    static_assert(BinType::PackedInputWords == 2, "Wrong packed input words for 33 bits");
+    BOOST_TEST(true);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_binary_dense_backward_ste)
+{
+    tinymind::BinaryDense<double, 2, 1> layer;
+
+    // Set latent weights within [-1, 1]
+    layer.setLatentWeight(0, 0,  0.5);
+    layer.setLatentWeight(0, 1, -0.3);
+    layer.setBias(0, 0.0);
+    layer.binarizeWeights();
+
+    double input[2] = {1.0, -1.0};
+    double output[1];
+    layer.forward(input, output);
+
+    double outputDeltas[1] = {1.0};
+    double inputDeltas[2];
+    layer.backward(outputDeltas, input, inputDeltas);
+
+    // Learning rate = -0.1 (negative because gradient descent)
+    layer.updateWeights(-0.1);
+
+    // Latent weights should have been updated
+    // w0: 0.5 + (-0.1) * (1.0 * sign(1.0)) = 0.5 - 0.1 = 0.4
+    // w1: -0.3 + (-0.1) * (1.0 * sign(-1.0)) = -0.3 + 0.1 = -0.2
+    BOOST_TEST(fabs(layer.getLatentWeight(0, 0) - 0.4) < 0.01);
+    BOOST_TEST(fabs(layer.getLatentWeight(0, 1) - (-0.2)) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_binary_dense_ste_clipping)
+{
+    tinymind::BinaryDense<double, 2, 1> layer;
+
+    // Set one latent weight outside [-1, 1] — STE should zero its gradient
+    layer.setLatentWeight(0, 0,  1.5);  // outside [-1, 1]
+    layer.setLatentWeight(0, 1,  0.5);  // inside [-1, 1]
+    layer.setBias(0, 0.0);
+    layer.binarizeWeights();
+
+    double input[2] = {1.0, 1.0};
+    double output[1];
+    layer.forward(input, output);
+
+    double outputDeltas[1] = {1.0};
+    layer.backward(outputDeltas, input, nullptr);
+    layer.updateWeights(-0.1);
+
+    // w0 at 1.5 is outside [-1,1], gradient clipped to 0 => stays at 1.5
+    BOOST_TEST(fabs(layer.getLatentWeight(0, 0) - 1.5) < 0.01);
+    // w1 at 0.5 is inside [-1,1], gradient applies => 0.5 + (-0.1)(1.0*1.0) = 0.4
+    BOOST_TEST(fabs(layer.getLatentWeight(0, 1) - 0.4) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_binary_dense_fixed_point)
+{
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::BinaryDense<ValueType, 4, 1> layer;
+
+    // Set latent weights using ValueConverter
+    typedef tinymind::ValueConverter<double, ValueType> Conv;
+    layer.setLatentWeight(0, 0, Conv::convertToDestinationType(0.5));
+    layer.setLatentWeight(0, 1, Conv::convertToDestinationType(-0.5));
+    layer.setLatentWeight(0, 2, Conv::convertToDestinationType(0.5));
+    layer.setLatentWeight(0, 3, Conv::convertToDestinationType(-0.5));
+    layer.setBias(0, Conv::convertToDestinationType(0.0));
+    layer.binarizeWeights();
+
+    // Binary weights should be [+1, -1, +1, -1]
+    ValueType posOne = Conv::convertToDestinationType(1.0);
+    ValueType negOne = Conv::convertToDestinationType(-1.0);
+    BOOST_TEST(layer.getBinaryWeight(0, 0).getValue() == posOne.getValue());
+    BOOST_TEST(layer.getBinaryWeight(0, 1).getValue() == negOne.getValue());
+    BOOST_TEST(layer.getBinaryWeight(0, 2).getValue() == posOne.getValue());
+    BOOST_TEST(layer.getBinaryWeight(0, 3).getValue() == negOne.getValue());
+
+    // Input: all +1 => sign = [+1, +1, +1, +1]
+    // dot = (+1)(+1) + (+1)(-1) + (+1)(+1) + (+1)(-1) = 0
+    ValueType input[4];
+    input[0] = Conv::convertToDestinationType(1.0);
+    input[1] = Conv::convertToDestinationType(1.0);
+    input[2] = Conv::convertToDestinationType(1.0);
+    input[3] = Conv::convertToDestinationType(1.0);
+
+    ValueType output[1];
+    layer.forward(input, output);
+
+    ValueType expected = Conv::convertToDestinationType(0.0);
+    BOOST_TEST(output[0].getValue() == expected.getValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_binary_dense_input_gradient_propagation)
+{
+    tinymind::BinaryDense<double, 3, 2> layer;
+
+    layer.setLatentWeight(0, 0,  0.5);
+    layer.setLatentWeight(0, 1, -0.5);
+    layer.setLatentWeight(0, 2,  0.5);
+
+    layer.setLatentWeight(1, 0, -0.5);
+    layer.setLatentWeight(1, 1,  0.5);
+    layer.setLatentWeight(1, 2, -0.5);
+
+    layer.setBias(0, 0.0);
+    layer.setBias(1, 0.0);
+    layer.binarizeWeights();
+
+    double input[3] = {1.0, 1.0, 1.0};
+    double output[2];
+    layer.forward(input, output);
+
+    // output deltas both = 1.0
+    double outputDeltas[2] = {1.0, 1.0};
+    double inputDeltas[3];
+    layer.backward(outputDeltas, input, inputDeltas);
+
+    // inputDeltas[0] = delta0 * sign(w[0][0]) + delta1 * sign(w[1][0])
+    //                = 1.0 * (+1) + 1.0 * (-1) = 0
+    BOOST_TEST(fabs(inputDeltas[0] - 0.0) < 0.01);
+    // inputDeltas[1] = 1.0 * (-1) + 1.0 * (+1) = 0
+    BOOST_TEST(fabs(inputDeltas[1] - 0.0) < 0.01);
+    // inputDeltas[2] = 1.0 * (+1) + 1.0 * (-1) = 0
+    BOOST_TEST(fabs(inputDeltas[2] - 0.0) < 0.01);
+}
+
+// ============================================================
+// TernaryDense tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_ternary_dense_forward_basic)
+{
+    // 4 inputs, 2 outputs, threshold 50%
+    tinymind::TernaryDense<double, 4, 2, 50> layer;
+
+    // Set latent weights with clear magnitudes
+    // Large values => +1 or -1, small values near 0 => 0
+    layer.setLatentWeight(0, 0,  0.9);   // should be +1
+    layer.setLatentWeight(0, 1,  0.01);  // should be 0 (below threshold)
+    layer.setLatentWeight(0, 2, -0.8);   // should be -1
+    layer.setLatentWeight(0, 3,  0.02);  // should be 0 (below threshold)
+
+    layer.setLatentWeight(1, 0, -0.7);   // should be -1
+    layer.setLatentWeight(1, 1,  0.85);  // should be +1
+    layer.setLatentWeight(1, 2,  0.03);  // should be 0 (below threshold)
+    layer.setLatentWeight(1, 3, -0.9);   // should be -1
+
+    layer.setBias(0, 0.0);
+    layer.setBias(1, 0.0);
+    layer.ternarizeWeights();
+
+    // Verify ternarization
+    // Mean |w| = (0.9+0.01+0.8+0.02+0.7+0.85+0.03+0.9)/8 = 4.21/8 = 0.52625
+    // threshold = 0.5 * 0.52625 = 0.263125
+    // w[0][0]=0.9 > 0.263 => +1
+    // w[0][1]=0.01 < 0.263 => 0
+    // w[0][2]=-0.8, |0.8| > 0.263 => -1
+    // w[0][3]=0.02 < 0.263 => 0
+    BOOST_TEST(layer.getTernaryWeight(0, 0) == tinymind::detail::TERNARY_POS);
+    BOOST_TEST(layer.getTernaryWeight(0, 1) == tinymind::detail::TERNARY_ZERO);
+    BOOST_TEST(layer.getTernaryWeight(0, 2) == tinymind::detail::TERNARY_NEG);
+    BOOST_TEST(layer.getTernaryWeight(0, 3) == tinymind::detail::TERNARY_ZERO);
+
+    BOOST_TEST(layer.getTernaryWeight(1, 0) == tinymind::detail::TERNARY_NEG);
+    BOOST_TEST(layer.getTernaryWeight(1, 1) == tinymind::detail::TERNARY_POS);
+    BOOST_TEST(layer.getTernaryWeight(1, 2) == tinymind::detail::TERNARY_ZERO);
+    BOOST_TEST(layer.getTernaryWeight(1, 3) == tinymind::detail::TERNARY_NEG);
+
+    // Input: [2.0, 3.0, 4.0, 5.0]
+    double input[4] = {2.0, 3.0, 4.0, 5.0};
+    double output[2];
+    layer.forward(input, output);
+
+    // output[0] = (+1)*2 + 0*3 + (-1)*4 + 0*5 = 2 - 4 = -2
+    BOOST_TEST(fabs(output[0] - (-2.0)) < 0.01);
+
+    // output[1] = (-1)*2 + (+1)*3 + 0*4 + (-1)*5 = -2 + 3 - 5 = -4
+    BOOST_TEST(fabs(output[1] - (-4.0)) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_ternary_dense_forward_with_bias)
+{
+    tinymind::TernaryDense<double, 2, 1, 10> layer;
+
+    // Both large positive => both +1
+    layer.setLatentWeight(0, 0, 0.9);
+    layer.setLatentWeight(0, 1, 0.8);
+    layer.setBias(0, 1.5);
+    layer.ternarizeWeights();
+
+    double input[2] = {3.0, 4.0};
+    double output[1];
+    layer.forward(input, output);
+
+    // output = (+1)*3 + (+1)*4 + 1.5 = 8.5
+    BOOST_TEST(fabs(output[0] - 8.5) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_ternary_dense_static_sizes)
+{
+    typedef tinymind::TernaryDense<double, 64, 16, 50> TernType;
+
+    static_assert(TernType::TotalTernaryWeights == 1024, "Wrong total ternary weights");
+    // 1024 ternary values, 16 per word = 64 words
+    static_assert(TernType::PackedWeightWords == 64, "Wrong packed weight words");
+    BOOST_TEST(true);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_ternary_dense_all_zero_threshold)
+{
+    // With very high threshold, most weights should become 0
+    tinymind::TernaryDense<double, 4, 1, 99> layer;
+
+    layer.setLatentWeight(0, 0,  0.5);
+    layer.setLatentWeight(0, 1, -0.5);
+    layer.setLatentWeight(0, 2,  0.5);
+    layer.setLatentWeight(0, 3, -0.5);
+    layer.setBias(0, 0.0);
+    layer.ternarizeWeights();
+
+    // Mean |w| = 0.5, threshold = 0.99 * 0.5 = 0.495
+    // All |w| = 0.5 > 0.495, so all should still be non-zero
+    // (need truly small weights relative to mean for zeroing)
+    double input[4] = {1.0, 1.0, 1.0, 1.0};
+    double output[1];
+    layer.forward(input, output);
+
+    // With very uniform weights, threshold 99% of mean still passes
+    // output = (+1)*1 + (-1)*1 + (+1)*1 + (-1)*1 = 0
+    BOOST_TEST(fabs(output[0]) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_ternary_dense_backward_ste)
+{
+    tinymind::TernaryDense<double, 2, 1, 10> layer;
+
+    layer.setLatentWeight(0, 0,  0.8);
+    layer.setLatentWeight(0, 1, -0.6);
+    layer.setBias(0, 0.0);
+    layer.ternarizeWeights();
+
+    double input[2] = {2.0, 3.0};
+    double output[1];
+    layer.forward(input, output);
+
+    double outputDeltas[1] = {1.0};
+    double inputDeltas[2];
+    layer.backward(outputDeltas, input, inputDeltas);
+    layer.updateWeights(-0.1);
+
+    // Gradient for w0: delta * input[0] = 1.0 * 2.0 = 2.0
+    // w0: 0.8 + (-0.1)(2.0) = 0.6
+    BOOST_TEST(fabs(layer.getLatentWeight(0, 0) - 0.6) < 0.01);
+
+    // Gradient for w1: delta * input[1] = 1.0 * 3.0 = 3.0
+    // w1: -0.6 + (-0.1)(3.0) = -0.9
+    BOOST_TEST(fabs(layer.getLatentWeight(0, 1) - (-0.9)) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_ternary_dense_input_gradient_propagation)
+{
+    tinymind::TernaryDense<double, 3, 1, 10> layer;
+
+    // All large => all non-zero ternary
+    layer.setLatentWeight(0, 0,  0.9);  // +1
+    layer.setLatentWeight(0, 1, -0.8);  // -1
+    layer.setLatentWeight(0, 2,  0.7);  // +1
+    layer.setBias(0, 0.0);
+    layer.ternarizeWeights();
+
+    double input[3] = {1.0, 2.0, 3.0};
+    double output[1];
+    layer.forward(input, output);
+
+    double outputDeltas[1] = {2.0};
+    double inputDeltas[3];
+    layer.backward(outputDeltas, input, inputDeltas);
+
+    // inputDeltas[0] = delta * ternary(w[0][0]) = 2.0 * (+1) = 2.0
+    BOOST_TEST(fabs(inputDeltas[0] - 2.0) < 0.01);
+    // inputDeltas[1] = delta * ternary(w[0][1]) = 2.0 * (-1) = -2.0
+    BOOST_TEST(fabs(inputDeltas[1] - (-2.0)) < 0.01);
+    // inputDeltas[2] = delta * ternary(w[0][2]) = 2.0 * (+1) = 2.0
+    BOOST_TEST(fabs(inputDeltas[2] - 2.0) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_ternary_dense_fixed_point)
+{
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::ValueConverter<double, ValueType> Conv;
+    tinymind::TernaryDense<ValueType, 4, 1, 10> layer;
+
+    layer.setLatentWeight(0, 0, Conv::convertToDestinationType(0.9));
+    layer.setLatentWeight(0, 1, Conv::convertToDestinationType(-0.8));
+    layer.setLatentWeight(0, 2, Conv::convertToDestinationType(0.7));
+    layer.setLatentWeight(0, 3, Conv::convertToDestinationType(-0.6));
+    layer.setBias(0, Conv::convertToDestinationType(0.0));
+    layer.ternarizeWeights();
+
+    // All weights are large magnitude => all non-zero ternary
+    BOOST_TEST(layer.getTernaryWeight(0, 0) == tinymind::detail::TERNARY_POS);
+    BOOST_TEST(layer.getTernaryWeight(0, 1) == tinymind::detail::TERNARY_NEG);
+    BOOST_TEST(layer.getTernaryWeight(0, 2) == tinymind::detail::TERNARY_POS);
+    BOOST_TEST(layer.getTernaryWeight(0, 3) == tinymind::detail::TERNARY_NEG);
+
+    // Input: [2, 1, 3, 2]
+    // output = (+1)*2 + (-1)*1 + (+1)*3 + (-1)*2 = 2 - 1 + 3 - 2 = 2
+    ValueType input[4];
+    input[0] = Conv::convertToDestinationType(2.0);
+    input[1] = Conv::convertToDestinationType(1.0);
+    input[2] = Conv::convertToDestinationType(3.0);
+    input[3] = Conv::convertToDestinationType(2.0);
+
+    ValueType output[1];
+    layer.forward(input, output);
+
+    ValueType expected = Conv::convertToDestinationType(2.0);
+    BOOST_TEST(output[0].getValue() == expected.getValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_ternary_dense_get_value_accessors)
+{
+    tinymind::TernaryDense<double, 2, 1, 10> layer;
+
+    layer.setLatentWeight(0, 0,  0.9);
+    layer.setLatentWeight(0, 1, -0.8);
+    layer.setBias(0, 0.0);
+    layer.ternarizeWeights();
+
+    BOOST_TEST(fabs(layer.getTernaryWeightValue(0, 0) - 1.0) < 0.01);
+    BOOST_TEST(fabs(layer.getTernaryWeightValue(0, 1) - (-1.0)) < 0.01);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
