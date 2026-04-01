@@ -1,1 +1,17 @@
-theme: jekyll-theme-architect
+remote_theme: just-the-docs/just-the-docs
+title: TinyMind
+description: Header-only C++ template library for neural networks on embedded systems
+baseurl: "/tinymind"
+url: "https://danmcleran.github.io"
+plugins:
+  - jekyll-remote-theme
+aux_links:
+  "GitHub": "https://github.com/danmcleran/tinymind"
+  "Wiki": "https://github.com/danmcleran/tinymind/wiki"
+footer_content: "Dan McLeran &mdash; danmcleran@gmail.com &mdash; MIT License"
+search_enabled: true
+search.button: true
+heading_anchors: true
+back_to_top: true
+back_to_top_text: "Back to top"
+color_scheme: dark
