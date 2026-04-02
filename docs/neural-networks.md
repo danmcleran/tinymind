@@ -98,30 +98,6 @@ typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<16, 8, 4>, 
     TransferFunctionsType> ThreeLayerNN;
 ```
 
-## Neural Network Class Diagram
-
-The core class for all tinymind neural networks is `NeuralNetwork`. This class is configured via the template parameters to have the desired behavior. Some instances of the template parameters are instantiated within the class, while others are simply used by the class via static function calls. A simple class diagram of `NeuralNetwork` and its relationship to others is presented below.
-
-![nn_class](https://user-images.githubusercontent.com/1591721/200402130-d9ba68d1-35f5-4d77-a0ca-b479cf93e059.png)
-
-## Neural Network System Sequence Diagrams
-
-### Initialization
-
-When the neural network is initialized, it has to configure itself by calling upon its TransferFunctionsPolicy. From its TransferFunctionsPolicy it gets initial weight values, initial learning rate, etc.
-
-![nn_ssd_init](https://user-images.githubusercontent.com/1591721/200402172-ac715e24-bc35-49e2-8653-98c292c09e10.png)
-
-Tinymind does not assume anything about the environment within which the neural network is instantiated. This is why it relies upon the presence of a policy class, TransferFunctionsPolicy. This makes the code more portable in that is does assume the presence of random number generation hardware. It also does not initialize the network itself. It relies upon the policy class to handle that in any way it desires.
-
-### Training
-
-The simple training flow thru a feed-forward neural network is documented here.
-
-![nn_ssd_train_pt1](https://user-images.githubusercontent.com/1591721/200402214-fc36f88f-e37f-40f4-850a-861f414dc232.png)
-
-In the feed-forward pass, inputs are fed into the neural network. The neural network calculates the predicted output values and stores them in the OutputLayer. When `calculateError` is called, the error between the predicted output and the actual output fed into the neural network is returned to the caller. If the delta between the neural network calculated outputs and known outputs is too large, the creator of the neural network can call the `trainNetwork` API to force the neural network to back-propagate the calculated error thru the network layers and update the connection weights to try and minimize this error on the next invocation.
-
 `NeuralNetwork` is also the base class for the recurrent network templates: `LstmNeuralNetwork`, `GruNeuralNetwork`, `ElmanNeuralNetwork`, and `RecurrentNeuralNetwork`. See the [LSTM and GRU Recurrent Networks]({{ site.baseurl }}/architectures/lstm-gru) page for details.
 
 # Training Policies
