@@ -3456,498 +3456,13 @@ namespace tinymind {
         }
     };
 
-    /**
-     * MLP Neural Network
-     */
-    template<
-            typename ValueType,
-            size_t NumberOfInputs,
-            size_t NumberOfHiddenLayers,
-            size_t NumberOfNeuronsInHiddenLayers,
-            size_t NumberOfOutputs,
-            typename TransferFunctionsPolicy,
-            bool IsTrainable = true,
-            size_t BatchSize = 1,
-            bool HasRecurrentLayer = false,
-            hiddenLayerConfiguration_e HiddenLayerConfig = NonRecurrentHiddenLayerConfig,
-            size_t RecurrentConnectionDepth = 0,
-            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
-            >
-    class MultilayerPerceptron
-    {
-    public:
-        typedef MultilayerPerceptron<   ValueType,
-                                        NumberOfInputs,
-                                        NumberOfHiddenLayers,
-                                        NumberOfNeuronsInHiddenLayers,
-                                        NumberOfOutputs,
-                                        TransferFunctionsPolicy,
-                                        IsTrainable,
-                                        BatchSize,
-                                        HasRecurrentLayer,
-                                        HiddenLayerConfig,
-                                        RecurrentConnectionDepth,
-                                        OutputLayerConfiguration> NeuralNetworkType;
-
-        typedef ValueType NeuralNetworkValueType;
-        typedef typename ConnectionTypeSelector<ValueType, IsTrainable>::ConnectionType ConnectionType;
-        typedef HiddenLayerTypeSelector<ConnectionType,
-                                        NumberOfHiddenLayers,
-                                        NumberOfNeuronsInHiddenLayers,
-                                        NumberOfOutputs,
-                                        TransferFunctionsPolicy,
-                                        HiddenLayerConfig> HiddenLayerTypeSelectorType;
-        typedef typename HiddenLayerTypeSelectorType::InnerHiddenLayerType InnerHiddenLayerType;
-        typedef typename HiddenLayerTypeSelectorType::LastHiddenLayerType LastHiddenLayerType;
-        static const size_t MlpInputToHiddenConnections = GateConnectionCount<NumberOfNeuronsInHiddenLayers, HiddenLayerConfig>::value;
-        static const size_t HiddenLayerGateMultiplier = GateConnectionCount<1, HiddenLayerConfig>::value;
-        typedef RecurrentLayerTypeSelector< ConnectionType,
-                                            NumberOfNeuronsInHiddenLayers,
-                                            MlpInputToHiddenConnections,
-                                            TransferFunctionsPolicy,
-                                            RecurrentConnectionDepth,
-                                            HasRecurrentLayer> RecurrentLayerTypeSelectorType;
-        typedef typename RecurrentLayerTypeSelectorType::RecurrentLayerType NeuralNetworkRecurrentLayerType;
-        typedef typename InputLayerNeuronTypeSelector<ConnectionType, MlpInputToHiddenConnections, TransferFunctionsPolicy, IsTrainable>::InputLayerNeuronType InputLayerNeuronType;
-        typedef typename OutputLayerNeuronTypeSelector<ConnectionType, TransferFunctionsPolicy, IsTrainable>::OutputLayerNeuronType OutputLayerNeuronType;
-        typedef InputLayer<InputLayerNeuronType, NumberOfInputs> InputLayerType;
-        typedef OutputLayerTypeSelector<OutputLayerNeuronType,
-                                        NumberOfOutputs,
-                                        OutputLayerConfiguration> OutputLayerTypeSelectorType;
-        typedef typename OutputLayerTypeSelectorType::OutputLayerType NeuralNetworkOutputLayerType;
-        typedef TransferFunctionsPolicy NeuralNetworkTransferFunctionsPolicy;
-        typedef typename GradientsManagerSelector<
-                                                    NeuralNetworkType,
-                                                    NumberOfHiddenLayers - 1,
-                                                    IsTrainable>::GradientsManagerType GradientsManagerType;
-        typedef typename BackPropTrainingPolicySelector<
-                                                        TransferFunctionsPolicy,
-                                                        BatchSize,
-                                                        HasRecurrentLayer,
-                                                        IsTrainable,
-                                                        OutputLayerConfiguration>::TrainingPolicyType TrainingPolicyType;
-
-        typedef WeightInitPolicy<NeuralNetworkType, IsTrainable> WeightInitPolicyType;
-
-        static const size_t NeuralNetworkNumberOfHiddenLayers = NumberOfHiddenLayers;
-        static const size_t NumberOfInnerHiddenLayers = NumberOfHiddenLayers - 1;
-        static const size_t NumberOfInputLayerNeurons = InputLayerType::NumberOfNeuronsInLayer;
-        static const size_t NumberOfHiddenLayerNeurons = LastHiddenLayerType::NumberOfNeuronsInLayer;
-        static const size_t NumberOfOutputLayerNeurons = NeuralNetworkOutputLayerType::NumberOfNeuronsInLayer;
-        static const size_t NeuralNetworkRecurrentConnectionDepth = NeuralNetworkRecurrentLayerType::RecurrentLayerRecurrentConnectionDepth;
-        static const size_t NeuralNetworkBatchSize = BatchSize;
-        static const outputLayerConfiguration_e NeuralNetworkOutputLayerConfiguration = OutputLayerConfiguration;
-
-        MultilayerPerceptron()
-        {
-            size_t bufferIndex;
-
-            this->mInputLayer.initializeNeurons();
-
-            this->mInnerHiddenLayerManager.initializeInnerHiddenLayerNeurons();
-
-            this->mLastHiddenLayer.initializeNeurons();
-
-            this->mOutputLayer.initializeNeurons();
-
-            this->mRecurrentLayer.initializeNeurons();
-
-            this->mTrainingPolicy.initialize();
-
-            WeightInitPolicyType::initializeWeights(*this);
-
-            for(size_t learnedValue = 0;learnedValue < NumberOfOutputLayerNeurons;++learnedValue)
-            {
-                bufferIndex = learnedValue * sizeof(ValueType);
-                new (&this->mLearnedValuesBuffer[bufferIndex]) ValueType();
-            }
-        }
-
-        void initializeWeights()
-        {
-            this->mInputLayer.initializeWeights();
-
-            this->mInnerHiddenLayerManager.initializeInnerHiddenLayerWeights();
-
-            this->mLastHiddenLayer.initializeWeights();
-
-            this->mOutputLayer.initializeWeights();
-
-            this->mRecurrentLayer.initializeWeights();
-        }
-
-        ValueType calculateError(ValueType const* const targetValues)
-        {
-            ValueType* pLearnedValues = reinterpret_cast<ValueType*>(&this->mLearnedValuesBuffer[0]);
-
-            getLearnedValues(pLearnedValues);
-
-            return TransferFunctionsPolicy::calculateError(targetValues, pLearnedValues);
-        }
-
-        void feedForward(ValueType const* const values)
-        {
-            this->feedForwardInputLayer(values);
-            
-            this->feedForwardHiddenLayers();
-
-            this->feedForwardOutputLayer();
-        }
-
-        ValueType getAccelerationRate() const
-        {
-            return this->mTrainingPolicy.getAccelerationRate();
-        }
-        
-        ValueType getLearningRate() const
-        {
-            return this->mTrainingPolicy.getLearningRate();
-        }
-
-        ValueType getMomentumRate() const
-        {
-            return this->mTrainingPolicy.getMomentumRate();
-        }
-
-        NeuralNetworkRecurrentLayerType& getRecurrentLayer()
-        {
-            return this->mRecurrentLayer;
-        }
-        
-        GradientsManagerType& getGradientsManager()
-        {
-            return this->mGradientsManager;
-        }
-
-        ValueType getHiddenLayerBiasNeuronWeightForConnection(const size_t hiddenLayer, const size_t connection)
-        {
-            if((NumberOfHiddenLayers - 1) == hiddenLayer)
-            {
-                return this->mLastHiddenLayer.getBiasNeuronWeightForConnection(connection);
-            }
-            else
-            {
-                return this->mInnerHiddenLayerManager.getPointerToInnerHiddenLayers()[hiddenLayer].getBiasNeuronWeightForConnection(connection);
-            }
-        }
-
-        ValueType getHiddenLayerWeightForNeuronAndConnection(const size_t hiddenLayer, const size_t neuron, const size_t connection)
-        {
-            if((NumberOfHiddenLayers - 1) == hiddenLayer)
-            {
-                return this->mLastHiddenLayer.getWeightForNeuronAndConnection(neuron, connection);
-            }
-            else
-            {
-                return this->mInnerHiddenLayerManager.getPointerToInnerHiddenLayers()[hiddenLayer].getWeightForNeuronAndConnection(neuron, connection);
-            }
-        }
-
-        InputLayerType& getInputLayer()
-        {
-            return this->mInputLayer;
-        }
-
-        ValueType getInputLayerBiasNeuronWeightForConnection(const size_t connection) const
-        {
-            return this->mInputLayer.getBiasNeuronWeightForConnection(connection);
-        }
-
-        ValueType getInputLayerWeightForNeuronAndConnection(const size_t neuron, const size_t connection) const
-        {
-            return this->mInputLayer.getWeightForNeuronAndConnection(neuron, connection);
-        }
-
-        LastHiddenLayerType& getLastHiddenLayer()
-        {
-            return this->mLastHiddenLayer;
-        }
-
-        void getLearnedValues(ValueType* output) const
-        {
-            for (size_t outputNeuron = 0; outputNeuron < NumberOfOutputLayerNeurons; ++outputNeuron)
-            {
-                output[outputNeuron] = mOutputLayer.getOutputValueForNeuron(outputNeuron);
-            }
-        }
-
-        NeuralNetworkOutputLayerType& getOutputLayer()
-        {
-            return this->mOutputLayer;
-        }
-
-        InnerHiddenLayerType* getPointerToInnerHiddenLayers()
-        {
-            return this->mInnerHiddenLayerManager.getPointerToInnerHiddenLayers();
-        }
-
-        void setAccelerationRate(const ValueType& value)
-        {
-            this->mTrainingPolicy.setAccelerationRate(value);
-        }
-        
-        void setLearningRate(const ValueType& value)
-        {
-            this->mTrainingPolicy.setLearningRate(value);
-        }
-        
-        void setMomentumRate(const ValueType& value)
-        {
-            this->mTrainingPolicy.setMomentumRate(value);
-        }
-
-        void setHiddenLayerBiasNeuronWeightForConnection(const size_t hiddenLayer, const size_t connection, const ValueType& weight)
-        {
-            if((NumberOfHiddenLayers - 1) == hiddenLayer)
-            {
-                this->mLastHiddenLayer.setBiasNeuronWeightForConnection(connection, weight);
-            }
-            else
-            {
-                this->mInnerHiddenLayerManager.getPointerToInnerHiddenLayers()[hiddenLayer].setBiasNeuronWeightForConnection(connection, weight);
-            }
-        }
-
-        void setHiddenLayerBiasDeltaWeightForConnection(const size_t hiddenLayer, const size_t connection, const ValueType& deltaWeight)
-        {
-            if((NumberOfHiddenLayers - 1) == hiddenLayer)
-            {
-                this->mLastHiddenLayer.setBiasNeuronDeltaWeightForConnection(connection, deltaWeight);
-            }
-            else
-            {
-                this->mInnerHiddenLayerManager.getPointerToInnerHiddenLayers()[hiddenLayer].setBiasNeuronDeltaWeightForConnection(connection, deltaWeight);
-            }
-        }
-        
-        void setHiddenLayerDeltaWeightForNeuronAndConnection(const size_t hiddenLayer, const size_t neuron, const size_t connection, const ValueType& deltaWeight)
-        {
-            if((NumberOfHiddenLayers - 1) == hiddenLayer)
-            {
-                this->mLastHiddenLayer.setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
-            }
-            else
-            {
-                this->mInnerHiddenLayerManager.getPointerToInnerHiddenLayers()[hiddenLayer].setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
-            }
-        }
-        
-        void setHiddenLayerWeightForNeuronAndConnection(const size_t hiddenLayer, const size_t neuron, const size_t connection, const ValueType& weight)
-        {
-            if((NumberOfHiddenLayers - 1) == hiddenLayer)
-            {
-                this->mLastHiddenLayer.setWeightForNeuronAndConnection(neuron, connection, weight);
-            }
-            else
-            {
-                this->mInnerHiddenLayerManager.getPointerToInnerHiddenLayers()[hiddenLayer].setWeightForNeuronAndConnection(neuron, connection, weight);
-            }
-        }
-
-        void setInputLayerBiasWeightForConnection(const size_t connection, const ValueType& weight)
-        {
-            this->mInputLayer.setBiasNeuronWeightForConnection(connection, weight);
-        }
-        
-        void setInputLayerBiasDeltaWeightForConnection(const size_t connection, const ValueType& deltaWeight)
-        {
-            this->mInputLayer.setBiasNeuronDeltaWeightForConnection(connection, deltaWeight);
-        }
-        
-        void setInputLayerDeltaWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& deltaWeight)
-        {
-            this->mInputLayer.setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
-        }
-
-        void setInputLayerWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& weight)
-        {
-            this->mInputLayer.setWeightForNeuronAndConnection(neuron, connection, weight);
-        }
-
-        void setOutputLayerDeltaWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& deltaWeight)
-        {
-            this->mOutputLayer.setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
-        }
-
-        void setOutputLayerWeightForNeuronAndConnection(const size_t neuron, const size_t connection, const ValueType& weight)
-        {
-            this->mOutputLayer.setWeightForNeuronAndConnection(neuron, connection, weight);
-        }
-
-        void setWeights(NeuralNetworkType& other)
-        {
-            ValueType weightValue;
-            size_t    hiddenLayer = 0;
-
-            for(size_t i = 0; i < NumberOfInputLayerNeurons; ++i)
-            {
-                for(size_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-                {
-                    weightValue = other.getInputLayerWeightForNeuronAndConnection(i, h);
-                    this->setInputLayerWeightForNeuronAndConnection(i, h, weightValue);
-                }
-            }
-
-            for(size_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-            {
-                weightValue = other.getInputLayerBiasNeuronWeightForConnection(h);
-                this->setInputLayerBiasWeightForConnection(h, weightValue);
-            }
-
-            for(;hiddenLayer < (NumberOfHiddenLayers - 1);++hiddenLayer)
-            {
-                for(size_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-                {
-                    for(size_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                    {
-                        weightValue = other.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1);
-                        this->setHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1, weightValue);
-                    }
-                }
-
-                for(size_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                {
-                    weightValue = other.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1);
-                    this->setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1, weightValue);
-                }
-            }
-
-            for(size_t hiddenNeuron = 0; hiddenNeuron < NumberOfHiddenLayerNeurons; ++hiddenNeuron)
-            {
-                for(size_t outputNeuron = 0; outputNeuron < NumberOfOutputLayerNeurons; ++outputNeuron)
-                {
-                    weightValue = other.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, hiddenNeuron, outputNeuron);
-                    this->setHiddenLayerWeightForNeuronAndConnection(hiddenLayer, hiddenNeuron, outputNeuron, weightValue);
-                }
-            }
-
-            for(size_t outputNeuron = 0; outputNeuron < NumberOfOutputLayerNeurons; ++outputNeuron)
-            {
-                weightValue = other.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, outputNeuron);
-                this->setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, outputNeuron, weightValue);
-            }
-        }
-
-        void trainNetwork(ValueType const* const targetValues)
-        {
-            this->mTrainingPolicy.trainNetwork(*this, targetValues);
-        }
-    protected:
-        void feedForwardHiddenLayers()
-        {
-            typedef HiddenLayerFeedForwardManager<InputLayerType, InnerHiddenLayerType, LastHiddenLayerType, NumberOfInnerHiddenLayers> HiddenLayerFeedForwardManagerType;
-
-            HiddenLayerFeedForwardManagerType::feedForward(this->mInputLayer, this->mInnerHiddenLayerManager.getPointerToInnerHiddenLayers(), this->mLastHiddenLayer);
-        }
-        
-        void feedForwardInputLayer(ValueType const* const values)
-        {
-            this->mInputLayer.feedForward(values);
-        }
-        
-        void feedForwardOutputLayer()
-        {
-            this->mOutputLayer.feedForward(this->mLastHiddenLayer);
-        }
-
-    protected:
-        InputLayerType mInputLayer;
-        InnerHiddenLayerManager<InnerHiddenLayerType, NumberOfInnerHiddenLayers> mInnerHiddenLayerManager;
-        LastHiddenLayerType mLastHiddenLayer;
-        NeuralNetworkOutputLayerType mOutputLayer;
-        NeuralNetworkRecurrentLayerType mRecurrentLayer;
-        TrainingPolicyType mTrainingPolicy;
-        GradientsManagerType mGradientsManager;
-    private:
-        unsigned char mLearnedValuesBuffer[NumberOfOutputLayerNeurons * sizeof(ValueType)];
-        unsigned char alignmentPads[1];
-    private:
-        MultilayerPerceptron(const MultilayerPerceptron&) {} // hide copy constructor
-        MultilayerPerceptron& operator=(const MultilayerPerceptron&) {} // hide assignment operator
-
-        static_assert(NumberOfInputs > 0, "Invalid number of inputs.");
-        static_assert(NumberOfHiddenLayers > 0, "Invalid number of hidden layers.");
-        static_assert(NumberOfNeuronsInHiddenLayers > 0, "Invalid number of neurons in hidden layers layers.");
-        static_assert(NumberOfOutputs > 0, "Invalid number of outputs.");
-        static_assert(NumberOfOutputLayerNeurons == TransferFunctionsPolicy::NumberOfTransferFunctionsOutputNeurons, "TransferFunctionPolicy NumberOfOutputNeurons is incorrect.");
-    };
-
-    /**
-     * Recurrent MLP
-     */
-    template<
-            typename ValueType,
-            size_t NumberOfInputs,
-            size_t NumberOfHiddenLayers,
-            size_t NumberOfNeuronsInHiddenLayers,
-            size_t NumberOfOutputs,
-            typename TransferFunctionsPolicy,
-            bool IsTrainable = true,
-            size_t BatchSize = 1,
-            bool HasRecurrentLayer = true,
-            hiddenLayerConfiguration_e HiddenLayerConfig = RecurrentHiddenLayerConfig,
-            size_t RecurrentConnectionDepth = 1,
-            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
-            >
-    class RecurrentMultilayerPerceptron : public MultilayerPerceptron<  ValueType,
-                                                                        NumberOfInputs,
-                                                                        NumberOfHiddenLayers,
-                                                                        NumberOfNeuronsInHiddenLayers,
-                                                                        NumberOfOutputs, 
-                                                                        TransferFunctionsPolicy,
-                                                                        IsTrainable,
-                                                                        BatchSize,
-                                                                        HasRecurrentLayer,
-                                                                        HiddenLayerConfig,
-                                                                        RecurrentConnectionDepth,
-                                                                        OutputLayerConfiguration
-                                                                        >
-    {
-    public:
-        void feedForward(ValueType const* const values)
-        {
-            this->feedForwardInputLayer(values);
-            
-            this->mLastHiddenLayer.feedForward(this->mInputLayer, this->mRecurrentLayer);
-            
-            this->feedForwardOutputLayer();
-        }
-    private:
-        static_assert(RecurrentConnectionDepth > 0, "Invalid recurrent connection depth.");
-    };
-
-    /**
-     * Elman Network
-     */
-    template<
-            typename ValueType,
-            size_t NumberOfInputs,
-            size_t NumberOfNeuronsInHiddenLayers,
-            size_t NumberOfOutputs,
-            typename TransferFunctionsPolicy,
-            bool IsTrainable = true,
-            size_t BatchSize = 1,
-            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
-            >
-    class ElmanNetwork : public RecurrentMultilayerPerceptron<  ValueType,
-                                                                NumberOfInputs,
-                                                                1,
-                                                                NumberOfNeuronsInHiddenLayers,
-                                                                NumberOfOutputs,
-                                                                TransferFunctionsPolicy,
-                                                                IsTrainable,
-                                                                BatchSize
-                                                                >
-    {
-    };
-
     // =========================================================================
     // Heterogeneous Hidden Layer Support
     //
     // The types and templates below enable neural networks where each hidden
-    // layer can have a different number of neurons. The existing
-    // MultilayerPerceptron class (above) is fully preserved for backward
-    // compatibility.
+    // layer can have a different number of neurons. MultilayerPerceptron is
+    // defined below as a backward-compatible alias for NeuralNetwork with
+    // uniform hidden layers.
     // =========================================================================
 
     // Forward declaration
@@ -5605,6 +5120,96 @@ namespace tinymind {
                                                                OutputLayerConfiguration>
     {
     };
+
+    // =========================================================================
+    // Backward-compatible aliases
+    //
+    // MultilayerPerceptron, RecurrentMultilayerPerceptron, and ElmanNetwork
+    // are now aliases for the NeuralNetwork family with uniform hidden layers.
+    // =========================================================================
+
+    /**
+     * MultilayerPerceptron — backward-compatible alias for NeuralNetwork
+     * with uniform hidden layers (all hidden layers have the same width).
+     */
+    template<
+            typename ValueType,
+            size_t NumberOfInputs,
+            size_t NumberOfHiddenLayers,
+            size_t NumberOfNeuronsInHiddenLayers,
+            size_t NumberOfOutputs,
+            typename TransferFunctionsPolicy,
+            bool IsTrainable = true,
+            size_t BatchSize = 1,
+            bool HasRecurrentLayer = false,
+            hiddenLayerConfiguration_e HiddenLayerConfig = NonRecurrentHiddenLayerConfig,
+            size_t RecurrentConnectionDepth = 0,
+            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
+            >
+    using MultilayerPerceptron = NeuralNetwork<
+            ValueType,
+            NumberOfInputs,
+            typename UniformHiddenLayersAlias<NumberOfHiddenLayers, NumberOfNeuronsInHiddenLayers>::type,
+            NumberOfOutputs,
+            TransferFunctionsPolicy,
+            IsTrainable,
+            BatchSize,
+            HasRecurrentLayer,
+            HiddenLayerConfig,
+            RecurrentConnectionDepth,
+            OutputLayerConfiguration>;
+
+    /**
+     * RecurrentMultilayerPerceptron — backward-compatible alias for RecurrentNeuralNetwork
+     * with uniform hidden layers.
+     */
+    template<
+            typename ValueType,
+            size_t NumberOfInputs,
+            size_t NumberOfHiddenLayers,
+            size_t NumberOfNeuronsInHiddenLayers,
+            size_t NumberOfOutputs,
+            typename TransferFunctionsPolicy,
+            bool IsTrainable = true,
+            size_t BatchSize = 1,
+            bool HasRecurrentLayer = true,
+            hiddenLayerConfiguration_e HiddenLayerConfig = RecurrentHiddenLayerConfig,
+            size_t RecurrentConnectionDepth = 1,
+            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
+            >
+    using RecurrentMultilayerPerceptron = RecurrentNeuralNetwork<
+            ValueType,
+            NumberOfInputs,
+            typename UniformHiddenLayersAlias<NumberOfHiddenLayers, NumberOfNeuronsInHiddenLayers>::type,
+            NumberOfOutputs,
+            TransferFunctionsPolicy,
+            IsTrainable,
+            BatchSize,
+            RecurrentConnectionDepth,
+            OutputLayerConfiguration>;
+
+    /**
+     * ElmanNetwork — backward-compatible alias for ElmanNeuralNetwork.
+     */
+    template<
+            typename ValueType,
+            size_t NumberOfInputs,
+            size_t NumberOfNeuronsInHiddenLayers,
+            size_t NumberOfOutputs,
+            typename TransferFunctionsPolicy,
+            bool IsTrainable = true,
+            size_t BatchSize = 1,
+            outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
+            >
+    using ElmanNetwork = ElmanNeuralNetwork<
+            ValueType,
+            NumberOfInputs,
+            NumberOfNeuronsInHiddenLayers,
+            NumberOfOutputs,
+            TransferFunctionsPolicy,
+            IsTrainable,
+            BatchSize,
+            OutputLayerConfiguration>;
 
     /**
      * LSTM Neural Network
