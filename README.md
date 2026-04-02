@@ -17,7 +17,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **GRU networks** (Gated Recurrent Unit) with 3-gate architecture -- ~25% less memory than LSTM per hidden neuron
 - **Binary neural networks** (`BinaryDense`) with XNOR+popcount forward pass -- 32x weight memory reduction via bit packing, no multiplication needed
 - **Ternary neural networks** (`TernaryDense`) with {-1, 0, +1} weights -- 16x weight memory reduction via 2-bit packing, multiply-free forward pass using conditional add/subtract/skip
-- **Heterogeneous hidden layers** via `HiddenLayers<N0, N1, ...>` for different neuron counts per layer
+- **Heterogeneous hidden layers** via `HiddenLayers<N0, N1, ...>` for different neuron counts per layer (`MultilayerPerceptron` is a convenience alias for uniform layers)
 - **Batch training** with configurable batch size
 - **Softmax output** for multi-class classification
 - **Xavier weight initialization** (uniform and normal distributions)
@@ -433,8 +433,7 @@ MazeEnvironment env;
 
 | Type | Class | Description |
 |------|-------|-------------|
-| Feed-forward | `NeuralNetwork` | Standard MLP with configurable layers |
-| Feed-forward (uniform) | `MultilayerPerceptron` | MLP with equal-sized hidden layers |
+| Feed-forward | `NeuralNetwork` | Standard MLP with configurable layers (`MultilayerPerceptron` alias for uniform layers) |
 | 1D Convolution | `Conv1D` | Time-series feature extraction with configurable kernel/stride/filters |
 | Max Pooling | `MaxPool1D` | Downsampling via maximum value selection with argmax tracking |
 | Average Pooling | `AvgPool1D` | Downsampling via mean with uniform gradient distribution |

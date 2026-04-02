@@ -29,12 +29,13 @@ This is why a complete XOR neural network (code + data + lookup tables) fits in 
 
 ## Neural Network Template Parameters
 
+The primary neural network template is `NeuralNetwork`, which supports heterogeneous hidden layer sizes via the `HiddenLayers<N0, N1, ...>` variadic template. `MultilayerPerceptron` is a convenience alias for `NeuralNetwork` with uniform hidden layers.
+
 ```cpp
 template<
         typename ValueType,
         size_t NumberOfInputs,
-        size_t NumberOfHiddenLayers,
-        size_t NumberOfNeuronsInHiddenLayers,
+        typename HiddenLayersDescriptor,
         size_t NumberOfOutputs,
         typename TransferFunctionsPolicy,
         bool IsTrainable = true,
@@ -44,7 +45,7 @@ template<
         size_t RecurrentConnectionDepth = 0,
         outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
         >
-class MultilayerPerceptron
+class NeuralNetwork
 {
 ...
 ```
@@ -53,9 +54,7 @@ class MultilayerPerceptron
 
 **NumberOfInputs** - Number of input neurons in the neural network.
 
-**NumberOfHiddenLayers** - Number of neural network hidden layers.
-
-**NumberOfNeuronsInHiddenLayers** - Number of neurons in the hidden layers. At this time all hidden layers must have the same number of neurons.
+**HiddenLayersDescriptor** - A `HiddenLayers<N0, N1, ...>` type specifying the number of neurons in each hidden layer. Each layer can have a different size (e.g., `HiddenLayers<16, 8, 4>`). For uniform layers, the `MultilayerPerceptron` alias accepts the traditional `NumberOfHiddenLayers` and `NumberOfNeuronsInHiddenLayers` scalar parameters.
 
 **NumberOfOutputs** - Number of output neurons in the neural network.
 
@@ -73,9 +72,35 @@ class MultilayerPerceptron
 
 **OutputLayerConfiguration** - Output layer configuration which configures the neural network's output layer as either feed forward or classifier type.
 
+### MultilayerPerceptron Alias
+
+`MultilayerPerceptron` is a backward-compatible alias for `NeuralNetwork` with uniform hidden layers:
+
+```cpp
+// These two are equivalent:
+typedef tinymind::MultilayerPerceptron<ValueType, 2, 1, 3, 1, TF> MyNN;
+typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<3>, 1, TF> MyNN;
+```
+
+### Usage Examples
+
+```cpp
+// Single hidden layer with 5 neurons
+typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<5>, 1,
+    TransferFunctionsType> SingleLayerNN;
+
+// Two hidden layers: 8 neurons then 4 neurons
+typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<8, 4>, 1,
+    TransferFunctionsType> TwoLayerNN;
+
+// Three hidden layers: 16 -> 8 -> 4
+typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<16, 8, 4>, 1,
+    TransferFunctionsType> ThreeLayerNN;
+```
+
 ## Neural Network Class Diagram
 
-The parent class for all tinymind neural networks is MultilayerPerceptron. This class is configured via the template parameters to have the desired behavior. Some instances of the template parameters are instantiated within the class, while others are simple used by the class via static function calls. A simple class diagram of MultilayerPerceptron and its relationship to others is presented below.
+The core class for all tinymind neural networks is `NeuralNetwork`. This class is configured via the template parameters to have the desired behavior. Some instances of the template parameters are instantiated within the class, while others are simply used by the class via static function calls. A simple class diagram of `NeuralNetwork` and its relationship to others is presented below.
 
 ![nn_class](https://user-images.githubusercontent.com/1591721/200402130-d9ba68d1-35f5-4d77-a0ca-b479cf93e059.png)
 
@@ -96,45 +121,6 @@ The simple training flow thru a feed-forward neural network is documented here.
 ![nn_ssd_train_pt1](https://user-images.githubusercontent.com/1591721/200402214-fc36f88f-e37f-40f4-850a-861f414dc232.png)
 
 In the feed-forward pass, inputs are fed into the neural network. The neural network calculates the predicted output values and stores them in the OutputLayer. When `calculateError` is called, the error between the predicted output and the actual output fed into the neural network is returned to the caller. If the delta between the neural network calculated outputs and known outputs is too large, the creator of the neural network can call the `trainNetwork` API to force the neural network to back-propagate the calculated error thru the network layers and update the connection weights to try and minimize this error on the next invocation.
-
-# NeuralNetwork Template (Heterogeneous Hidden Layers)
-
-In addition to `MultilayerPerceptron` (which requires all hidden layers to have the same number of neurons), tinymind provides the `NeuralNetwork` template which supports **heterogeneous hidden layer sizes** via the `HiddenLayers<N0, N1, ...>` variadic template:
-
-```cpp
-template<
-        typename ValueType,
-        size_t NumberOfInputs,
-        typename HiddenLayersDescriptor,
-        size_t NumberOfOutputs,
-        typename TransferFunctionsPolicy,
-        bool IsTrainable = true,
-        size_t BatchSize = 1,
-        bool HasRecurrentLayer = false,
-        hiddenLayerConfiguration_e HiddenLayerConfig = NonRecurrentHiddenLayerConfig,
-        size_t RecurrentConnectionDepth = 0,
-        outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration
-        >
-class NeuralNetwork
-```
-
-The key difference is the `HiddenLayersDescriptor` parameter, which replaces the separate `NumberOfHiddenLayers` and `NumberOfNeuronsInHiddenLayers` parameters. Examples:
-
-```cpp
-// Single hidden layer with 5 neurons
-typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<5>, 1,
-    TransferFunctionsType> SingleLayerNN;
-
-// Two hidden layers: 8 neurons then 4 neurons
-typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<8, 4>, 1,
-    TransferFunctionsType> TwoLayerNN;
-
-// Three hidden layers: 16 -> 8 -> 4
-typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<16, 8, 4>, 1,
-    TransferFunctionsType> ThreeLayerNN;
-```
-
-Internally, `NeuralNetwork` uses a chain-based layer composition (`LayerChain`/`EmptyLayerChain`) that compiles to the **exact same binary size** as the array-based `MultilayerPerceptron` for equivalent configurations. There is zero overhead from the heterogeneous layer support.
 
 `NeuralNetwork` is also the base class for the recurrent network templates: `LstmNeuralNetwork`, `GruNeuralNetwork`, `ElmanNeuralNetwork`, and `RecurrentNeuralNetwork`. See the [LSTM and GRU Recurrent Networks]({{ site.baseurl }}/architectures/lstm-gru) page for details.
 

@@ -6,20 +6,6 @@ nav_order: 4
 
 # Network Instance Size Comparison
 
-## NeuralNetwork vs MultilayerPerceptron
-
-Instance sizes in bytes for equivalent network configurations using `double` as the value type.
-
-| Configuration | MultilayerPerceptron | NeuralNetwork |
-|---|---|---|
-| 1 hidden layer (2->5->1) | 1,008 bytes | 1,008 bytes |
-| 2 hidden layers (2->5->5->1) | 2,112 bytes | 2,112 bytes |
-| 3 hidden layers (2->5->5->5->1) | 3,216 bytes | 3,216 bytes |
-| Recurrent/Elman (2->3->1) | 1,056 bytes | 1,056 bytes |
-| Non-trainable (2->5->1) | 360 bytes | 360 bytes |
-
-Zero overhead -- the chain-based `LayerChain`/`EmptyLayerChain` approach compiles down to the same size as the array-based `InnerHiddenLayerManager`.
-
 ## All Architectures: MLP vs LSTM vs GRU vs KAN
 
 ### Using `double` (2->N->1)

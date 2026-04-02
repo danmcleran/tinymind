@@ -44,8 +44,7 @@ TinyMind networks are small enough to deploy on the most constrained microcontro
 
 | Type | Class | Notes |
 |---|---|---|
-| Feed-forward | [`NeuralNetwork`]({{ site.baseurl }}/neural-networks) | Arbitrary depth/width |
-| Feed-forward uniform | [`MultilayerPerceptron`]({{ site.baseurl }}/neural-networks) | Equal-sized hidden layers |
+| Feed-forward | [`NeuralNetwork`]({{ site.baseurl }}/neural-networks) | Arbitrary depth/width (`MultilayerPerceptron` alias for uniform layers) |
 | 1D Convolution | [`Conv1D`]({{ site.baseurl }}/architectures/conv-pooling) | Time-series feature extraction |
 | Max/Avg Pooling | [`MaxPool1D`, `AvgPool1D`]({{ site.baseurl }}/architectures/conv-pooling) | Downsampling |
 | Binary Dense | [`BinaryDense`]({{ site.baseurl }}/architectures/quantized-networks) | XNOR+popcount (1-bit, 32x compression) |
