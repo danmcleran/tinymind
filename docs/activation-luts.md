@@ -6,7 +6,7 @@ nav_order: 8
 
 # Activation Function Lookup Tables
 
-On embedded systems without standard math libraries, functions like `tanh()`, `sigmoid()`, `exp()`, and `log()` are unavailable. TinyMind replaces these with pre-computed **lookup tables (LUTs)** stored as constant arrays in flash memory. At runtime, activation values are retrieved via table lookup with linear interpolation -- no floating-point math required.
+On embedded systems without standard math libraries, functions like `tanh()`, `sigmoid()`, `exp()`, and `log()` are unavailable. TinyMind replaces these with pre-computed **lookup tables (LUTs)** stored as constant arrays in memory. At runtime, activation values are retrieved via table lookup with linear interpolation -- no floating-point math required.
 
 ## Why Lookup Tables?
 
