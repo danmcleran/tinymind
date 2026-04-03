@@ -94,6 +94,10 @@ For many embedded applications, the optimal workflow is:
 
 See [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) for details.
 
+## Activation Function Lookup Tables
+
+Fixed-point activation functions (sigmoid, tanh, exp, log) are implemented via pre-computed lookup tables with linear interpolation -- no FPU or math library needed. Each table is 96 entries, and compile-time preprocessor switches ensure you only pay for the tables you use (96 bytes for a Q8.8 tanh table). See [Activation Function Lookup Tables]({{ site.baseurl }}/activation-luts) for the full details on table generation, runtime lookup, and memory footprint.
+
 ## Design Philosophy
 
 TinyMind is inspired by Andrei Alexandrescu's [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design). Neural networks are configured through policy classes as template parameters, allowing compile-time specialization that eliminates unused code and data. You only pay for what you use.
