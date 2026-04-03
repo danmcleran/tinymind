@@ -928,7 +928,8 @@ static void testNeuralNetwork_Recurrent(NeuralNetworkType& neuralNetwork, char c
 }
 
 template<typename NeuralNetworkType>
-static void testFloatingPointNeuralNetwork_Recurrent(NeuralNetworkType& neuralNetwork, char const* const path)
+static void testFloatingPointNeuralNetwork_Recurrent(NeuralNetworkType& neuralNetwork, char const* const path,
+                                                      const int numberOfTrainingIterations = TRAINING_ITERATIONS)
 {
     typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
     typedef double FullWidthValueType;
@@ -943,7 +944,7 @@ static void testFloatingPointNeuralNetwork_Recurrent(NeuralNetworkType& neuralNe
 
     tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::writeHeader(results);
 
-    for (int i = 0; i < TRAINING_ITERATIONS; ++i)
+    for (int i = 0; i < numberOfTrainingIterations; ++i)
     {
         generateRecurrentValues(values, output);
 
@@ -2750,6 +2751,10 @@ BOOST_AUTO_TEST_CASE(test_case_recurrent_neural_network_heterogeneous_layers)
 
 BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_floating_point)
 {
+    // LSTM networks require more training iterations than simple RNNs due to
+    // the additional gate parameters (input, forget, output gates) that must
+    // all converge together.
+    static const int LSTM_TRAINING_ITERATIONS = 5000;
     static const size_t NUMBER_OF_INPUTS = 2;
     static const size_t NUMBER_OF_NEURONS_PER_HIDDEN_LAYER = 4;
     static const size_t NUMBER_OF_OUTPUTS = 1;
@@ -2769,7 +2774,7 @@ BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_floating_point)
     char const* const path = "output/nn_float_lstm_neural_network.txt";
     FloatingPointLstmNeuralNetworkType nn;
 
-    testFloatingPointNeuralNetwork_Recurrent(nn, path);
+    testFloatingPointNeuralNetwork_Recurrent(nn, path, LSTM_TRAINING_ITERATIONS);
 }
 
 BOOST_AUTO_TEST_CASE(test_case_lstm_neural_network_fixed_point)
