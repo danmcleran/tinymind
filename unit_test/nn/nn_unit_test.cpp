@@ -2589,6 +2589,64 @@ BOOST_AUTO_TEST_CASE(test_case_new_nn_not_trainable)
     BOOST_TEST(true);
 }
 
+BOOST_AUTO_TEST_CASE(test_case_new_nn_heterogeneous_2_hidden_layers_weight_copy)
+{
+    // NeuralNetwork with heterogeneous hidden layers (8, 4): train, copy weights, verify copy
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::ReluActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::NeuralNetwork< ValueType,
+                                     2,
+                                     tinymind::HiddenLayers<8, 4>,
+                                     1,
+                                     TransferFunctionsType> NNType;
+    srand(RANDOM_SEED);
+    char const* const path = "output/nn_float_hetero_2_hidden_xor.txt";
+    char const* const pathCopy = "output/nn_float_hetero_2_hidden_xor_copy.txt";
+    NNType nn;
+    NNType nnCopy;
+
+    nn.setLearningRate(0.005);
+    nn.setAccelerationRate(0.03);
+    nn.setMomentumRate(0.16);
+
+    testFloatingPointNN_Xor(nn, path, 100000);
+    nnCopy.setWeights(nn);
+    testFloatingPointNN_Xor(nnCopy, pathCopy, 100000);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_new_nn_heterogeneous_3_hidden_layers_weight_copy)
+{
+    // NeuralNetwork with 3 heterogeneous hidden layers (10, 5, 3): train, copy weights, verify copy
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                                            ValueType,
+                                            UniformRealRandomNumberGenerator,
+                                            tinymind::ReluActivationPolicy,
+                                            tinymind::TanhActivationPolicy> TransferFunctionsType;
+    typedef tinymind::NeuralNetwork< ValueType,
+                                     2,
+                                     tinymind::HiddenLayers<10, 5, 3>,
+                                     1,
+                                     TransferFunctionsType> NNType;
+    srand(RANDOM_SEED);
+    char const* const path = "output/nn_float_hetero_3_hidden_xor.txt";
+    char const* const pathCopy = "output/nn_float_hetero_3_hidden_xor_copy.txt";
+    NNType nn;
+    NNType nnCopy;
+
+    nn.setLearningRate(0.005);
+    nn.setAccelerationRate(0.03);
+    nn.setMomentumRate(0.16);
+
+    testFloatingPointNN_Xor(nn, path, 100000);
+    nnCopy.setWeights(nn);
+    testFloatingPointNN_Xor(nnCopy, pathCopy, 100000);
+}
+
 // =========================================================================
 // Tests for RecurrentNeuralNetwork and ElmanNeuralNetwork
 // =========================================================================
