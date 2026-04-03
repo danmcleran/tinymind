@@ -3683,44 +3683,48 @@ namespace tinymind {
             return ChainHiddenLayerAccessor<RestChainType>::template getWeightForNeuronAndConnection<ValueType>(chain.rest, layerIndex - 1, neuron, connection);
         }
 
-        static void setBiasNeuronWeightForConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t connection, const ValueType& weight)
+        template<typename VT = ValueType>
+        static void setBiasNeuronWeightForConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t connection, const VT& weight)
         {
             if(layerIndex == 0)
             {
                 chain.layer.setBiasNeuronWeightForConnection(connection, weight);
                 return;
             }
-            ChainHiddenLayerAccessor<RestChainType>::template setBiasNeuronWeightForConnection<ValueType>(chain.rest, layerIndex - 1, connection, weight);
+            ChainHiddenLayerAccessor<RestChainType>::template setBiasNeuronWeightForConnection<VT>(chain.rest, layerIndex - 1, connection, weight);
         }
 
-        static void setBiasNeuronDeltaWeightForConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t connection, const ValueType& deltaWeight)
+        template<typename VT = ValueType>
+        static void setBiasNeuronDeltaWeightForConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t connection, const VT& deltaWeight)
         {
             if(layerIndex == 0)
             {
                 chain.layer.setBiasNeuronDeltaWeightForConnection(connection, deltaWeight);
                 return;
             }
-            ChainHiddenLayerAccessor<RestChainType>::template setBiasNeuronDeltaWeightForConnection<ValueType>(chain.rest, layerIndex - 1, connection, deltaWeight);
+            ChainHiddenLayerAccessor<RestChainType>::template setBiasNeuronDeltaWeightForConnection<VT>(chain.rest, layerIndex - 1, connection, deltaWeight);
         }
 
-        static void setWeightForNeuronAndConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t neuron, size_t connection, const ValueType& weight)
+        template<typename VT = ValueType>
+        static void setWeightForNeuronAndConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t neuron, size_t connection, const VT& weight)
         {
             if(layerIndex == 0)
             {
                 chain.layer.setWeightForNeuronAndConnection(neuron, connection, weight);
                 return;
             }
-            ChainHiddenLayerAccessor<RestChainType>::template setWeightForNeuronAndConnection<ValueType>(chain.rest, layerIndex - 1, neuron, connection, weight);
+            ChainHiddenLayerAccessor<RestChainType>::template setWeightForNeuronAndConnection<VT>(chain.rest, layerIndex - 1, neuron, connection, weight);
         }
 
-        static void setDeltaWeightForNeuronAndConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t neuron, size_t connection, const ValueType& deltaWeight)
+        template<typename VT = ValueType>
+        static void setDeltaWeightForNeuronAndConnection(LayerChain<LayerType, RestChainType>& chain, size_t layerIndex, size_t neuron, size_t connection, const VT& deltaWeight)
         {
             if(layerIndex == 0)
             {
                 chain.layer.setDeltaWeightForNeuronAndConnection(neuron, connection, deltaWeight);
                 return;
             }
-            ChainHiddenLayerAccessor<RestChainType>::template setDeltaWeightForNeuronAndConnection<ValueType>(chain.rest, layerIndex - 1, neuron, connection, deltaWeight);
+            ChainHiddenLayerAccessor<RestChainType>::template setDeltaWeightForNeuronAndConnection<VT>(chain.rest, layerIndex - 1, neuron, connection, deltaWeight);
         }
     };
 
