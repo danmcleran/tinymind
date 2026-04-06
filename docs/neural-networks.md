@@ -153,4 +153,5 @@ Beyond the feed-forward and recurrent architectures described above, tinymind al
 
 - **[Kolmogorov-Arnold Networks]({{ site.baseurl }}/architectures/kan)** -- learnable B-spline activation functions on edges
 - **[Convolutional and Pooling Layers]({{ site.baseurl }}/architectures/conv-pooling)** -- Conv1D, MaxPool1D, AvgPool1D, BatchNorm1D, Dropout
+- **[Linear Self-Attention]({{ site.baseurl }}/architectures/self-attention)** -- SelfAttention1D with ReLU kernel feature map
 - **[Quantized Neural Networks]({{ site.baseurl }}/architectures/quantized-networks)** -- BinaryDense and TernaryDense layers

@@ -1,6 +1,6 @@
 # TinyMind
 
-A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, binary and ternary neural networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
+A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, linear self-attention, binary and ternary neural networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
 
 Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design), TinyMind uses template metaprogramming to produce zero-overhead abstractions where network topology, value type, activation functions, and training policies are all compile-time parameters.
 
@@ -11,6 +11,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **Feed-forward networks** with arbitrary depth and width
 - **1D convolution layer** for time-series feature extraction (sensor data, IMU, ECG)
 - **1D pooling layers** (`MaxPool1D`, `AvgPool1D`) for downsampling with multi-channel support and backpropagation
+- **Linear self-attention** (`SelfAttention1D`) using ReLU kernel feature map -- O(N*P^2) instead of O(N^2*D), no softmax/exp required, works with Q-format fixed-point
 - **Kolmogorov-Arnold Networks (KAN)** with learnable B-spline activation functions on edges
 - **Recurrent neural networks** (Elman) with configurable recurrent connection depth
 - **LSTM networks** with gated cell state, supporting single and multi-layer configurations
@@ -303,6 +304,80 @@ dropout.setTraining(false);
 dropout.forward(poolOut, dropOut);  // identity pass-through
 ```
 
+### Linear Self-Attention (Sequence Processing)
+
+```cpp
+#include "selfattention1d.hpp"
+
+// 32 time steps, 16-dim embedding, 8-dim projections
+typedef tinymind::SelfAttention1D<double, 32, 16, 8> AttnType;
+
+AttnType attn;
+
+// Set projection weights (W_q, W_k, W_v)
+for (size_t proj = 0; proj < 3; ++proj)
+    for (size_t r = 0; r < 16; ++r)
+        for (size_t c = 0; c < 8; ++c)
+            attn.setProjectionWeight(proj, r, c, randomWeight());
+
+double sequence[32 * 16];  // input: 32 time steps x 16 features
+double attended[32 * 8];   // output: 32 time steps x 8 features
+
+attn.forward(sequence, attended);
+
+// Feed into a classifier
+classifier.feedForward(attended);
+```
+
+### Conv1D + Self-Attention Pipeline
+
+```cpp
+#include "conv1d.hpp"
+#include "selfattention1d.hpp"
+
+// Conv1D extracts features, self-attention models dependencies
+typedef tinymind::Conv1D<double, 128, 5, 2, 4> ConvType;
+// Conv output: 4 filters * 62 positions = 248 values
+// Reshape as: 62 time steps x 4 features
+typedef tinymind::SelfAttention1D<double, 62, 4, 4> AttnType;
+
+ConvType conv;
+AttnType attn;
+
+double sensorData[128];
+double convOut[ConvType::OutputSize];   // 248
+double attnInput[62 * 4];              // reshaped
+double attnOut[AttnType::OutputSize];  // 248
+
+conv.forward(sensorData, convOut);
+// Reshape filter-major to time-step-major...
+attn.forward(attnInput, attnOut);
+```
+
+### Self-Attention with Fixed-Point (Q16.16)
+
+```cpp
+#include "selfattention1d.hpp"
+
+typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+typedef tinymind::SelfAttention1D<ValueType, 16, 8, 4> AttnType;
+
+AttnType attn;
+
+// Set identity projections
+for (size_t proj = 0; proj < 3; ++proj)
+{
+    for (size_t r = 0; r < 8; ++r)
+        for (size_t c = 0; c < 4; ++c)
+            attn.setProjectionWeight(proj, r, c,
+                (r == c) ? ValueType(1, 0) : ValueType(0));
+}
+
+ValueType input[16 * 8];
+ValueType output[16 * 4];
+attn.forward(input, output);
+```
+
 ### Binary Dense Layer (Multiplication-Free)
 
 ```cpp
@@ -438,6 +513,7 @@ MazeEnvironment env;
 | Max Pooling | `MaxPool1D` | Downsampling via maximum value selection with argmax tracking |
 | Average Pooling | `AvgPool1D` | Downsampling via mean with uniform gradient distribution |
 | Dropout | `Dropout` | Inverted dropout regularization with training/inference mode |
+| Self-Attention | `SelfAttention1D` | Linear attention with ReLU kernel feature map |
 | Binary Dense | `BinaryDense` | XNOR+popcount dense layer with 1-bit packed weights |
 | Ternary Dense | `TernaryDense` | Multiply-free dense layer with 2-bit packed {-1,0,+1} weights |
 | KAN | `KolmogorovArnoldNetwork` | Learnable B-spline activations on edges |
@@ -537,6 +613,7 @@ tinymind/
     bspline.hpp                 # B-spline evaluation engine (De Boor algorithm)
     kanTransferFunctions.hpp    # KAN transfer functions and SiLU activation
     conv1d.hpp                  # 1D convolution layer
+    selfattention1d.hpp         # Linear self-attention layer
     binarylayer.hpp             # Binary neural network layer (XNOR+popcount)
     ternarylayer.hpp            # Ternary neural network layer ({-1,0,+1} weights)
     qformat.hpp                 # Fixed-point arithmetic
@@ -568,7 +645,7 @@ tinymind/
     dqn_maze/                   # Deep Q-Network maze solver
     pytorch/                    # PyTorch weight import (MLP + GRU export)
   unit_test/
-    nn/                         # Neural network tests (132 test cases)
+    nn/                         # Neural network tests (147 test cases)
     kan/                        # KAN tests (16 test cases)
     qformat/                    # Fixed-point type tests (static_assert)
     qlearn/                     # Q-learning tests
