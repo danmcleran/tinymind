@@ -51,6 +51,7 @@ TINYMIND_DISABLE_WARNING_POP
 #include "rmsprop.hpp"
 #include "binarylayer.hpp"
 #include "ternarylayer.hpp"
+#include "selfattention1d.hpp"
 #include "networkStats.hpp"
 #include "random.hpp"
 #include "nnproperties.hpp"
@@ -5342,6 +5343,522 @@ BOOST_AUTO_TEST_CASE(test_case_ternary_dense_get_value_accessors)
 
     BOOST_TEST(fabs(layer.getTernaryWeightValue(0, 0) - 1.0) < 0.01);
     BOOST_TEST(fabs(layer.getTernaryWeightValue(0, 1) - (-1.0)) < 0.01);
+}
+
+// ============================================================
+// SelfAttention1D tests (floating-point)
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_static_sizes)
+{
+    typedef tinymind::SelfAttention1D<double, 16, 8, 4> AttnType;
+
+    static_assert(AttnType::InputSize == 128, "Wrong input size");       // 16 * 8
+    static_assert(AttnType::OutputSize == 64, "Wrong output size");      // 16 * 4
+    static_assert(AttnType::WeightsPerProjection == 32, "Wrong weights per proj"); // 8 * 4
+    static_assert(AttnType::TotalWeights == 96, "Wrong total weights");  // 3 * 32
+    static_assert(AttnType::BiasesPerProjection == 4, "Wrong biases per proj");
+    static_assert(AttnType::TotalBiases == 12, "Wrong total biases");    // 3 * 4
+    BOOST_TEST(true);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_identity_projection)
+{
+    // With identity-like projections and no ReLU clipping,
+    // verify output is non-zero and has expected dimensions.
+    // N=4, D=2, P=2
+    tinymind::SelfAttention1D<double, 4, 2, 2> attn;
+
+    // Set W_q = W_k = W_v = identity matrix
+    for (size_t proj = 0; proj < 3; ++proj)
+    {
+        for (size_t r = 0; r < 2; ++r)
+        {
+            for (size_t c = 0; c < 2; ++c)
+            {
+                attn.setProjectionWeight(proj, r, c, (r == c) ? 1.0 : 0.0);
+            }
+        }
+    }
+
+    // Input: 4 time steps x 2 features, all positive (so ReLU passes through)
+    double input[8] = {
+        1.0, 2.0,   // t0
+        3.0, 4.0,   // t1
+        5.0, 6.0,   // t2
+        7.0, 8.0    // t3
+    };
+    double output[8]; // 4 x 2
+
+    attn.forward(input, output);
+
+    // With identity projections on positive input:
+    // Q' = K' = V = X (ReLU is pass-through for positive values)
+    // KV = X^T * X (2x2 gram matrix)
+    // Out = X * KV = X * (X^T * X)
+    // Verify output is non-zero
+    bool anyNonZero = false;
+    for (size_t i = 0; i < 8; ++i)
+    {
+        if (fabs(output[i]) > 0.001)
+        {
+            anyNonZero = true;
+            break;
+        }
+    }
+    BOOST_TEST(anyNonZero);
+
+    // Manually compute expected output:
+    // X^T * X = [[1+9+25+49, 2+12+30+56], [2+12+30+56, 4+16+36+64]]
+    //         = [[84, 100], [100, 120]]
+    // Out[0] = X[0] * KV = [1,2] * [[84,100],[100,120]] = [284, 340]
+    BOOST_TEST(fabs(output[0] - 284.0) < 0.001);
+    BOOST_TEST(fabs(output[1] - 340.0) < 0.001);
+
+    // Out[1] = [3,4] * [[84,100],[100,120]] = [652, 780]
+    BOOST_TEST(fabs(output[2] - 652.0) < 0.001);
+    BOOST_TEST(fabs(output[3] - 780.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_relu_clipping)
+{
+    // Verify ReLU zeroes out negative Q and K projections
+    // N=2, D=2, P=2
+    tinymind::SelfAttention1D<double, 2, 2, 2> attn;
+
+    // W_q = [[-1, 0], [0, -1]] (negates input -> ReLU clips to zero)
+    attn.setProjectionWeight(0, 0, 0, -1.0);
+    attn.setProjectionWeight(0, 0, 1,  0.0);
+    attn.setProjectionWeight(0, 1, 0,  0.0);
+    attn.setProjectionWeight(0, 1, 1, -1.0);
+
+    // W_k = identity
+    attn.setProjectionWeight(1, 0, 0, 1.0);
+    attn.setProjectionWeight(1, 0, 1, 0.0);
+    attn.setProjectionWeight(1, 1, 0, 0.0);
+    attn.setProjectionWeight(1, 1, 1, 1.0);
+
+    // W_v = identity
+    attn.setProjectionWeight(2, 0, 0, 1.0);
+    attn.setProjectionWeight(2, 0, 1, 0.0);
+    attn.setProjectionWeight(2, 1, 0, 0.0);
+    attn.setProjectionWeight(2, 1, 1, 1.0);
+
+    double input[4] = {1.0, 2.0, 3.0, 4.0};
+    double output[4];
+
+    attn.forward(input, output);
+
+    // Q = ReLU([[-1,0],[0,-1]] * input) = ReLU(negative) = 0
+    // Output = Q' * KV = 0 for all
+    for (size_t i = 0; i < 4; ++i)
+    {
+        BOOST_TEST(fabs(output[i]) < 0.001);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_bias)
+{
+    // Verify biases are applied to projections
+    // N=2, D=2, P=2, zero weights, positive Q bias to produce non-zero output
+    tinymind::SelfAttention1D<double, 2, 2, 2> attn;
+
+    // All weights zero (default)
+    // Set Q bias to positive values so Q' = ReLU(0 + bias) = bias
+    attn.setProjectionBias(0, 0, 1.0);
+    attn.setProjectionBias(0, 1, 1.0);
+
+    // Set K bias so K' has positive values
+    attn.setProjectionBias(1, 0, 1.0);
+    attn.setProjectionBias(1, 1, 1.0);
+
+    // Set V bias
+    attn.setProjectionBias(2, 0, 2.0);
+    attn.setProjectionBias(2, 1, 3.0);
+
+    double input[4] = {0.0, 0.0, 0.0, 0.0};
+    double output[4];
+
+    attn.forward(input, output);
+
+    // Q' = [1,1] for each time step (from bias, ReLU pass-through)
+    // K' = [1,1] for each time step
+    // V  = [2,3] for each time step
+    // KV = K'^T * V = [[1,1],[1,1]]^T (2x2) * [[2,3],[2,3]] (2x2)
+    //    K'^T is (2x2): col0=[1,1], col1=[1,1]
+    //    KV[0][0] = K'[0,0]*V[0,0] + K'[1,0]*V[1,0] = 1*2 + 1*2 = 4
+    //    KV[0][1] = K'[0,0]*V[0,1] + K'[1,0]*V[1,1] = 1*3 + 1*3 = 6
+    //    KV[1][0] = K'[0,1]*V[0,0] + K'[1,1]*V[1,0] = 1*2 + 1*2 = 4
+    //    KV[1][1] = K'[0,1]*V[0,1] + K'[1,1]*V[1,1] = 1*3 + 1*3 = 6
+    // Out = Q' * KV:
+    //    Out[0] = [1,1] * [[4,6],[4,6]] = [8, 12]
+    BOOST_TEST(fabs(output[0] - 8.0) < 0.001);
+    BOOST_TEST(fabs(output[1] - 12.0) < 0.001);
+    BOOST_TEST(fabs(output[2] - 8.0) < 0.001);
+    BOOST_TEST(fabs(output[3] - 12.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_weight_accessors)
+{
+    tinymind::SelfAttention1D<double, 4, 3, 2> attn;
+
+    // Set and verify projection weights
+    attn.setProjectionWeight(0, 1, 0, 3.14);
+    BOOST_TEST(fabs(attn.getProjectionWeight(0, 1, 0) - 3.14) < 0.001);
+
+    attn.setProjectionWeight(2, 2, 1, -1.5);
+    BOOST_TEST(fabs(attn.getProjectionWeight(2, 2, 1) - (-1.5)) < 0.001);
+
+    // Verify flat accessor matches structured accessor
+    // proj=0, row=1, col=0 -> flat index = 0*6 + 1*2 + 0 = 2
+    BOOST_TEST(fabs(attn.getWeight(2) - 3.14) < 0.001);
+
+    // proj=2, row=2, col=1 -> flat index = 2*6 + 2*2 + 1 = 17
+    BOOST_TEST(fabs(attn.getWeight(17) - (-1.5)) < 0.001);
+
+    // Bias accessors
+    attn.setProjectionBias(1, 0, 0.5);
+    BOOST_TEST(fabs(attn.getProjectionBias(1, 0) - 0.5) < 0.001);
+    BOOST_TEST(fabs(attn.getBias(2) - 0.5) < 0.001); // flat index = 1*2 + 0 = 2
+}
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_gradients_nonzero)
+{
+    // After forward + computeGradients, weight gradients should be non-zero
+    tinymind::SelfAttention1D<double, 4, 2, 2> attn;
+
+    // Identity projections
+    for (size_t proj = 0; proj < 3; ++proj)
+    {
+        attn.setProjectionWeight(proj, 0, 0, 1.0);
+        attn.setProjectionWeight(proj, 0, 1, 0.0);
+        attn.setProjectionWeight(proj, 1, 0, 0.0);
+        attn.setProjectionWeight(proj, 1, 1, 1.0);
+    }
+
+    double input[8] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
+    double output[8];
+    attn.forward(input, output);
+
+    // Non-zero output deltas
+    double deltas[8] = {0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.4, -0.4};
+    attn.computeGradients(deltas);
+
+    // At least some gradients should be non-zero
+    bool anyGradNonZero = false;
+    for (size_t i = 0; i < tinymind::SelfAttention1D<double, 4, 2, 2>::TotalWeights; ++i)
+    {
+        if (fabs(attn.getGradient(i)) > 1e-10)
+        {
+            anyGradNonZero = true;
+            break;
+        }
+    }
+    BOOST_TEST(anyGradNonZero);
+
+    // Bias gradients should also be non-zero
+    bool anyBiasGradNonZero = false;
+    for (size_t i = 0; i < tinymind::SelfAttention1D<double, 4, 2, 2>::TotalBiases; ++i)
+    {
+        if (fabs(attn.getBiasGradient(i)) > 1e-10)
+        {
+            anyBiasGradNonZero = true;
+            break;
+        }
+    }
+    BOOST_TEST(anyBiasGradNonZero);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_weight_update)
+{
+    // Verify that updateWeights modifies weights in the correct direction
+    tinymind::SelfAttention1D<double, 2, 2, 2> attn;
+
+    for (size_t proj = 0; proj < 3; ++proj)
+    {
+        attn.setProjectionWeight(proj, 0, 0, 1.0);
+        attn.setProjectionWeight(proj, 0, 1, 0.0);
+        attn.setProjectionWeight(proj, 1, 0, 0.0);
+        attn.setProjectionWeight(proj, 1, 1, 1.0);
+    }
+
+    double input[4] = {1.0, 2.0, 3.0, 4.0};
+    double output[4];
+    attn.forward(input, output);
+
+    double deltas[4] = {0.1, 0.2, 0.3, 0.4};
+    attn.computeGradients(deltas);
+
+    // Record weights before update
+    double wBefore = attn.getProjectionWeight(0, 0, 0);
+    double bBefore = attn.getProjectionBias(0, 0);
+
+    // Negative learning rate for gradient descent
+    attn.updateWeights(-0.01);
+
+    double wAfter = attn.getProjectionWeight(0, 0, 0);
+    double bAfter = attn.getProjectionBias(0, 0);
+
+    // Weights should have changed
+    BOOST_TEST(fabs(wAfter - wBefore) > 1e-10);
+    BOOST_TEST(fabs(bAfter - bBefore) > 1e-10);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_conv1d_pipeline)
+{
+    // Conv1D -> SelfAttention1D pipeline
+    // Conv1D: 8 input, kernel=3, stride=1, 2 filters -> output 6*2=12 values
+    // Reshape as: 6 time steps x 2 features
+    // SelfAttention1D: N=6, D=2, P=2
+    tinymind::Conv1D<double, 8, 3, 1, 2> conv;
+    tinymind::SelfAttention1D<double, 6, 2, 2> attn;
+
+    // Set conv filter 0: [1, 0, 0], bias=0
+    conv.setFilterWeight(0, 0, 1.0);
+    conv.setFilterWeight(0, 1, 0.0);
+    conv.setFilterWeight(0, 2, 0.0);
+    conv.setFilterWeight(0, 3, 0.0);
+
+    // Set conv filter 1: [0, 0, 1], bias=0
+    conv.setFilterWeight(1, 0, 0.0);
+    conv.setFilterWeight(1, 1, 0.0);
+    conv.setFilterWeight(1, 2, 1.0);
+    conv.setFilterWeight(1, 3, 0.0);
+
+    double convInput[8] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
+    double convOutput[12]; // 2 filters * 6 positions
+
+    conv.forward(convInput, convOutput);
+
+    // Reshape conv output (filter-major) to attention input (time-step-major)
+    double attnInput[12];
+    for (size_t t = 0; t < 6; ++t)
+    {
+        attnInput[t * 2 + 0] = convOutput[t];     // filter 0
+        attnInput[t * 2 + 1] = convOutput[6 + t]; // filter 1
+    }
+
+    // Identity projections for attention
+    for (size_t proj = 0; proj < 3; ++proj)
+    {
+        attn.setProjectionWeight(proj, 0, 0, 1.0);
+        attn.setProjectionWeight(proj, 0, 1, 0.0);
+        attn.setProjectionWeight(proj, 1, 0, 0.0);
+        attn.setProjectionWeight(proj, 1, 1, 1.0);
+    }
+
+    double attnOutput[12]; // 6 * 2
+    attn.forward(attnInput, attnOutput);
+
+    // Verify output is non-zero and plausible
+    bool anyNonZero = false;
+    for (size_t i = 0; i < 12; ++i)
+    {
+        if (fabs(attnOutput[i]) > 0.001)
+        {
+            anyNonZero = true;
+            break;
+        }
+    }
+    BOOST_TEST(anyNonZero);
+}
+
+// ============================================================
+// SelfAttention1D tests (fixed-point)
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_fixed_point_forward)
+{
+    // Verify SelfAttention1D compiles and runs with Q8.8 fixed-point
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::SelfAttention1D<ValueType, 2, 2, 2> attn;
+
+    // Identity projections
+    for (size_t proj = 0; proj < 3; ++proj)
+    {
+        attn.setProjectionWeight(proj, 0, 0, ValueType(1, 0));
+        attn.setProjectionWeight(proj, 0, 1, ValueType(0));
+        attn.setProjectionWeight(proj, 1, 0, ValueType(0));
+        attn.setProjectionWeight(proj, 1, 1, ValueType(1, 0));
+    }
+
+    ValueType input[4];
+    input[0] = ValueType(1, 0);
+    input[1] = ValueType(2, 0);
+    input[2] = ValueType(1, 0);
+    input[3] = ValueType(1, 0);
+
+    ValueType output[4];
+    attn.forward(input, output);
+
+    // Output should be non-zero (positive input through identity + ReLU)
+    bool anyNonZero = false;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        if (output[i].getValue() != 0)
+        {
+            anyNonZero = true;
+            break;
+        }
+    }
+    BOOST_TEST(anyNonZero);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_fixed_point_relu)
+{
+    // Verify ReLU works correctly with Q8.8
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::SelfAttention1D<ValueType, 2, 2, 2> attn;
+
+    // W_q negates (ReLU should clip to zero)
+    attn.setProjectionWeight(0, 0, 0, ValueType(-1, 0));
+    attn.setProjectionWeight(0, 0, 1, ValueType(0));
+    attn.setProjectionWeight(0, 1, 0, ValueType(0));
+    attn.setProjectionWeight(0, 1, 1, ValueType(-1, 0));
+
+    // W_k, W_v = identity
+    for (size_t proj = 1; proj < 3; ++proj)
+    {
+        attn.setProjectionWeight(proj, 0, 0, ValueType(1, 0));
+        attn.setProjectionWeight(proj, 0, 1, ValueType(0));
+        attn.setProjectionWeight(proj, 1, 0, ValueType(0));
+        attn.setProjectionWeight(proj, 1, 1, ValueType(1, 0));
+    }
+
+    ValueType input[4];
+    input[0] = ValueType(1, 0);
+    input[1] = ValueType(2, 0);
+    input[2] = ValueType(3, 0);
+    input[3] = ValueType(4, 0);
+
+    ValueType output[4];
+    attn.forward(input, output);
+
+    // Q' = ReLU(negative) = 0, so output = 0
+    ValueType zero(0);
+    for (size_t i = 0; i < 4; ++i)
+    {
+        BOOST_TEST(output[i].getValue() == zero.getValue());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_fixed_point_q16_16)
+{
+    // Verify with Q16.16 (the recommended mid-range format)
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::SelfAttention1D<ValueType, 4, 2, 2> attn;
+
+    // Identity projections
+    for (size_t proj = 0; proj < 3; ++proj)
+    {
+        attn.setProjectionWeight(proj, 0, 0, ValueType(1, 0));
+        attn.setProjectionWeight(proj, 0, 1, ValueType(0));
+        attn.setProjectionWeight(proj, 1, 0, ValueType(0));
+        attn.setProjectionWeight(proj, 1, 1, ValueType(1, 0));
+    }
+
+    ValueType input[8];
+    input[0] = ValueType(1, 0);
+    input[1] = ValueType(2, 0);
+    input[2] = ValueType(3, 0);
+    input[3] = ValueType(4, 0);
+    input[4] = ValueType(5, 0);
+    input[5] = ValueType(6, 0);
+    input[6] = ValueType(7, 0);
+    input[7] = ValueType(8, 0);
+
+    ValueType output[8];
+    attn.forward(input, output);
+
+    // With identity projections on positive input, output = X * (X^T * X)
+    // Same math as the floating-point test:
+    // X^T * X = [[84, 100], [100, 120]]
+    // Out[0] = [1,2] * [[84,100],[100,120]] = [284, 340]
+    // Verify first output element (allow fixed-point rounding tolerance)
+    const typename ValueType::FullWidthValueType tolerance = 1 << (ValueType::NumberOfFractionalBits - 1);
+    ValueType expected284(284, 0);
+    BOOST_TEST(std::abs(output[0].getValue() - expected284.getValue()) <= tolerance);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_fixed_point_gradients)
+{
+    // Verify gradients compile and produce non-zero values with Q16.16
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::SelfAttention1D<ValueType, 2, 2, 2> attn;
+
+    // Identity projections
+    for (size_t proj = 0; proj < 3; ++proj)
+    {
+        attn.setProjectionWeight(proj, 0, 0, ValueType(1, 0));
+        attn.setProjectionWeight(proj, 0, 1, ValueType(0));
+        attn.setProjectionWeight(proj, 1, 0, ValueType(0));
+        attn.setProjectionWeight(proj, 1, 1, ValueType(1, 0));
+    }
+
+    ValueType input[4];
+    input[0] = ValueType(1, 0);
+    input[1] = ValueType(2, 0);
+    input[2] = ValueType(1, 0);
+    input[3] = ValueType(1, 0);
+
+    ValueType output[4];
+    attn.forward(input, output);
+
+    // Compute gradients with non-zero deltas
+    ValueType deltas[4];
+    deltas[0] = ValueType(0, 1 << (ValueType::NumberOfFractionalBits - 1)); // 0.5
+    deltas[1] = ValueType(0, 1 << (ValueType::NumberOfFractionalBits - 1));
+    deltas[2] = ValueType(0, 1 << (ValueType::NumberOfFractionalBits - 2)); // 0.25
+    deltas[3] = ValueType(0, 1 << (ValueType::NumberOfFractionalBits - 2));
+
+    attn.computeGradients(deltas);
+
+    // At least some gradients should be non-zero
+    bool anyNonZero = false;
+    for (size_t i = 0; i < tinymind::SelfAttention1D<ValueType, 2, 2, 2>::TotalWeights; ++i)
+    {
+        if (attn.getGradient(i).getValue() != 0)
+        {
+            anyNonZero = true;
+            break;
+        }
+    }
+    BOOST_TEST(anyNonZero);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_selfattention1d_fixed_point_bias)
+{
+    // Verify biases work with Q16.16
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::SelfAttention1D<ValueType, 2, 2, 2> attn;
+
+    // All weights zero, set biases
+    attn.setProjectionBias(0, 0, ValueType(1, 0));
+    attn.setProjectionBias(0, 1, ValueType(1, 0));
+    attn.setProjectionBias(1, 0, ValueType(1, 0));
+    attn.setProjectionBias(1, 1, ValueType(1, 0));
+    attn.setProjectionBias(2, 0, ValueType(2, 0));
+    attn.setProjectionBias(2, 1, ValueType(3, 0));
+
+    ValueType input[4];
+    input[0] = ValueType(0);
+    input[1] = ValueType(0);
+    input[2] = ValueType(0);
+    input[3] = ValueType(0);
+
+    ValueType output[4];
+    attn.forward(input, output);
+
+    // Same math as floating-point bias test:
+    // Q' = K' = [1,1] per step, V = [2,3] per step
+    // KV = [[4,6],[4,6]], Out = [[8,12],[8,12]]
+    const typename ValueType::FullWidthValueType tolerance = 1 << (ValueType::NumberOfFractionalBits - 1);
+    ValueType expected8(8, 0);
+    ValueType expected12(12, 0);
+    BOOST_TEST(std::abs(output[0].getValue() - expected8.getValue()) <= tolerance);
+    BOOST_TEST(std::abs(output[1].getValue() - expected12.getValue()) <= tolerance);
+    BOOST_TEST(std::abs(output[2].getValue() - expected8.getValue()) <= tolerance);
+    BOOST_TEST(std::abs(output[3].getValue() - expected12.getValue()) <= tolerance);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
