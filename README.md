@@ -1,6 +1,6 @@
 # TinyMind
 
-A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, linear self-attention, binary and ternary neural networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
+A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, linear self-attention, FFT-based signal processing, binary and ternary neural networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
 
 Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design), TinyMind uses template metaprogramming to produce zero-overhead abstractions where network topology, value type, activation functions, and training policies are all compile-time parameters.
 
@@ -12,6 +12,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **1D convolution layer** for time-series feature extraction (sensor data, IMU, ECG)
 - **1D pooling layers** (`MaxPool1D`, `AvgPool1D`) for downsampling with multi-channel support and backpropagation
 - **Linear self-attention** (`SelfAttention1D`) using ReLU kernel feature map -- O(N*P^2) instead of O(N^2*D), no softmax/exp required, works with Q-format fixed-point
+- **FFT layer** (`FFT1D`) with radix-2 decimation-in-time, compile-time bit-reversal tables, and scaled butterfly stages for fixed-point overflow prevention -- frequency-domain feature extraction for signal processing pipelines
 - **Kolmogorov-Arnold Networks (KAN)** with learnable B-spline activation functions on edges
 - **Recurrent neural networks** (Elman) with configurable recurrent connection depth
 - **LSTM networks** with gated cell state, supporting single and multi-layer configurations
@@ -378,6 +379,38 @@ ValueType output[16 * 4];
 attn.forward(input, output);
 ```
 
+### FFT (Frequency-Domain Feature Extraction)
+
+```cpp
+#include "fft1d.hpp"
+#include <cmath>
+
+// 128-point FFT for sensor signal analysis
+const size_t N = 128;
+tinymind::FFT1D<double, N> fft;
+
+// Compute twiddle factors
+double cosTable[N / 2], sinTable[N / 2];
+for (size_t k = 0; k < N / 2; ++k)
+{
+    cosTable[k] = std::cos(-2.0 * M_PI * k / N);
+    sinTable[k] = std::sin(-2.0 * M_PI * k / N);
+}
+fft.setTwiddleFactors(cosTable, sinTable);
+
+double real[N] = { /* sensor samples */ };
+double imag[N] = {}; // zero for real-valued input
+
+fft.forward(real, imag);
+
+// Compute power spectrum (avoids sqrt for fixed-point compatibility)
+double magSq[N];
+tinymind::FFT1D<double, N>::magnitudeSquared(real, imag, magSq);
+
+// Feed N/2 frequency bins into a classifier
+classifier.feedForward(magSq);
+```
+
 ### Binary Dense Layer (Multiplication-Free)
 
 ```cpp
@@ -514,6 +547,7 @@ MazeEnvironment env;
 | Average Pooling | `AvgPool1D` | Downsampling via mean with uniform gradient distribution |
 | Dropout | `Dropout` | Inverted dropout regularization with training/inference mode |
 | Self-Attention | `SelfAttention1D` | Linear attention with ReLU kernel feature map |
+| FFT | `FFT1D` | Radix-2 FFT with scaled butterfly for frequency-domain feature extraction |
 | Binary Dense | `BinaryDense` | XNOR+popcount dense layer with 1-bit packed weights |
 | Ternary Dense | `TernaryDense` | Multiply-free dense layer with 2-bit packed {-1,0,+1} weights |
 | KAN | `KolmogorovArnoldNetwork` | Learnable B-spline activations on edges |
@@ -614,6 +648,7 @@ tinymind/
     kanTransferFunctions.hpp    # KAN transfer functions and SiLU activation
     conv1d.hpp                  # 1D convolution layer
     selfattention1d.hpp         # Linear self-attention layer
+    fft1d.hpp                   # Radix-2 FFT with compile-time bit-reversal tables
     binarylayer.hpp             # Binary neural network layer (XNOR+popcount)
     ternarylayer.hpp            # Ternary neural network layer ({-1,0,+1} weights)
     qformat.hpp                 # Fixed-point arithmetic

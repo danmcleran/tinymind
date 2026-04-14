@@ -36,7 +36,7 @@ TinyMind is a **header-only C++ template library** for neural networks and Q-lea
 - **`neuralnet.hpp`** — The main neural network template (~3200 lines). Supports feed-forward and recurrent networks. Network topology, value type, activation function, and other policies are all template parameters.
 - **`qlearn.hpp`** — Q-learning and DQN reinforcement learning implementation.
 - **`activationFunctions.hpp`**, **`fixedPointTransferFunctions.hpp`** — Activation functions (sigmoid, tanh, ReLU, etc.) with separate implementations for fixed-point vs. float.
-- **`lookupTables.cpp`** — Large pre-computed lookup tables (~3MB) for fixed-point activation functions (sigmoid, tanh, exp, log). This is the only `.cpp` file in the core library; everything else is headers.
+- **`lookupTables.cpp`** — Large pre-computed lookup tables for fixed-point activation functions (sigmoid, tanh, exp, log, sin, cos). This is the only `.cpp` file in the core library; everything else is headers.
 - **`cpp/include/nnproperties.hpp`** — Defines the property/policy classes used to configure neural network templates (layer sizes, learning rates, activation functions, etc.).
 
 ### Standalone Composable Layers (`cpp/`)
@@ -46,6 +46,7 @@ These layers sit outside the neural network template and can be chained into pip
 - **`conv1d.hpp`** — 1D convolution layer for time-series feature extraction.
 - **`pool1d.hpp`** — `MaxPool1D` and `AvgPool1D` for downsampling.
 - **`selfattention1d.hpp`** — Linear self-attention layer using ReLU kernel feature map (no softmax). O(N*D*P + N*P^2) complexity. Supports both float and Q-format.
+- **`fft1d.hpp`** — Radix-2 decimation-in-time FFT with compile-time bit-reversal tables and scaled butterfly stages. Twiddle factors injected externally for Q-format compatibility.
 - **`batchnorm.hpp`** — Batch normalization with training/inference modes.
 - **`dropout.hpp`** — Inverted dropout regularization.
 - **`binarylayer.hpp`** — Binary neural network layer (XNOR+popcount).

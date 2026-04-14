@@ -50,6 +50,7 @@ TinyMind networks are small enough to deploy on the most constrained microcontro
 | Binary Dense | [`BinaryDense`]({{ site.baseurl }}/architectures/quantized-networks) | XNOR+popcount (1-bit, 32x compression) |
 | Ternary Dense | [`TernaryDense`]({{ site.baseurl }}/architectures/quantized-networks) | Multiply-free ({-1,0,+1}, 16x compression) |
 | KAN | [`KolmogorovArnoldNetwork`]({{ site.baseurl }}/architectures/kan) | Learnable B-spline activations |
+| FFT | [`FFT1D`]({{ site.baseurl }}/architectures/fft) | Frequency-domain feature extraction for signal processing |
 | Elman RNN | [`ElmanNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | Simple recurrent feedback |
 | LSTM | [`LstmNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | 4-gate architecture |
 | GRU | [`GruNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | 3-gate architecture (~25% less memory) |
@@ -96,7 +97,7 @@ See [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) for 
 
 ## Activation Function Lookup Tables
 
-Fixed-point activation functions (sigmoid, tanh, exp, log) are implemented via pre-computed lookup tables with linear interpolation -- no FPU or math library needed. Each table is 96 entries, and compile-time preprocessor switches ensure you only pay for the tables you use (96 bytes for a Q8.8 tanh table). See [Activation Function Lookup Tables]({{ site.baseurl }}/activation-luts) for the full details on table generation, runtime lookup, and memory footprint.
+Fixed-point activation functions (sigmoid, tanh, exp, log) and trigonometric functions (sin, cos) are implemented via pre-computed lookup tables with linear interpolation -- no FPU or math library needed. Each table is 96 entries, and compile-time preprocessor switches ensure you only pay for the tables you use (96 bytes for a Q8.8 tanh table). See [Activation Function Lookup Tables]({{ site.baseurl }}/activation-luts) for the full details on table generation, runtime lookup, and memory footprint.
 
 ## Design Philosophy
 

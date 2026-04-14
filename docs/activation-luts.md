@@ -6,7 +6,7 @@ nav_order: 8
 
 # Activation Function Lookup Tables
 
-On embedded systems without standard math libraries, functions like `tanh()`, `sigmoid()`, `exp()`, and `log()` are unavailable. TinyMind replaces these with pre-computed **lookup tables (LUTs)** stored as constant arrays in memory. At runtime, activation values are retrieved via table lookup with linear interpolation -- no floating-point math required.
+On embedded systems without standard math libraries, functions like `tanh()`, `sigmoid()`, `exp()`, `log()`, `sin()`, and `cos()` are unavailable. TinyMind replaces these with pre-computed **lookup tables (LUTs)** stored as constant arrays in memory. At runtime, activation values are retrieved via table lookup with linear interpolation -- no floating-point math required.
 
 ## Why Lookup Tables?
 
@@ -25,6 +25,8 @@ Traditional activation functions require either a hardware FPU or a software flo
 | Tanh | `TanhValuesTableQ` | `TanhActivationPolicy<ValueType>` | `f'(x) = 1 - f(x)^2` |
 | Exp | `ExpValuesTableQ` | Used by `SoftmaxActivationPolicy`, `EluActivationPolicy` | N/A (used internally) |
 | Log | `LogValuesTableQ` | Available for custom policies | N/A (used internally) |
+| Sin | `SinValuesTableQ` | Available for FFT twiddle factors and custom policies | N/A |
+| Cos | `CosValuesTableQ` | Available for FFT twiddle factors and custom policies | N/A |
 
 Additionally, `GeluActivationPolicy` reuses the sigmoid LUT with a 1.702x input scaling factor.
 
@@ -64,6 +66,8 @@ TINYMIND_USE_SIGMOID_8_8    // Sigmoid Q8.8
 TINYMIND_USE_TANH_8_8       // Tanh Q8.8
 TINYMIND_USE_EXP_16_16      // Exp Q16.16
 TINYMIND_USE_LOG_24_8       // Log Q24.8
+TINYMIND_USE_SIN_8_8        // Sin Q8.8
+TINYMIND_USE_COS_8_8        // Cos Q8.8
 ```
 
 The naming pattern is `TINYMIND_USE_{FUNCTION}_{FixedBits}_{FracBits}`. Define these macros in your build system (e.g., `-DTINYMIND_USE_TANH_8_8=1`) to include the corresponding table.
@@ -116,19 +120,21 @@ The single argument is the output directory. The generator produces:
 | Output File | Contents |
 |---|---|
 | `activation.hpp` | Table dimension constants (`NUMBER_OF_ACTIVATION_TABLE_VALUES`, etc.) |
-| `sigmoid.hpp`, `tanh.hpp`, `exp.hpp`, `log.hpp` | Template selector structs that map Q-format parameters to the correct table struct |
+| `sigmoid.hpp`, `tanh.hpp`, `exp.hpp`, `log.hpp`, `sin.hpp`, `cos.hpp` | Template selector structs that map Q-format parameters to the correct table struct |
 | `sigmoidValues{8,16,32,64,128}Bit.hpp` | Table struct declarations for each bit width |
 | `tanhValues{8,16,32,64,128}Bit.hpp` | (same pattern for tanh) |
 | `expValues{8,16,32,64,128}Bit.hpp` | (same pattern for exp) |
 | `logValues{8,16,32,64,128}Bit.hpp` | (same pattern for log) |
-| `lookupTables.cpp` | All table data -- the `const` arrays with pre-computed hex values (~3 MB) |
+| `sinValues{8,16,32,64,128}Bit.hpp` | (same pattern for sin) |
+| `cosValues{8,16,32,64,128}Bit.hpp` | (same pattern for cos) |
+| `lookupTables.cpp` | All table data -- the `const` arrays with pre-computed hex values |
 
 ### How Values Are Computed
 
 For each Q-format split and each activation function, the generator:
 
 1. Iterates over 96 evenly spaced x-values from -6.0 to +5.875 (step 0.125)
-2. Computes the activation using double-precision floating-point (`std::tanh`, `std::exp`, or the sigmoid formula `e^x / (e^x + 1)`)
+2. Computes the activation using double-precision floating-point (`std::tanh`, `std::exp`, `std::sin`, `std::cos`, or the sigmoid formula `e^x / (e^x + 1)`)
 3. Converts the result to fixed-point by multiplying by `2^FractionalBits`
 4. Casts to the appropriate unsigned integer type and writes as a hex literal
 
