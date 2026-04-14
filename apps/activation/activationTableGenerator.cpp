@@ -58,6 +58,8 @@ typedef enum
     sigmoidActivation,
     expActivation,
     logActivation,
+    sinActivation,
+    cosActivation,
     endActivation
 } activation_e;
 
@@ -68,16 +70,16 @@ typedef struct
 } copyrightSpan_t;
 
 static std::string folderPathString;
-static char const* const activationTags[] = {"TINYMIND_USE_TANH_", "TINYMIND_USE_SIGMOID_", "TINYMIND_USE_EXP_", "TINYMIND_USE_LOG_"};
+static char const* const activationTags[] = {"TINYMIND_USE_TANH_", "TINYMIND_USE_SIGMOID_", "TINYMIND_USE_EXP_", "TINYMIND_USE_LOG_", "TINYMIND_USE_SIN_", "TINYMIND_USE_COS_"};
 static const uint8_t tables[] = {8, 16, 32, 64, 128};
 
 using namespace std;
 
 static const string lutFileName = "lookupTables.cpp";
-static const string selectorPath[] = {"tanh.hpp", "sigmoid.hpp", "exp.hpp", "log.hpp"};
-static const string valuesPathPrefix[] = {"tanhValues", "sigmoidValues", "expValues", "logValues"};
-static const string structPrefixes[] = {"Tanh", "Sigmoid", "Exp", "Log"};
-static const string includePrefix[] = {"tanh", "sigmoid", "exp", "log"};
+static const string selectorPath[] = {"tanh.hpp", "sigmoid.hpp", "exp.hpp", "log.hpp", "sin.hpp", "cos.hpp"};
+static const string valuesPathPrefix[] = {"tanhValues", "sigmoidValues", "expValues", "logValues", "sinValues", "cosValues"};
+static const string structPrefixes[] = {"Tanh", "Sigmoid", "Exp", "Log", "Sin", "Cos"};
+static const string includePrefix[] = {"tanh", "sigmoid", "exp", "log", "sin", "cos"};
 
 static_assert((sizeof(selectorPath) / sizeof(string)) == endActivation, "Invalid selector file path array size.");
 static_assert((sizeof(valuesPathPrefix) / sizeof(string)) == endActivation, "Invalid path prefix array size.");
@@ -92,15 +94,18 @@ static double sigmoid(const double x)
     return result;
 }
 
-static void writeFileCopyrightAndLicense(const string& path)
+static bool activationRequiresIntelCopyright(const activation_e activationType)
+{
+    return (activationType != sinActivation && activationType != cosActivation);
+}
+
+static void writeFileCopyrightAndLicense(const string& path, const bool includeIntelCopyright = true)
 {
     ifstream myInFile("../my_copyright.txt");
-    ifstream intelInFile("../intel_copyright.txt");
     ofstream outFile(path);
     char buffer[1024];
 
     assert(myInFile.is_open());
-    assert(intelInFile.is_open());
 
     while(!myInFile.eof())
     {
@@ -109,17 +114,25 @@ static void writeFileCopyrightAndLicense(const string& path)
         outFile << std::endl;
     }
 
-    while(!intelInFile.eof())
+    if (includeIntelCopyright)
     {
-        intelInFile.getline(buffer, 1024);
-        outFile.write(buffer, strlen(buffer));
-        outFile << std::endl;
+        ifstream intelInFile("../intel_copyright.txt");
+        assert(intelInFile.is_open());
+
+        while(!intelInFile.eof())
+        {
+            intelInFile.getline(buffer, 1024);
+            outFile.write(buffer, strlen(buffer));
+            outFile << std::endl;
+        }
+
+        intelInFile.close();
     }
+
     outFile << std::endl;
 
     outFile.flush();
     outFile.close();
-    intelInFile.close();
 }
 
 static void writeNamespaceBegin(const string& path)
@@ -144,9 +157,9 @@ static void writeActivationFileHeader(const string& path)
     outFile << "#pragma once" << endl << endl;
 }
 
-static void writeFileHeader(const string& path)
+static void writeFileHeader(const string& path, const bool includeIntelCopyright = true)
 {
-    writeFileCopyrightAndLicense(path);
+    writeFileCopyrightAndLicense(path, includeIntelCopyright);
 
     ofstream outFile(path, ofstream::app);
     outFile << "#pragma once" << endl << endl;
@@ -282,6 +295,14 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
                 activate = 0.0;
             }
         }
+        else if (sinActivation == activationType)
+        {
+            activate = std::sin(value);
+        }
+        else if (cosActivation == activationType)
+        {
+            activate = std::cos(value);
+        }
         else
         {
             assert(false);
@@ -396,6 +417,7 @@ static void generateLut(const string& path, const activation_e activationType)
 static void generateHeader(const activation_e activationType)
 {
     fs::path selectorFilePath(folderPathString);
+    const bool includeIntelCopyright = activationRequiresIntelCopyright(activationType);
 
     selectorFilePath /= selectorPath[activationType];
 
@@ -404,12 +426,12 @@ static void generateHeader(const activation_e activationType)
         fs::path filePath(folderPathString);
         const uint8_t totalBits = tables[index];
         string fileName = valuesPathPrefix[activationType] + to_string(totalBits);
-        
+
         fileName.append("Bit.hpp");
 
         filePath /= fileName;
 
-        writeFileHeader(filePath.string());
+        writeFileHeader(filePath.string(), includeIntelCopyright);
 
         writeNamespaceBegin(filePath.string());
 
@@ -422,7 +444,7 @@ static void generateHeader(const activation_e activationType)
     }
 
 
-    writeFileHeader(selectorFilePath.string());
+    writeFileHeader(selectorFilePath.string(), includeIntelCopyright);
 
     for(uint8_t index = 0;index < ((sizeof(tables) / sizeof(tables[0])));++index)
     {
@@ -500,6 +522,8 @@ int main(const int argc, char *argv[])
     generateHeader(tanhActivation);
     generateHeader(expActivation);
     generateHeader(logActivation);
+    generateHeader(sinActivation);
+    generateHeader(cosActivation);
 
     fs::path lutPath(folderPath);
     lutPath /= lutFileName;

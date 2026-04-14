@@ -52,6 +52,7 @@ TINYMIND_DISABLE_WARNING_POP
 #include "binarylayer.hpp"
 #include "ternarylayer.hpp"
 #include "selfattention1d.hpp"
+#include "fft1d.hpp"
 #include "networkStats.hpp"
 #include "random.hpp"
 #include "nnproperties.hpp"
@@ -5859,6 +5860,316 @@ BOOST_AUTO_TEST_CASE(test_case_selfattention1d_fixed_point_bias)
     BOOST_TEST(std::abs(output[1].getValue() - expected12.getValue()) <= tolerance);
     BOOST_TEST(std::abs(output[2].getValue() - expected8.getValue()) <= tolerance);
     BOOST_TEST(std::abs(output[3].getValue() - expected12.getValue()) <= tolerance);
+}
+
+// ============================================================================
+// FFT1D tests
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_case_fft1d_static_sizes)
+{
+    typedef tinymind::FFT1D<double, 8> FFTType;
+
+    static_assert(FFTType::Length == 8, "Wrong FFT length");
+    static_assert(FFTType::HalfLength == 4, "Wrong half length");
+    static_assert(FFTType::NumStages == 3, "Wrong number of stages");
+    BOOST_TEST(true);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_fft1d_float_dc_signal)
+{
+    // A constant (DC) signal should produce energy only in bin 0
+    const size_t N = 8;
+    tinymind::FFT1D<double, N> fft;
+
+    // Compute twiddle factors
+    double cosTable[N / 2];
+    double sinTable[N / 2];
+    for (size_t k = 0; k < N / 2; ++k)
+    {
+        cosTable[k] = std::cos(-2.0 * M_PI * k / N);
+        sinTable[k] = std::sin(-2.0 * M_PI * k / N);
+    }
+    fft.setTwiddleFactors(cosTable, sinTable);
+
+    double real[N] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+    double imag[N] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+    fft.forward(real, imag);
+
+    // Scaled FFT divides by N, so DC bin = sum/N = 8/8 = 1.0
+    BOOST_TEST(fabs(real[0] - 1.0) < 0.001);
+    BOOST_TEST(fabs(imag[0]) < 0.001);
+
+    // All other bins should be zero
+    for (size_t i = 1; i < N; ++i)
+    {
+        BOOST_TEST(fabs(real[i]) < 0.001);
+        BOOST_TEST(fabs(imag[i]) < 0.001);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_fft1d_float_impulse)
+{
+    // Impulse at index 0: FFT should produce constant magnitude across all bins
+    const size_t N = 8;
+    tinymind::FFT1D<double, N> fft;
+
+    double cosTable[N / 2];
+    double sinTable[N / 2];
+    for (size_t k = 0; k < N / 2; ++k)
+    {
+        cosTable[k] = std::cos(-2.0 * M_PI * k / N);
+        sinTable[k] = std::sin(-2.0 * M_PI * k / N);
+    }
+    fft.setTwiddleFactors(cosTable, sinTable);
+
+    double real[N] = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    double imag[N] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+    fft.forward(real, imag);
+
+    // Scaled by 1/N, so each bin should have magnitude 1/N = 0.125
+    double magSq[N];
+    tinymind::FFT1D<double, N>::magnitudeSquared(real, imag, magSq);
+
+    const double expectedMagSq = (1.0 / N) * (1.0 / N); // 0.015625
+    for (size_t i = 0; i < N; ++i)
+    {
+        BOOST_TEST(fabs(magSq[i] - expectedMagSq) < 0.001);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_fft1d_float_nyquist)
+{
+    // Alternating +1/-1 signal: energy at Nyquist frequency (bin N/2)
+    const size_t N = 8;
+    tinymind::FFT1D<double, N> fft;
+
+    double cosTable[N / 2];
+    double sinTable[N / 2];
+    for (size_t k = 0; k < N / 2; ++k)
+    {
+        cosTable[k] = std::cos(-2.0 * M_PI * k / N);
+        sinTable[k] = std::sin(-2.0 * M_PI * k / N);
+    }
+    fft.setTwiddleFactors(cosTable, sinTable);
+
+    double real[N] = {1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0};
+    double imag[N] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+    fft.forward(real, imag);
+
+    // Scaled FFT: Nyquist bin (N/2=4) should have magnitude 1.0
+    BOOST_TEST(fabs(real[N / 2] - 1.0) < 0.001);
+    BOOST_TEST(fabs(imag[N / 2]) < 0.001);
+
+    // All other bins should be zero
+    for (size_t i = 0; i < N; ++i)
+    {
+        if (i != N / 2)
+        {
+            BOOST_TEST(fabs(real[i]) < 0.001);
+            BOOST_TEST(fabs(imag[i]) < 0.001);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_fft1d_float_roundtrip)
+{
+    // Forward then inverse should recover the original signal
+    const size_t N = 8;
+    tinymind::FFT1D<double, N> fft;
+
+    double cosTable[N / 2];
+    double sinTable[N / 2];
+    for (size_t k = 0; k < N / 2; ++k)
+    {
+        cosTable[k] = std::cos(-2.0 * M_PI * k / N);
+        sinTable[k] = std::sin(-2.0 * M_PI * k / N);
+    }
+    fft.setTwiddleFactors(cosTable, sinTable);
+
+    double original[N] = {0.1, 0.5, -0.3, 0.8, -0.2, 0.6, 0.0, -0.4};
+    double real[N];
+    double imag[N];
+    for (size_t i = 0; i < N; ++i)
+    {
+        real[i] = original[i];
+        imag[i] = 0.0;
+    }
+
+    fft.forward(real, imag);
+    fft.inverse(real, imag);
+
+    // Should recover original (within floating-point tolerance)
+    for (size_t i = 0; i < N; ++i)
+    {
+        BOOST_TEST(fabs(real[i] - original[i]) < 0.001);
+        BOOST_TEST(fabs(imag[i]) < 0.001);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_fft1d_float_single_frequency)
+{
+    // Pure cosine at bin 1 frequency
+    const size_t N = 16;
+    tinymind::FFT1D<double, N> fft;
+
+    double cosTable[N / 2];
+    double sinTable[N / 2];
+    for (size_t k = 0; k < N / 2; ++k)
+    {
+        cosTable[k] = std::cos(-2.0 * M_PI * k / N);
+        sinTable[k] = std::sin(-2.0 * M_PI * k / N);
+    }
+    fft.setTwiddleFactors(cosTable, sinTable);
+
+    double real[N];
+    double imag[N];
+    for (size_t i = 0; i < N; ++i)
+    {
+        real[i] = std::cos(2.0 * M_PI * i / N); // frequency bin 1
+        imag[i] = 0.0;
+    }
+
+    fft.forward(real, imag);
+
+    // Scaled FFT: bins 1 and N-1 should have magnitude 0.5
+    // (cosine splits into positive and negative frequency)
+    BOOST_TEST(fabs(real[1] - 0.5) < 0.001);
+    BOOST_TEST(fabs(imag[1]) < 0.001);
+    BOOST_TEST(fabs(real[N - 1] - 0.5) < 0.001);
+    BOOST_TEST(fabs(imag[N - 1]) < 0.001);
+
+    // All other bins should be near zero
+    for (size_t i = 0; i < N; ++i)
+    {
+        if (i != 1 && i != N - 1)
+        {
+            BOOST_TEST(fabs(real[i]) < 0.001);
+            BOOST_TEST(fabs(imag[i]) < 0.001);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_fft1d_float_magnitude_squared)
+{
+    // Verify magnitudeSquared computes real^2 + imag^2
+    const size_t N = 4;
+    double real[N] = {3.0, 0.0, -1.0, 0.0};
+    double imag[N] = {4.0, 0.0, 2.0, 0.0};
+    double magSq[N];
+
+    tinymind::FFT1D<double, N>::magnitudeSquared(real, imag, magSq);
+
+    BOOST_TEST(fabs(magSq[0] - 25.0) < 0.001); // 9 + 16
+    BOOST_TEST(fabs(magSq[1] - 0.0) < 0.001);
+    BOOST_TEST(fabs(magSq[2] - 5.0) < 0.001);  // 1 + 4
+    BOOST_TEST(fabs(magSq[3] - 0.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_fft1d_fixed_point_dc_signal)
+{
+    // DC signal test with Q8.8 fixed-point
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    const size_t N = 8;
+    tinymind::FFT1D<ValueType, N> fft;
+
+    // Pre-computed twiddle factors for N=8: cos(-2*pi*k/8) and sin(-2*pi*k/8)
+    // k=0: cos(0)=1, sin(0)=0
+    // k=1: cos(-pi/4)=0.707, sin(-pi/4)=-0.707
+    // k=2: cos(-pi/2)=0, sin(-pi/2)=-1
+    // k=3: cos(-3pi/4)=-0.707, sin(-3pi/4)=-0.707
+    ValueType cosTable[N / 2];
+    ValueType sinTable[N / 2];
+    cosTable[0] = ValueType(1, 0);
+    cosTable[1] = ValueType(0, 181);  // ~0.707
+    cosTable[2] = ValueType(0, 0);
+    cosTable[3] = ValueType(-1, 75);  // ~-0.707
+
+    sinTable[0] = ValueType(0, 0);
+    sinTable[1] = ValueType(-1, 75);  // ~-0.707
+    sinTable[2] = ValueType(-1, 0);
+    sinTable[3] = ValueType(-1, 75);  // ~-0.707
+
+    fft.setTwiddleFactors(cosTable, sinTable);
+
+    ValueType real[N];
+    ValueType imag[N];
+    for (size_t i = 0; i < N; ++i)
+    {
+        real[i] = ValueType(1, 0);
+        imag[i] = ValueType(0);
+    }
+
+    fft.forward(real, imag);
+
+    // DC bin should have the dominant energy
+    // With scaled FFT, DC = 1.0 (sum/N = 8/8)
+    ValueType expected(1, 0);
+    const typename ValueType::FullWidthValueType tolerance = 3 << (ValueType::NumberOfFractionalBits - 3);
+
+    BOOST_TEST(std::abs(real[0].getValue() - expected.getValue()) <= tolerance);
+    BOOST_TEST(std::abs(imag[0].getValue()) <= tolerance);
+
+    // Other bins should be near zero
+    for (size_t i = 1; i < N; ++i)
+    {
+        BOOST_TEST(std::abs(real[i].getValue()) <= tolerance);
+        BOOST_TEST(std::abs(imag[i].getValue()) <= tolerance);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_fft1d_fixed_point_roundtrip)
+{
+    // Forward then inverse should approximately recover the signal
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    const size_t N = 8;
+    tinymind::FFT1D<ValueType, N> fft;
+
+    ValueType cosTable[N / 2];
+    ValueType sinTable[N / 2];
+    cosTable[0] = ValueType(1, 0);
+    cosTable[1] = ValueType(0, 181);
+    cosTable[2] = ValueType(0, 0);
+    cosTable[3] = ValueType(-1, 75);
+
+    sinTable[0] = ValueType(0, 0);
+    sinTable[1] = ValueType(-1, 75);
+    sinTable[2] = ValueType(-1, 0);
+    sinTable[3] = ValueType(-1, 75);
+
+    fft.setTwiddleFactors(cosTable, sinTable);
+
+    ValueType original[N];
+    original[0] = ValueType(0, 128); // 0.5
+    original[1] = ValueType(1, 0);
+    original[2] = ValueType(-1, 0);
+    original[3] = ValueType(0, 64);  // 0.25
+    original[4] = ValueType(0, 0);
+    original[5] = ValueType(0, 192); // 0.75
+    original[6] = ValueType(-1, 128); // -0.5
+    original[7] = ValueType(0, 32);  // 0.125
+
+    ValueType real[N];
+    ValueType imag[N];
+    for (size_t i = 0; i < N; ++i)
+    {
+        real[i] = original[i];
+        imag[i] = ValueType(0);
+    }
+
+    fft.forward(real, imag);
+    fft.inverse(real, imag);
+
+    // With Q8.8 and 3 stages, expect some rounding error
+    // Tolerance: ~4 LSBs of the fractional part
+    const typename ValueType::FullWidthValueType tolerance = 4;
+    for (size_t i = 0; i < N; ++i)
+    {
+        BOOST_TEST(std::abs(real[i].getValue() - original[i].getValue()) <= tolerance);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
