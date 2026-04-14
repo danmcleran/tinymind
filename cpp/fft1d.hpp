@@ -141,48 +141,15 @@ namespace tinymind {
          */
         void forward(ValueType* real, ValueType* imag) const
         {
-            bitReversalPermute(real, imag);
-
-            size_t halfSize = 1;
-            for (size_t stage = 0; stage < NumStages; ++stage)
-            {
-                const size_t fullSize = halfSize << 1;
-                const size_t twiddleStride = HalfLength / halfSize;
-
-                for (size_t group = 0; group < N; group += fullSize)
-                {
-                    for (size_t pair = 0; pair < halfSize; ++pair)
-                    {
-                        const size_t twiddleIdx = pair * twiddleStride;
-                        const ValueType wCos = mTwiddleCos[twiddleIdx];
-                        const ValueType wSin = mTwiddleSin[twiddleIdx];
-
-                        const size_t top = group + pair;
-                        const size_t bot = top + halfSize;
-
-                        // Complex multiply: W * x[bot]
-                        const ValueType tReal = wCos * real[bot] - wSin * imag[bot];
-                        const ValueType tImag = wCos * imag[bot] + wSin * real[bot];
-
-                        // Scaled butterfly: divide by 2 each stage to prevent overflow
-                        const ValueType topReal = real[top];
-                        const ValueType topImag = imag[top];
-                        real[top] = (topReal + tReal) / 2;
-                        imag[top] = (topImag + tImag) / 2;
-                        real[bot] = (topReal - tReal) / 2;
-                        imag[bot] = (topImag - tImag) / 2;
-                    }
-                }
-                halfSize = fullSize;
-            }
+            forwardImpl(real, imag, true);
         }
 
         /**
          * Inverse FFT: frequency domain -> time domain (in-place).
          *
-         * Conjugates input, runs forward FFT, then conjugates output.
-         * The forward FFT already applies 1/N scaling through its
-         * scaled butterfly stages, so no additional division is needed.
+         * Uses the conjugate trick: IFFT(X) = conj(DFT(conj(X))).
+         * The unscaled DFT is used internally so that forward (which
+         * scales by 1/N) and inverse are true inverses of each other.
          */
         void inverse(ValueType* real, ValueType* imag) const
         {
@@ -192,9 +159,10 @@ namespace tinymind {
                 imag[i] = ValueType(0) - imag[i];
             }
 
-            forward(real, imag);
+            // Unscaled DFT so that forward's 1/N and inverse cancel
+            forwardImpl(real, imag, false);
 
-            // Conjugate output (forward already scaled by 1/N)
+            // Conjugate output
             for (size_t i = 0; i < N; ++i)
             {
                 imag[i] = ValueType(0) - imag[i];
@@ -223,6 +191,58 @@ namespace tinymind {
         ValueType mTwiddleSin[HalfLength];
 
         static constexpr detail::BitReversalTable<N, NumStages> sBitRevTable{};
+
+        /**
+         * Core FFT implementation.
+         * @param scale  If true, divide by 2 each stage (forward FFT).
+         *               If false, no scaling (used by inverse FFT).
+         */
+        void forwardImpl(ValueType* real, ValueType* imag, const bool scale) const
+        {
+            bitReversalPermute(real, imag);
+
+            size_t halfSize = 1;
+            for (size_t stage = 0; stage < NumStages; ++stage)
+            {
+                const size_t fullSize = halfSize << 1;
+                const size_t twiddleStride = HalfLength / halfSize;
+
+                for (size_t group = 0; group < N; group += fullSize)
+                {
+                    for (size_t pair = 0; pair < halfSize; ++pair)
+                    {
+                        const size_t twiddleIdx = pair * twiddleStride;
+                        const ValueType wCos = mTwiddleCos[twiddleIdx];
+                        const ValueType wSin = mTwiddleSin[twiddleIdx];
+
+                        const size_t top = group + pair;
+                        const size_t bot = top + halfSize;
+
+                        const ValueType tReal = wCos * real[bot] - wSin * imag[bot];
+                        const ValueType tImag = wCos * imag[bot] + wSin * real[bot];
+
+                        const ValueType topReal = real[top];
+                        const ValueType topImag = imag[top];
+
+                        if (scale)
+                        {
+                            real[top] = (topReal + tReal) / 2;
+                            imag[top] = (topImag + tImag) / 2;
+                            real[bot] = (topReal - tReal) / 2;
+                            imag[bot] = (topImag - tImag) / 2;
+                        }
+                        else
+                        {
+                            real[top] = topReal + tReal;
+                            imag[top] = topImag + tImag;
+                            real[bot] = topReal - tReal;
+                            imag[bot] = topImag - tImag;
+                        }
+                    }
+                }
+                halfSize = fullSize;
+            }
+        }
 
         static void bitReversalPermute(ValueType* real, ValueType* imag)
         {
