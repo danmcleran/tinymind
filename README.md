@@ -1,6 +1,6 @@
 # TinyMind
 
-A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, linear self-attention, FFT-based signal processing, binary and ternary neural networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
+A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, linear self-attention, FFT-based signal processing, 1D and 2D convolutions (including MobileNet-style depthwise-separable blocks), binary and ternary neural networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
 
 Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design), TinyMind uses template metaprogramming to produce zero-overhead abstractions where network topology, value type, activation functions, and training policies are all compile-time parameters.
 
@@ -11,6 +11,9 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **Feed-forward networks** with arbitrary depth and width
 - **1D convolution layer** for time-series feature extraction (sensor data, IMU, ECG)
 - **1D pooling layers** (`MaxPool1D`, `AvgPool1D`) for downsampling with multi-channel support and backpropagation
+- **2D convolution layer** (`Conv2D`) with NHWC layout (channel-last) for spectrograms, images, and time-frequency tiles -- MFCC/keyword-spotting and small vision workloads
+- **Depthwise-separable blocks** (`DepthwiseConv2D` + `PointwiseConv2D`) -- MobileNet-style ~8-9x MAC reduction vs. full 2D convolution at K=3
+- **2D pooling layers** (`MaxPool2D`, `AvgPool2D`, `GlobalAvgPool2D`) with backpropagation -- GAP replaces the flatten-to-dense matrix that dominates flash in small CNNs
 - **Linear self-attention** (`SelfAttention1D`) using ReLU kernel feature map -- O(N*P^2) instead of O(N^2*D), no softmax/exp required, works with Q-format fixed-point
 - **FFT layer** (`FFT1D`) with radix-2 decimation-in-time, compile-time bit-reversal tables, and scaled butterfly stages for fixed-point overflow prevention -- frequency-domain feature extraction for signal processing pipelines
 - **Kolmogorov-Arnold Networks (KAN)** with learnable B-spline activation functions on edges
@@ -80,6 +83,13 @@ Fixed-point activations use pre-computed lookup tables for speed. Floating-point
 - Deep Q-Network (DQN) with neural network function approximation
 - Experience replay buffer for DQN training
 - Dyna-Q hybrid model-free/model-based learning
+
+### Benchmark Harness (`cpp/include/bench/`)
+
+- **`bench::readCycleCounter()`** -- reads ARM Cortex-M `DWT->CYCCNT` when built with `-DTINYMIND_BENCH_CORTEX_M`, falls back to `std::chrono::steady_clock` nanoseconds on the host
+- **`bench::paintStack` / `bench::stackHighWater`** -- canary-based stack watermarking for worst-case RAM measurement on MCUs
+- **`bench::LayerStat` + `writeHeader/writeRow`** -- CSV layer stats (name, weight bytes, activation bytes, cycles) that target any sink with `operator<<` (works with `std::ostream` on host and a minimal UART wrapper on MCU, no `<iostream>` dependency required)
+- See [`examples/kws_cortex_m/`](examples/kws_cortex_m/) for an end-to-end KWS-style pipeline using the harness
 
 ## Quick Start
 
@@ -304,6 +314,38 @@ dropout.forward(poolOut, dropOut);  // applies mask during training
 dropout.setTraining(false);
 dropout.forward(poolOut, dropOut);  // identity pass-through
 ```
+
+### Depthwise-Separable 2D CNN (Keyword Spotting)
+
+```cpp
+#include "conv2d.hpp"
+#include "depthwiseconv2d.hpp"
+#include "pointwiseconv2d.hpp"
+#include "pool2d.hpp"
+
+// Input: 20x20x1 (e.g., MFCC tile). Output: 10 class logits.
+using Conv1 = tinymind::Conv2D<float, 20, 20, 1, 3, 3, 1, 1, 8>;   // -> 18x18x8
+using Pool1 = tinymind::MaxPool2D<float, 18, 18, 8, 2, 2>;          // -> 9x9x8
+using Dw    = tinymind::DepthwiseConv2D<float, 9, 9, 8, 3, 3>;      // -> 7x7x8
+using Pw    = tinymind::PointwiseConv2D<float, 7, 7, 8, 16>;        // -> 7x7x16
+using Gap   = tinymind::GlobalAvgPool2D<float, 7, 7, 16>;           // -> 16
+using Dense = tinymind::PointwiseConv2D<float, 1, 1, 16, 10>;       // -> 10
+
+Conv1 conv1; Pool1 pool1; Dw dw; Pw pw; Gap gap; Dense dense;
+
+float input[20 * 20];
+float b1[Conv1::OutputSize], b2[Pool1::OutputSize], b3[Dw::OutputSize];
+float b4[Pw::OutputSize],    b5[Gap::OutputSize],   logits[Dense::OutputSize];
+
+conv1.forward(input, b1);
+pool1.forward(b1, b2);
+dw.forward(b2, b3);
+pw.forward(b3, b4);
+gap.forward(b4, b5);
+dense.forward(b5, logits);
+```
+
+See [`examples/kws_cortex_m/`](examples/kws_cortex_m/) for the full runnable version with per-layer cycle counts and a port stub for Cortex-M targets.
 
 ### Linear Self-Attention (Sequence Processing)
 
@@ -543,8 +585,14 @@ MazeEnvironment env;
 |------|-------|-------------|
 | Feed-forward | `NeuralNetwork` | Standard MLP with configurable layers (`MultilayerPerceptron` alias for uniform layers) |
 | 1D Convolution | `Conv1D` | Time-series feature extraction with configurable kernel/stride/filters |
+| 2D Convolution | `Conv2D` | NHWC 2D convolution for spectrograms, images, time-frequency tiles |
+| Depthwise Conv2D | `DepthwiseConv2D` | Per-channel 2D kernel, no cross-channel mixing (MobileNet block) |
+| Pointwise Conv2D | `PointwiseConv2D` | 1x1 Conv2D for channel mixing; doubles as a 1x1-input dense layer |
 | Max Pooling | `MaxPool1D` | Downsampling via maximum value selection with argmax tracking |
 | Average Pooling | `AvgPool1D` | Downsampling via mean with uniform gradient distribution |
+| 2D Max Pool | `MaxPool2D` | 2D downsampling via maximum with argmax tracking |
+| 2D Avg Pool | `AvgPool2D` | 2D downsampling via mean with uniform gradient distribution |
+| Global Avg Pool | `GlobalAvgPool2D` | Collapse HxW to per-channel mean; replaces flatten-to-dense |
 | Dropout | `Dropout` | Inverted dropout regularization with training/inference mode |
 | Self-Attention | `SelfAttention1D` | Linear attention with ReLU kernel feature map |
 | FFT | `FFT1D` | Radix-2 FFT with scaled butterfly for frequency-domain feature extraction |
@@ -630,6 +678,7 @@ cd examples/gru_xor && make clean && make
 cd examples/lstm_sinusoid && make clean && make
 cd examples/maze && make clean && make
 cd examples/dqn_maze && make clean && make
+cd examples/kws_cortex_m && make clean && make
 ```
 
 ### Compiler Flags
@@ -647,6 +696,10 @@ tinymind/
     bspline.hpp                 # B-spline evaluation engine (De Boor algorithm)
     kanTransferFunctions.hpp    # KAN transfer functions and SiLU activation
     conv1d.hpp                  # 1D convolution layer
+    conv2d.hpp                  # 2D convolution layer (NHWC, VALID padding)
+    depthwiseconv2d.hpp         # Depthwise 2D convolution (per-channel kernels)
+    pointwiseconv2d.hpp         # 1x1 pointwise convolution (channel mixing / dense)
+    pool2d.hpp                  # MaxPool2D, AvgPool2D, GlobalAvgPool2D
     selfattention1d.hpp         # Linear self-attention layer
     fft1d.hpp                   # Radix-2 FFT with compile-time bit-reversal tables
     binarylayer.hpp             # Binary neural network layer (XNOR+popcount)
@@ -671,6 +724,9 @@ tinymind/
     include/                    # Support headers
       nnproperties.hpp          # Weight file manager (MLP, LSTM, GRU, KAN)
       constants.hpp, limits.hpp, random.hpp, ...
+      bench/                    # Benchmark harness
+        platform.hpp            # Cycle counter (Cortex-M DWT / host chrono) + stack watermarks
+        report.hpp              # LayerStat CSV rows and ScopedTimer
   examples/
     xor/                        # MLP XOR gate learning
     kan_xor/                    # KAN XOR gate learning
@@ -678,9 +734,10 @@ tinymind/
     lstm_sinusoid/              # LSTM sinusoid prediction
     maze/                       # Tabular Q-learning maze solver
     dqn_maze/                   # Deep Q-Network maze solver
+    kws_cortex_m/               # Depthwise-separable CNN pipeline with bench harness
     pytorch/                    # PyTorch weight import (MLP + GRU export)
   unit_test/
-    nn/                         # Neural network tests (147 test cases)
+    nn/                         # Neural network tests (171 test cases)
     kan/                        # KAN tests (16 test cases)
     qformat/                    # Fixed-point type tests (static_assert)
     qlearn/                     # Q-learning tests
