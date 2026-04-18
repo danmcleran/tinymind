@@ -152,6 +152,6 @@ ELU uses the exp lookup table. GELU approximates `x * sigmoid(1.702 * x)` using 
 Beyond the feed-forward and recurrent architectures described above, tinymind also provides:
 
 - **[Kolmogorov-Arnold Networks]({{ site.baseurl }}/architectures/kan)** -- learnable B-spline activation functions on edges
-- **[Convolutional and Pooling Layers]({{ site.baseurl }}/architectures/conv-pooling)** -- Conv1D, MaxPool1D, AvgPool1D, BatchNorm1D, Dropout
+- **[Convolutional and Pooling Layers]({{ site.baseurl }}/architectures/conv-pooling)** -- Conv1D, MaxPool1D, AvgPool1D, BatchNorm1D, Dropout, plus Conv2D / DepthwiseConv2D / PointwiseConv2D and 2D pooling (MaxPool2D, AvgPool2D, GlobalAvgPool2D)
 - **[Linear Self-Attention]({{ site.baseurl }}/architectures/self-attention)** -- SelfAttention1D with ReLU kernel feature map
 - **[Quantized Neural Networks]({{ site.baseurl }}/architectures/quantized-networks)** -- BinaryDense and TernaryDense layers

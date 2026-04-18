@@ -106,6 +106,32 @@ AvgPool1D is stateless (1 byte). It has no per-instance storage since average gr
 | `double` | 384 bytes | 1,536 bytes | 193 bytes | **2,113 bytes** |
 | Q8.8 | 96 bytes | 1,536 bytes | 193 bytes | **1,825 bytes** |
 
+### 2D Layers
+
+All 2D layers use NHWC layout. Sizes below are in `float` (the type used by the `examples/kws_cortex_m/` runner). Q8.8 sizes are ~4x smaller.
+
+| Configuration | `float` |
+|---|---|
+| Conv2D (20x20x1, k=3, s=1, 8 filters) | 640 bytes |
+| DepthwiseConv2D (9x9x8, k=3) | 640 bytes |
+| PointwiseConv2D (7x7, 8 -> 16) | 1,152 bytes |
+| PointwiseConv2D (1x1, 16 -> 10; dense classifier) | 1,360 bytes |
+| MaxPool2D (18x18x8, pool=2, stride=2) | 5,184 bytes |
+| GlobalAvgPool2D (7x7x16) | 1 byte |
+
+Conv2D / DepthwiseConv2D / PointwiseConv2D store both weights and gradients (2x overhead) to support on-device training. MaxPool2D stores `size_t` argmax indices per output. GlobalAvgPool2D is stateless.
+
+### Full Pipeline: Conv2D -> MaxPool2D -> DepthwiseConv2D -> PointwiseConv2D -> GlobalAvgPool2D -> Dense
+
+Running the pipeline in `examples/kws_cortex_m/` (20x20x1 input, 10 output classes, all `float`):
+
+| Section | Bytes |
+|---|---|
+| Total weight + state bytes | **8,976** |
+| Peak activation buffer | **10,368** (first conv output) |
+
+Swapping the layer value type from `float` to Q8.8 roughly quarters the Conv / DW / PW / Dense storage and halves each activation buffer. The `MaxPool2D` argmax array is `size_t`-indexed and is independent of value type -- on a tight MCU target it becomes the dominant term and is the best candidate for the next round of footprint work.
+
 ## Binary and Ternary Dense Layer Sizes
 
 ### BinaryDense (Trainable)

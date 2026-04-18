@@ -46,7 +46,10 @@ TinyMind networks are small enough to deploy on the most constrained microcontro
 |---|---|---|
 | Feed-forward | [`NeuralNetwork`]({{ site.baseurl }}/neural-networks) | Arbitrary depth/width (`MultilayerPerceptron` alias for uniform layers) |
 | 1D Convolution | [`Conv1D`]({{ site.baseurl }}/architectures/conv-pooling) | Time-series feature extraction |
-| Max/Avg Pooling | [`MaxPool1D`, `AvgPool1D`]({{ site.baseurl }}/architectures/conv-pooling) | Downsampling |
+| 2D Convolution | [`Conv2D`]({{ site.baseurl }}/architectures/conv-pooling) | Spectrograms, images, time-frequency tiles (NHWC) |
+| Depthwise-Separable | [`DepthwiseConv2D` + `PointwiseConv2D`]({{ site.baseurl }}/architectures/conv-pooling) | MobileNet-style block, ~8-9x MAC reduction |
+| Max/Avg Pooling | [`MaxPool1D`, `AvgPool1D`]({{ site.baseurl }}/architectures/conv-pooling) | 1D downsampling |
+| 2D Pooling | [`MaxPool2D`, `AvgPool2D`, `GlobalAvgPool2D`]({{ site.baseurl }}/architectures/conv-pooling) | 2D downsampling; GAP replaces flatten-to-dense |
 | Binary Dense | [`BinaryDense`]({{ site.baseurl }}/architectures/quantized-networks) | XNOR+popcount (1-bit, 32x compression) |
 | Ternary Dense | [`TernaryDense`]({{ site.baseurl }}/architectures/quantized-networks) | Multiply-free ({-1,0,+1}, 16x compression) |
 | KAN | [`KolmogorovArnoldNetwork`]({{ site.baseurl }}/architectures/kan) | Learnable B-spline activations |
