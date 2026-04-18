@@ -46,6 +46,12 @@ TINYMIND_DISABLE_WARNING_POP
 #include "truncatedBPTT.hpp"
 #include "conv1d.hpp"
 #include "pool1d.hpp"
+#include "conv2d.hpp"
+#include "depthwiseconv2d.hpp"
+#include "pointwiseconv2d.hpp"
+#include "pool2d.hpp"
+#include "bench/platform.hpp"
+#include "bench/report.hpp"
 #include "dropout.hpp"
 #include "batchnorm.hpp"
 #include "rmsprop.hpp"
@@ -6170,6 +6176,379 @@ BOOST_AUTO_TEST_CASE(test_case_fft1d_fixed_point_roundtrip)
     {
         BOOST_TEST(std::abs(real[i].getValue() - original[i].getValue()) <= tolerance);
     }
+}
+
+// ============================================================
+// Conv2D tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_conv2d_static_sizes)
+{
+    typedef tinymind::Conv2D<double, 32, 32, 3, 3, 3, 1, 1, 16> ConvType;
+    static_assert(ConvType::OutputHeight == 30, "Wrong output height");
+    static_assert(ConvType::OutputWidth == 30, "Wrong output width");
+    static_assert(ConvType::OutputSize == 30 * 30 * 16, "Wrong output size");
+    // 16 filters * (3*3*3 + 1) = 16 * 28 = 448
+    static_assert(ConvType::TotalWeights == 448, "Wrong total weights");
+    BOOST_TEST(true);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_conv2d_forward_identity)
+{
+    // 3x3 input, 1 channel, 3x3 kernel, 1 filter = 1x1 output
+    // Kernel is all zeros except center = 1; output should equal input center.
+    tinymind::Conv2D<double, 3, 3, 1, 3, 3, 1, 1, 1> conv;
+
+    conv.setFilterWeight(0, 1, 1, 0, 1.0); // center tap
+    conv.setFilterBias(0, 0.0);
+
+    double input[9] = {
+        1, 2, 3,
+        4, 5, 6,
+        7, 8, 9
+    };
+    double output[1];
+    conv.forward(input, output);
+
+    BOOST_TEST(std::fabs(output[0] - 5.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_conv2d_forward_sum_kernel)
+{
+    // 4x4 input, 1 channel, 2x2 kernel (all ones), stride 2 -> 2x2 output
+    tinymind::Conv2D<double, 4, 4, 1, 2, 2, 2, 2, 1> conv;
+    for (size_t kh = 0; kh < 2; ++kh)
+    {
+        for (size_t kw = 0; kw < 2; ++kw)
+        {
+            conv.setFilterWeight(0, kh, kw, 0, 1.0);
+        }
+    }
+    conv.setFilterBias(0, 0.0);
+
+    double input[16] = {
+        1, 2, 3, 4,
+        5, 6, 7, 8,
+        9, 10, 11, 12,
+        13, 14, 15, 16
+    };
+    double output[4];
+    conv.forward(input, output);
+
+    // Top-left 2x2 = 1+2+5+6 = 14; top-right = 3+4+7+8 = 22
+    // Bot-left = 9+10+13+14 = 46; bot-right = 11+12+15+16 = 54
+    BOOST_TEST(std::fabs(output[0] - 14.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[1] - 22.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[2] - 46.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[3] - 54.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_conv2d_multi_channel_and_filter)
+{
+    // 2x2 input, 2 channels, 2x2 kernel, 2 filters -> 1x1x2 output
+    tinymind::Conv2D<double, 2, 2, 2, 2, 2, 1, 1, 2> conv;
+
+    // Filter 0: sum over all channels and positions
+    for (size_t kh = 0; kh < 2; ++kh)
+        for (size_t kw = 0; kw < 2; ++kw)
+            for (size_t ci = 0; ci < 2; ++ci)
+                conv.setFilterWeight(0, kh, kw, ci, 1.0);
+    conv.setFilterBias(0, 0.0);
+
+    // Filter 1: channel 0 positive, channel 1 negative
+    for (size_t kh = 0; kh < 2; ++kh)
+    {
+        for (size_t kw = 0; kw < 2; ++kw)
+        {
+            conv.setFilterWeight(1, kh, kw, 0,  1.0);
+            conv.setFilterWeight(1, kh, kw, 1, -1.0);
+        }
+    }
+    conv.setFilterBias(1, 0.0);
+
+    // NHWC input, each pixel has [ch0, ch1]
+    double input[8] = {
+        1, 10,  2, 20,   // row 0
+        3, 30,  4, 40    // row 1
+    };
+    double output[2];
+    conv.forward(input, output);
+
+    // Filter 0 = sum all = (1+2+3+4) + (10+20+30+40) = 10 + 100 = 110
+    BOOST_TEST(std::fabs(output[0] - 110.0) < 1e-9);
+    // Filter 1 = (1+2+3+4) - (10+20+30+40) = 10 - 100 = -90
+    BOOST_TEST(std::fabs(output[1] - (-90.0)) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_conv2d_gradient_sanity)
+{
+    // Single-filter, 3x3 input, 3x3 kernel -> scalar output.
+    // For output y = sum(w * x) + b, dy/dw = x, dy/db = 1.
+    // With delta=1 the weight gradient equals input and bias grad = 1.
+    tinymind::Conv2D<double, 3, 3, 1, 3, 3, 1, 1, 1> conv;
+    for (size_t i = 0; i < conv.TotalWeights; ++i)
+    {
+        conv.setWeight(i, 0.1);
+    }
+
+    double input[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+    double delta[1] = {1.0};
+    conv.computeGradients(delta, input);
+
+    for (size_t kh = 0; kh < 3; ++kh)
+    {
+        for (size_t kw = 0; kw < 3; ++kw)
+        {
+            const size_t idx = kh * 3 + kw;
+            const double g = conv.getGradient(0 * conv.WeightsPerFilter + idx);
+            BOOST_TEST(std::fabs(g - input[idx]) < 1e-9);
+        }
+    }
+    // Bias gradient
+    const double biasGrad = conv.getGradient(conv.WeightsPerFilter - 1);
+    BOOST_TEST(std::fabs(biasGrad - 1.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_conv2d_fixed_point)
+{
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::Conv2D<ValueType, 3, 3, 1, 3, 3, 1, 1, 1> conv;
+
+    conv.setFilterWeight(0, 1, 1, 0, ValueType(1, 0));
+    conv.setFilterBias(0, ValueType(0));
+
+    ValueType input[9];
+    for (size_t i = 0; i < 9; ++i)
+    {
+        input[i] = ValueType(static_cast<int>(i + 1), 0);
+    }
+    ValueType output[1];
+    conv.forward(input, output);
+
+    ValueType expected(5, 0);
+    BOOST_TEST(output[0].getValue() == expected.getValue());
+}
+
+// ============================================================
+// DepthwiseConv2D + PointwiseConv2D tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_depthwiseconv2d_independence)
+{
+    // Two channels, kernel picks channel 0 only.
+    tinymind::DepthwiseConv2D<double, 2, 2, 2, 2, 2, 1, 1> dw;
+
+    // Channel 0: ones; Channel 1: ones. Biases 0.
+    for (size_t c = 0; c < 2; ++c)
+    {
+        for (size_t kh = 0; kh < 2; ++kh)
+        {
+            for (size_t kw = 0; kw < 2; ++kw)
+            {
+                dw.setChannelWeight(c, kh, kw, 1.0);
+            }
+        }
+        dw.setChannelBias(c, 0.0);
+    }
+
+    double input[8] = {
+        1, 10,  2, 20,
+        3, 30,  4, 40
+    };
+    double output[2]; // OutputH = OutputW = 1, Channels = 2
+    dw.forward(input, output);
+
+    BOOST_TEST(std::fabs(output[0] - 10.0) < 1e-9);  // ch0 sum
+    BOOST_TEST(std::fabs(output[1] - 100.0) < 1e-9); // ch1 sum — no mixing
+}
+
+BOOST_AUTO_TEST_CASE(test_case_pointwiseconv2d_channel_mix)
+{
+    // 1x1 spatial, 3 in-channels, 2 filters.
+    tinymind::PointwiseConv2D<double, 1, 1, 3, 2> pw;
+
+    // Filter 0: [1, 2, 3] dot input
+    pw.setFilterWeight(0, 0, 1.0);
+    pw.setFilterWeight(0, 1, 2.0);
+    pw.setFilterWeight(0, 2, 3.0);
+    pw.setFilterBias(0, 0.0);
+
+    // Filter 1: mean with bias
+    pw.setFilterWeight(1, 0, 1.0);
+    pw.setFilterWeight(1, 1, 1.0);
+    pw.setFilterWeight(1, 2, 1.0);
+    pw.setFilterBias(1, 0.5);
+
+    double input[3] = {4.0, 5.0, 6.0};
+    double output[2];
+    pw.forward(input, output);
+
+    BOOST_TEST(std::fabs(output[0] - (1*4 + 2*5 + 3*6)) < 1e-9); // 32
+    BOOST_TEST(std::fabs(output[1] - (4 + 5 + 6 + 0.5)) < 1e-9); // 15.5
+}
+
+BOOST_AUTO_TEST_CASE(test_case_separable_pipeline)
+{
+    // Verify a depthwise-then-pointwise pipeline produces the same
+    // result as manual per-channel + mix math.
+    tinymind::DepthwiseConv2D<double, 3, 3, 2, 3, 3, 1, 1> dw;
+    tinymind::PointwiseConv2D<double, 1, 1, 2, 1> pw;
+
+    for (size_t c = 0; c < 2; ++c)
+    {
+        for (size_t kh = 0; kh < 3; ++kh)
+        {
+            for (size_t kw = 0; kw < 3; ++kw)
+            {
+                dw.setChannelWeight(c, kh, kw, 1.0);
+            }
+        }
+        dw.setChannelBias(c, 0.0);
+    }
+    pw.setFilterWeight(0, 0, 0.5);
+    pw.setFilterWeight(0, 1, 2.0);
+    pw.setFilterBias(0, 0.0);
+
+    double input[18];
+    for (size_t i = 0; i < 18; ++i)
+    {
+        input[i] = (i % 2 == 0) ? 1.0 : 2.0;
+    }
+
+    double dwOut[2];
+    dw.forward(input, dwOut);
+    // dwOut[0] = sum of 9 ch0 values = 9.0; dwOut[1] = 18.0
+    BOOST_TEST(std::fabs(dwOut[0] - 9.0) < 1e-9);
+    BOOST_TEST(std::fabs(dwOut[1] - 18.0) < 1e-9);
+
+    double pwOut[1];
+    pw.forward(dwOut, pwOut);
+    // 0.5 * 9 + 2.0 * 18 = 4.5 + 36 = 40.5
+    BOOST_TEST(std::fabs(pwOut[0] - 40.5) < 1e-9);
+}
+
+// ============================================================
+// Pool2D tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_maxpool2d_forward)
+{
+    tinymind::MaxPool2D<double, 4, 4, 1, 2, 2, 2, 2> pool;
+    double input[16] = {
+        1, 3, 2, 4,
+        5, 7, 6, 8,
+        9, 11, 10, 12,
+        13, 15, 14, 16
+    };
+    double output[4];
+    pool.forward(input, output);
+
+    // Each 2x2 block max: 7, 8, 15, 16
+    BOOST_TEST(std::fabs(output[0] - 7.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[1] - 8.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[2] - 15.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[3] - 16.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_maxpool2d_backward)
+{
+    tinymind::MaxPool2D<double, 4, 4, 1, 2, 2, 2, 2> pool;
+    double input[16] = {
+        1, 3, 2, 4,
+        5, 7, 6, 8,
+        9, 11, 10, 12,
+        13, 15, 14, 16
+    };
+    double output[4];
+    pool.forward(input, output);
+
+    double outputDeltas[4] = {1.0, 1.0, 1.0, 1.0};
+    double inputDeltas[16];
+    pool.backward(outputDeltas, inputDeltas);
+
+    // Only argmax positions get gradient; sum should equal 4.
+    double sum = 0.0;
+    for (size_t i = 0; i < 16; ++i) sum += inputDeltas[i];
+    BOOST_TEST(std::fabs(sum - 4.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_avgpool2d_forward)
+{
+    tinymind::AvgPool2D<double, 4, 4, 1, 2, 2, 2, 2> pool;
+    double input[16] = {
+        1, 1, 2, 2,
+        1, 1, 2, 2,
+        3, 3, 4, 4,
+        3, 3, 4, 4
+    };
+    double output[4];
+    pool.forward(input, output);
+
+    BOOST_TEST(std::fabs(output[0] - 1.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[1] - 2.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[2] - 3.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[3] - 4.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_globalavgpool2d_forward)
+{
+    // 3x3x2 input -> 2 outputs
+    tinymind::GlobalAvgPool2D<double, 3, 3, 2> gap;
+
+    double input[18];
+    for (size_t i = 0; i < 9; ++i)
+    {
+        input[i * 2 + 0] = 1.0; // channel 0 all ones
+        input[i * 2 + 1] = 3.0; // channel 1 all threes
+    }
+
+    double output[2];
+    gap.forward(input, output);
+
+    BOOST_TEST(std::fabs(output[0] - 1.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[1] - 3.0) < 1e-9);
+}
+
+// ============================================================
+// Benchmark harness tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_bench_stack_watermark)
+{
+    uint8_t buffer[256];
+    tinymind::bench::paintStack(buffer, sizeof(buffer));
+
+    // Untouched: high water == 0
+    BOOST_TEST(tinymind::bench::stackHighWater(buffer, sizeof(buffer)) == 0u);
+
+    // Stack grows down: simulate a 40-byte frame by zeroing the *highest*
+    // 40 bytes of the buffer. stackHighWater should report 40.
+    for (size_t i = sizeof(buffer) - 40; i < sizeof(buffer); ++i)
+    {
+        buffer[i] = 0x00;
+    }
+    // The canary pattern is intact up to byte (256 - 40 - 1). The first
+    // non-A5 byte is at offset 216, so used = 256 - 216 = 40.
+    BOOST_TEST(tinymind::bench::stackHighWater(buffer, sizeof(buffer)) == 40u);
+
+    // Touching the bottom as well should push the watermark to full size.
+    buffer[0] = 0x00;
+    BOOST_TEST(tinymind::bench::stackHighWater(buffer, sizeof(buffer)) == sizeof(buffer));
+}
+
+BOOST_AUTO_TEST_CASE(test_case_bench_cycle_counter_monotonic)
+{
+    tinymind::bench::enableCycleCounter();
+    const tinymind::bench::Cycles a = tinymind::bench::readCycleCounter();
+    // Do some work the compiler cannot elide.
+    volatile uint64_t acc = 0;
+    for (uint64_t i = 0; i < 10000; ++i) acc += i;
+    const tinymind::bench::Cycles b = tinymind::bench::readCycleCounter();
+
+    // On host, a/b are ns-since-first-call; require b >= a modulo wrap.
+    // Cast to signed to tolerate legitimate wrap.
+    BOOST_TEST(static_cast<int32_t>(b - a) >= 0);
+    BOOST_TEST(acc > 0u); // keep the loop live
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -45,6 +45,9 @@ These layers sit outside the neural network template and can be chained into pip
 
 - **`conv1d.hpp`** — 1D convolution layer for time-series feature extraction.
 - **`pool1d.hpp`** — `MaxPool1D` and `AvgPool1D` for downsampling.
+- **`conv2d.hpp`** — 2D convolution for spectrograms/images, NHWC layout, VALID padding.
+- **`depthwiseconv2d.hpp`** / **`pointwiseconv2d.hpp`** — MobileNet-style depthwise-separable blocks.
+- **`pool2d.hpp`** — `MaxPool2D`, `AvgPool2D`, and `GlobalAvgPool2D` (GAP replaces the big flatten-to-dense matrix).
 - **`selfattention1d.hpp`** — Linear self-attention layer using ReLU kernel feature map (no softmax). O(N*D*P + N*P^2) complexity. Supports both float and Q-format.
 - **`fft1d.hpp`** — Radix-2 decimation-in-time FFT with compile-time bit-reversal tables and scaled butterfly stages. Twiddle factors injected externally for Q-format compatibility.
 - **`batchnorm.hpp`** — Batch normalization with training/inference modes.
@@ -79,7 +82,13 @@ typedef NeuralNet<XorNNProperties> XorNN;
 - **`xor/`** — XOR gate learned by a small neural network; includes a Python plotting script
 - **`maze/`** and **`dqn_maze/`** — Maze solving via Q-learning and deep Q-networks
 - **`pytorch/`** — Exports weights from a PyTorch model and imports them into a TinyMind C++ network for inference
+- **`kws_cortex_m/`** — Keyword-spotting-style pipeline built from `Conv2D` → `MaxPool2D` → `DepthwiseConv2D` → `PointwiseConv2D` → `GlobalAvgPool2D` → dense, with a CSV cycles/bytes report from the bench harness. Host runner; includes a `port_stub.hpp` sketch for porting to a Cortex-M target.
 
 ### Apps (`apps/activation/`)
 
 Standalone tool that generates the lookup table values used in `lookupTables.cpp`.
+
+### Benchmark harness (`cpp/include/bench/`)
+
+- **`platform.hpp`** — `bench::readCycleCounter()` (DWT CYCCNT on Cortex-M, `std::chrono` host fallback) and `bench::paintStack` / `bench::stackHighWater` for MCU stack watermarking. Enable the MCU path with `-DTINYMIND_BENCH_CORTEX_M`.
+- **`report.hpp`** — `bench::LayerStat` CSV row type, `bench::writeHeader` / `bench::writeRow` for any sink that supports `operator<<`, and a `bench::ScopedTimer` for per-layer measurements. See `examples/kws_cortex_m/` for an end-to-end use.
