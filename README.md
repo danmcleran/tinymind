@@ -679,6 +679,7 @@ cd examples/lstm_sinusoid && make clean && make
 cd examples/maze && make clean && make
 cd examples/dqn_maze && make clean && make
 cd examples/kws_cortex_m && make clean && make
+cd examples/predictive_maintenance && make clean && make
 ```
 
 ### Compiler Flags
@@ -735,6 +736,7 @@ tinymind/
     maze/                       # Tabular Q-learning maze solver
     dqn_maze/                   # Deep Q-Network maze solver
     kws_cortex_m/               # Depthwise-separable CNN pipeline with bench harness
+    predictive_maintenance/     # Binary classifier on AI4I 2020 dataset (Q16.16 MLP)
     pytorch/                    # PyTorch weight import (MLP + GRU export)
   unit_test/
     nn/                         # Neural network tests (171 test cases)
