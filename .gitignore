@@ -7,6 +7,7 @@ examples/kan_xor/output/
 examples/gru_xor/output/
 examples/lstm_sinusoid/output/
 examples/kws_cortex_m/output/
+examples/predictive_maintenance/output/
 examples/pytorch/xor/input/
 examples/pytorch/xor/output/
 unit_test/qformat/output/
