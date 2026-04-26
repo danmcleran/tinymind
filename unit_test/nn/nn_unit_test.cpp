@@ -4220,6 +4220,58 @@ BOOST_AUTO_TEST_CASE(test_case_conv1d_fixed_point)
     BOOST_TEST(output[2].getValue() == expected.getValue());
 }
 
+BOOST_AUTO_TEST_CASE(test_case_conv1d_gradient_sanity)
+{
+    // y = sum(w * x) + b. With outputDelta = 1 the kernel weight gradients
+    // accumulate the input values at each stride position, and the bias
+    // gradient counts the number of output positions.
+    tinymind::Conv1D<double, 5, 3, 1, 1> conv;
+    for (size_t i = 0; i < conv.TotalWeights; ++i) conv.setWeight(i, 0.0);
+
+    double input[5] = {1.0, 2.0, 3.0, 4.0, 5.0};
+    double output[3];
+    conv.forward(input, output);
+    double outputDeltas[3] = {1.0, 1.0, 1.0};
+    conv.computeGradients(outputDeltas, input);
+
+    // Output positions slide kernel over input. Kernel-weight gradient at k
+    // accumulates input[k + pos*stride] for pos in [0, OutputLength).
+    // For stride=1, kernelSize=3, inputLength=5: outputLength=3.
+    // grad[k=0] = input[0] + input[1] + input[2] = 1+2+3 = 6
+    // grad[k=1] = input[1] + input[2] + input[3] = 2+3+4 = 9
+    // grad[k=2] = input[2] + input[3] + input[4] = 3+4+5 = 12
+    BOOST_TEST(std::fabs(conv.getGradient(0) -  6.0) < 1e-9);
+    BOOST_TEST(std::fabs(conv.getGradient(1) -  9.0) < 1e-9);
+    BOOST_TEST(std::fabs(conv.getGradient(2) - 12.0) < 1e-9);
+    // Bias gradient = sum of deltas across output positions = 3.
+    BOOST_TEST(std::fabs(conv.getGradient(3) - 3.0) < 1e-9);
+
+    // updateWeights with lr=0.1 should move weight 0 by 0.1 * 6.0 = 0.6.
+    conv.updateWeights(0.1);
+    BOOST_TEST(std::fabs(conv.getFilterWeight(0, 0) - 0.6) < 1e-9);
+    BOOST_TEST(std::fabs(conv.getFilterWeight(0, 3) - 0.3) < 1e-9); // bias
+}
+
+BOOST_AUTO_TEST_CASE(test_case_conv1d_gradient_fixed_point)
+{
+    // Same gradient invariant in Q8.8.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::Conv1D<ValueType, 5, 3, 1, 1> conv;
+    for (size_t i = 0; i < conv.TotalWeights; ++i) conv.setWeight(i, ValueType(0));
+
+    ValueType input[5] = {ValueType(1, 0), ValueType(2, 0), ValueType(3, 0),
+                          ValueType(4, 0), ValueType(5, 0)};
+    ValueType output[3];
+    conv.forward(input, output);
+    ValueType outputDeltas[3] = {ValueType(1, 0), ValueType(1, 0), ValueType(1, 0)};
+    conv.computeGradients(outputDeltas, input);
+
+    BOOST_TEST(conv.getGradient(0).getValue() == ValueType( 6, 0).getValue());
+    BOOST_TEST(conv.getGradient(1).getValue() == ValueType( 9, 0).getValue());
+    BOOST_TEST(conv.getGradient(2).getValue() == ValueType(12, 0).getValue());
+    BOOST_TEST(conv.getGradient(3).getValue() == ValueType( 3, 0).getValue());
+}
+
 BOOST_AUTO_TEST_CASE(test_case_truncated_bptt)
 {
     // Test that TruncatedBPTT accumulates steps before training
