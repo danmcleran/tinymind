@@ -23,6 +23,7 @@
 #pragma once
 
 #include <cstddef>
+#include <type_traits>
 
 namespace tinymind {
     /**
@@ -182,7 +183,7 @@ namespace tinymind {
                         sum += input[inputStart + k];
                     }
 
-                    output[outputOffset + pos] = sum / static_cast<ValueType>(PoolSize);
+                    output[outputOffset + pos] = sum / divisor();
                 }
             }
         }
@@ -208,7 +209,7 @@ namespace tinymind {
                 for (size_t pos = 0; pos < OutputLength; ++pos)
                 {
                     const size_t inputStart = inputOffset + pos * Stride;
-                    const ValueType grad = outputDeltas[outputOffset + pos] / static_cast<ValueType>(PoolSize);
+                    const ValueType grad = outputDeltas[outputOffset + pos] / divisor();
 
                     for (size_t k = 0; k < PoolSize; ++k)
                     {
@@ -219,6 +220,23 @@ namespace tinymind {
         }
 
     private:
+        // Build the PoolSize divisor as ValueType. For floating-point a cast
+        // is enough; for QValue the (FixedPart, FractionalPart) constructor
+        // is required because QValue(int) treats its argument as raw bits.
+        template<typename T = ValueType>
+        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        divisor()
+        {
+            return static_cast<T>(PoolSize);
+        }
+
+        template<typename T = ValueType>
+        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        divisor()
+        {
+            return T(static_cast<typename T::FixedPartFieldType>(PoolSize), 0u);
+        }
+
         static_assert(InputLength >= PoolSize, "Input length must be >= pool size.");
         static_assert(Stride > 0, "Stride must be > 0.");
         static_assert(PoolSize > 0, "Pool size must be > 0.");

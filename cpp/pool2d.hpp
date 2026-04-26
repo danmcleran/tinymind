@@ -23,6 +23,7 @@
 #pragma once
 
 #include <cstddef>
+#include <type_traits>
 
 namespace tinymind {
     /**
@@ -168,7 +169,7 @@ namespace tinymind {
                                 sum += input[inIdx];
                             }
                         }
-                        output[outPixelOffset + c] = sum / static_cast<ValueType>(WindowArea);
+                        output[outPixelOffset + c] = sum / divisor();
                     }
                 }
             }
@@ -191,8 +192,7 @@ namespace tinymind {
 
                     for (size_t c = 0; c < Channels; ++c)
                     {
-                        const ValueType grad = outputDeltas[outPixelOffset + c]
-                                             / static_cast<ValueType>(WindowArea);
+                        const ValueType grad = outputDeltas[outPixelOffset + c] / divisor();
                         for (size_t kh = 0; kh < PoolH; ++kh)
                         {
                             for (size_t kw = 0; kw < PoolW; ++kw)
@@ -207,6 +207,23 @@ namespace tinymind {
         }
 
     private:
+        // Build the WindowArea divisor as ValueType. Cast for floating-point;
+        // (FixedPart, FractionalPart) constructor for QValue, since QValue(int)
+        // would treat its argument as raw bits instead of a value.
+        template<typename T = ValueType>
+        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        divisor()
+        {
+            return static_cast<T>(WindowArea);
+        }
+
+        template<typename T = ValueType>
+        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        divisor()
+        {
+            return T(static_cast<typename T::FixedPartFieldType>(WindowArea), 0u);
+        }
+
         static_assert(H >= PoolH, "Input height must be >= pool height.");
         static_assert(W >= PoolW, "Input width must be >= pool width.");
         static_assert(StrideH > 0 && StrideW > 0, "Strides must be > 0.");
@@ -253,7 +270,7 @@ namespace tinymind {
 
             for (size_t c = 0; c < Channels; ++c)
             {
-                output[c] = output[c] / static_cast<ValueType>(Area);
+                output[c] = output[c] / divisor();
             }
         }
 
@@ -261,7 +278,7 @@ namespace tinymind {
         {
             for (size_t c = 0; c < Channels; ++c)
             {
-                const ValueType grad = outputDeltas[c] / static_cast<ValueType>(Area);
+                const ValueType grad = outputDeltas[c] / divisor();
                 for (size_t h = 0; h < H; ++h)
                 {
                     for (size_t w = 0; w < W; ++w)
@@ -273,6 +290,21 @@ namespace tinymind {
         }
 
     private:
+        // See pool1d.hpp / pool2d.hpp::AvgPool2D::divisor for rationale.
+        template<typename T = ValueType>
+        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        divisor()
+        {
+            return static_cast<T>(Area);
+        }
+
+        template<typename T = ValueType>
+        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        divisor()
+        {
+            return T(static_cast<typename T::FixedPartFieldType>(Area), 0u);
+        }
+
         static_assert(H > 0 && W > 0, "Spatial dimensions must be > 0.");
         static_assert(Channels > 0, "Channels must be > 0.");
     };

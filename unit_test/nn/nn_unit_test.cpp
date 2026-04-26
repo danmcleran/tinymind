@@ -4431,6 +4431,22 @@ BOOST_AUTO_TEST_CASE(test_case_avgpool1d_pool3)
     BOOST_TEST(fabs(output[1] - 15.0) < 0.001);
 }
 
+BOOST_AUTO_TEST_CASE(test_case_avgpool1d_fixed_point)
+{
+    // Pin down the fixed-point divisor: average of [2.0, 4.0] in Q8.8 must be
+    // exactly 3.0, not raw=PoolSize.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::AvgPool1D<ValueType, 4, 2, 2, 1> pool;
+
+    ValueType input[4] = {ValueType(2, 0), ValueType(4, 0), ValueType(6, 0), ValueType(8, 0)};
+    ValueType output[2];
+    pool.forward(input, output);
+
+    // (2+4)/2 = 3.0; (6+8)/2 = 7.0.
+    BOOST_TEST(output[0].getValue() == ValueType(3, 0).getValue());
+    BOOST_TEST(output[1].getValue() == ValueType(7, 0).getValue());
+}
+
 // ============================================================
 // Dropout tests
 // ============================================================
@@ -6741,6 +6757,51 @@ BOOST_AUTO_TEST_CASE(test_case_globalavgpool2d_forward)
 
     BOOST_TEST(std::fabs(output[0] - 1.0) < 1e-9);
     BOOST_TEST(std::fabs(output[1] - 3.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_avgpool2d_fixed_point)
+{
+    // 4x4 input, 2x2 window, stride 2 -> 2x2 output. Divisor must be 4.0
+    // (a Q-format value), not raw=4.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::AvgPool2D<ValueType, 4, 4, 1, 2, 2, 2, 2> pool;
+
+    ValueType input[16];
+    // Row-major NHWC, channel 0. Use values that average to whole numbers.
+    const int values[16] = {
+        2,  2, 4,  4,
+        2,  2, 4,  4,
+        6,  6, 8,  8,
+        6,  6, 8,  8
+    };
+    for (size_t i = 0; i < 16; ++i) input[i] = ValueType(values[i], 0);
+
+    ValueType output[4];
+    pool.forward(input, output);
+
+    BOOST_TEST(output[0].getValue() == ValueType(2, 0).getValue());
+    BOOST_TEST(output[1].getValue() == ValueType(4, 0).getValue());
+    BOOST_TEST(output[2].getValue() == ValueType(6, 0).getValue());
+    BOOST_TEST(output[3].getValue() == ValueType(8, 0).getValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_globalavgpool2d_fixed_point)
+{
+    // 3x3x2 input, all ones / threes per channel; GAP must produce exactly 1.0 / 3.0.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::GlobalAvgPool2D<ValueType, 3, 3, 2> gap;
+
+    ValueType input[18];
+    for (size_t i = 0; i < 9; ++i)
+    {
+        input[i * 2 + 0] = ValueType(1, 0);
+        input[i * 2 + 1] = ValueType(3, 0);
+    }
+    ValueType output[2];
+    gap.forward(input, output);
+
+    BOOST_TEST(output[0].getValue() == ValueType(1, 0).getValue());
+    BOOST_TEST(output[1].getValue() == ValueType(3, 0).getValue());
 }
 
 // ============================================================
