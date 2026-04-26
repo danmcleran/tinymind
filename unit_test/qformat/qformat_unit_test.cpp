@@ -1193,4 +1193,36 @@ BOOST_AUTO_TEST_CASE(test_case_division_saturation)
 #endif // __SIZEOF_INT128__
 }
 
+BOOST_AUTO_TEST_CASE(test_case_division_by_zero_saturates)
+{
+    // MinMaxSaturatePolicy must clamp division by zero rather than trapping.
+    // Positive numerator -> max; negative numerator -> min; zero numerator -> min.
+    SignedQ8_8SatPolicyType pos(2, 0); // +2.0
+    SignedQ8_8SatPolicyType neg(-3, 0); // -3.0
+    SignedQ8_8SatPolicyType zero(0, 0);
+    SignedQ8_8SatPolicyType denom(0, 0);
+
+    SignedQ8_8SatPolicyType posDiv = pos / denom;
+    BOOST_TEST(posDiv.getValue() == SignedQ8_8SatPolicyType::QFormatMaxValue());
+
+    SignedQ8_8SatPolicyType negDiv = neg / denom;
+    BOOST_TEST(negDiv.getValue() == SignedQ8_8SatPolicyType::QFormatMinValue());
+
+    SignedQ8_8SatPolicyType zeroDiv = zero / denom;
+    BOOST_TEST(zeroDiv.getValue() == SignedQ8_8SatPolicyType::QFormatMinValue());
+
+    // Same behavior for an unsigned type (no negative numerators possible).
+    UnsignedQ8_8SatPolicyType uPos(5, 0);
+    UnsignedQ8_8SatPolicyType uZero(0, 0);
+    UnsignedQ8_8SatPolicyType uDenom(0, 0);
+
+    UnsignedQ8_8SatPolicyType uPosDiv = uPos / uDenom;
+    BOOST_TEST(uPosDiv.getValue() == UnsignedQ8_8SatPolicyType::QFormatMaxValue());
+
+    // Zero / zero on unsigned type: numerator is not > 0, so falls into the
+    // minValue branch, which for unsigned is 0.
+    UnsignedQ8_8SatPolicyType uZeroDiv = uZero / uDenom;
+    BOOST_TEST(uZeroDiv.getValue() == UnsignedQ8_8SatPolicyType::QFormatMinValue());
+}
+
 BOOST_AUTO_TEST_SUITE_END()

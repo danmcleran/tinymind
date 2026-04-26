@@ -3448,6 +3448,71 @@ BOOST_AUTO_TEST_CASE(test_case_step_decay_schedule_fixed_point)
     BOOST_TEST(r3.getValue() < rate.getValue());
 }
 
+BOOST_AUTO_TEST_CASE(test_case_step_decay_schedule_multi_cycle)
+{
+    // Realistic usage: rate = schedule.step(rate). Across multiple intervals
+    // the rate must strictly decrease each cycle and stay flat in between.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::StepDecaySchedule<ValueType, 3, 0, 230> schedule;
+
+    ValueType rate(0, 128); // 0.5
+    schedule.initialize(rate);
+
+    ValueType prev = rate;
+    for (int cycle = 0; cycle < 3; ++cycle)
+    {
+        // Two flat steps: rate unchanged.
+        rate = schedule.step(rate);
+        BOOST_TEST(rate.getValue() == prev.getValue());
+        rate = schedule.step(rate);
+        BOOST_TEST(rate.getValue() == prev.getValue());
+        // Third step decays.
+        rate = schedule.step(rate);
+        BOOST_TEST(rate.getValue() < prev.getValue());
+        prev = rate;
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_step_decay_schedule_initialize_resets_counter)
+{
+    // initialize() must reset the internal step counter; decay should fire
+    // exactly StepInterval steps after the reset, not sooner.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::StepDecaySchedule<ValueType, 3, 0, 230> schedule;
+
+    ValueType rate(0, 128); // 0.5
+
+    // Burn 2 steps worth of counter so the next step would have decayed.
+    schedule.initialize(rate);
+    (void)schedule.step(rate);
+    (void)schedule.step(rate);
+
+    // Reset; next two steps must NOT decay even though only one more would have triggered before.
+    schedule.initialize(rate);
+    BOOST_TEST(schedule.step(rate).getValue() == rate.getValue());
+    BOOST_TEST(schedule.step(rate).getValue() == rate.getValue());
+    // Third step after reset triggers decay.
+    BOOST_TEST(schedule.step(rate).getValue() < rate.getValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_step_decay_schedule_interval_one)
+{
+    // StepInterval = 1 means decay every single step (no flat plateau).
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::StepDecaySchedule<ValueType, 1, 0, 230> schedule;
+
+    ValueType rate(0, 128); // 0.5
+    schedule.initialize(rate);
+
+    ValueType prev = rate;
+    for (int i = 0; i < 5; ++i)
+    {
+        ValueType next = schedule.step(prev);
+        BOOST_TEST(next.getValue() < prev.getValue());
+        prev = next;
+    }
+}
+
 BOOST_AUTO_TEST_CASE(test_case_fixed_point_gradient_clipping_xor)
 {
     // Verify fixed-point XOR training with gradient clipping enabled via FixedPointTransferFunctions
@@ -4509,6 +4574,80 @@ BOOST_AUTO_TEST_CASE(test_case_dropout_mode_toggle)
     BOOST_TEST(dropout.isTraining() == false);
     dropout.setTraining(true);
     BOOST_TEST(dropout.isTraining() == true);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_dropout_fixed_point_inference_passthrough)
+{
+    // In inference mode the forward pass is a verbatim copy, even with
+    // fixed-point types. No scaling, no mask sampling.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::Dropout<ValueType, 4, 50> dropout;
+    dropout.setTraining(false);
+
+    ValueType input[4] = {ValueType(1, 0), ValueType(2, 0), ValueType(-1, 0), ValueType(0, 128)};
+    ValueType output[4];
+    dropout.forward(input, output);
+
+    for (size_t i = 0; i < 4; ++i)
+    {
+        BOOST_TEST(output[i].getValue() == input[i].getValue());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_dropout_high_rate_boundary)
+{
+    // 99% dropout is the largest legal rate (the layer static_asserts < 100).
+    // Scale = 100, so survivors multiply by 100. Verified on double here;
+    // see notes in dropout.hpp for the fixed-point scale-construction issue.
+    srand(RANDOM_SEED);
+    tinymind::Dropout<double, 16, 99> dropout;
+    dropout.setTraining(true);
+
+    double input[16];
+    for (size_t i = 0; i < 16; ++i)
+    {
+        input[i] = 1.0;
+    }
+    double output[16];
+    dropout.forward(input, output);
+
+    bool sawDropped = false;
+    for (size_t i = 0; i < 16; ++i)
+    {
+        if (dropout.getMask(i))
+        {
+            BOOST_TEST(std::fabs(output[i] - 100.0) < 1e-9);
+        }
+        else
+        {
+            BOOST_TEST(output[i] == 0.0);
+            sawDropped = true;
+        }
+    }
+    // With 99% drop on 16 elements the chance of zero drops is ~1.5e-32.
+    BOOST_TEST(sawDropped);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_dropout_seed_determinism)
+{
+    // Identical srand seeds must produce identical masks across separate
+    // dropout instances — needed for reproducible training runs.
+    tinymind::Dropout<double, 32, 50> a;
+    tinymind::Dropout<double, 32, 50> b;
+    double input[32];
+    for (size_t i = 0; i < 32; ++i) input[i] = 1.0;
+    double outA[32], outB[32];
+
+    srand(RANDOM_SEED);
+    a.forward(input, outA);
+    srand(RANDOM_SEED);
+    b.forward(input, outB);
+
+    for (size_t i = 0; i < 32; ++i)
+    {
+        BOOST_TEST(a.getMask(i) == b.getMask(i));
+        BOOST_TEST(outA[i] == outB[i]);
+    }
 }
 
 // ============================================================
@@ -6425,6 +6564,69 @@ BOOST_AUTO_TEST_CASE(test_case_separable_pipeline)
     pw.forward(dwOut, pwOut);
     // 0.5 * 9 + 2.0 * 18 = 4.5 + 36 = 40.5
     BOOST_TEST(std::fabs(pwOut[0] - 40.5) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_conv2d_asymmetric_kernel)
+{
+    // 3x1 kernel over a 4x3 input (vertical sum). Output shape (4-3+1) x (3-1+1) = 2x3.
+    tinymind::Conv2D<double, 4, 3, 1, 3, 1, 1, 1, 1> conv;
+    for (size_t kh = 0; kh < 3; ++kh)
+    {
+        conv.setFilterWeight(0, kh, 0, 0, 1.0);
+    }
+    conv.setFilterBias(0, 0.0);
+
+    double input[12] = {
+        1, 2, 3,
+        4, 5, 6,
+        7, 8, 9,
+        10, 11, 12
+    };
+    double output[6];
+    conv.forward(input, output);
+
+    // Row 0 of output: column sums of input rows 0..2 = (1+4+7, 2+5+8, 3+6+9) = (12, 15, 18)
+    // Row 1 of output: column sums of input rows 1..3 = (4+7+10, 5+8+11, 6+9+12) = (21, 24, 27)
+    BOOST_TEST(std::fabs(output[0] - 12.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[1] - 15.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[2] - 18.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[3] - 21.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[4] - 24.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[5] - 27.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_conv2d_stride_three)
+{
+    // 7x7 input, 2x2 kernel of ones, stride 3x3. Output: floor((7-2)/3)+1 = 2 each axis.
+    tinymind::Conv2D<double, 7, 7, 1, 2, 2, 3, 3, 1> conv;
+    static_assert(decltype(conv)::OutputHeight == 2, "Wrong output height for stride 3");
+    static_assert(decltype(conv)::OutputWidth == 2, "Wrong output width for stride 3");
+    for (size_t kh = 0; kh < 2; ++kh)
+    {
+        for (size_t kw = 0; kw < 2; ++kw)
+        {
+            conv.setFilterWeight(0, kh, kw, 0, 1.0);
+        }
+    }
+    conv.setFilterBias(0, 0.0);
+
+    double input[49];
+    for (size_t i = 0; i < 49; ++i)
+    {
+        input[i] = static_cast<double>(i + 1);
+    }
+    double output[4];
+    conv.forward(input, output);
+
+    // Window (row, col) sums a 2x2 patch starting at (3*row, 3*col) of a 1-indexed
+    // sequence laid out row-major. Patch at (0,0): rows {0,1}, cols {0,1} ->
+    // values {1,2,8,9} sum to 20. Patch at (0,1): cols {3,4} -> {4,5,11,12} = 32.
+    // Patch at (1,0): rows {3,4} cols {0,1} -> {22,23,29,30} = 104.
+    // Patch at (1,1): rows {3,4} cols {3,4} -> {25,26,32,33} = 116.
+    BOOST_TEST(std::fabs(output[0] -  20.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[1] -  32.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[2] - 104.0) < 1e-9);
+    BOOST_TEST(std::fabs(output[3] - 116.0) < 1e-9);
 }
 
 // ============================================================
