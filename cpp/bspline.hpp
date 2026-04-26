@@ -23,6 +23,7 @@
 #pragma once
 
 #include <cstddef>
+#include <type_traits>
 #include "constants.hpp"
 #include "interpolate.hpp"
 
@@ -218,7 +219,7 @@ namespace tinymind {
             static const size_t MAX_DERIV_COEFFS = 64;
             ValueType derivCoeffs[MAX_DERIV_COEFFS];
 
-            const ValueType degree = static_cast<ValueType>(SplineDegree);
+            const ValueType degree = degreeAsValue();
 
             for (size_t i = 0; i < numDerivCoeffs; ++i)
             {
@@ -237,6 +238,24 @@ namespace tinymind {
             // using the interior knots (knots[1] ... knots[NumberOfKnots-2])
             return DeBoorEvaluator<ValueType, SplineDegree - 1>::evaluateSpline(
                 derivCoeffs, &knots[1], numDerivCoeffs, x);
+        }
+
+    private:
+        // Convert SplineDegree (compile-time integer) to ValueType. Cast for
+        // floating-point; (FixedPart, FractionalPart) constructor for QValue,
+        // since QValue(int) treats its argument as raw bits.
+        template<typename T = ValueType>
+        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        degreeAsValue()
+        {
+            return static_cast<T>(SplineDegree);
+        }
+
+        template<typename T = ValueType>
+        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        degreeAsValue()
+        {
+            return T(static_cast<typename T::FixedPartFieldType>(SplineDegree), 0u);
         }
     };
 

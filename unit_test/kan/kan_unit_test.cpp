@@ -213,6 +213,36 @@ BOOST_AUTO_TEST_CASE(fixed_point_piecewise_linear)
     BOOST_CHECK(resultEnd.getValue() == 256);
 }
 
+BOOST_AUTO_TEST_CASE(fixed_point_quadratic_spline_derivative)
+{
+    // Pins down the SplineDegree -> ValueType conversion for Q-format. With
+    // the previous static_cast<ValueType>(SplineDegree) bug, the computed
+    // derivative at x=0 collapses to ~0 instead of tracking the linear
+    // coefficient slope; the tolerance below would be exceeded.
+    typedef tinymind::QValue<8, 8, true> Q88;
+
+    // Reference computation in double.
+    tinymind::UniformKnotVector<double, 3, 2> knotsD;
+    knotsD.initialize(-1.0, 1.0);
+    double coeffsD[5] = {0.0, 0.25, 0.5, 0.75, 1.0};
+    const double refDeriv = tinymind::DeBoorEvaluator<double, 2>::evaluateSplineDerivative(
+        coeffsD, knotsD.knots, 5, 0.0);
+
+    // Same inputs in Q8.8 fixed-point.
+    tinymind::UniformKnotVector<Q88, 3, 2> knotsQ;
+    knotsQ.initialize(Q88(-1, 0), Q88(1, 0));
+    Q88 coeffsQ[5] = {Q88(0, 0), Q88(0, 64), Q88(0, 128), Q88(0, 192), Q88(1, 0)};
+    const Q88 result = tinymind::DeBoorEvaluator<Q88, 2>::evaluateSplineDerivative(
+        coeffsQ, knotsQ.knots, 5, Q88(0, 0));
+
+    const double resultD = static_cast<double>(result.getValue()) / 256.0;
+    // Reference is non-trivial (linear coeffs over [-1,1] -> nonzero slope).
+    // Tolerance allows for Q8.8 quantization through several multiplies/divides;
+    // the buggy raw-bits value would miss by ~0.5.
+    BOOST_CHECK(std::fabs(refDeriv) > 0.1);
+    BOOST_CHECK(std::fabs(resultD - refDeriv) < 0.1);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 // =========================================================================
