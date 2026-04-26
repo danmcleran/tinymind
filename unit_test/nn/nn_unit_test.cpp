@@ -4594,33 +4594,65 @@ BOOST_AUTO_TEST_CASE(test_case_dropout_fixed_point_inference_passthrough)
     }
 }
 
+BOOST_AUTO_TEST_CASE(test_case_dropout_fixed_point_training_scaling)
+{
+    // Q8.8 with 50% dropout: survivors must scale by exactly 2.0 = raw 512.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    srand(RANDOM_SEED);
+    tinymind::Dropout<ValueType, 8, 50> dropout;
+    dropout.setTraining(true);
+
+    ValueType input[8];
+    for (size_t i = 0; i < 8; ++i)
+    {
+        input[i] = ValueType(1, 0); // 1.0
+    }
+    ValueType output[8];
+    dropout.forward(input, output);
+
+    for (size_t i = 0; i < 8; ++i)
+    {
+        if (dropout.getMask(i))
+        {
+            BOOST_TEST(output[i].getValue() == ValueType(2, 0).getValue());
+        }
+        else
+        {
+            BOOST_TEST(output[i].getValue() == 0);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(test_case_dropout_high_rate_boundary)
 {
     // 99% dropout is the largest legal rate (the layer static_asserts < 100).
-    // Scale = 100, so survivors multiply by 100. Verified on double here;
-    // see notes in dropout.hpp for the fixed-point scale-construction issue.
+    // Scale = 100. Use Q16.16 since 100 doesn't fit in Q8.8's signed fixed range.
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
     srand(RANDOM_SEED);
-    tinymind::Dropout<double, 16, 99> dropout;
+    tinymind::Dropout<ValueType, 16, 99> dropout;
     dropout.setTraining(true);
 
-    double input[16];
+    ValueType input[16];
     for (size_t i = 0; i < 16; ++i)
     {
-        input[i] = 1.0;
+        input[i] = ValueType(1, 0);
     }
-    double output[16];
+    ValueType output[16];
     dropout.forward(input, output);
 
+    const ValueType expectedKept(100, 0);
     bool sawDropped = false;
     for (size_t i = 0; i < 16; ++i)
     {
         if (dropout.getMask(i))
         {
-            BOOST_TEST(std::fabs(output[i] - 100.0) < 1e-9);
+            // 1 LSB tolerance for Q16.16 division rounding in scale construction.
+            const auto delta = output[i].getValue() - expectedKept.getValue();
+            BOOST_TEST(std::abs(delta) <= 1);
         }
         else
         {
-            BOOST_TEST(output[i] == 0.0);
+            BOOST_TEST(output[i].getValue() == 0);
             sawDropped = true;
         }
     }

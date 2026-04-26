@@ -24,6 +24,7 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <type_traits>
 
 namespace tinymind {
     /**
@@ -157,11 +158,30 @@ namespace tinymind {
             }
         }
 
+        // Construct a ValueType representing the integer v. For floating-point
+        // types this is just a cast; for QValue the (fixed, fractional)
+        // constructor is required because QValue(int) treats its argument as
+        // the raw fixed-point bit pattern, not the value.
+        template<typename T = ValueType>
+        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        fromInteger(const int v)
+        {
+            return static_cast<T>(v);
+        }
+
+        template<typename T = ValueType>
+        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        fromInteger(const int v)
+        {
+            return T(static_cast<typename T::FixedPartFieldType>(v), 0u);
+        }
+
         static ValueType scale()
         {
             // 1 / (1 - p) where p = DropoutPercent / 100
             // = 100 / (100 - DropoutPercent)
-            static const ValueType s = static_cast<ValueType>(100.0 / (100.0 - static_cast<double>(DropoutPercent)));
+            static const ValueType s = fromInteger(100)
+                                     / fromInteger(100 - static_cast<int>(DropoutPercent));
             return s;
         }
 
