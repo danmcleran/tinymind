@@ -6568,6 +6568,32 @@ BOOST_AUTO_TEST_CASE(test_case_conv2d_fixed_point)
     BOOST_TEST(output[0].getValue() == expected.getValue());
 }
 
+BOOST_AUTO_TEST_CASE(test_case_conv2d_gradient_fixed_point)
+{
+    // Q8.8 gradient sanity: dy/dw = x for each kernel position; dy/db = 1.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::Conv2D<ValueType, 3, 3, 1, 3, 3, 1, 1, 1> conv;
+    for (size_t i = 0; i < conv.TotalWeights; ++i) conv.setWeight(i, ValueType(0));
+
+    ValueType input[9];
+    for (size_t i = 0; i < 9; ++i)
+    {
+        input[i] = ValueType(static_cast<int>(i + 1), 0);
+    }
+    ValueType delta[1] = {ValueType(1, 0)};
+    conv.computeGradients(delta, input);
+
+    for (size_t kh = 0; kh < 3; ++kh)
+    {
+        for (size_t kw = 0; kw < 3; ++kw)
+        {
+            const size_t idx = kh * 3 + kw;
+            BOOST_TEST(conv.getGradient(idx).getValue() == input[idx].getValue());
+        }
+    }
+    BOOST_TEST(conv.getGradient(conv.WeightsPerFilter - 1).getValue() == ValueType(1, 0).getValue());
+}
+
 // ============================================================
 // DepthwiseConv2D + PointwiseConv2D tests
 // ============================================================
