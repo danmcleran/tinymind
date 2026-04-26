@@ -6574,6 +6574,101 @@ BOOST_AUTO_TEST_CASE(test_case_pointwiseconv2d_channel_mix)
     BOOST_TEST(std::fabs(output[1] - (4 + 5 + 6 + 0.5)) < 1e-9); // 15.5
 }
 
+BOOST_AUTO_TEST_CASE(test_case_depthwiseconv2d_gradient_sanity)
+{
+    // For y = sum(w * x) + b within a channel, dy/dw = x and dy/db = 1.
+    // With output delta = 1.0 we expect mGradients to equal the input
+    // patch values in each channel and 1.0 for each bias.
+    tinymind::DepthwiseConv2D<double, 2, 2, 2, 2, 2, 1, 1> dw;
+    for (size_t c = 0; c < 2; ++c)
+    {
+        for (size_t kh = 0; kh < 2; ++kh)
+            for (size_t kw = 0; kw < 2; ++kw)
+                dw.setChannelWeight(c, kh, kw, 0.0);
+        dw.setChannelBias(c, 0.0);
+    }
+    double input[8] = {
+        1, 10,  2, 20,
+        3, 30,  4, 40
+    };
+    double output[2];
+    dw.forward(input, output);
+    double outputDeltas[2] = {1.0, 1.0};
+    dw.computeGradients(outputDeltas, input);
+
+    // Channel 0 weight gradients should equal channel-0 inputs (1,2,3,4).
+    BOOST_TEST(std::fabs(dw.getChannelWeight(0, 0, 0)) < 1e-9);  // unchanged before update
+    BOOST_TEST(std::fabs(dw.getGradient(0) - 1.0) < 1e-9); // ch0 (kh=0,kw=0)
+    BOOST_TEST(std::fabs(dw.getGradient(1) - 2.0) < 1e-9);
+    BOOST_TEST(std::fabs(dw.getGradient(2) - 3.0) < 1e-9);
+    BOOST_TEST(std::fabs(dw.getGradient(3) - 4.0) < 1e-9);
+    BOOST_TEST(std::fabs(dw.getGradient(4) - 1.0) < 1e-9); // bias ch0
+    // Channel 1 weight gradients should equal channel-1 inputs (10,20,30,40).
+    BOOST_TEST(std::fabs(dw.getGradient(5)  - 10.0) < 1e-9);
+    BOOST_TEST(std::fabs(dw.getGradient(6)  - 20.0) < 1e-9);
+    BOOST_TEST(std::fabs(dw.getGradient(7)  - 30.0) < 1e-9);
+    BOOST_TEST(std::fabs(dw.getGradient(8)  - 40.0) < 1e-9);
+    BOOST_TEST(std::fabs(dw.getGradient(9)  - 1.0) < 1e-9);  // bias ch1
+
+    // updateWeights moves weights by lr * grad. With lr = 0.1 and starting
+    // weights at zero, the new ch0 (kh=0,kw=0) weight should be 0.1 * 1.0 = 0.1.
+    dw.updateWeights(0.1);
+    BOOST_TEST(std::fabs(dw.getChannelWeight(0, 0, 0) - 0.1) < 1e-9);
+    BOOST_TEST(std::fabs(dw.getChannelBias(1) - 0.1) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_pointwiseconv2d_gradient_sanity)
+{
+    // 1x1 spatial, 3 in-channels, 2 filters. Linear: dy_f/dw_{f,ci} = x_ci.
+    tinymind::PointwiseConv2D<double, 1, 1, 3, 2> pw;
+    for (size_t f = 0; f < 2; ++f)
+    {
+        for (size_t ci = 0; ci < 3; ++ci) pw.setFilterWeight(f, ci, 0.0);
+        pw.setFilterBias(f, 0.0);
+    }
+    double input[3] = {4.0, 5.0, 6.0};
+    double output[2];
+    pw.forward(input, output);
+
+    // Output deltas: filter 0 -> 1.0, filter 1 -> 2.0.
+    double outputDeltas[2] = {1.0, 2.0};
+    pw.computeGradients(outputDeltas, input);
+
+    // Filter 0: gradients = delta * input = (4,5,6); bias grad = 1.
+    BOOST_TEST(std::fabs(pw.getGradient(0) - 4.0) < 1e-9);
+    BOOST_TEST(std::fabs(pw.getGradient(1) - 5.0) < 1e-9);
+    BOOST_TEST(std::fabs(pw.getGradient(2) - 6.0) < 1e-9);
+    BOOST_TEST(std::fabs(pw.getGradient(3) - 1.0) < 1e-9);
+    // Filter 1: gradients = 2 * input = (8,10,12); bias grad = 2.
+    BOOST_TEST(std::fabs(pw.getGradient(4) -  8.0) < 1e-9);
+    BOOST_TEST(std::fabs(pw.getGradient(5) - 10.0) < 1e-9);
+    BOOST_TEST(std::fabs(pw.getGradient(6) - 12.0) < 1e-9);
+    BOOST_TEST(std::fabs(pw.getGradient(7) -  2.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_depthwiseconv2d_gradient_fixed_point)
+{
+    // Same gradient invariant in Q8.8: dy/dw equals the input patch.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::DepthwiseConv2D<ValueType, 2, 2, 1, 2, 2, 1, 1> dw;
+    for (size_t kh = 0; kh < 2; ++kh)
+        for (size_t kw = 0; kw < 2; ++kw)
+            dw.setChannelWeight(0, kh, kw, ValueType(0));
+    dw.setChannelBias(0, ValueType(0));
+
+    ValueType input[4] = {ValueType(1, 0), ValueType(2, 0), ValueType(3, 0), ValueType(4, 0)};
+    ValueType output[1];
+    dw.forward(input, output);
+    ValueType outputDeltas[1] = {ValueType(1, 0)};
+    dw.computeGradients(outputDeltas, input);
+
+    BOOST_TEST(dw.getGradient(0).getValue() == ValueType(1, 0).getValue());
+    BOOST_TEST(dw.getGradient(1).getValue() == ValueType(2, 0).getValue());
+    BOOST_TEST(dw.getGradient(2).getValue() == ValueType(3, 0).getValue());
+    BOOST_TEST(dw.getGradient(3).getValue() == ValueType(4, 0).getValue());
+    BOOST_TEST(dw.getGradient(4).getValue() == ValueType(1, 0).getValue()); // bias
+}
+
 BOOST_AUTO_TEST_CASE(test_case_separable_pipeline)
 {
     // Verify a depthwise-then-pointwise pipeline produces the same
