@@ -5,6 +5,7 @@ check :
 	cd unit_test/nn && make clean && make && make run && cd -
 	cd unit_test/qformat && make clean && make && make run && cd -
 	cd unit_test/qlearn && make clean && make && make run && cd -
+	cd unit_test/lookuptable && make clean && make && make run && cd -
 	cd examples/xor && make clean && make && make release && cd -
 	cd examples/maze && make clean && make && make release && cd -
 	cd examples/dqn_maze && make clean && make && make release && cd -
