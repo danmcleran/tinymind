@@ -33,6 +33,7 @@
 #include <limits>
 
 #include "qformat.hpp"
+#include "interpolate.hpp"
 #include "lookupTable.hpp"
 #include "sigmoid.hpp"
 #include "tanh.hpp"
@@ -135,6 +136,39 @@ void verifyAccuracy(const Table& table, double (*ref)(double),
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(test_suite_lookuptable)
+
+// ----- linearInterpolation (interpolate.hpp) ---------------------------------
+// Two branches: x1 == x0 short-circuit, and the linear path.
+
+BOOST_AUTO_TEST_CASE(linear_interpolation_endpoints_double)
+{
+    using tinymind::linearInterpolation;
+    BOOST_CHECK_CLOSE(linearInterpolation<double>(0.0, 0.0, 1.0, 10.0, 20.0), 10.0, 1e-9);
+    BOOST_CHECK_CLOSE(linearInterpolation<double>(1.0, 0.0, 1.0, 10.0, 20.0), 20.0, 1e-9);
+    BOOST_CHECK_CLOSE(linearInterpolation<double>(0.5, 0.0, 1.0, 10.0, 20.0), 15.0, 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(linear_interpolation_degenerate_returns_y0)
+{
+    // x1 == x0 hits the divide-by-zero guard at interpolate.hpp:29 and must
+    // return y0 unchanged, not divide by zero.
+    using tinymind::linearInterpolation;
+    BOOST_CHECK_CLOSE(linearInterpolation<double>(5.0, 1.0, 1.0, 7.0, 99.0), 7.0, 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(linear_interpolation_fixed_point)
+{
+    // Same boundary checks in Q8.8.
+    using tinymind::linearInterpolation;
+    using Q = QValue<8, 8, true>;
+    const Q result = linearInterpolation<Q>(Q(0, 128),  // x = 0.5
+                                            Q(0, 0),    // x0 = 0
+                                            Q(1, 0),    // x1 = 1
+                                            Q(0, 0),    // y0 = 0
+                                            Q(1, 0));   // y1 = 1
+    // Expect 0.5 = raw 128.
+    BOOST_CHECK_EQUAL(result.getValue(), Q(0, 128).getValue());
+}
 
 // ----- Branch coverage on LookupTable<Q>::getValue ---------------------------
 //

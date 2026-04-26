@@ -6804,6 +6804,112 @@ BOOST_AUTO_TEST_CASE(test_case_globalavgpool2d_fixed_point)
     BOOST_TEST(output[1].getValue() == ValueType(3, 0).getValue());
 }
 
+BOOST_AUTO_TEST_CASE(test_case_avgpool2d_backward)
+{
+    // 4x4 single-channel, 2x2 window stride 2. Each output cell distributes
+    // its delta uniformly across the 4 input cells in its window: grad = d/4.
+    tinymind::AvgPool2D<double, 4, 4, 1, 2, 2, 2, 2> pool;
+    double outputDeltas[4] = {4.0, 8.0, 12.0, 16.0};
+    double inputDeltas[16];
+    pool.backward(outputDeltas, inputDeltas);
+
+    // Top-left window (output 0): grad = 1.0 across 4 cells.
+    BOOST_TEST(std::fabs(inputDeltas[0] - 1.0) < 1e-9);
+    BOOST_TEST(std::fabs(inputDeltas[1] - 1.0) < 1e-9);
+    BOOST_TEST(std::fabs(inputDeltas[4] - 1.0) < 1e-9);
+    BOOST_TEST(std::fabs(inputDeltas[5] - 1.0) < 1e-9);
+    // Top-right window (output 1): grad = 2.0
+    BOOST_TEST(std::fabs(inputDeltas[2] - 2.0) < 1e-9);
+    BOOST_TEST(std::fabs(inputDeltas[3] - 2.0) < 1e-9);
+    BOOST_TEST(std::fabs(inputDeltas[6] - 2.0) < 1e-9);
+    BOOST_TEST(std::fabs(inputDeltas[7] - 2.0) < 1e-9);
+    // Bot-right window (output 3): grad = 4.0
+    BOOST_TEST(std::fabs(inputDeltas[10] - 4.0) < 1e-9);
+    BOOST_TEST(std::fabs(inputDeltas[15] - 4.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_avgpool2d_backward_fixed_point)
+{
+    // Same input pattern as above in Q8.8: confirms divisor() is correct on
+    // the backward path, not just forward.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::AvgPool2D<ValueType, 4, 4, 1, 2, 2, 2, 2> pool;
+    ValueType outputDeltas[4] = {ValueType(4, 0), ValueType(8, 0), ValueType(12, 0), ValueType(16, 0)};
+    ValueType inputDeltas[16];
+    pool.backward(outputDeltas, inputDeltas);
+
+    BOOST_TEST(inputDeltas[0].getValue()  == ValueType(1, 0).getValue());
+    BOOST_TEST(inputDeltas[5].getValue()  == ValueType(1, 0).getValue());
+    BOOST_TEST(inputDeltas[3].getValue()  == ValueType(2, 0).getValue());
+    BOOST_TEST(inputDeltas[10].getValue() == ValueType(4, 0).getValue());
+    BOOST_TEST(inputDeltas[15].getValue() == ValueType(4, 0).getValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_globalavgpool2d_backward)
+{
+    // GAP backward distributes each output delta uniformly across its
+    // spatial extent (H*W positions per channel).
+    tinymind::GlobalAvgPool2D<double, 3, 3, 2> gap;
+    double outputDeltas[2] = {9.0, 18.0};  // chosen so per-cell grad is 1.0 and 2.0
+    double inputDeltas[18];
+    gap.backward(outputDeltas, inputDeltas);
+
+    for (size_t i = 0; i < 9; ++i)
+    {
+        BOOST_TEST(std::fabs(inputDeltas[i * 2 + 0] - 1.0) < 1e-9);
+        BOOST_TEST(std::fabs(inputDeltas[i * 2 + 1] - 2.0) < 1e-9);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_globalavgpool2d_backward_fixed_point)
+{
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::GlobalAvgPool2D<ValueType, 3, 3, 2> gap;
+    ValueType outputDeltas[2] = {ValueType(9, 0), ValueType(18, 0)};
+    ValueType inputDeltas[18];
+    gap.backward(outputDeltas, inputDeltas);
+
+    for (size_t i = 0; i < 9; ++i)
+    {
+        BOOST_TEST(inputDeltas[i * 2 + 0].getValue() == ValueType(1, 0).getValue());
+        BOOST_TEST(inputDeltas[i * 2 + 1].getValue() == ValueType(2, 0).getValue());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_maxpool2d_backward_fixed_point)
+{
+    // Argmax-routed gradients: only the position holding each max receives
+    // the upstream delta. Other positions stay zero.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::MaxPool2D<ValueType, 4, 4, 1, 2, 2, 2, 2> pool;
+    ValueType input[16];
+    const int values[16] = {
+        1, 3, 2, 4,
+        5, 7, 6, 8,
+        9, 11, 10, 12,
+        13, 15, 14, 16
+    };
+    for (size_t i = 0; i < 16; ++i) input[i] = ValueType(values[i], 0);
+
+    ValueType output[4];
+    pool.forward(input, output);  // populates argmax indices
+
+    ValueType outputDeltas[4] = {ValueType(1, 0), ValueType(1, 0), ValueType(1, 0), ValueType(1, 0)};
+    ValueType inputDeltas[16];
+    pool.backward(outputDeltas, inputDeltas);
+
+    typename ValueType::FullWidthValueType sum = 0;
+    size_t hits = 0;
+    for (size_t i = 0; i < 16; ++i)
+    {
+        sum += inputDeltas[i].getValue();
+        if (inputDeltas[i].getValue() != 0) ++hits;
+    }
+    // Exactly four argmax positions, each receiving raw=256 (= 1.0).
+    BOOST_TEST(hits == 4u);
+    BOOST_TEST(sum == 4 * ValueType(1, 0).getValue());
+}
+
 // ============================================================
 // Benchmark harness tests
 // ============================================================
