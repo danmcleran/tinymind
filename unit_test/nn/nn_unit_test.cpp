@@ -4352,6 +4352,30 @@ BOOST_AUTO_TEST_CASE(test_case_maxpool1d_backward)
     BOOST_TEST(fabs(inputDeltas[5] - 0.3) < 0.001); // max of window 2
 }
 
+BOOST_AUTO_TEST_CASE(test_case_maxpool1d_backward_fixed_point)
+{
+    // Same argmax routing in Q8.8: only the position holding each max
+    // should receive the upstream delta; others stay zero.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::MaxPool1D<ValueType, 6, 2, 2, 1> pool;
+
+    ValueType input[6] = {ValueType(1, 0), ValueType(3, 0), ValueType(2, 0),
+                          ValueType(5, 0), ValueType(4, 0), ValueType(6, 0)};
+    ValueType output[3];
+    pool.forward(input, output);
+
+    ValueType outputDeltas[3] = {ValueType(1, 0), ValueType(2, 0), ValueType(3, 0)};
+    ValueType inputDeltas[6];
+    pool.backward(outputDeltas, inputDeltas);
+
+    BOOST_TEST(inputDeltas[0].getValue() == 0);
+    BOOST_TEST(inputDeltas[1].getValue() == ValueType(1, 0).getValue());
+    BOOST_TEST(inputDeltas[2].getValue() == 0);
+    BOOST_TEST(inputDeltas[3].getValue() == ValueType(2, 0).getValue());
+    BOOST_TEST(inputDeltas[4].getValue() == 0);
+    BOOST_TEST(inputDeltas[5].getValue() == ValueType(3, 0).getValue());
+}
+
 BOOST_AUTO_TEST_CASE(test_case_maxpool1d_multichannel)
 {
     // 2 channels, 4 elements each, pool size 2, stride 2
@@ -5289,6 +5313,31 @@ BOOST_AUTO_TEST_CASE(test_case_binary_dense_backward_ste)
     BOOST_TEST(fabs(layer.getLatentWeight(0, 1) - (-0.2)) < 0.01);
 }
 
+BOOST_AUTO_TEST_CASE(test_case_binary_dense_updateweights_sign_flip)
+{
+    // updateWeights() must call binarizeWeights() so that a latent weight
+    // crossing zero immediately flips the packed weight sign on the next
+    // forward pass.
+    tinymind::BinaryDense<double, 1, 1> layer;
+    layer.setLatentWeight(0, 0, 0.05);  // small positive
+    layer.setBias(0, 0.0);
+    layer.binarizeWeights();
+    BOOST_TEST(layer.getBinaryWeight(0, 0) == 1.0);
+
+    // Run backward to populate gradient. With input=+1 and outputDelta=+1,
+    // mLatentGradients[0] = +1.0 (within STE clip range).
+    double input[1] = {1.0};
+    double output[1];
+    layer.forward(input, output);
+    double outputDeltas[1] = {1.0};
+    layer.backward(outputDeltas, input, nullptr);
+
+    // lr = -0.1 pushes latent to 0.05 - 0.1 = -0.05; re-binarize to -1.
+    layer.updateWeights(-0.1);
+    BOOST_TEST(fabs(layer.getLatentWeight(0, 0) - (-0.05)) < 1e-9);
+    BOOST_TEST(layer.getBinaryWeight(0, 0) == -1.0);
+}
+
 BOOST_AUTO_TEST_CASE(test_case_binary_dense_ste_clipping)
 {
     tinymind::BinaryDense<double, 2, 1> layer;
@@ -5515,6 +5564,29 @@ BOOST_AUTO_TEST_CASE(test_case_ternary_dense_backward_ste)
     // Gradient for w1: delta * input[1] = 1.0 * 3.0 = 3.0
     // w1: -0.6 + (-0.1)(3.0) = -0.9
     BOOST_TEST(fabs(layer.getLatentWeight(0, 1) - (-0.9)) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_ternary_dense_updateweights_sign_flip)
+{
+    // Verify updateWeights re-ternarizes after a latent weight crosses zero.
+    // With a single weight the threshold collapses to 0.5*|w|, so any nonzero
+    // latent maps to its sign. Initial latent +0.5 -> +1; gradient pushes it
+    // negative, packed value should flip to -1 immediately.
+    tinymind::TernaryDense<double, 1, 1, 50> layer;
+    layer.setLatentWeight(0, 0, 0.5);
+    layer.setBias(0, 0.0);
+    layer.ternarizeWeights();
+    BOOST_TEST(layer.getTernaryWeightValue(0, 0) == 1.0);
+
+    double input[1] = {2.0};
+    double output[1];
+    layer.forward(input, output);
+    double outputDeltas[1] = {1.0};
+    layer.backward(outputDeltas, input, nullptr);
+    // Gradient = delta * input = 2.0; lr = -0.4 -> latent becomes 0.5 - 0.8 = -0.3.
+    layer.updateWeights(-0.4);
+    BOOST_TEST(fabs(layer.getLatentWeight(0, 0) - (-0.3)) < 1e-6);
+    BOOST_TEST(layer.getTernaryWeightValue(0, 0) == -1.0);
 }
 
 BOOST_AUTO_TEST_CASE(test_case_ternary_dense_input_gradient_propagation)
@@ -6745,6 +6817,56 @@ BOOST_AUTO_TEST_CASE(test_case_depthwiseconv2d_gradient_fixed_point)
     BOOST_TEST(dw.getGradient(2).getValue() == ValueType(3, 0).getValue());
     BOOST_TEST(dw.getGradient(3).getValue() == ValueType(4, 0).getValue());
     BOOST_TEST(dw.getGradient(4).getValue() == ValueType(1, 0).getValue()); // bias
+}
+
+BOOST_AUTO_TEST_CASE(test_case_depthwiseconv2d_updateweights_fixed_point)
+{
+    // After computeGradients, updateWeights must compute weights[i] += lr*grad[i]
+    // through Q-format multiply-add. Use Q16.16 for headroom.
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::DepthwiseConv2D<ValueType, 2, 2, 1, 2, 2, 1, 1> dw;
+    for (size_t kh = 0; kh < 2; ++kh)
+        for (size_t kw = 0; kw < 2; ++kw)
+            dw.setChannelWeight(0, kh, kw, ValueType(0));
+    dw.setChannelBias(0, ValueType(0));
+
+    ValueType input[4] = {ValueType(2, 0), ValueType(4, 0), ValueType(6, 0), ValueType(8, 0)};
+    ValueType output[1];
+    dw.forward(input, output);
+    ValueType outputDeltas[1] = {ValueType(1, 0)};
+    dw.computeGradients(outputDeltas, input);
+
+    // lr = 0.5, gradients = (2, 4, 6, 8); expected new weights = (1, 2, 3, 4); bias = 0.5.
+    const ValueType lr(0, 1u << 15);  // 0.5 in Q16.16
+    dw.updateWeights(lr);
+
+    BOOST_TEST(dw.getChannelWeight(0, 0, 0).getValue() == ValueType(1, 0).getValue());
+    BOOST_TEST(dw.getChannelWeight(0, 0, 1).getValue() == ValueType(2, 0).getValue());
+    BOOST_TEST(dw.getChannelWeight(0, 1, 0).getValue() == ValueType(3, 0).getValue());
+    BOOST_TEST(dw.getChannelWeight(0, 1, 1).getValue() == ValueType(4, 0).getValue());
+    BOOST_TEST(dw.getChannelBias(0).getValue() == ValueType(0, 1u << 15).getValue()); // 0.5
+}
+
+BOOST_AUTO_TEST_CASE(test_case_pointwiseconv2d_updateweights_fixed_point)
+{
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::PointwiseConv2D<ValueType, 1, 1, 3, 1> pw;
+    for (size_t ci = 0; ci < 3; ++ci) pw.setFilterWeight(0, ci, ValueType(0));
+    pw.setFilterBias(0, ValueType(0));
+
+    ValueType input[3] = {ValueType(2, 0), ValueType(4, 0), ValueType(6, 0)};
+    ValueType output[1];
+    pw.forward(input, output);
+    ValueType outputDeltas[1] = {ValueType(1, 0)};
+    pw.computeGradients(outputDeltas, input);
+
+    const ValueType lr(0, 1u << 15);  // 0.5
+    pw.updateWeights(lr);
+    // Filter 0 weight gradients = input = (2, 4, 6); * 0.5 = (1, 2, 3).
+    BOOST_TEST(pw.getFilterWeight(0, 0).getValue() == ValueType(1, 0).getValue());
+    BOOST_TEST(pw.getFilterWeight(0, 1).getValue() == ValueType(2, 0).getValue());
+    BOOST_TEST(pw.getFilterWeight(0, 2).getValue() == ValueType(3, 0).getValue());
+    BOOST_TEST(pw.getFilterBias(0).getValue() == ValueType(0, 1u << 15).getValue());
 }
 
 BOOST_AUTO_TEST_CASE(test_case_separable_pipeline)
