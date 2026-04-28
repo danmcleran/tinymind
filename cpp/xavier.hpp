@@ -23,160 +23,144 @@
 #pragma once
 
 #include <cmath>
+#include <cstddef>
+#include <cstdlib>
 
 namespace tinymind {
 
-enum layer_e
-{
-    INVALID = 0,
-    INPUT_LAYER,
-    HIDDEN_LAYER,
-    OUTPUT_LAYER
-};
+// Forward declaration: definition lives in neuralnet.hpp.
+template<size_t...> struct HiddenLayers;
+
+namespace detail {
 
 /**
- * The XavierWeightInitializer class implements the Xavier weight initialization algorithm.
- * It generates weights for neural network connections based on the number of inputs and outputs
- * of each neuron, ensuring that the weights are initialized in a way that helps maintain
- * the variance of activations across layers.
- * 
- * This is very tied to the neural network initializtion order, so be careful if changing that.
- * It was done this way to minimize the touch to existing code.
+ * XavierStages computes per-stage metrics for a network with NumberOfInputs
+ * inputs, the given HiddenLayers<...> descriptor, and NumberOfOutputs outputs.
+ *
+ * A "stage" is the set of weights between two adjacent layers. For L hidden
+ * layers there are L+1 stages (input->H[0], H[0]->H[1], ..., H[L-1]->O).
+ *
+ * Each source layer carries a bias neuron, so the weight count for stage k is
+ * (LayerSize(k) + 1) * LayerSize(k+1). The Xavier fan-sum at stage k is
+ * LayerSize(k) + LayerSize(k+1).
  */
-template<
-            size_t NumberOfInputs,
-            size_t NumberOfHiddenLayers,
-            size_t NumberOfNeuronsInHiddenLayers,
-            size_t NumberOfOutputs>
-struct XavierWeightInitializer
+template<size_t NumberOfInputs, typename HiddenLayersDesc, size_t NumberOfOutputs>
+struct XavierStages;
+
+template<size_t NumberOfInputs, size_t NumberOfOutputs, size_t... Sizes>
+struct XavierStages<NumberOfInputs, HiddenLayers<Sizes...>, NumberOfOutputs>
 {
-private:
-    static const unsigned NumberOfNeurons = (NumberOfInputs + (NumberOfHiddenLayers * NumberOfNeuronsInHiddenLayers) + NumberOfOutputs);
-    static const unsigned FirstHiddenNeuron = NumberOfInputs;
-    static const unsigned FirstOuputNeuron = (NumberOfInputs + (NumberOfHiddenLayers * NumberOfNeuronsInHiddenLayers));
+    static constexpr size_t Count = sizeof...(Sizes) + 1;
 
-    unsigned neuron;
-    layer_e previousLayer;
-    layer_e currentLayer;
-    layer_e nextLayer;
-    unsigned numInputs;
-    unsigned numOutputs;
-
-    void advanceNeuron()
+    static constexpr size_t layerSize(const size_t k)
     {
-        ++neuron;
-        if (neuron >= NumberOfNeurons)
-        {
-            // reset for next call
-            neuron = 0;
-            previousLayer = layer_e::INVALID;
-            currentLayer = layer_e::INPUT_LAYER;
-            nextLayer = layer_e::HIDDEN_LAYER;
-            numInputs = NumberOfInputs;
-            numOutputs = NumberOfNeuronsInHiddenLayers;
-        }
-        else
-        {
-            if (neuron >= FirstOuputNeuron)
-            {
-                currentLayer = layer_e::OUTPUT_LAYER;
-                previousLayer = layer_e::HIDDEN_LAYER;
-                nextLayer = layer_e::INVALID;
-            }
-            else
-            {
-                if ((neuron >= FirstHiddenNeuron) && (neuron < FirstOuputNeuron))
-                {
-                    currentLayer = layer_e::HIDDEN_LAYER;
-                    
-                    if (neuron < (NumberOfInputs + NumberOfNeuronsInHiddenLayers))
-                    {
-                        previousLayer = layer_e::INPUT_LAYER;
-                    }
-                    else
-                    {
-                        previousLayer = layer_e::HIDDEN_LAYER;
-                    }
-
-                    if (neuron + NumberOfNeuronsInHiddenLayers >= FirstOuputNeuron)
-                    {
-                        nextLayer = layer_e::OUTPUT_LAYER;
-                    }
-                    else
-                    {
-                        nextLayer = layer_e::HIDDEN_LAYER;
-                    }
-                }
-            }
-        }
+        constexpr size_t sizes[] = { NumberOfInputs, Sizes..., NumberOfOutputs };
+        return sizes[k];
     }
 
-    void calculateInputsAndOutputs()
+    static constexpr size_t stageWeightCount(const size_t k)
     {
-        if (currentLayer == layer_e::INPUT_LAYER)
-        {
-            numInputs = NumberOfInputs;
-            numOutputs = NumberOfNeuronsInHiddenLayers;
-        }
-        else if (currentLayer == layer_e::HIDDEN_LAYER)
-        {
-            if (previousLayer == layer_e::INPUT_LAYER)
-            {
-                numInputs = NumberOfInputs;
-            }
-            else
-            {
-                numInputs = NumberOfNeuronsInHiddenLayers;
-            }
+        return (layerSize(k) + 1) * layerSize(k + 1);
+    }
 
-            if (nextLayer == layer_e::OUTPUT_LAYER)
-            {
-                numOutputs = NumberOfOutputs;
-            }
-            else
-            {
-                numOutputs = NumberOfNeuronsInHiddenLayers;
-            }
-        }
-        else
+    static constexpr size_t stageFanSum(const size_t k)
+    {
+        return layerSize(k) + layerSize(k + 1);
+    }
+};
+
+template<size_t Count, size_t Size, size_t... Accumulated>
+struct UniformHiddenLayersForXavier
+{
+    typedef typename UniformHiddenLayersForXavier<Count - 1, Size, Size, Accumulated...>::type type;
+};
+
+template<size_t Size, size_t... Accumulated>
+struct UniformHiddenLayersForXavier<0, Size, Accumulated...>
+{
+    typedef HiddenLayers<Accumulated...> type;
+};
+
+} // namespace detail
+
+/**
+ * XavierWeightInitializerForLayers — Xavier weight initializer that supports
+ * heterogeneous hidden layer widths via the same HiddenLayers<S0, S1, ...>
+ * descriptor used by NeuralNetwork in neuralnet.hpp.
+ *
+ * Each call to generateUniformWeight()/generateNormalWeight() emits one weight
+ * for the next outgoing connection, advancing through the layer pairs in the
+ * same order the network's initializeWeights() chain visits them:
+ *   input layer -> first hidden, first hidden -> second hidden, ...,
+ *   last hidden -> output. Both regular neurons and per-layer bias neurons
+ *   contribute to each stage's weight count.
+ */
+template<size_t NumberOfInputs, typename HiddenLayersDesc, size_t NumberOfOutputs>
+struct XavierWeightInitializerForLayers;
+
+template<size_t NumberOfInputs, size_t NumberOfOutputs, size_t... Sizes>
+struct XavierWeightInitializerForLayers<NumberOfInputs, HiddenLayers<Sizes...>, NumberOfOutputs>
+{
+private:
+    typedef detail::XavierStages<NumberOfInputs, HiddenLayers<Sizes...>, NumberOfOutputs> Stages;
+
+    size_t mWeightInStage;
+    size_t mStage;
+
+    void advance()
+    {
+        ++mWeightInStage;
+        if (mWeightInStage >= Stages::stageWeightCount(mStage))
         {
-            numInputs = NumberOfNeuronsInHiddenLayers;
-            numOutputs = NumberOfOutputs;
+            mWeightInStage = 0;
+            ++mStage;
+            if (mStage >= Stages::Count)
+            {
+                mStage = 0;
+            }
         }
     }
 
 public:
-    XavierWeightInitializer() : neuron(0),
-                                 previousLayer(layer_e::INVALID),
-                                 currentLayer(layer_e::INPUT_LAYER),
-                                 nextLayer(layer_e::HIDDEN_LAYER),
-                                 numInputs(0),
-                                 numOutputs(0)
+    XavierWeightInitializerForLayers() : mWeightInStage(0), mStage(0)
     {
     }
 
     double generateUniformWeight()
     {
-        calculateInputsAndOutputs();
-
-        const double limit = std::sqrt(6.0 / (static_cast<double>(numInputs + numOutputs)));
+        const double fanSum = static_cast<double>(Stages::stageFanSum(mStage));
+        const double limit = std::sqrt(6.0 / fanSum);
         const double randomValue = ((static_cast<double>(rand()) / RAND_MAX) * 2.0 * limit) - limit;
 
-        advanceNeuron();
+        advance();
 
         return randomValue;
     }
 
     double generateNormalWeight()
     {
-        calculateInputsAndOutputs();
-
-        const double limit = std::sqrt(2.0 / (static_cast<double>(numInputs + numOutputs)));
+        const double fanSum = static_cast<double>(Stages::stageFanSum(mStage));
+        const double limit = std::sqrt(2.0 / fanSum);
         const double randomValue = ((static_cast<double>(rand()) / RAND_MAX) * 2.0 * limit) - limit;
 
-        advanceNeuron();
+        advance();
 
         return randomValue;
     }
 };
-}
+
+/**
+ * XavierWeightInitializer — backward-compatible alias for the uniform-width
+ * case. NumberOfNeuronsInHiddenLayers is used for every hidden layer.
+ */
+template<
+            size_t NumberOfInputs,
+            size_t NumberOfHiddenLayers,
+            size_t NumberOfNeuronsInHiddenLayers,
+            size_t NumberOfOutputs>
+using XavierWeightInitializer = XavierWeightInitializerForLayers<
+        NumberOfInputs,
+        typename detail::UniformHiddenLayersForXavier<NumberOfHiddenLayers, NumberOfNeuronsInHiddenLayers>::type,
+        NumberOfOutputs>;
+
+} // namespace tinymind
