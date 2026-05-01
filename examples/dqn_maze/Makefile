@@ -6,7 +6,7 @@ WARN=-Wall -Wextra -Werror -Wpedantic
 OUT=./output/dqn_maze
 SOURCES=dqn_maze.cpp dqn_mazelearner.cpp ../../cpp/lookupTables.cpp
 INCLUDES=-I../../cpp -I../../cpp/include -I../../include/
-DEFINES=-DTINYMIND_USE_TANH_16_16=1
+DEFINES=-DTINYMIND_USE_TANH_16_16=1 -DTINYMIND_ENABLE_FLOAT=1
 
 default:
 	$(MKDIR)

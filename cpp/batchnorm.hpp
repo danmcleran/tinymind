@@ -23,7 +23,7 @@
 #pragma once
 
 #include <cstddef>
-#include <cmath>
+#include <type_traits>
 
 #include "adam.hpp"
 #include "nnproperties.hpp"
@@ -221,35 +221,52 @@ namespace tinymind {
         ValueType mNormalized[Size];
         bool mTraining;
 
-        typedef ValueConverter<double, ValueType> Converter;
+        // Construct a ValueType representing the integer v. FPU-free for QValue:
+        // QValue(int) treats its argument as the raw fixed-point bit pattern,
+        // so we must use the (fixed, fractional) constructor instead.
+        template<typename T = ValueType>
+        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        fromInteger(const int v)
+        {
+            return static_cast<T>(v);
+        }
+
+        template<typename T = ValueType>
+        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        fromInteger(const int v)
+        {
+            return T(static_cast<typename T::FixedPartFieldType>(v), 0u);
+        }
 
         static ValueType zero()
         {
-            static const ValueType z = Converter::convertToDestinationType(0.0);
+            static const ValueType z = fromInteger(0);
             return z;
         }
 
         static ValueType one()
         {
-            static const ValueType o = Converter::convertToDestinationType(1.0);
+            static const ValueType o = fromInteger(1);
             return o;
         }
 
         static ValueType sizeValue()
         {
-            static const ValueType s = Converter::convertToDestinationType(static_cast<double>(Size));
+            static const ValueType s = fromInteger(static_cast<int>(Size));
             return s;
         }
 
         static ValueType momentum()
         {
-            static const ValueType m = Converter::convertToDestinationType(static_cast<double>(MomentumPercent) / 100.0);
+            static const ValueType m = fromInteger(static_cast<int>(MomentumPercent))
+                                     / fromInteger(100);
             return m;
         }
 
         static ValueType epsilon()
         {
-            static const ValueType e = Converter::convertToDestinationType(static_cast<double>(EpsilonPercent) / 100.0);
+            static const ValueType e = fromInteger(static_cast<int>(EpsilonPercent))
+                                     / fromInteger(100);
             return e;
         }
 

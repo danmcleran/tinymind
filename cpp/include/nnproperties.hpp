@@ -96,11 +96,20 @@
  * Total values = I*H + H + (L-1)*(H^2 + H) + H*O + O  (L hidden layers)
  */
 
+#include "tinymind_platform.hpp"
+
 #include <cstdint>
 #include <cstdlib>
+#include <cstdio>
+
+#if TINYMIND_ENABLE_FLOAT
+#include <cmath>
+#endif
+
+#if TINYMIND_ENABLE_HOSTED_IO
 #include <fstream>
 #include <vector>
-#include <cstdio>
+#endif
 
 namespace tinymind {
     template<typename SourceType>
@@ -118,6 +127,7 @@ namespace tinymind {
         }
     };
 
+#if TINYMIND_ENABLE_FLOAT
     template<>
     struct ValueParser<double>
     {
@@ -129,7 +139,7 @@ namespace tinymind {
             return atof(buffer);
         }
     };
-    
+
     template<>
     struct ValueParser<float>
     {
@@ -141,6 +151,7 @@ namespace tinymind {
             return static_cast<float>(atof(buffer));
         }
     };
+#endif // TINYMIND_ENABLE_FLOAT
 
     template<typename SourceType, typename DestinationType>
     struct ValueConverter
@@ -151,6 +162,7 @@ namespace tinymind {
         }
     };
 
+#if TINYMIND_ENABLE_FLOAT
     template<typename DestinationType>
     struct ValueConverter<double, DestinationType>
     {
@@ -170,7 +182,7 @@ namespace tinymind {
     {
         static double convertToDestinationType(const SourceType& value)
         {
-            static const double factor = pow(2, -1.0 * SourceType::NumberOfFractionalBits);
+            static const double factor = std::pow(2.0, -1.0 * SourceType::NumberOfFractionalBits);
             const double result = (static_cast<double>(value.getValue()) * factor);
 
             return result;
@@ -205,7 +217,7 @@ namespace tinymind {
     {
         static float convertToDestinationType(const SourceType& value)
         {
-            static const float factor = pow(2, -1.0f * SourceType::NumberOfFractionalBits);
+            static const float factor = std::pow(2.0f, -1.0f * SourceType::NumberOfFractionalBits);
             const float result = (static_cast<float>(value.getValue()) * factor);
 
             return result;
@@ -220,7 +232,9 @@ namespace tinymind {
             return value;
         }
     };
+#endif // TINYMIND_ENABLE_FLOAT
 
+#if TINYMIND_ENABLE_HOSTED_IO
     template<typename NeuralNetworkType>
     struct NetworkPropertiesFileManager
     {
@@ -776,4 +790,5 @@ namespace tinymind {
             }
         }
     };
+#endif // TINYMIND_ENABLE_HOSTED_IO
 }

@@ -22,10 +22,15 @@
 
 #pragma once
 
-#include <cmath>
+#include "include/tinymind_platform.hpp"
+
 #include <cstddef>
 
 #include "adam.hpp"
+
+#if TINYMIND_ENABLE_FLOAT
+#include <cmath>
+#endif
 
 namespace tinymind {
     /**
@@ -115,6 +120,7 @@ namespace tinymind {
         size_t mTimestep;
     };
 
+#if TINYMIND_ENABLE_FLOAT
     /**
      * Floating-point RMSprop optimizer with standard hyperparameters.
      * Uses double-precision constants directly instead of QValue constructors.
@@ -169,5 +175,6 @@ namespace tinymind {
         double mDecay;
         double mEpsilon;
     };
+#endif // TINYMIND_ENABLE_FLOAT
 
 }

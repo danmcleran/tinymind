@@ -24,6 +24,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 #include "nnproperties.hpp"
 
@@ -341,29 +342,44 @@ namespace tinymind {
         ValueType mBias[OutputSize];
         ValueType mBiasGradients[OutputSize];
 
-        typedef ValueConverter<double, ValueType> Converter;
+        // Construct a ValueType representing the integer v. FPU-free for QValue:
+        // QValue(int) treats its argument as the raw fixed-point bit pattern,
+        // so we must use the (fixed, fractional) constructor instead.
+        template<typename T = ValueType>
+        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        fromInteger(const int v)
+        {
+            return static_cast<T>(v);
+        }
+
+        template<typename T = ValueType>
+        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        fromInteger(const int v)
+        {
+            return T(static_cast<typename T::FixedPartFieldType>(v), 0u);
+        }
 
         static ValueType zero()
         {
-            static const ValueType z = Converter::convertToDestinationType(0.0);
+            static const ValueType z = fromInteger(0);
             return z;
         }
 
         static ValueType one()
         {
-            static const ValueType o = Converter::convertToDestinationType(1.0);
+            static const ValueType o = fromInteger(1);
             return o;
         }
 
         static ValueType negOne()
         {
-            static const ValueType n = Converter::convertToDestinationType(-1.0);
+            static const ValueType n = fromInteger(-1);
             return n;
         }
 
         static ValueType intToValue(const int32_t v)
         {
-            return Converter::convertToDestinationType(static_cast<double>(v));
+            return fromInteger(static_cast<int>(v));
         }
 
         static_assert(InputSize > 0, "Input size must be > 0.");

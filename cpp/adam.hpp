@@ -22,8 +22,13 @@
 
 #pragma once
 
-#include <cmath>
+#include "include/tinymind_platform.hpp"
+
 #include <cstddef>
+
+#if TINYMIND_ENABLE_FLOAT
+#include <cmath>
+#endif
 
 namespace tinymind {
     /**
@@ -40,23 +45,44 @@ namespace tinymind {
 
     /**
      * Square root approximation for fixed-point QValue types.
-     * Converts to double via getValue(), computes sqrt, converts back.
+     *
+     * FPU-free integer Newton's method on the raw representation.
+     * Q-format identity: for value = r / 2^N, sqrt(value) in Q form is
+     * isqrt(r << N) — the integer sqrt of the raw value left-shifted by
+     * the number of fractional bits. The shift fits in the QValue's
+     * MultiplicationResultFullWidthValueType (always 2x the raw width)
+     * for any supported Q format. Negative inputs clamp to 0.
+     *
+     * Convergence: O(log W) iterations where W is the bit width of the
+     * intermediate, so ~6 iterations for 64-bit and ~7 for 128-bit.
      */
     template<typename ValueType>
     struct SquareRootApproximation
     {
-        typedef typename ValueType::FullWidthValueType FullWidthValueType;
+        typedef typename ValueType::FullWidthValueType                     FullWidthValueType;
+        typedef typename ValueType::MultiplicationResultFullWidthValueType WideType;
 
         static ValueType sqrt(const ValueType& value)
         {
-            static const double factor = std::pow(2.0, -1.0 * static_cast<double>(ValueType::NumberOfFractionalBits));
-            const double dval = static_cast<double>(value.getValue()) * factor;
-            const double result = std::sqrt(dval >= 0.0 ? dval : 0.0);
-            const FullWidthValueType rawResult = static_cast<FullWidthValueType>(result * static_cast<double>(1ULL << ValueType::NumberOfFractionalBits));
-            return ValueType(rawResult);
+            const FullWidthValueType raw = value.getValue();
+            if (raw <= static_cast<FullWidthValueType>(0))
+            {
+                return ValueType(static_cast<FullWidthValueType>(0));
+            }
+
+            const WideType n = static_cast<WideType>(raw) << ValueType::NumberOfFractionalBits;
+            WideType x = n;
+            WideType y = (x + static_cast<WideType>(1)) / static_cast<WideType>(2);
+            while (y < x)
+            {
+                x = y;
+                y = (x + n / x) / static_cast<WideType>(2);
+            }
+            return ValueType(static_cast<FullWidthValueType>(x));
         }
     };
 
+#if TINYMIND_ENABLE_FLOAT
     template<>
     struct SquareRootApproximation<float>
     {
@@ -74,6 +100,7 @@ namespace tinymind {
             return std::sqrt(value);
         }
     };
+#endif // TINYMIND_ENABLE_FLOAT
 
     /**
      * Adam optimizer policy for use with BackPropagationParent.
@@ -187,6 +214,7 @@ namespace tinymind {
         size_t mTimestep;
     };
 
+#if TINYMIND_ENABLE_FLOAT
     /**
      * Floating-point Adam optimizer with standard hyperparameters.
      * Uses double-precision constants directly instead of QValue constructors.
@@ -251,5 +279,6 @@ namespace tinymind {
         double mBeta2;
         double mEpsilon;
     };
+#endif // TINYMIND_ENABLE_FLOAT
 
 }

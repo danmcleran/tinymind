@@ -5,7 +5,7 @@ WARN=-Wall -Wextra -Werror -Wpedantic
 OUT=./output/predictive_maintenance
 SOURCES=predictive_maintenance.cpp ../../cpp/lookupTables.cpp
 INCLUDES=-I../../cpp -I../../cpp/include -I../../include/
-DEFINES=-DTINYMIND_ENABLE_OSTREAMS=1 -DTINYMIND_USE_SIGMOID_16_16=1
+DEFINES=-DTINYMIND_ENABLE_OSTREAMS=1 -DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_USE_SIGMOID_16_16=1
 
 default :
 	$(MKDIR)

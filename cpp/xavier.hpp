@@ -22,8 +22,13 @@
 
 #pragma once
 
-#include <cmath>
+#include "include/tinymind_platform.hpp"
+
 #include <cstddef>
+
+#if TINYMIND_ENABLE_FLOAT
+
+#include <cmath>
 #include <cstdlib>
 
 namespace tinymind {
@@ -164,3 +169,5 @@ using XavierWeightInitializer = XavierWeightInitializerForLayers<
         NumberOfOutputs>;
 
 } // namespace tinymind
+
+#endif // TINYMIND_ENABLE_FLOAT

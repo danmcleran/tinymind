@@ -5172,6 +5172,84 @@ BOOST_AUTO_TEST_CASE(test_case_batchnorm_update_parameters)
     }
 }
 
+BOOST_AUTO_TEST_CASE(test_case_square_root_qvalue_perfect_squares)
+{
+    // Integer Newton's method must produce exact results on perfect squares.
+    typedef tinymind::QValue<8, 8, true> Q88;
+    BOOST_TEST(tinymind::SquareRootApproximation<Q88>::sqrt(Q88(0, 0)).getValue()
+               == 0);
+    BOOST_TEST(tinymind::SquareRootApproximation<Q88>::sqrt(Q88(1, 0)).getValue()
+               == Q88(1, 0).getValue());
+    BOOST_TEST(tinymind::SquareRootApproximation<Q88>::sqrt(Q88(4, 0)).getValue()
+               == Q88(2, 0).getValue());
+    BOOST_TEST(tinymind::SquareRootApproximation<Q88>::sqrt(Q88(9, 0)).getValue()
+               == Q88(3, 0).getValue());
+    BOOST_TEST(tinymind::SquareRootApproximation<Q88>::sqrt(Q88(16, 0)).getValue()
+               == Q88(4, 0).getValue());
+
+    typedef tinymind::QValue<16, 16, true> Q1616;
+    BOOST_TEST(tinymind::SquareRootApproximation<Q1616>::sqrt(Q1616(100, 0)).getValue()
+               == Q1616(10, 0).getValue());
+    BOOST_TEST(tinymind::SquareRootApproximation<Q1616>::sqrt(Q1616(10000, 0)).getValue()
+               == Q1616(100, 0).getValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_square_root_qvalue_non_squares)
+{
+    // Compare integer-sqrt result against the float reference within
+    // one raw-LSB tolerance (truncation rounding).
+    typedef tinymind::QValue<16, 16, true> ValueType;
+    const double inputs[] = { 0.25, 0.5, 2.0, 3.0, 0.01, 0.1, 1.5, 0.75 };
+    for (size_t i = 0; i < sizeof(inputs) / sizeof(inputs[0]); ++i)
+    {
+        const ValueType v = tinymind::ValueConverter<double, ValueType>::convertToDestinationType(inputs[i]);
+        const ValueType result = tinymind::SquareRootApproximation<ValueType>::sqrt(v);
+        const double resultD = static_cast<double>(result.getValue())
+                             / static_cast<double>(1ULL << ValueType::NumberOfFractionalBits);
+        const double expected = std::sqrt(inputs[i]);
+        // Up to ~3 Q-LSBs of error: input quantization (truncation) compounds
+        // with the integer-sqrt truncation. Use 4 LSBs as a safe tolerance.
+        BOOST_TEST(std::fabs(resultD - expected) < 4.0 / (1ULL << ValueType::NumberOfFractionalBits));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_square_root_qvalue_clamps_negative)
+{
+    // Negative inputs must clamp to zero, not invoke std::sqrt(NaN).
+    typedef tinymind::QValue<8, 8, true> Q88;
+    Q88 negative;
+    negative = static_cast<Q88::FullWidthValueType>(-256); // -1.0
+    BOOST_TEST(tinymind::SquareRootApproximation<Q88>::sqrt(negative).getValue() == 0);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_batchnorm_qvalue_hyperparam_helpers)
+{
+    // BatchNorm with QValue must derive epsilon/momentum/sizeValue without
+    // going through ValueConverter<double, QValue>. This catches a bug we
+    // had where gating the float specializations in nnproperties.hpp left
+    // batchnorm with a silently-zero epsilon (then SIGFPE on sqrt(0+0)).
+    typedef tinymind::QValue<16, 16, true> ValueType;
+    tinymind::BatchNorm1D<ValueType, 4, 10, 1> bn;
+    bn.setTraining(true);
+
+    ValueType input[4];
+    input[0] = ValueType(0, 0);
+    input[1] = ValueType(0, 0);
+    input[2] = ValueType(0, 0);
+    input[3] = ValueType(0, 0);
+
+    ValueType output[4];
+    // All-zero input -> mean=0, variance=0. Without a non-zero epsilon
+    // we'd hit a divide-by-zero in invStd. The helper must produce
+    // epsilon ~ 0.01 for EpsilonPercent=1.
+    bn.forward(input, output);
+
+    for (size_t i = 0; i < 4; ++i)
+    {
+        BOOST_TEST(output[i].getValue() == 0);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(test_case_batchnorm_fixed_point)
 {
     // Verify BatchNorm compiles and runs with Q16.16 fixed-point

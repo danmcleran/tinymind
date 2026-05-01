@@ -24,6 +24,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 #include "nnproperties.hpp"
 
@@ -328,35 +329,51 @@ namespace tinymind {
         ValueType mBias[OutputSize];
         ValueType mBiasGradients[OutputSize];
 
-        typedef ValueConverter<double, ValueType> Converter;
+        // Construct a ValueType representing the integer v. FPU-free for QValue:
+        // QValue(int) treats its argument as the raw fixed-point bit pattern,
+        // so we must use the (fixed, fractional) constructor instead.
+        template<typename T = ValueType>
+        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        fromInteger(const int v)
+        {
+            return static_cast<T>(v);
+        }
+
+        template<typename T = ValueType>
+        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        fromInteger(const int v)
+        {
+            return T(static_cast<typename T::FixedPartFieldType>(v), 0u);
+        }
 
         static ValueType zero()
         {
-            static const ValueType z = Converter::convertToDestinationType(0.0);
+            static const ValueType z = fromInteger(0);
             return z;
         }
 
         static ValueType one()
         {
-            static const ValueType o = Converter::convertToDestinationType(1.0);
+            static const ValueType o = fromInteger(1);
             return o;
         }
 
         static ValueType negOne()
         {
-            static const ValueType n = Converter::convertToDestinationType(-1.0);
+            static const ValueType n = fromInteger(-1);
             return n;
         }
 
         static ValueType totalWeightsValue()
         {
-            static const ValueType t = Converter::convertToDestinationType(static_cast<double>(TotalTernaryWeights));
+            static const ValueType t = fromInteger(static_cast<int>(TotalTernaryWeights));
             return t;
         }
 
         static ValueType thresholdFraction()
         {
-            static const ValueType t = Converter::convertToDestinationType(static_cast<double>(ThresholdPercent) / 100.0);
+            static const ValueType t = fromInteger(static_cast<int>(ThresholdPercent))
+                                     / fromInteger(100);
             return t;
         }
 
