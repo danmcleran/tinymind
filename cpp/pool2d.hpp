@@ -22,8 +22,9 @@
 
 #pragma once
 
+#include "include/tinymind_traits.hpp"
+
 #include <cstddef>
-#include <type_traits>
 
 namespace tinymind {
     /**
@@ -211,14 +212,14 @@ namespace tinymind {
         // (FixedPart, FractionalPart) constructor for QValue, since QValue(int)
         // would treat its argument as raw bits instead of a value.
         template<typename T = ValueType>
-        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        static typename tinymind::enable_if<tinymind::is_floating_point<T>::value, T>::type
         divisor()
         {
             return static_cast<T>(WindowArea);
         }
 
         template<typename T = ValueType>
-        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        static typename tinymind::enable_if<!tinymind::is_floating_point<T>::value, T>::type
         divisor()
         {
             return T(static_cast<typename T::FixedPartFieldType>(WindowArea), 0u);
@@ -292,14 +293,14 @@ namespace tinymind {
     private:
         // See pool1d.hpp / pool2d.hpp::AvgPool2D::divisor for rationale.
         template<typename T = ValueType>
-        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        static typename tinymind::enable_if<tinymind::is_floating_point<T>::value, T>::type
         divisor()
         {
             return static_cast<T>(Area);
         }
 
         template<typename T = ValueType>
-        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        static typename tinymind::enable_if<!tinymind::is_floating_point<T>::value, T>::type
         divisor()
         {
             return T(static_cast<typename T::FixedPartFieldType>(Area), 0u);

@@ -26,7 +26,7 @@
 
 #include <cstddef>
 
-#if TINYMIND_ENABLE_FLOAT
+#if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 #include <cmath>
 #endif
 
@@ -82,7 +82,7 @@ namespace tinymind {
         }
     };
 
-#if TINYMIND_ENABLE_FLOAT
+#if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
     template<>
     struct SquareRootApproximation<float>
     {
@@ -100,7 +100,7 @@ namespace tinymind {
             return std::sqrt(value);
         }
     };
-#endif // TINYMIND_ENABLE_FLOAT
+#endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 
     /**
      * Adam optimizer policy for use with BackPropagationParent.
@@ -214,10 +214,12 @@ namespace tinymind {
         size_t mTimestep;
     };
 
-#if TINYMIND_ENABLE_FLOAT
+#if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
     /**
      * Floating-point Adam optimizer with standard hyperparameters.
      * Uses double-precision constants directly instead of QValue constructors.
+     * Requires TINYMIND_ENABLE_STD because std::sqrt and std::pow are needed
+     * for moment normalization and bias correction.
      */
     template<typename ValueType>
     struct AdamOptimizerFloat
@@ -279,6 +281,6 @@ namespace tinymind {
         double mBeta2;
         double mEpsilon;
     };
-#endif // TINYMIND_ENABLE_FLOAT
+#endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 
 }

@@ -22,8 +22,13 @@
 
 #pragma once
 
+#include "include/tinymind_platform.hpp"
+
 #include <cstddef>
+
+#if TINYMIND_ENABLE_HOSTED_RAND
 #include <cstdlib>
+#endif
 
 namespace tinymind {
     /**
@@ -84,6 +89,7 @@ namespace tinymind {
                 return prediction;
             }
 
+#if TINYMIND_ENABLE_HOSTED_RAND
             // Use integer random for embedded compatibility (no <random> needed)
             const unsigned threshold = static_cast<unsigned>(
                 ((mTotalDecaySteps - mCurrentStep) * 1000U) / mTotalDecaySteps);
@@ -94,6 +100,14 @@ namespace tinymind {
                 return groundTruth;
             }
             return prediction;
+#else
+            // Without rand() available, fall back to deterministic
+            // teacher-forcing schedule: ground truth while we're still in
+            // the decay window, prediction afterwards. Suitable for
+            // freestanding inference; for stochastic training, define
+            // TINYMIND_ENABLE_HOSTED_RAND or supply your own scheduler.
+            return groundTruth;
+#endif
         }
 
         /**

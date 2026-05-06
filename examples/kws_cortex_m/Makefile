@@ -8,7 +8,7 @@ WARN=-Wall -Wextra -Werror -Wpedantic
 OUT=./output/kws_cortex_m
 SOURCES=kws_cortex_m.cpp
 INCLUDES=-I../../cpp -I../../cpp/include -I../../include/
-DEFINES=-DTINYMIND_ENABLE_FLOAT=1
+DEFINES=-DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_STD=1
 
 default :
 	$(MKDIR)

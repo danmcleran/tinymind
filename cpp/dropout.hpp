@@ -22,9 +22,14 @@
 
 #pragma once
 
+#include "include/tinymind_platform.hpp"
+#include "include/tinymind_traits.hpp"
+
 #include <cstddef>
+
+#if TINYMIND_ENABLE_HOSTED_RAND
 #include <cstdlib>
-#include <type_traits>
+#endif
 
 namespace tinymind {
     /**
@@ -74,6 +79,7 @@ namespace tinymind {
          */
         void forward(ValueType const* const input, ValueType* output)
         {
+#if TINYMIND_ENABLE_HOSTED_RAND
             if (mTraining)
             {
                 generateMask();
@@ -91,7 +97,12 @@ namespace tinymind {
                 }
             }
             else
+#endif
             {
+                // Without TINYMIND_ENABLE_HOSTED_RAND there is no rand()
+                // available to produce the mask, so dropout collapses to
+                // identity — the correct inference-time behavior. mTraining
+                // is intentionally ignored on freestanding targets.
                 for (size_t i = 0; i < Size; ++i)
                 {
                     output[i] = input[i];
@@ -109,6 +120,7 @@ namespace tinymind {
          */
         void backward(ValueType const* const outputDeltas, ValueType* inputDeltas) const
         {
+#if TINYMIND_ENABLE_HOSTED_RAND
             for (size_t i = 0; i < Size; ++i)
             {
                 if (mMask[i])
@@ -120,6 +132,12 @@ namespace tinymind {
                     inputDeltas[i] = ValueType(0);
                 }
             }
+#else
+            for (size_t i = 0; i < Size; ++i)
+            {
+                inputDeltas[i] = outputDeltas[i];
+            }
+#endif
         }
 
         /**
@@ -149,6 +167,7 @@ namespace tinymind {
         bool mMask[Size];
         bool mTraining;
 
+#if TINYMIND_ENABLE_HOSTED_RAND
         void generateMask()
         {
             for (size_t i = 0; i < Size; ++i)
@@ -157,20 +176,21 @@ namespace tinymind {
                 mMask[i] = (r >= DropoutPercent);
             }
         }
+#endif
 
         // Construct a ValueType representing the integer v. For floating-point
         // types this is just a cast; for QValue the (fixed, fractional)
         // constructor is required because QValue(int) treats its argument as
         // the raw fixed-point bit pattern, not the value.
         template<typename T = ValueType>
-        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        static typename tinymind::enable_if<tinymind::is_floating_point<T>::value, T>::type
         fromInteger(const int v)
         {
             return static_cast<T>(v);
         }
 
         template<typename T = ValueType>
-        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        static typename tinymind::enable_if<!tinymind::is_floating_point<T>::value, T>::type
         fromInteger(const int v)
         {
             return T(static_cast<typename T::FixedPartFieldType>(v), 0u);

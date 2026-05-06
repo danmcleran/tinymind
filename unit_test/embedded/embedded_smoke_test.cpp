@@ -22,14 +22,26 @@
 
 // Embedded smoke test.
 //
-// Builds with neither TINYMIND_ENABLE_FLOAT nor TINYMIND_ENABLE_HOSTED_IO
-// nor TINYMIND_ENABLE_OSTREAMS defined. Verifies that the standalone
-// composable layers and the float-free portions of nnproperties /
-// adam / rmsprop compile and run on a QValue-only pipeline.
+// Drives the four-corner (FLOAT, STD) build matrix configured by
+// unit_test/embedded/Makefile:
 //
-// No iostream, no fstream, no vector, no random, no cmath are pulled in
-// directly; the goal is to fail loudly if a future change reintroduces a
-// hosted-only dependency to a path embedded users rely on.
+//   FLOAT=0 STD=0  freestanding   - pure QValue pipeline, no hosted deps.
+//   FLOAT=1 STD=0  no-stdlib FPU  - QValue + float forward-pass-only layers
+//                                   (Conv/Pool/Dropout-inference). Verifies
+//                                   float ValueType doesn't drag in <cmath>.
+//   FLOAT=0 STD=1  no-FPU hosted  - QValue pipeline, stdlib available.
+//   FLOAT=1 STD=1  hosted         - everything.
+//
+// The QValue pipeline runs at every setting; the float pipeline only
+// compiles in when FLOAT=1, and intentionally avoids layers that need
+// SquareRootApproximation<float> (BatchNorm, Adam/RMSprop float optimizers,
+// Xavier) since those require STD too.
+//
+// The point is regression-guarding: fail loudly if a future change
+// reintroduces a hosted-only or FPU-only dependency into a header that
+// embedded users rely on.
+
+#include "tinymind_platform.hpp"
 
 #include "qformat.hpp"
 #include "conv1d.hpp"
@@ -116,6 +128,41 @@ Q88 exerciseValueConverter()
     return ConverterType::convertToDestinationType(Q88(1, 0));
 }
 
+#if TINYMIND_ENABLE_FLOAT
+// Float pipeline: layers that do not call SquareRootApproximation<float> (so
+// they are safe at FLOAT=1, STD=0). This catches accidental <cmath> leaks via
+// the float-as-ValueType code paths.
+typedef tinymind::Conv1D<float, 16, 3, 1, 4>                                       Conv1FloatType;
+typedef tinymind::MaxPool1D<float, Conv1FloatType::OutputLength, 2, 2, 4>          Pool1FloatType;
+typedef tinymind::Conv2D<float, 8, 8, 1, 3, 3, 1, 1, 2>                            Conv2FloatType;
+typedef tinymind::MaxPool2D<float, Conv2FloatType::OutputHeight,
+                                   Conv2FloatType::OutputWidth, 2, 2, 2>           Pool2FloatType;
+typedef tinymind::Dropout<float, 4, 25>                                            DropFloatType;
+
+float fInput1d[16];
+float fConv1Out[Conv1FloatType::OutputSize];
+float fPool1Out[Pool1FloatType::OutputSize];
+float fInput2d[8 * 8];
+float fConv2Out[Conv2FloatType::OutputSize];
+float fPool2Out[Pool2FloatType::OutputSize];
+float fDropIn[4];
+float fDropOut[4];
+
+Conv1FloatType gConv1f;
+Pool1FloatType gPool1f;
+Conv2FloatType gConv2f;
+Pool2FloatType gPool2f;
+DropFloatType  gDropf;
+
+void clearFloat(float* p, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+    {
+        p[i] = 0.0f;
+    }
+}
+#endif // TINYMIND_ENABLE_FLOAT
+
 } // namespace
 
 int main()
@@ -146,6 +193,23 @@ int main()
 
     // ValueConverter<Q88,Q88> on Q88(1,0) must round-trip to a non-zero raw value.
     // gapOut[0] must equal itself (rules out ValueType being something exotic).
-    const bool ok = (v.getValue() != 0) && (gapOut[0] == gapOut[0]);
+    bool ok = (v.getValue() != 0) && (gapOut[0] == gapOut[0]);
+
+#if TINYMIND_ENABLE_FLOAT
+    clearFloat(fInput1d, 16);
+    clearFloat(fInput2d, 8 * 8);
+    clearFloat(fDropIn, 4);
+
+    gConv1f.forward(fInput1d, fConv1Out);
+    gPool1f.forward(fConv1Out, fPool1Out);
+    gConv2f.forward(fInput2d, fConv2Out);
+    gPool2f.forward(fConv2Out, fPool2Out);
+    gDropf.setTraining(false);
+    gDropf.forward(fDropIn, fDropOut);
+
+    ok = ok && (fPool1Out[0] == fPool1Out[0]) && (fPool2Out[0] == fPool2Out[0])
+            && (fDropOut[0] == fDropOut[0]);
+#endif
+
     return ok ? 0 : 1;
 }

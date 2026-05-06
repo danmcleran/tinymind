@@ -99,19 +99,16 @@
 #include "tinymind_platform.hpp"
 
 #include <cstdint>
-#include <cstdlib>
-#include <cstdio>
-
-#if TINYMIND_ENABLE_FLOAT
-#include <cmath>
-#endif
 
 #if TINYMIND_ENABLE_HOSTED_IO
+#include <cstdlib>
+#include <cstdio>
 #include <fstream>
 #include <vector>
 #endif
 
 namespace tinymind {
+#if TINYMIND_ENABLE_HOSTED_IO
     template<typename SourceType>
     struct ValueParser
     {
@@ -152,6 +149,7 @@ namespace tinymind {
         }
     };
 #endif // TINYMIND_ENABLE_FLOAT
+#endif // TINYMIND_ENABLE_HOSTED_IO
 
     template<typename SourceType, typename DestinationType>
     struct ValueConverter
@@ -163,6 +161,22 @@ namespace tinymind {
     };
 
 #if TINYMIND_ENABLE_FLOAT
+    // Q -> float scale factor: 2^-NumberOfFractionalBits computed by repeated
+    // halving so we don't depend on <cmath> / std::pow. Initialized once per
+    // (SourceType, FloatType) pair as a function-local static.
+    namespace detail {
+        template<typename FloatType>
+        static FloatType pow2NegativeFloat(unsigned exponent)
+        {
+            FloatType result = static_cast<FloatType>(1);
+            for (unsigned i = 0; i < exponent; ++i)
+            {
+                result *= static_cast<FloatType>(0.5);
+            }
+            return result;
+        }
+    }
+
     template<typename DestinationType>
     struct ValueConverter<double, DestinationType>
     {
@@ -182,7 +196,7 @@ namespace tinymind {
     {
         static double convertToDestinationType(const SourceType& value)
         {
-            static const double factor = std::pow(2.0, -1.0 * SourceType::NumberOfFractionalBits);
+            static const double factor = detail::pow2NegativeFloat<double>(SourceType::NumberOfFractionalBits);
             const double result = (static_cast<double>(value.getValue()) * factor);
 
             return result;
@@ -217,7 +231,7 @@ namespace tinymind {
     {
         static float convertToDestinationType(const SourceType& value)
         {
-            static const float factor = std::pow(2.0f, -1.0f * SourceType::NumberOfFractionalBits);
+            static const float factor = detail::pow2NegativeFloat<float>(SourceType::NumberOfFractionalBits);
             const float result = (static_cast<float>(value.getValue()) * factor);
 
             return result;

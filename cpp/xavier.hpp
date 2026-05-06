@@ -26,7 +26,11 @@
 
 #include <cstddef>
 
-#if TINYMIND_ENABLE_FLOAT
+// Xavier needs three things at once: float arithmetic for the limit/sample
+// values, std::sqrt from <cmath> to compute the limit, and rand()/RAND_MAX
+// from <cstdlib> for the uniform sample. If any one of those is unavailable
+// on the target, the whole initializer compiles out.
+#if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD && TINYMIND_ENABLE_HOSTED_RAND
 
 #include <cmath>
 #include <cstdlib>
@@ -170,4 +174,4 @@ using XavierWeightInitializer = XavierWeightInitializerForLayers<
 
 } // namespace tinymind
 
-#endif // TINYMIND_ENABLE_FLOAT
+#endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD && TINYMIND_ENABLE_HOSTED_RAND

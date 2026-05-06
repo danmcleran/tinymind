@@ -22,8 +22,9 @@
 
 #pragma once
 
+#include "include/tinymind_traits.hpp"
+
 #include <cstddef>
-#include <type_traits>
 
 namespace tinymind {
     /**
@@ -224,14 +225,14 @@ namespace tinymind {
         // is enough; for QValue the (FixedPart, FractionalPart) constructor
         // is required because QValue(int) treats its argument as raw bits.
         template<typename T = ValueType>
-        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        static typename tinymind::enable_if<tinymind::is_floating_point<T>::value, T>::type
         divisor()
         {
             return static_cast<T>(PoolSize);
         }
 
         template<typename T = ValueType>
-        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        static typename tinymind::enable_if<!tinymind::is_floating_point<T>::value, T>::type
         divisor()
         {
             return T(static_cast<typename T::FixedPartFieldType>(PoolSize), 0u);

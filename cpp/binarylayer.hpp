@@ -22,9 +22,10 @@
 
 #pragma once
 
+#include "include/tinymind_traits.hpp"
+
 #include <cstddef>
 #include <cstdint>
-#include <type_traits>
 
 #include "nnproperties.hpp"
 
@@ -346,14 +347,14 @@ namespace tinymind {
         // QValue(int) treats its argument as the raw fixed-point bit pattern,
         // so we must use the (fixed, fractional) constructor instead.
         template<typename T = ValueType>
-        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        static typename tinymind::enable_if<tinymind::is_floating_point<T>::value, T>::type
         fromInteger(const int v)
         {
             return static_cast<T>(v);
         }
 
         template<typename T = ValueType>
-        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        static typename tinymind::enable_if<!tinymind::is_floating_point<T>::value, T>::type
         fromInteger(const int v)
         {
             return T(static_cast<typename T::FixedPartFieldType>(v), 0u);

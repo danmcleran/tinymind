@@ -28,7 +28,7 @@
 
 #include "adam.hpp"
 
-#if TINYMIND_ENABLE_FLOAT
+#if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 #include <cmath>
 #endif
 
@@ -120,10 +120,12 @@ namespace tinymind {
         size_t mTimestep;
     };
 
-#if TINYMIND_ENABLE_FLOAT
+#if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
     /**
      * Floating-point RMSprop optimizer with standard hyperparameters.
      * Uses double-precision constants directly instead of QValue constructors.
+     * Requires TINYMIND_ENABLE_STD because std::sqrt is needed for the
+     * second-moment normalization.
      */
     template<typename ValueType>
     struct RmsPropOptimizerFloat
@@ -175,6 +177,6 @@ namespace tinymind {
         double mDecay;
         double mEpsilon;
     };
-#endif // TINYMIND_ENABLE_FLOAT
+#endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 
 }

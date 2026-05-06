@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include "include/tinymind_platform.hpp"
+
 #include <cstddef>
 #include <cstdint>
 

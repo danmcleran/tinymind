@@ -22,8 +22,9 @@
 
 #pragma once
 
+#include "include/tinymind_traits.hpp"
+
 #include <cstddef>
-#include <type_traits>
 #include "constants.hpp"
 #include "interpolate.hpp"
 
@@ -245,14 +246,14 @@ namespace tinymind {
         // floating-point; (FixedPart, FractionalPart) constructor for QValue,
         // since QValue(int) treats its argument as raw bits.
         template<typename T = ValueType>
-        static typename std::enable_if<std::is_floating_point<T>::value, T>::type
+        static typename tinymind::enable_if<tinymind::is_floating_point<T>::value, T>::type
         degreeAsValue()
         {
             return static_cast<T>(SplineDegree);
         }
 
         template<typename T = ValueType>
-        static typename std::enable_if<!std::is_floating_point<T>::value, T>::type
+        static typename tinymind::enable_if<!tinymind::is_floating_point<T>::value, T>::type
         degreeAsValue()
         {
             return T(static_cast<typename T::FixedPartFieldType>(SplineDegree), 0u);
