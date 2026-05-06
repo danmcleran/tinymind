@@ -26,6 +26,18 @@ Compiler flags: `-Wall -Wextra -Werror -Wpedantic` (debug builds also add `-ggdb
 
 The `BOOST_HOME` environment variable must be set to the Boost installation path (used by unit test Makefiles).
 
+### Platform Feature Gates
+
+Five preprocessor macros in `cpp/include/tinymind_platform.hpp` control optional hosted dependencies. **All default to 0** (freestanding); hosted Makefiles set `=1` selectively.
+
+- `TINYMIND_ENABLE_FLOAT` — `float`/`double` as `ValueType`
+- `TINYMIND_ENABLE_STD` — `<cmath>`, `<type_traits>`, `namespace std::`
+- `TINYMIND_ENABLE_HOSTED_IO` — `<fstream>`, `<vector>`, `<cstdlib>`, `<cstdio>` (file weight serialization)
+- `TINYMIND_ENABLE_OSTREAMS` — `<ostream>` and `QValue::operator<<`
+- `TINYMIND_ENABLE_HOSTED_RAND` — `<cstdlib>` `rand()` (Dropout training mode, ScheduledSampling, Xavier)
+
+`unit_test/embedded` is the regression guard — its Makefile builds the four `(FLOAT, STD)` corners and `make check` runs all of them. Float-typed Adam/RMSprop/Xavier require both `FLOAT && STD`. When adding a new header to `cpp/`, include `"include/tinymind_platform.hpp"` first and gate any `<cmath>`/`<type_traits>`/`std::` use; for SFINAE on `is_floating_point`, use `tinymind::enable_if` and `tinymind::is_floating_point` from `cpp/include/tinymind_traits.hpp` so the layer compiles at `STD=0`.
+
 ## Architecture Overview
 
 TinyMind is a **header-only C++ template library** for neural networks and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements. The design is inspired by Andrei Alexandrescu's policy-based design from *Modern C++ Design*.

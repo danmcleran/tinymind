@@ -30,6 +30,8 @@ Most ML frameworks assume abundant resources: gigabytes of RAM, a GPU, an operat
 
 Because TinyMind is a header-only template library, there is no runtime library to link. The compiler generates code only for the specific network topology, value type, and activation functions you use. Unused features are never compiled.
 
+Five preprocessor gates (`TINYMIND_ENABLE_FLOAT`, `TINYMIND_ENABLE_STD`, `TINYMIND_ENABLE_HOSTED_IO`, `TINYMIND_ENABLE_OSTREAMS`, `TINYMIND_ENABLE_HOSTED_RAND`) control optional dependencies on the FPU, the C++ stdlib (`<cmath>`/`<type_traits>`/`namespace std`), file I/O, ostreams, and `rand()`. All default off — a freestanding build pulls in only `<cstddef>` and `<cstdint>`. See the [README's Platform Feature Gates](https://github.com/danmcleran/tinymind#platform-feature-gates) section for the full matrix.
+
 ## What Fits Where?
 
 TinyMind networks are small enough to deploy on the most constrained microcontrollers:

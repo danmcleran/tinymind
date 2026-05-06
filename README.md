@@ -687,6 +687,20 @@ cd examples/predictive_maintenance && make clean && make
 - Debug: `-Wall -Wextra -Werror -Wpedantic -ggdb`
 - Release: `-Wall -Wextra -Werror -Wpedantic -O3`
 
+### Platform Feature Gates
+
+TinyMind compiles cleanly on freestanding embedded targets that lack an FPU, a hosted C++ stdlib, or a C runtime `rand()`. Five preprocessor macros control which dependencies are pulled in. **All default to 0** so embedded targets get the strictest configuration out of the box; hosted users opt in via `-DTINYMIND_ENABLE_*=1`. The five gates are orthogonal — pick exactly the subset your toolchain provides.
+
+| Macro | What it enables |
+|---|---|
+| `TINYMIND_ENABLE_FLOAT` | `float`/`double` as `ValueType` (in addition to `QValue`); `ValueParser`/`ValueConverter` float specializations |
+| `TINYMIND_ENABLE_STD` | `<cmath>`, `<type_traits>`, `namespace std::`; required for the float-typed `Adam`/`RMSprop`/`Xavier` paths (which need `std::sqrt`) |
+| `TINYMIND_ENABLE_HOSTED_IO` | `<fstream>`, `<vector>`, `<cstdlib>`, `<cstdio>`; required for `NetworkPropertiesFileManager` weight serialization |
+| `TINYMIND_ENABLE_OSTREAMS` | `<ostream>` and `QValue::operator<<` for debug printing |
+| `TINYMIND_ENABLE_HOSTED_RAND` | `<cstdlib>` `rand()`/`RAND_MAX`; required by `Dropout` (training mode), `ScheduledSampling`, and `Xavier` |
+
+With all five at 0, no header in `cpp/` includes anything beyond `<cstddef>`, `<cstdint>`, and placement `<new>` — all required by freestanding C++. With `FLOAT=1, STD=0` you get an FPU-but-no-stdlib build for float forward-pass inference. The `unit_test/embedded` matrix builds and runs all four `(FLOAT, STD)` corners as part of `make check`.
+
 ## Project Structure
 
 ```
@@ -723,6 +737,8 @@ tinymind/
     xavier.hpp                  # Xavier weight initialization
     lookupTables.cpp            # Pre-computed activation tables (~3MB)
     include/                    # Support headers
+      tinymind_platform.hpp     # Platform feature gates (FLOAT/STD/HOSTED_IO/OSTREAMS/HOSTED_RAND)
+      tinymind_traits.hpp       # Minimal in-house enable_if / is_floating_point for STD=0 builds
       nnproperties.hpp          # Weight file manager (MLP, LSTM, GRU, KAN)
       constants.hpp, limits.hpp, random.hpp, ...
       bench/                    # Benchmark harness
