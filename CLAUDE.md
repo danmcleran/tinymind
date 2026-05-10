@@ -28,15 +28,16 @@ The `BOOST_HOME` environment variable must be set to the Boost installation path
 
 ### Platform Feature Gates
 
-Five preprocessor macros in `cpp/include/tinymind_platform.hpp` control optional hosted dependencies. **All default to 0** (freestanding); hosted Makefiles set `=1` selectively.
+Six preprocessor macros in `cpp/include/tinymind_platform.hpp` control optional hosted dependencies. **All default to 0** (freestanding); hosted Makefiles set `=1` selectively.
 
 - `TINYMIND_ENABLE_FLOAT` — `float`/`double` as `ValueType`
 - `TINYMIND_ENABLE_STD` — `<cmath>`, `<type_traits>`, `namespace std::`
 - `TINYMIND_ENABLE_HOSTED_IO` — `<fstream>`, `<vector>`, `<cstdlib>`, `<cstdio>` (file weight serialization)
 - `TINYMIND_ENABLE_OSTREAMS` — `<ostream>` and `QValue::operator<<`
 - `TINYMIND_ENABLE_HOSTED_RAND` — `<cstdlib>` `rand()` (Dropout training mode, ScheduledSampling, Xavier)
+- `TINYMIND_ENABLE_QUANTIZATION` — `cpp/q*.hpp` int8 quantization layer family + `Requantizer`. Calibration helpers in `cpp/include/qcalibration.hpp` are additionally gated on `FLOAT && STD` (host-only). Existing fixed-point and float pipelines are unaffected.
 
-`unit_test/embedded` is the regression guard — its Makefile builds the four `(FLOAT, STD)` corners and `make check` runs all of them. Float-typed Adam/RMSprop/Xavier require both `FLOAT && STD`. When adding a new header to `cpp/`, include `"include/tinymind_platform.hpp"` first and gate any `<cmath>`/`<type_traits>`/`std::` use; for SFINAE on `is_floating_point`, use `tinymind::enable_if` and `tinymind::is_floating_point` from `cpp/include/tinymind_traits.hpp` so the layer compiles at `STD=0`.
+`unit_test/embedded` is the regression guard — its Makefile builds five corners of the `(FLOAT, STD, QUANT)` matrix (`freestanding`, `no_stdlib`, `no_fpu`, `hosted`, `quant_freestanding`) and `make check` runs all of them. Float-typed Adam/RMSprop/Xavier require both `FLOAT && STD`. When adding a new header to `cpp/`, include `"include/tinymind_platform.hpp"` first and gate any `<cmath>`/`<type_traits>`/`std::` use; for SFINAE on `is_floating_point`, use `tinymind::enable_if` and `tinymind::is_floating_point` from `cpp/include/tinymind_traits.hpp` so the layer compiles at `STD=0`.
 
 ## Architecture Overview
 
@@ -67,6 +68,19 @@ These layers sit outside the neural network template and can be chained into pip
 - **`binarylayer.hpp`** — Binary neural network layer (XNOR+popcount).
 - **`ternarylayer.hpp`** — Ternary neural network layer ({-1,0,+1} weights).
 
+### Quantization (optional, `TINYMIND_ENABLE_QUANTIZATION=1`)
+
+Post-training int8 quantization path that lives **alongside** the existing single-`ValueType` pipeline. None of the existing layers, `QValue`, or `NeuralNet<>` change; quantized models are built from a parallel layer family that templates on `<InputType, WeightType, AccumType, OutputType>` and carries TFLite/CMSIS-NN style runtime metadata (`scale`, `zero_point`, plus an integer `(multiplier, shift)` Requantizer between layers).
+
+- **`qaffine.hpp`** — Affine primitives: `QAffineTensor`, `Requantizer<SrcAccum, DstStorage>`, and the gemmlowp-style `saturatingRoundingDoublingHighMul` / `roundingDivideByPOT` helpers. Pure integer at runtime; freestanding-safe.
+- **`qconv2d.hpp`**, **`qdepthwiseconv2d.hpp`** (per-channel weight scale, TFLite mandate), **`qpointwiseconv2d.hpp`**, **`qpool2d.hpp`** (`QMaxPool2D` / `QAvgPool2D` / `QGlobalAvgPool2D`), **`qdense.hpp`** — Quantized layer family. Weights, biases, and Requantizer tables are caller-owned; layer structs are pointer-shaped so the same model can be built once on the host and re-used across many MCU targets.
+- **`qactivations.hpp`** — Quantized ReLU / ReLU6, plus `clampForRelu` / `clampForRelu6` helpers that fold the activation into the upstream Requantizer's saturation pass (matches CMSIS-NN runtime efficiency).
+- **`include/qcalibration.hpp`** — Host-only calibration helpers (`RangeObserver`, `computeAffineParamsAsymmetric` / `Symmetric`, `computePerChannelSymmetricScales`, `quantizeBuffer`, `buildRequantizer`). Gated on `TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD` so the deployable inference binary never pulls in float math.
+
+The deployable target shape is `TINYMIND_ENABLE_QUANTIZATION=1, TINYMIND_ENABLE_FLOAT=0, TINYMIND_ENABLE_STD=0`: int8 weights/activations, int32 accumulators, integer requantization, no `<cmath>`. The `unit_test/embedded` matrix exercises this corner as `quant_freestanding`. The `unit_test/quantization` Boost.Test suite covers the math (Requantizer round-trip, per-channel depthwise, calibration), and `examples/kws_cortex_m_int8/` is a side-by-side counterpart to `examples/kws_cortex_m/` with directly comparable CSV cycle/byte reports.
+
+Non-goals in this phase: no QAT (post-training only), no int4/mixed precision, no conv+bn+relu fusion pass.
+
 ### Design Pattern
 
 Neural networks are configured through a properties struct that bundles all template policies:
@@ -88,6 +102,8 @@ typedef NeuralNet<XorNNProperties> XorNN;
 - **`nn/`** — Boost.Test unit tests for neural network correctness (training convergence, forward pass values, etc.)
 - **`qformat/`** — Compile-time `static_assert` tests for fixed-point type properties
 - **`qlearn/`** — Boost.Test unit tests for Q-learning
+- **`quantization/`** — Boost.Test unit tests for the int8 quantization path: Requantizer round-trip, per-tensor / per-channel calibration, QConv2D / QDepthwise / QPointwise / QPool / QDense forward passes against a float reference. Builds with `TINYMIND_ENABLE_QUANTIZATION=1`.
+- **`embedded/`** — Cross-corner regression matrix. Builds the smoke source under five `(FLOAT, STD, QUANT)` configurations including `quant_freestanding` (`FLOAT=0 STD=0 QUANT=1`) which is the deployable inference shape for an int8 MCU target.
 
 ### Examples (`examples/`)
 
@@ -95,6 +111,7 @@ typedef NeuralNet<XorNNProperties> XorNN;
 - **`maze/`** and **`dqn_maze/`** — Maze solving via Q-learning and deep Q-networks
 - **`pytorch/`** — Exports weights from a PyTorch model and imports them into a TinyMind C++ network for inference
 - **`kws_cortex_m/`** — Keyword-spotting-style pipeline built from `Conv2D` → `MaxPool2D` → `DepthwiseConv2D` → `PointwiseConv2D` → `GlobalAvgPool2D` → dense, with a CSV cycles/bytes report from the bench harness. Host runner; includes a `port_stub.hpp` sketch for porting to a Cortex-M target.
+- **`kws_cortex_m_int8/`** — int8 quantized counterpart of `kws_cortex_m`. Same pipeline shape, same CSV report format, but every layer is replaced with the `cpp/q*.hpp` family. Demonstrates host-side calibration via `qcalibration.hpp` plus a pure-integer forward path. Use it for direct cycle/byte comparisons against the float pipeline.
 
 ### Apps (`apps/activation/`)
 
