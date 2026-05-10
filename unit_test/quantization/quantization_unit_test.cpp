@@ -84,7 +84,13 @@ using tinymind::computePerChannelSymmetricScales;
 using tinymind::buildRequantizer;
 using tinymind::computeQuantizedSix;
 using tinymind::computeQuantizedThreshold;
+using tinymind::buildQSigmoidLUT;
+using tinymind::buildQTanhLUT;
 #endif
+using tinymind::kQActivationLUTSize;
+using tinymind::qActivationLUTIndex;
+using tinymind::qApplyLUT;
+using tinymind::qApplyLUTBuffer;
 
 namespace {
 
@@ -1325,6 +1331,118 @@ BOOST_AUTO_TEST_CASE(end_to_end_quantized_dot_product)
     // since input/weight quantization each contribute their own rounding.
     BOOST_TEST(std::abs(out - ref) <= 3.0f * op.scale);
 }
+#endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
+
+BOOST_AUTO_TEST_CASE(qactivation_lut_index_endpoints)
+{
+    // -128 maps to index 0, 0 maps to index 128, 127 maps to index 255.
+    BOOST_TEST(qActivationLUTIndex(static_cast<int8_t>(-128)) == 0u);
+    BOOST_TEST(qActivationLUTIndex(static_cast<int8_t>(0)) == 128u);
+    BOOST_TEST(qActivationLUTIndex(static_cast<int8_t>(127)) == 255u);
+}
+
+BOOST_AUTO_TEST_CASE(qactivation_lut_apply_pointwise_and_buffer)
+{
+    int8_t lut[kQActivationLUTSize];
+    for (std::size_t i = 0; i < kQActivationLUTSize; ++i)
+    {
+        lut[i] = static_cast<int8_t>(static_cast<int32_t>(i) - 128);
+    }
+
+    // Identity LUT: output equals input across the full int8 range.
+    for (int32_t v = -128; v <= 127; ++v)
+    {
+        BOOST_TEST(qApplyLUT(static_cast<int8_t>(v), lut) == static_cast<int8_t>(v));
+    }
+
+    int8_t buf[5] = {-128, -1, 0, 1, 127};
+    qApplyLUTBuffer(buf, 5, lut);
+    BOOST_TEST(buf[0] == static_cast<int8_t>(-128));
+    BOOST_TEST(buf[1] == static_cast<int8_t>(-1));
+    BOOST_TEST(buf[2] == static_cast<int8_t>(0));
+    BOOST_TEST(buf[3] == static_cast<int8_t>(1));
+    BOOST_TEST(buf[4] == static_cast<int8_t>(127));
+}
+
+#if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
+
+BOOST_AUTO_TEST_CASE(qsigmoid_lut_matches_float_reference)
+{
+    // Calibrate the input tensor over [-8, 8] (saturating sigmoid range).
+    AffineParams ip = computeAffineParamsAsymmetric(-8.0f, 8.0f, -128, 127);
+    // Sigmoid output lives in (0, 1); use the canonical 1/256 grid with
+    // zero_point = -128 so the full int8 range covers the function.
+    const float out_scale = 1.0f / 256.0f;
+    const int32_t out_zp = -128;
+
+    int8_t lut[kQActivationLUTSize];
+    buildQSigmoidLUT(ip.scale, ip.zero_point, out_scale, out_zp, lut);
+
+    // The LUT must be monotonic non-decreasing in the input value.
+    for (std::size_t i = 1; i < kQActivationLUTSize; ++i)
+    {
+        BOOST_TEST(static_cast<int32_t>(lut[i]) >= static_cast<int32_t>(lut[i - 1]));
+    }
+
+    // Saturation extremes: very negative input -> ~0, very positive -> ~1.
+    {
+        const int8_t q_neg = quantize<int8_t>(-7.5f, ip.scale, ip.zero_point, -128, 127);
+        const int8_t y_neg = qApplyLUT(q_neg, lut);
+        const float yf = dequantize<int8_t>(y_neg, out_scale, out_zp);
+        BOOST_TEST(yf < 0.01f);
+    }
+    {
+        const int8_t q_pos = quantize<int8_t>(7.5f, ip.scale, ip.zero_point, -128, 127);
+        const int8_t y_pos = qApplyLUT(q_pos, lut);
+        const float yf = dequantize<int8_t>(y_pos, out_scale, out_zp);
+        BOOST_TEST(yf > 0.99f);
+    }
+
+    // Sample several points and compare to the float reference. The error
+    // budget is the input grid step times sigmoid'(x)<=1/4 plus one output
+    // LSB; allow a couple of LSBs for rounding.
+    const float test_xs[] = {-4.0f, -1.0f, -0.25f, 0.0f, 0.25f, 1.0f, 4.0f};
+    for (float x : test_xs)
+    {
+        const int8_t qx = quantize<int8_t>(x, ip.scale, ip.zero_point, -128, 127);
+        const float y_q = dequantize<int8_t>(qApplyLUT(qx, lut), out_scale, out_zp);
+        const float y_ref = 1.0f / (1.0f + std::exp(-x));
+        BOOST_TEST(std::abs(y_q - y_ref) < 0.05f);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qtanh_lut_matches_float_reference)
+{
+    AffineParams ip = computeAffineParamsAsymmetric(-4.0f, 4.0f, -128, 127);
+    // tanh output lives in (-1, 1); 1/128 with zp=0 covers the symmetric range.
+    const float out_scale = 1.0f / 128.0f;
+    const int32_t out_zp = 0;
+
+    int8_t lut[kQActivationLUTSize];
+    buildQTanhLUT(ip.scale, ip.zero_point, out_scale, out_zp, lut);
+
+    for (std::size_t i = 1; i < kQActivationLUTSize; ++i)
+    {
+        BOOST_TEST(static_cast<int32_t>(lut[i]) >= static_cast<int32_t>(lut[i - 1]));
+    }
+
+    // Odd symmetry around the input zero_point: tanh(0) = 0.
+    {
+        const int8_t qx = quantize<int8_t>(0.0f, ip.scale, ip.zero_point, -128, 127);
+        const float y_q = dequantize<int8_t>(qApplyLUT(qx, lut), out_scale, out_zp);
+        BOOST_TEST(std::abs(y_q) < 0.02f);
+    }
+
+    const float test_xs[] = {-3.0f, -1.0f, -0.5f, 0.0f, 0.5f, 1.0f, 3.0f};
+    for (float x : test_xs)
+    {
+        const int8_t qx = quantize<int8_t>(x, ip.scale, ip.zero_point, -128, 127);
+        const float y_q = dequantize<int8_t>(qApplyLUT(qx, lut), out_scale, out_zp);
+        const float y_ref = std::tanh(x);
+        BOOST_TEST(std::abs(y_q - y_ref) < 0.05f);
+    }
+}
+
 #endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 
 BOOST_AUTO_TEST_SUITE_END()

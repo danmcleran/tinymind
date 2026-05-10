@@ -46,9 +46,13 @@
  *      Folding the activation into the requantizer is what TFLite/CMSIS-NN
  *      do for runtime efficiency: no second pass over the buffer.
  *
- * Sigmoid/tanh lookup tables are out of scope for this phase; they require
- * separate table generation similar to lookupTables.cpp and are tracked
- * for a later phase.
+ * Sigmoid/tanh are also supported via 256-entry int8 lookup tables. The
+ * LUT is keyed by the unsigned reinterpretation of the int8 input
+ * (input + 128), so the runtime apply is a single load with no compare or
+ * arithmetic. Host-only builders (buildQSigmoidLUT / buildQTanhLUT) walk
+ * every int8 input value, dequantize to float, apply the float reference,
+ * and requantize into the destination tensor's grid; the resulting int8
+ * table is embedded as a constant for the deployable build.
  */
 
 namespace tinymind {
@@ -104,6 +108,46 @@ namespace tinymind {
             if (v < zero_point) v = zero_point;
             else if (v > q_six) v = q_six;
             buf[i] = v;
+        }
+    }
+
+    /**
+     * Size of the int8 sigmoid/tanh lookup table.
+     *
+     * One entry per int8 input value; index is the uint8 reinterpretation
+     * of the int8 (i.e. input + 128). Storing the table as int8 keeps it
+     * 256 bytes regardless of the activation.
+     */
+    static constexpr std::size_t kQActivationLUTSize = 256;
+
+    /**
+     * Convert an int8 input to the uint8 LUT index.
+     *
+     * The cast pattern is the canonical "shift-by-128" trick: int8 -128 maps
+     * to index 0, int8 0 maps to index 128, int8 127 maps to index 255.
+     */
+    inline std::size_t qActivationLUTIndex(int8_t x)
+    {
+        return static_cast<std::size_t>(static_cast<uint8_t>(static_cast<int32_t>(x) + 128));
+    }
+
+    /**
+     * Apply a 256-entry int8 LUT pointwise.
+     *
+     * The LUT is caller-owned and produced by buildQSigmoidLUT /
+     * buildQTanhLUT (or any equivalent host-side table). Pure integer at
+     * runtime, freestanding-safe.
+     */
+    inline int8_t qApplyLUT(int8_t x, const int8_t* lut)
+    {
+        return lut[qActivationLUTIndex(x)];
+    }
+
+    inline void qApplyLUTBuffer(int8_t* buf, std::size_t n, const int8_t* lut)
+    {
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            buf[i] = lut[qActivationLUTIndex(buf[i])];
         }
     }
 
@@ -185,6 +229,73 @@ namespace tinymind {
                                    static_cast<double>(output_scale)) +
                        static_cast<long>(zero_point);
         return static_cast<int32_t>(q);
+    }
+
+    /**
+     * Saturating round-to-nearest float -> int8 used by the LUT builders.
+     *
+     * Centralized so the sigmoid and tanh tables share identical rounding
+     * semantics with std::lround (ties away from zero, matching TFLite).
+     */
+    inline int8_t qSaturateRoundToInt8(float v)
+    {
+        long q = std::lround(static_cast<double>(v));
+        if (q < -128) q = -128;
+        if (q > 127)  q = 127;
+        return static_cast<int8_t>(q);
+    }
+
+    /**
+     * Build a 256-entry int8 lookup table for sigmoid.
+     *
+     * For every int8 input value, dequantize to float using the input
+     * tensor's (scale, zero_point), apply 1 / (1 + exp(-x)), then
+     * requantize to the output tensor's grid. The output of sigmoid is in
+     * (0, 1), so callers typically calibrate the output tensor with
+     * output_scale = 1/256 and output_zero_point = -128 to use the full
+     * int8 range; any other pair works as long as it covers (0, 1).
+     *
+     * lut_out must point to a buffer of kQActivationLUTSize int8 entries.
+     */
+    inline void buildQSigmoidLUT(float input_scale, int32_t input_zero_point,
+                                 float output_scale, int32_t output_zero_point,
+                                 int8_t* lut_out)
+    {
+        for (std::size_t idx = 0; idx < kQActivationLUTSize; ++idx)
+        {
+            // idx is the uint8 reinterpretation of the int8 input; recover
+            // the signed input by subtracting 128 before dequantizing.
+            const int32_t x_i8 = static_cast<int32_t>(idx) - 128;
+            const float x_f = input_scale *
+                              static_cast<float>(x_i8 - input_zero_point);
+            const float y_f = 1.0f / (1.0f + std::exp(-x_f));
+            const float y_q = static_cast<float>(output_zero_point) +
+                              y_f / output_scale;
+            lut_out[idx] = qSaturateRoundToInt8(y_q);
+        }
+    }
+
+    /**
+     * Build a 256-entry int8 lookup table for tanh.
+     *
+     * Output range is (-1, 1); a symmetric output calibration with
+     * output_scale = 1/128 and output_zero_point = 0 yields the full int8
+     * range. Otherwise mirrors buildQSigmoidLUT.
+     */
+    inline void buildQTanhLUT(float input_scale, int32_t input_zero_point,
+                              float output_scale, int32_t output_zero_point,
+                              int8_t* lut_out)
+    {
+        for (std::size_t idx = 0; idx < kQActivationLUTSize; ++idx)
+        {
+            const int32_t x_i8 = static_cast<int32_t>(idx) - 128;
+            const float x_f = input_scale *
+                              static_cast<float>(x_i8 - input_zero_point);
+            const float y_f = std::tanh(x_f);
+            const float y_q = static_cast<float>(output_zero_point) +
+                              y_f / output_scale;
+            lut_out[idx] = qSaturateRoundToInt8(y_q);
+        }
     }
 
 } // namespace tinymind

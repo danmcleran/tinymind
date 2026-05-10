@@ -74,7 +74,7 @@ Post-training int8 quantization path that lives **alongside** the existing singl
 
 - **`qaffine.hpp`** — Affine primitives: `QAffineTensor`, `Requantizer<SrcAccum, DstStorage>`, and the gemmlowp-style `saturatingRoundingDoublingHighMul` / `roundingDivideByPOT` helpers. Pure integer at runtime; freestanding-safe.
 - **`qconv2d.hpp`**, **`qdepthwiseconv2d.hpp`** (per-channel weight scale, TFLite mandate), **`qpointwiseconv2d.hpp`**, **`qpool2d.hpp`** (`QMaxPool2D` / `QAvgPool2D` / `QGlobalAvgPool2D`), **`qdense.hpp`** — Quantized layer family. Weights, biases, and Requantizer tables are caller-owned; layer structs are pointer-shaped so the same model can be built once on the host and re-used across many MCU targets.
-- **`qactivations.hpp`** — Quantized ReLU / ReLU6, plus `clampForRelu` / `clampForRelu6` helpers that fold the activation into the upstream Requantizer's saturation pass (matches CMSIS-NN runtime efficiency).
+- **`qactivations.hpp`** — Quantized ReLU / ReLU6, plus `clampForRelu` / `clampForRelu6` helpers that fold the activation into the upstream Requantizer's saturation pass (matches CMSIS-NN runtime efficiency). 256-entry int8 lookup tables for sigmoid and tanh (`buildQSigmoidLUT` / `buildQTanhLUT` build host-side; `qApplyLUT` / `qApplyLUTBuffer` apply pure-integer at runtime).
 - **`include/qcalibration.hpp`** — Host-only calibration helpers (`RangeObserver`, `computeAffineParamsAsymmetric` / `Symmetric`, `computePerChannelSymmetricScales`, `quantizeBuffer`, `buildRequantizer`). Gated on `TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD` so the deployable inference binary never pulls in float math.
 
 The deployable target shape is `TINYMIND_ENABLE_QUANTIZATION=1, TINYMIND_ENABLE_FLOAT=0, TINYMIND_ENABLE_STD=0`: int8 weights/activations, int32 accumulators, integer requantization, no `<cmath>`. The `unit_test/embedded` matrix exercises this corner as `quant_freestanding`. The `unit_test/quantization` Boost.Test suite covers the math (Requantizer round-trip, per-channel depthwise, calibration), and `examples/kws_cortex_m_int8/` is a side-by-side counterpart to `examples/kws_cortex_m/` with directly comparable CSV cycle/byte reports.
@@ -109,7 +109,8 @@ typedef NeuralNet<XorNNProperties> XorNN;
 
 - **`xor/`** — XOR gate learned by a small neural network; includes a Python plotting script
 - **`maze/`** and **`dqn_maze/`** — Maze solving via Q-learning and deep Q-networks
-- **`pytorch/`** — Exports weights from a PyTorch model and imports them into a TinyMind C++ network for inference
+- **`pytorch/`** — Exports weights from a PyTorch model and imports them into a TinyMind C++ network for inference (Q-format pipeline)
+- **`pytorch_quant/xor/`** — Affine int8 counterpart to `pytorch/xor/`. PyTorch float training + per-tensor calibration + `weights.hpp` emission, then a pure-integer C++ forward pass through `QDense` + `qrelu` + `QDense` + int8 sigmoid LUT
 - **`kws_cortex_m/`** — Keyword-spotting-style pipeline built from `Conv2D` → `MaxPool2D` → `DepthwiseConv2D` → `PointwiseConv2D` → `GlobalAvgPool2D` → dense, with a CSV cycles/bytes report from the bench harness. Host runner; includes a `port_stub.hpp` sketch for porting to a Cortex-M target.
 - **`kws_cortex_m_int8/`** — int8 quantized counterpart of `kws_cortex_m`. Same pipeline shape, same CSV report format, but every layer is replaced with the `cpp/q*.hpp` family. Demonstrates host-side calibration via `qcalibration.hpp` plus a pure-integer forward path. Use it for direct cycle/byte comparisons against the float pipeline.
 

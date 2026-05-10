@@ -15,4 +15,5 @@ check :
 	cd examples/kan_xor && make clean && make && make release && cd -
 	cd examples/kws_cortex_m && make clean && make && make release && cd -
 	cd examples/kws_cortex_m_int8 && make clean && make && make release && cd -
+	cd examples/pytorch_quant/xor && make clean && make && make release && make run && cd -
 	cd apps/activation && make clean && make && make release && cd -
