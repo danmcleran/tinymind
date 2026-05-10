@@ -39,6 +39,8 @@
 
 #include "qaffine.hpp"
 #include "qcalibration.hpp"
+#include "qactivations.hpp"
+#include "qdense.hpp"
 #include "compiler.h"
 
 #define BOOST_TEST_MODULE quantization_unit_test
@@ -51,6 +53,13 @@ using tinymind::saturatingRoundingDoublingHighMul;
 using tinymind::roundingDivideByPOT;
 using tinymind::Requantizer;
 using tinymind::QAffineTensor;
+using tinymind::qrelu;
+using tinymind::qreluBuffer;
+using tinymind::qrelu6;
+using tinymind::qrelu6Buffer;
+using tinymind::clampForRelu;
+using tinymind::clampForRelu6;
+using tinymind::QDense;
 #if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 using tinymind::quantizeMultiplier;
 using tinymind::AffineParams;
@@ -63,6 +72,8 @@ using tinymind::quantizeBuffer;
 using tinymind::dequantizeBuffer;
 using tinymind::computePerChannelSymmetricScales;
 using tinymind::buildRequantizer;
+using tinymind::computeQuantizedSix;
+using tinymind::computeQuantizedThreshold;
 #endif
 
 namespace {
@@ -414,7 +425,289 @@ BOOST_AUTO_TEST_CASE(build_requantizer_matches_manual_decomposition)
                                        /*output_zp=*/-10, -128, 127);
     BOOST_TEST(static_cast<int>(r2.apply(100)) == 40);
 }
+#endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 
+// ---------------------------------------------------------------------------
+// Phase 3: quantized activations + dense layer. The pure-integer helpers
+// (qrelu, qrelu6, clampForRelu*) compile in any configuration; the layer
+// tests below them rely on calibration helpers and so are gated again.
+// ---------------------------------------------------------------------------
+
+BOOST_AUTO_TEST_CASE(qrelu_clamps_at_zero_point)
+{
+    // Symmetric int8: zero_point = 0. Negative inputs -> 0, non-negative
+    // pass through.
+    BOOST_TEST(static_cast<int>(qrelu<int8_t>(-50, 0)) == 0);
+    BOOST_TEST(static_cast<int>(qrelu<int8_t>(0, 0)) == 0);
+    BOOST_TEST(static_cast<int>(qrelu<int8_t>(50, 0)) == 50);
+
+    // Non-zero zero_point (asymmetric): clamp at zp.
+    BOOST_TEST(static_cast<int>(qrelu<int8_t>(-10, -20)) == -10); // > -20
+    BOOST_TEST(static_cast<int>(qrelu<int8_t>(-30, -20)) == -20); // < -20
+}
+
+BOOST_AUTO_TEST_CASE(qrelu_buffer_in_place)
+{
+    int8_t buf[5] = {-50, -1, 0, 1, 50};
+    qreluBuffer<int8_t>(buf, 5, 0);
+    BOOST_TEST(static_cast<int>(buf[0]) == 0);
+    BOOST_TEST(static_cast<int>(buf[1]) == 0);
+    BOOST_TEST(static_cast<int>(buf[2]) == 0);
+    BOOST_TEST(static_cast<int>(buf[3]) == 1);
+    BOOST_TEST(static_cast<int>(buf[4]) == 50);
+}
+
+BOOST_AUTO_TEST_CASE(qrelu6_clamps_at_both_ends)
+{
+    // zero_point = -128, q_six = 30 (arbitrary upper clamp).
+    BOOST_TEST(static_cast<int>(qrelu6<int8_t>(-128, -128, 30)) == -128);
+    BOOST_TEST(static_cast<int>(qrelu6<int8_t>(0, -128, 30)) == 0);
+    BOOST_TEST(static_cast<int>(qrelu6<int8_t>(30, -128, 30)) == 30);
+    BOOST_TEST(static_cast<int>(qrelu6<int8_t>(50, -128, 30)) == 30);  // saturate high
+    BOOST_TEST(static_cast<int>(qrelu6<int8_t>(-127, -128, 30)) == -127); // pass through
+    BOOST_TEST(static_cast<int>(qrelu6<int8_t>(-129 + 1, -128, 30)) == -128); // saturate low
+}
+
+BOOST_AUTO_TEST_CASE(qrelu6_buffer)
+{
+    int8_t buf[4] = {-50, 0, 25, 100};
+    qrelu6Buffer<int8_t>(buf, 4, 0, 30);
+    BOOST_TEST(static_cast<int>(buf[0]) == 0);
+    BOOST_TEST(static_cast<int>(buf[1]) == 0);
+    BOOST_TEST(static_cast<int>(buf[2]) == 25);
+    BOOST_TEST(static_cast<int>(buf[3]) == 30);
+}
+
+BOOST_AUTO_TEST_CASE(clamp_for_relu_raises_qmin_only_when_below_zp)
+{
+    int8_t qmin = -128;
+    clampForRelu<int8_t>(0, qmin, 127);
+    BOOST_TEST(static_cast<int>(qmin) == 0);
+
+    qmin = 10; // already above zp
+    clampForRelu<int8_t>(0, qmin, 127);
+    BOOST_TEST(static_cast<int>(qmin) == 10);
+}
+
+BOOST_AUTO_TEST_CASE(clamp_for_relu6_lowers_qmax_only_when_above_q_six)
+{
+    int8_t qmin = -128;
+    int8_t qmax = 127;
+    clampForRelu6<int8_t>(0, 30, qmin, qmax);
+    BOOST_TEST(static_cast<int>(qmin) == 0);
+    BOOST_TEST(static_cast<int>(qmax) == 30);
+
+    // q_six above current qmax: qmax should not move up.
+    qmin = -128;
+    qmax = 20;
+    clampForRelu6<int8_t>(0, 30, qmin, qmax);
+    BOOST_TEST(static_cast<int>(qmin) == 0);
+    BOOST_TEST(static_cast<int>(qmax) == 20);
+}
+
+#if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
+BOOST_AUTO_TEST_CASE(quantized_six_threshold_round_trip)
+{
+    // Output scale 6/255, zero_point = -128. Quantized 6.0 should land at
+    // qmax (127).
+    const float scale = 6.0f / 255.0f;
+    const int32_t zp = -128;
+    const int32_t q_six = computeQuantizedSix(scale, zp);
+    BOOST_TEST(q_six == 127);
+
+    // Threshold 3.0 lands roughly halfway: qmin + 127 ish.
+    const int32_t q_three = computeQuantizedThreshold(3.0f, scale, zp);
+    BOOST_TEST(q_three >= -1);
+    BOOST_TEST(q_three <= 1);
+}
+
+BOOST_AUTO_TEST_CASE(qdense_basic_single_output)
+{
+    // 2 inputs -> 1 output, weights [1, 1]. Treat all scales as 1.0 so
+    // requant ratio is 1.0 and the integer accumulator passes through.
+    const int8_t weights[] = {1, 1};
+    const int32_t bias[] = {0};
+
+    QDense<int8_t, int8_t, int32_t, int8_t, 2, 1> layer;
+    layer.weights = weights;
+    layer.biases = bias;
+    layer.input_zero_point = 0;
+    layer.requantizer = buildRequantizer<int8_t>(
+        /*in*/1.0f, /*w*/1.0f, /*out*/1.0f,
+        /*out_zp*/0, -128, 127);
+
+    const int8_t input[] = {3, 5};
+    int8_t out[1] = {0};
+    layer.forward(input, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 8);
+}
+
+BOOST_AUTO_TEST_CASE(qdense_multi_output)
+{
+    // 2 inputs -> 2 outputs.
+    // weights row-major: [[2, 1],
+    //                     [-1, 3]]
+    // input = [1, 2]; expect [2*1 + 1*2, -1*1 + 3*2] = [4, 5].
+    const int8_t weights[] = {2, 1, -1, 3};
+    const int32_t bias[] = {0, 0};
+
+    QDense<int8_t, int8_t, int32_t, int8_t, 2, 2> layer;
+    layer.weights = weights;
+    layer.biases = bias;
+    layer.input_zero_point = 0;
+    layer.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    const int8_t input[] = {1, 2};
+    int8_t out[2] = {0, 0};
+    layer.forward(input, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 4);
+    BOOST_TEST(static_cast<int>(out[1]) == 5);
+}
+
+BOOST_AUTO_TEST_CASE(qdense_applies_bias)
+{
+    const int8_t weights[] = {1, 1};
+    const int32_t bias[] = {10};
+
+    QDense<int8_t, int8_t, int32_t, int8_t, 2, 1> layer;
+    layer.weights = weights;
+    layer.biases = bias;
+    layer.input_zero_point = 0;
+    layer.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    const int8_t input[] = {3, 5};
+    int8_t out[1] = {0};
+    layer.forward(input, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 18); // 3+5+10
+}
+
+BOOST_AUTO_TEST_CASE(qdense_null_bias_starts_at_zero)
+{
+    const int8_t weights[] = {2};
+    QDense<int8_t, int8_t, int32_t, int8_t, 1, 1> layer;
+    layer.weights = weights;
+    layer.biases = nullptr;
+    layer.input_zero_point = 0;
+    layer.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    const int8_t input[] = {7};
+    int8_t out[1] = {0};
+    layer.forward(input, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 14);
+}
+
+BOOST_AUTO_TEST_CASE(qdense_subtracts_input_zero_point)
+{
+    // input_zero_point = 5. Weights [1, 1]. Effective input = (q - 5).
+    // q=[10, 20] -> effective [5, 15] -> sum 20.
+    const int8_t weights[] = {1, 1};
+    const int32_t bias[] = {0};
+
+    QDense<int8_t, int8_t, int32_t, int8_t, 2, 1> layer;
+    layer.weights = weights;
+    layer.biases = bias;
+    layer.input_zero_point = 5;
+    layer.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    const int8_t input[] = {10, 20};
+    int8_t out[1] = {0};
+    layer.forward(input, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 20);
+}
+
+BOOST_AUTO_TEST_CASE(qdense_with_fused_relu)
+{
+    // ReLU fused via raised qmin: -128 -> 0. Negative accumulators clamp.
+    const int8_t weights[] = {1, -1};
+    const int32_t bias[] = {0};
+
+    QDense<int8_t, int8_t, int32_t, int8_t, 2, 1> layer;
+    layer.weights = weights;
+    layer.biases = bias;
+    layer.input_zero_point = 0;
+    layer.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+    int8_t qmin = layer.requantizer.qmin;
+    clampForRelu<int8_t>(layer.requantizer.zero_point, qmin, layer.requantizer.qmax);
+    layer.requantizer.qmin = qmin;
+
+    // input [5, 10] -> 5 - 10 = -5 -> ReLU -> 0
+    const int8_t neg_input[] = {5, 10};
+    int8_t out[1] = {0};
+    layer.forward(neg_input, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 0);
+
+    // input [10, 5] -> 10 - 5 = 5 -> pass through
+    const int8_t pos_input[] = {10, 5};
+    layer.forward(pos_input, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 5);
+}
+
+BOOST_AUTO_TEST_CASE(qdense_end_to_end_against_float_reference)
+{
+    // 3 inputs -> 2 outputs. Build a small float reference, calibrate,
+    // quantize weights/inputs, run QDense, dequantize, compare.
+    using tinymind::AffineParams;
+    using tinymind::computeAffineParamsAsymmetric;
+    using tinymind::computeAffineParamsSymmetric;
+    using tinymind::quantize;
+    using tinymind::dequantize;
+    using tinymind::quantizeBuffer;
+
+    const float w_floats[6] = {
+         0.5f, -0.25f,  0.75f,   // output 0
+        -0.5f,  0.25f, -0.75f,   // output 1
+    };
+    const float b_floats[2] = {0.1f, -0.1f};
+    const float a_floats[3] = {1.0f, -2.0f, 0.5f};
+
+    // Float reference.
+    float ref[2] = {0.0f, 0.0f};
+    for (int o = 0; o < 2; ++o)
+    {
+        ref[o] = b_floats[o];
+        for (int i = 0; i < 3; ++i)
+        {
+            ref[o] += w_floats[o * 3 + i] * a_floats[i];
+        }
+    }
+
+    // Calibrate.
+    AffineParams wp = computeAffineParamsSymmetric(-0.75f, 0.75f, 127);
+    AffineParams ap = computeAffineParamsAsymmetric(-2.0f, 1.0f, -128, 127);
+    AffineParams op = computeAffineParamsAsymmetric(-2.0f, 2.0f, -128, 127);
+
+    // Quantize.
+    int8_t wq[6];
+    int8_t aq[3];
+    int32_t bq[2];
+    quantizeBuffer<int8_t>(w_floats, wq, 6, wp.scale, 0, -127, 127);
+    quantizeBuffer<int8_t>(a_floats, aq, 3, ap.scale, ap.zero_point, -128, 127);
+    // Bias scale = input_scale * weight_scale, no zero_point.
+    const float bias_scale = ap.scale * wp.scale;
+    for (int o = 0; o < 2; ++o)
+    {
+        bq[o] = static_cast<int32_t>(std::lround(b_floats[o] / bias_scale));
+    }
+
+    QDense<int8_t, int8_t, int32_t, int8_t, 3, 2> layer;
+    layer.weights = wq;
+    layer.biases = bq;
+    layer.input_zero_point = static_cast<int8_t>(ap.zero_point);
+    layer.requantizer = buildRequantizer<int8_t>(ap.scale, wp.scale, op.scale,
+                                                 op.zero_point, -128, 127);
+
+    int8_t out_q[2];
+    layer.forward(aq, out_q);
+
+    float out_f[2];
+    out_f[0] = dequantize<int8_t>(out_q[0], op.scale, op.zero_point);
+    out_f[1] = dequantize<int8_t>(out_q[1], op.scale, op.zero_point);
+
+    // Allow a few output LSBs of tolerance: weight + activation + bias
+    // each contribute their own quantization error.
+    BOOST_TEST(std::abs(out_f[0] - ref[0]) <= 4.0f * op.scale);
+    BOOST_TEST(std::abs(out_f[1] - ref[1]) <= 4.0f * op.scale);
+}
 BOOST_AUTO_TEST_CASE(end_to_end_quantized_dot_product)
 {
     // Verify the full calibration path: float weights + activations get
