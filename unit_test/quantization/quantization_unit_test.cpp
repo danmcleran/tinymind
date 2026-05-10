@@ -41,6 +41,8 @@
 #include "qcalibration.hpp"
 #include "qactivations.hpp"
 #include "qdense.hpp"
+#include "qconv2d.hpp"
+#include "qpool2d.hpp"
 #include "compiler.h"
 
 #define BOOST_TEST_MODULE quantization_unit_test
@@ -60,6 +62,10 @@ using tinymind::qrelu6Buffer;
 using tinymind::clampForRelu;
 using tinymind::clampForRelu6;
 using tinymind::QDense;
+using tinymind::QConv2D;
+using tinymind::QMaxPool2D;
+using tinymind::QAvgPool2D;
+using tinymind::QGlobalAvgPool2D;
 #if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 using tinymind::quantizeMultiplier;
 using tinymind::AffineParams;
@@ -708,6 +714,304 @@ BOOST_AUTO_TEST_CASE(qdense_end_to_end_against_float_reference)
     BOOST_TEST(std::abs(out_f[0] - ref[0]) <= 4.0f * op.scale);
     BOOST_TEST(std::abs(out_f[1] - ref[1]) <= 4.0f * op.scale);
 }
+// ---------------------------------------------------------------------------
+// Phase 4: quantized 2D conv + pool layers.
+// ---------------------------------------------------------------------------
+
+BOOST_AUTO_TEST_CASE(qmaxpool2d_2x2_stride2)
+{
+    // 4x4 single-channel input. Pool 2x2 stride 2 -> 2x2 output.
+    // Input grid (row-major NHWC, C=1):
+    //   1  2  3  4
+    //   5  6  7  8
+    //   9 10 11 12
+    //  13 14 15 16
+    // Max of each 2x2 quadrant: {6, 8, 14, 16}.
+    const int8_t in[16] = {
+        1, 2, 3, 4,
+        5, 6, 7, 8,
+        9, 10, 11, 12,
+        13, 14, 15, 16
+    };
+    int8_t out[4] = {0};
+
+    QMaxPool2D<int8_t, 4, 4, 1, 2, 2> pool;
+    pool.forward(in, out);
+
+    BOOST_TEST(static_cast<int>(out[0]) == 6);
+    BOOST_TEST(static_cast<int>(out[1]) == 8);
+    BOOST_TEST(static_cast<int>(out[2]) == 14);
+    BOOST_TEST(static_cast<int>(out[3]) == 16);
+}
+
+BOOST_AUTO_TEST_CASE(qmaxpool2d_multi_channel)
+{
+    // 2x2 input, 2 channels, 2x2 pool -> 1x1 output, 2 channels.
+    // NHWC layout: pixels are interleaved.
+    const int8_t in[8] = {
+        1, 100,    2, 50,
+        3, 25,     4, 75
+    };
+    int8_t out[2] = {0, 0};
+
+    QMaxPool2D<int8_t, 2, 2, 2, 2, 2> pool;
+    pool.forward(in, out);
+
+    BOOST_TEST(static_cast<int>(out[0]) == 4);    // channel 0 max
+    BOOST_TEST(static_cast<int>(out[1]) == 100);  // channel 1 max
+}
+
+BOOST_AUTO_TEST_CASE(qavgpool2d_2x2_stride2)
+{
+    const int8_t in[16] = {
+        1, 2, 3, 4,
+        5, 6, 7, 8,
+        9, 10, 11, 12,
+        13, 14, 15, 16
+    };
+    int8_t out[4] = {0};
+
+    QAvgPool2D<int8_t, int32_t, 4, 4, 1, 2, 2> pool;
+    pool.qmin = -128;
+    pool.qmax = 127;
+    pool.forward(in, out);
+
+    // Window means: (1+2+5+6)/4 = 3.5 -> 4 (round-half-away),
+    //               (3+4+7+8)/4 = 5.5 -> 6,
+    //               (9+10+13+14)/4 = 11.5 -> 12,
+    //               (11+12+15+16)/4 = 13.5 -> 14.
+    BOOST_TEST(static_cast<int>(out[0]) == 4);
+    BOOST_TEST(static_cast<int>(out[1]) == 6);
+    BOOST_TEST(static_cast<int>(out[2]) == 12);
+    BOOST_TEST(static_cast<int>(out[3]) == 14);
+}
+
+BOOST_AUTO_TEST_CASE(qavgpool2d_negative_values_round_half_away)
+{
+    // Window mean of {-1, -2, -2, -3} = -2.0 (exact). Mean of
+    // {-1, -2, -2, -2} = -1.75 -> rounds to -2.
+    const int8_t in[8] = {
+        -1, -2, -2, -3,    // first window (row, col, c flattened)
+        -2, -2, -2, -2,    // padding row to keep H >= PoolH; not used
+    };
+    int8_t out[1] = {0};
+
+    QAvgPool2D<int8_t, int32_t, 2, 4, 1, 2, 4> pool;
+    pool.qmin = -128;
+    pool.qmax = 127;
+    pool.forward(in, out);
+
+    // Whole 2x4 window covers in[0..3] then in[4..7].
+    // Sum = -1 -2 -2 -3 -2 -2 -2 -2 = -16. Avg = -16/8 = -2 exact.
+    BOOST_TEST(static_cast<int>(out[0]) == -2);
+}
+
+BOOST_AUTO_TEST_CASE(qglobalavgpool2d)
+{
+    // 2x2 input, 2 channels: NHWC = [c0=1, c1=10, c0=3, c1=20,
+    //                                c0=5, c1=30, c0=7, c1=40].
+    // Channel 0 mean = (1+3+5+7)/4 = 4.0
+    // Channel 1 mean = (10+20+30+40)/4 = 25.0
+    const int8_t in[8] = {1, 10, 3, 20, 5, 30, 7, 40};
+    int8_t out[2] = {0};
+
+    QGlobalAvgPool2D<int8_t, int32_t, 2, 2, 2> gap;
+    gap.qmin = -128;
+    gap.qmax = 127;
+    gap.forward(in, out);
+
+    BOOST_TEST(static_cast<int>(out[0]) == 4);
+    BOOST_TEST(static_cast<int>(out[1]) == 25);
+}
+
+BOOST_AUTO_TEST_CASE(qavgpool2d_clamps_to_qmax)
+{
+    // All values at int8 max -> avg = 127, well within range. Then
+    // sanity: tighter qmax forces clamp.
+    int8_t in[4] = {127, 127, 127, 127};
+    int8_t out[1] = {0};
+
+    QAvgPool2D<int8_t, int32_t, 2, 2, 1, 2, 2> pool;
+    pool.qmin = -128;
+    pool.qmax = 50;  // artificially tight for test
+    pool.forward(in, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 50);
+}
+
+BOOST_AUTO_TEST_CASE(qconv2d_identity_kernel)
+{
+    // 3x3 input, 3x3 kernel = 1x1 output. Single in/out channel.
+    // Kernel is all zeros except center weight = 1; bias 0; identity
+    // ratio (in*w/out) = 1.0, zero zp.
+    const int8_t in[9] = {
+        1, 2, 3,
+        4, 5, 6,
+        7, 8, 9,
+    };
+    const int8_t weights[9] = {
+        0, 0, 0,
+        0, 1, 0,
+        0, 0, 0,
+    };
+    const int32_t bias[1] = {0};
+    int8_t out[1] = {0};
+
+    QConv2D<int8_t, int8_t, int32_t, int8_t, 3, 3, 1, 3, 3, 1, 1, 1> conv;
+    conv.weights = weights;
+    conv.biases = bias;
+    conv.input_zero_point = 0;
+    conv.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    conv.forward(in, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 5); // center value
+}
+
+BOOST_AUTO_TEST_CASE(qconv2d_two_filters)
+{
+    // 3x3 input, 3x3 kernel, 2 filters -> 1x1x2 output.
+    // Filter 0: identity (center=1). Filter 1: -identity.
+    const int8_t in[9] = {
+        1, 2, 3,
+        4, 10, 6,
+        7, 8, 9,
+    };
+    const int8_t weights[18] = {
+        // filter 0 (KH*KW*Cin = 9 weights)
+        0, 0, 0, 0, 1, 0, 0, 0, 0,
+        // filter 1
+        0, 0, 0, 0, -1, 0, 0, 0, 0,
+    };
+    const int32_t bias[2] = {0, 0};
+    int8_t out[2] = {0};
+
+    QConv2D<int8_t, int8_t, int32_t, int8_t, 3, 3, 1, 3, 3, 1, 1, 2> conv;
+    conv.weights = weights;
+    conv.biases = bias;
+    conv.input_zero_point = 0;
+    conv.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    conv.forward(in, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 10);   // center
+    BOOST_TEST(static_cast<int>(out[1]) == -10);  // negated center
+}
+
+BOOST_AUTO_TEST_CASE(qconv2d_with_bias_and_input_zp)
+{
+    // 2x2 input, 2x2 kernel, 1 filter -> 1x1 out.
+    // input_zero_point = 5; effective input = q - 5.
+    // Weights all 1 -> effective sum = (q1-5) + (q2-5) + (q3-5) + (q4-5).
+    const int8_t in[4] = {10, 10, 10, 10};   // effective 5 + 5 + 5 + 5 = 20
+    const int8_t weights[4] = {1, 1, 1, 1};
+    const int32_t bias[1] = {3};
+    int8_t out[1] = {0};
+
+    QConv2D<int8_t, int8_t, int32_t, int8_t, 2, 2, 1, 2, 2, 1, 1, 1> conv;
+    conv.weights = weights;
+    conv.biases = bias;
+    conv.input_zero_point = 5;
+    conv.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    conv.forward(in, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 23); // 20 + 3
+}
+
+BOOST_AUTO_TEST_CASE(qconv2d_stride_two_2x4_input)
+{
+    // 2x4 input, 1x2 kernel, stride W=2 -> 2x2 output (height H=2 with
+    // KH=1 stride=1 -> 2; width (4-2)/2+1 = 2).
+    // Wait — with KH=1 we'd need H>=1; let's use H=2, KH=2, strideH=1
+    // -> OH = (2-2)/1 + 1 = 1. Actually pick KH=1 strideH=1 H=2 -> OH=2.
+    // Use KH=1, KW=2, strideH=1, strideW=2, H=2, W=4 -> OH=2, OW=2.
+    const int8_t in[8] = {
+        1, 2, 3, 4,
+        5, 6, 7, 8,
+    };
+    const int8_t weights[2] = {1, 1}; // KH*KW*Cin = 2
+    const int32_t bias[1] = {0};
+    int8_t out[4] = {0};
+
+    QConv2D<int8_t, int8_t, int32_t, int8_t, 2, 4, 1, 1, 2, 1, 2, 1> conv;
+    conv.weights = weights;
+    conv.biases = bias;
+    conv.input_zero_point = 0;
+    conv.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    conv.forward(in, out);
+    // (1+2), (3+4), (5+6), (7+8) -> 3, 7, 11, 15.
+    BOOST_TEST(static_cast<int>(out[0]) == 3);
+    BOOST_TEST(static_cast<int>(out[1]) == 7);
+    BOOST_TEST(static_cast<int>(out[2]) == 11);
+    BOOST_TEST(static_cast<int>(out[3]) == 15);
+}
+
+BOOST_AUTO_TEST_CASE(qconv2d_end_to_end_against_float_reference)
+{
+    // 4x4 input single channel, 3x3 kernel, 1 filter, stride 1.
+    // Output is 2x2. Compare quantized output (dequantized) to float.
+    using tinymind::AffineParams;
+
+    const float a_floats[16] = {
+        0.1f, 0.2f, 0.3f, 0.4f,
+        0.5f, 0.6f, 0.7f, 0.8f,
+        0.9f, 1.0f, 0.5f, -0.5f,
+        -0.1f, -0.2f, -0.3f, -0.4f,
+    };
+    const float w_floats[9] = {
+        0.1f, 0.2f, 0.1f,
+        0.0f, 0.5f, 0.0f,
+        -0.1f, -0.2f, -0.1f,
+    };
+    const float b_floats[1] = {0.05f};
+
+    // Float reference.
+    float ref[4] = {0};
+    for (int oh = 0; oh < 2; ++oh)
+    {
+        for (int ow = 0; ow < 2; ++ow)
+        {
+            float acc = b_floats[0];
+            for (int kh = 0; kh < 3; ++kh)
+            {
+                for (int kw = 0; kw < 3; ++kw)
+                {
+                    acc += w_floats[kh * 3 + kw] *
+                           a_floats[(oh + kh) * 4 + (ow + kw)];
+                }
+            }
+            ref[oh * 2 + ow] = acc;
+        }
+    }
+
+    AffineParams ap = computeAffineParamsAsymmetric(-0.5f, 1.0f, -128, 127);
+    AffineParams wp = computeAffineParamsSymmetric(-0.5f, 0.5f, 127);
+    AffineParams op = computeAffineParamsAsymmetric(-1.5f, 1.5f, -128, 127);
+
+    int8_t aq[16];
+    int8_t wq[9];
+    int32_t bq[1];
+    quantizeBuffer<int8_t>(a_floats, aq, 16, ap.scale, ap.zero_point, -128, 127);
+    quantizeBuffer<int8_t>(w_floats, wq, 9, wp.scale, 0, -127, 127);
+    const float bias_scale = ap.scale * wp.scale;
+    bq[0] = static_cast<int32_t>(std::lround(b_floats[0] / bias_scale));
+
+    QConv2D<int8_t, int8_t, int32_t, int8_t, 4, 4, 1, 3, 3, 1, 1, 1> conv;
+    conv.weights = wq;
+    conv.biases = bq;
+    conv.input_zero_point = static_cast<int8_t>(ap.zero_point);
+    conv.requantizer = buildRequantizer<int8_t>(ap.scale, wp.scale, op.scale,
+                                                op.zero_point, -128, 127);
+
+    int8_t out_q[4];
+    conv.forward(aq, out_q);
+
+    for (int i = 0; i < 4; ++i)
+    {
+        const float out_f = dequantize<int8_t>(out_q[i], op.scale, op.zero_point);
+        // Tolerance: weight + activation + bias quantization combined.
+        BOOST_TEST(std::abs(out_f - ref[i]) <= 5.0f * op.scale);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(end_to_end_quantized_dot_product)
 {
     // Verify the full calibration path: float weights + activations get
