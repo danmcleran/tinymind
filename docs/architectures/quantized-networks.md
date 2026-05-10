@@ -7,7 +7,9 @@ nav_order: 4
 
 # Quantized Neural Networks
 
-Tinymind provides two extreme-quantization layer types for ultra-low-power inference: `BinaryDense` and `TernaryDense`. These layers replace full-precision multiply-accumulate operations with bitwise logic (XNOR + popcount for binary) or conditional add/subtract/skip (for ternary), achieving massive memory reduction and eliminating multiplication entirely from the forward pass.
+This page covers TinyMind's **extreme-quantization** layer types for ultra-low-power inference: `BinaryDense` and `TernaryDense`. For the more familiar **TFLite / CMSIS-NN style int8 affine quantization** path (per-tensor / per-channel `(scale, zero_point)`, int32 accumulators, integer Requantizer), see [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization). The two paths coexist; pick the binary / ternary route when you need 32x compression and a multiply-free MAC, pick the int8 route for drop-in MobileNet-shape deployment.
+
+`BinaryDense` and `TernaryDense` replace full-precision multiply-accumulate operations with bitwise logic (XNOR + popcount for binary) or conditional add/subtract/skip (for ternary), achieving massive memory reduction and eliminating multiplication entirely from the forward pass.
 
 - **BinaryDense**: Weights and activations constrained to {-1, +1}. 32x memory reduction via 1-bit packing.
 - **TernaryDense**: Weights constrained to {-1, 0, +1}. 16x memory reduction via 2-bit packing. Zero weights are skipped, providing sparsity.

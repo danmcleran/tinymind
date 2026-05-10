@@ -61,6 +61,16 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - Pre-computed lookup tables for sigmoid, tanh, exp, and log across all supported bit-widths
 - Also supports `float` and `double` as value types for prototyping
 
+### Post-Training Int8 Quantization (optional, `TINYMIND_ENABLE_QUANTIZATION=1`)
+
+A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside** the existing single-`ValueType` pipeline (no changes to `QValue`, `NeuralNet<>`, or any current layer):
+
+- **`QConv2D`**, **`QDepthwiseConv2D`** (per-channel weight scale, TFLite mandate), **`QPointwiseConv2D`**, **`QMaxPool2D`**, **`QAvgPool2D`**, **`QGlobalAvgPool2D`**, **`QDense`** -- int8 weights/activations, int32 accumulators, integer requantization between layers via gemmlowp-style `Requantizer<int32, int8>` (Q0.31 multiplier + shift)
+- **`qrelu` / `qrelu6`** activations plus `clampForRelu` / `clampForRelu6` helpers that fold the activation into the upstream Requantizer's saturation pass for runtime efficiency
+- **Host-side calibration** in `cpp/include/qcalibration.hpp`: `RangeObserver`, `computeAffineParamsAsymmetric` / `Symmetric`, `computePerChannelSymmetricScales`, `quantizeBuffer`, `buildRequantizer` -- gated on `FLOAT && STD` so the deployable inference binary never pulls in float math
+- **Pure integer at runtime**: the inference path compiles freestanding (`FLOAT=0 STD=0 QUANT=1`); `unit_test/embedded` exercises this corner as `quant_freestanding` and the `unit_test/quantization` Boost.Test suite covers the math
+- **End-to-end example**: [`examples/kws_cortex_m_int8/`](examples/kws_cortex_m_int8/) is a side-by-side counterpart to `examples/kws_cortex_m/` -- same KWS pipeline, comparable CSV cycle/byte report, ~10x smaller weight footprint on the convolutional layers
+
 ### Activation Functions
 
 | Function | Policy Class | Range |
@@ -89,7 +99,7 @@ Fixed-point activations use pre-computed lookup tables for speed. Floating-point
 - **`bench::readCycleCounter()`** -- reads ARM Cortex-M `DWT->CYCCNT` when built with `-DTINYMIND_BENCH_CORTEX_M`, falls back to `std::chrono::steady_clock` nanoseconds on the host
 - **`bench::paintStack` / `bench::stackHighWater`** -- canary-based stack watermarking for worst-case RAM measurement on MCUs
 - **`bench::LayerStat` + `writeHeader/writeRow`** -- CSV layer stats (name, weight bytes, activation bytes, cycles) that target any sink with `operator<<` (works with `std::ostream` on host and a minimal UART wrapper on MCU, no `<iostream>` dependency required)
-- See [`examples/kws_cortex_m/`](examples/kws_cortex_m/) for an end-to-end KWS-style pipeline using the harness
+- See [`examples/kws_cortex_m/`](examples/kws_cortex_m/) for an end-to-end KWS-style pipeline using the harness, and [`examples/kws_cortex_m_int8/`](examples/kws_cortex_m_int8/) for the int8 quantized counterpart with comparable CSV output
 
 ## Quick Start
 
@@ -689,7 +699,7 @@ cd examples/predictive_maintenance && make clean && make
 
 ### Platform Feature Gates
 
-TinyMind compiles cleanly on freestanding embedded targets that lack an FPU, a hosted C++ stdlib, or a C runtime `rand()`. Five preprocessor macros control which dependencies are pulled in. **All default to 0** so embedded targets get the strictest configuration out of the box; hosted users opt in via `-DTINYMIND_ENABLE_*=1`. The five gates are orthogonal — pick exactly the subset your toolchain provides.
+TinyMind compiles cleanly on freestanding embedded targets that lack an FPU, a hosted C++ stdlib, or a C runtime `rand()`. Six preprocessor macros control which dependencies are pulled in. **All default to 0** so embedded targets get the strictest configuration out of the box; hosted users opt in via `-DTINYMIND_ENABLE_*=1`. The gates are orthogonal — pick exactly the subset your toolchain provides.
 
 | Macro | What it enables |
 |---|---|
@@ -698,8 +708,9 @@ TinyMind compiles cleanly on freestanding embedded targets that lack an FPU, a h
 | `TINYMIND_ENABLE_HOSTED_IO` | `<fstream>`, `<vector>`, `<cstdlib>`, `<cstdio>`; required for `NetworkPropertiesFileManager` weight serialization |
 | `TINYMIND_ENABLE_OSTREAMS` | `<ostream>` and `QValue::operator<<` for debug printing |
 | `TINYMIND_ENABLE_HOSTED_RAND` | `<cstdlib>` `rand()`/`RAND_MAX`; required by `Dropout` (training mode), `ScheduledSampling`, and `Xavier` |
+| `TINYMIND_ENABLE_QUANTIZATION` | Parallel int8 quantization layer family (`cpp/q*.hpp`) plus `Requantizer`. Calibration helpers in `cpp/include/qcalibration.hpp` are additionally gated on `FLOAT && STD` (host-only). |
 
-With all five at 0, no header in `cpp/` includes anything beyond `<cstddef>`, `<cstdint>`, and placement `<new>` — all required by freestanding C++. With `FLOAT=1, STD=0` you get an FPU-but-no-stdlib build for float forward-pass inference. The `unit_test/embedded` matrix builds and runs all four `(FLOAT, STD)` corners as part of `make check`.
+With all six at 0, no header in `cpp/` includes anything beyond `<cstddef>`, `<cstdint>`, and placement `<new>` — all required by freestanding C++. With `FLOAT=1, STD=0` you get an FPU-but-no-stdlib build for float forward-pass inference. With `QUANT=1, FLOAT=0, STD=0` you get the deployable int8 inference shape (no float, no calibration helpers). The `unit_test/embedded` matrix builds and runs five corners (`freestanding`, `no_stdlib`, `no_fpu`, `hosted`, `quant_freestanding`) as part of `make check`.
 
 ## Project Structure
 
@@ -721,6 +732,13 @@ tinymind/
     ternarylayer.hpp            # Ternary neural network layer ({-1,0,+1} weights)
     qformat.hpp                 # Fixed-point arithmetic
     qlearn.hpp                  # Q-learning and DQN
+    qaffine.hpp                 # Affine quantization primitives + Requantizer (TINYMIND_ENABLE_QUANTIZATION)
+    qconv2d.hpp                 # Quantized 2D convolution (per-tensor weight scale)
+    qdepthwiseconv2d.hpp        # Quantized depthwise 2D conv (per-channel weight scale, TFLite mandate)
+    qpointwiseconv2d.hpp        # Quantized 1x1 pointwise conv
+    qpool2d.hpp                 # QMaxPool2D, QAvgPool2D, QGlobalAvgPool2D
+    qdense.hpp                  # Quantized fully-connected layer
+    qactivations.hpp            # Quantized ReLU / ReLU6 + fused-clamp helpers
     activationFunctions.hpp     # Activation function policies (9 functions)
     fixedPointTransferFunctions.hpp
     adam.hpp                    # Adam optimizer policy
@@ -737,9 +755,10 @@ tinymind/
     xavier.hpp                  # Xavier weight initialization
     lookupTables.cpp            # Pre-computed activation tables (~3MB)
     include/                    # Support headers
-      tinymind_platform.hpp     # Platform feature gates (FLOAT/STD/HOSTED_IO/OSTREAMS/HOSTED_RAND)
+      tinymind_platform.hpp     # Platform feature gates (FLOAT/STD/HOSTED_IO/OSTREAMS/HOSTED_RAND/QUANTIZATION)
       tinymind_traits.hpp       # Minimal in-house enable_if / is_floating_point for STD=0 builds
       nnproperties.hpp          # Weight file manager (MLP, LSTM, GRU, KAN)
+      qcalibration.hpp          # Host-only int8 calibration helpers (RangeObserver, buildRequantizer, ...)
       constants.hpp, limits.hpp, random.hpp, ...
       bench/                    # Benchmark harness
         platform.hpp            # Cycle counter (Cortex-M DWT / host chrono) + stack watermarks
@@ -752,6 +771,7 @@ tinymind/
     maze/                       # Tabular Q-learning maze solver
     dqn_maze/                   # Deep Q-Network maze solver
     kws_cortex_m/               # Depthwise-separable CNN pipeline with bench harness
+    kws_cortex_m_int8/          # int8 quantized counterpart of kws_cortex_m (parallel Q* layers)
     predictive_maintenance/     # Binary classifier on AI4I 2020 dataset (Q16.16 MLP)
     pytorch/                    # PyTorch weight import (MLP + GRU export)
   unit_test/
@@ -759,6 +779,8 @@ tinymind/
     kan/                        # KAN tests (16 test cases)
     qformat/                    # Fixed-point type tests (static_assert)
     qlearn/                     # Q-learning tests
+    quantization/               # int8 quantization path: Requantizer, calibration, Q* layer correctness
+    embedded/                   # Five-corner (FLOAT, STD, QUANT) regression matrix
   apps/
     activation/                 # Lookup table generator tool
 ```
@@ -768,6 +790,7 @@ tinymind/
 - [CLAUDE.md](CLAUDE.md) -- Architecture overview and build commands
 - [KAN.md](KAN.md) -- KAN implementation plan and summary
 - [LSTM.md](LSTM.md) -- LSTM implementation analysis and improvement roadmap
+- [QUANTIZATION.md](QUANTIZATION.md) -- Post-training int8 quantization plan and design notes
 
 ## License
 

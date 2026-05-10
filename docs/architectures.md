@@ -17,3 +17,4 @@ TinyMind provides a range of neural network architectures, all as header-only C+
 | [Linear Self-Attention]({{ site.baseurl }}/architectures/self-attention) | ~6 KB (mid-range) | Sequence dependency modeling without O(N^2) |
 | [FFT Layer]({{ site.baseurl }}/architectures/fft) | 768 bytes (64-pt Q8.8) | Frequency-domain feature extraction |
 | [Quantized Networks]({{ site.baseurl }}/architectures/quantized-networks) | 128 bytes (packed binary) | 32-64x weight compression |
+| [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) | int8 weights + int32 accum | TFLite/CMSIS-NN style post-training int8, drop-in MobileNet-shape deployment |
