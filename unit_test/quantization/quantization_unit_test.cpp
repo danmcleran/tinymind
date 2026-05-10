@@ -43,6 +43,8 @@
 #include "qdense.hpp"
 #include "qconv2d.hpp"
 #include "qpool2d.hpp"
+#include "qdepthwiseconv2d.hpp"
+#include "qpointwiseconv2d.hpp"
 #include "compiler.h"
 
 #define BOOST_TEST_MODULE quantization_unit_test
@@ -66,6 +68,8 @@ using tinymind::QConv2D;
 using tinymind::QMaxPool2D;
 using tinymind::QAvgPool2D;
 using tinymind::QGlobalAvgPool2D;
+using tinymind::QDepthwiseConv2D;
+using tinymind::QPointwiseConv2D;
 #if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 using tinymind::quantizeMultiplier;
 using tinymind::AffineParams;
@@ -1010,6 +1014,279 @@ BOOST_AUTO_TEST_CASE(qconv2d_end_to_end_against_float_reference)
         // Tolerance: weight + activation + bias quantization combined.
         BOOST_TEST(std::abs(out_f - ref[i]) <= 5.0f * op.scale);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5: per-channel depthwise + per-tensor pointwise conv.
+// ---------------------------------------------------------------------------
+
+BOOST_AUTO_TEST_CASE(qdepthwiseconv2d_two_channels_distinct_scales)
+{
+    // 3x3 input, 2 channels, 3x3 kernel, 1 filter per channel -> 1x1x2 out.
+    // Channel 0: identity center weight = 1, ratio 1.0.
+    // Channel 1: identity center weight = 1, but per-channel ratio 0.5
+    // (effectively halves the output) — exercises the per-channel
+    // Requantizer array.
+    //
+    // NHWC: input[h, w, c] interleaved.
+    // Channel 0 grid: 1 2 3 / 4 50 6 / 7 8 9. Center = 50.
+    // Channel 1 grid: 10 20 30 / 40 100 60 / 70 80 90. Center = 100.
+    const int8_t in[18] = {
+        1, 10,  2, 20,  3, 30,
+        4, 40, 50,100,  6, 60,
+        7, 70,  8, 80,  9, 90,
+    };
+    const int8_t weights[18] = {
+        // channel 0 KH*KW = 9
+        0, 0, 0, 0, 1, 0, 0, 0, 0,
+        // channel 1
+        0, 0, 0, 0, 1, 0, 0, 0, 0,
+    };
+    const int32_t bias[2] = {0, 0};
+
+    Requantizer<int32_t, int8_t> rs[2];
+    rs[0] = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+    rs[1] = buildRequantizer<int8_t>(1.0f, 1.0f, 2.0f, 0, -128, 127);
+
+    QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, 3, 3, 2, 3, 3, 1, 1> dw;
+    dw.weights = weights;
+    dw.biases = bias;
+    dw.input_zero_point = 0;
+    dw.requantizers = rs;
+
+    int8_t out[2] = {0};
+    dw.forward(in, out);
+
+    BOOST_TEST(static_cast<int>(out[0]) == 50);  // channel 0: passes through
+    BOOST_TEST(static_cast<int>(out[1]) == 50);  // channel 1: 100 * 0.5 = 50
+}
+
+BOOST_AUTO_TEST_CASE(qdepthwiseconv2d_with_input_zero_point)
+{
+    // 2x2 input, 1 channel, 2x2 kernel -> 1x1 out.
+    // input_zp = 5; effective input = q - 5.
+    // weights all 1, bias 0. q=[10,10,10,10] -> effective sum = 5+5+5+5 = 20.
+    const int8_t in[4] = {10, 10, 10, 10};
+    const int8_t weights[4] = {1, 1, 1, 1};
+    const int32_t bias[1] = {0};
+
+    Requantizer<int32_t, int8_t> rs[1];
+    rs[0] = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, 2, 2, 1, 2, 2, 1, 1> dw;
+    dw.weights = weights;
+    dw.biases = bias;
+    dw.input_zero_point = 5;
+    dw.requantizers = rs;
+
+    int8_t out[1] = {0};
+    dw.forward(in, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 20);
+}
+
+BOOST_AUTO_TEST_CASE(qdepthwiseconv2d_null_bias_starts_at_zero)
+{
+    // Single 1x1 input/kernel, single channel — degenerate but exercises
+    // the nullptr-bias path in depthwise.
+    const int8_t in[1] = {7};
+    const int8_t weights[1] = {2};
+
+    Requantizer<int32_t, int8_t> rs[1];
+    rs[0] = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, 1, 1, 1, 1, 1, 1, 1> dw;
+    dw.weights = weights;
+    dw.biases = nullptr;
+    dw.input_zero_point = 0;
+    dw.requantizers = rs;
+
+    int8_t out[1] = {0};
+    dw.forward(in, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 14);
+}
+
+BOOST_AUTO_TEST_CASE(qdepthwiseconv2d_per_channel_calibrated_against_float)
+{
+    // 3x3 input, 2 channels (very different ranges), 2x2 depthwise kernel.
+    // Per-channel symmetric weight scale; per-channel Requantizer.
+    using tinymind::AffineParams;
+
+    // Distinct activation/weight ranges per channel.
+    // Channel 0 activations small ~[-0.5, 0.5], weights small.
+    // Channel 1 activations big ~[-4, 4], weights bigger.
+    const float a_floats_c0[9] = {
+         0.1f,  0.2f,  0.3f,
+         0.4f,  0.5f, -0.5f,
+        -0.4f, -0.3f, -0.2f,
+    };
+    const float a_floats_c1[9] = {
+        -3.0f, -2.0f, -1.0f,
+         0.0f,  1.0f,  2.0f,
+         3.0f,  4.0f, -4.0f,
+    };
+
+    const float w_floats_c0[4] = { 0.1f, 0.2f, -0.1f, 0.05f };
+    const float w_floats_c1[4] = { 1.5f, -1.0f, 0.5f, -0.5f };
+
+    const float b_floats[2] = { 0.01f, -0.5f };
+
+    // Float reference (NHWC interleaving for input).
+    float ref[8] = {0};
+    for (int oh = 0; oh < 2; ++oh)
+    {
+        for (int ow = 0; ow < 2; ++ow)
+        {
+            for (int c = 0; c < 2; ++c)
+            {
+                float acc = b_floats[c];
+                for (int kh = 0; kh < 2; ++kh)
+                {
+                    for (int kw = 0; kw < 2; ++kw)
+                    {
+                        const int ih = oh + kh;
+                        const int iw = ow + kw;
+                        const float a = (c == 0)
+                            ? a_floats_c0[ih * 3 + iw]
+                            : a_floats_c1[ih * 3 + iw];
+                        const float w = (c == 0)
+                            ? w_floats_c0[kh * 2 + kw]
+                            : w_floats_c1[kh * 2 + kw];
+                        acc += w * a;
+                    }
+                }
+                ref[(oh * 2 + ow) * 2 + c] = acc;
+            }
+        }
+    }
+
+    // Calibrate. Activation is per-tensor across both channels (TFLite
+    // typically uses per-tensor activations even when weights are
+    // per-channel). Pick a range that covers both channels.
+    AffineParams ap = computeAffineParamsAsymmetric(-4.0f, 4.0f, -128, 127);
+    AffineParams op = computeAffineParamsAsymmetric(-10.0f, 10.0f, -128, 127);
+
+    // Per-channel symmetric weight params.
+    AffineParams wp[2];
+    wp[0] = computeAffineParamsSymmetric(-0.1f, 0.2f, 127);
+    wp[1] = computeAffineParamsSymmetric(-1.0f, 1.5f, 127);
+
+    // Build interleaved input (NHWC, 2 channels).
+    int8_t aq[18];
+    for (int i = 0; i < 9; ++i)
+    {
+        aq[i * 2 + 0] = quantize<int8_t>(a_floats_c0[i],
+                                         ap.scale, ap.zero_point, -128, 127);
+        aq[i * 2 + 1] = quantize<int8_t>(a_floats_c1[i],
+                                         ap.scale, ap.zero_point, -128, 127);
+    }
+
+    // Quantize per-channel weights into a single channel-major buffer of
+    // shape [Channels][KH*KW].
+    int8_t wq[8];
+    for (int i = 0; i < 4; ++i)
+    {
+        wq[0 * 4 + i] = quantize<int8_t>(w_floats_c0[i], wp[0].scale, 0, -127, 127);
+        wq[1 * 4 + i] = quantize<int8_t>(w_floats_c1[i], wp[1].scale, 0, -127, 127);
+    }
+
+    // Per-channel int32 bias with scale = ap.scale * wp[c].scale.
+    int32_t bq[2];
+    for (int c = 0; c < 2; ++c)
+    {
+        const float bias_scale = ap.scale * wp[c].scale;
+        bq[c] = static_cast<int32_t>(std::lround(b_floats[c] / bias_scale));
+    }
+
+    Requantizer<int32_t, int8_t> rs[2];
+    for (int c = 0; c < 2; ++c)
+    {
+        rs[c] = buildRequantizer<int8_t>(ap.scale, wp[c].scale, op.scale,
+                                         op.zero_point, -128, 127);
+    }
+
+    QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, 3, 3, 2, 2, 2, 1, 1> dw;
+    dw.weights = wq;
+    dw.biases = bq;
+    dw.input_zero_point = static_cast<int8_t>(ap.zero_point);
+    dw.requantizers = rs;
+
+    int8_t out_q[8];
+    dw.forward(aq, out_q);
+
+    for (int i = 0; i < 8; ++i)
+    {
+        const float out_f = dequantize<int8_t>(out_q[i], op.scale, op.zero_point);
+        BOOST_TEST(std::abs(out_f - ref[i]) <= 6.0f * op.scale);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qpointwiseconv2d_basic_reduction)
+{
+    // 1x1 spatial, 3 input channels, 2 output channels.
+    // weights row-major [NumFilters][InChannels] = [[1, 1, 1], [-1, 0, 1]].
+    // input = [4, 5, 6]. Expected: [15, 2].
+    const int8_t in[3] = {4, 5, 6};
+    const int8_t weights[6] = {
+         1,  1, 1,
+        -1,  0, 1,
+    };
+    const int32_t bias[2] = {0, 0};
+
+    QPointwiseConv2D<int8_t, int8_t, int32_t, int8_t, 1, 1, 3, 2> pw;
+    pw.weights = weights;
+    pw.biases = bias;
+    pw.input_zero_point = 0;
+    pw.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    int8_t out[2] = {0};
+    pw.forward(in, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 15);
+    BOOST_TEST(static_cast<int>(out[1]) == 2);
+}
+
+BOOST_AUTO_TEST_CASE(qpointwiseconv2d_2x2_spatial)
+{
+    // 2x2 spatial, 2 input channels, 1 output channel.
+    // weights = [1, 1] (single filter).
+    // Each output pixel = c0 + c1 at that location.
+    const int8_t in[8] = {
+        1, 2,    3, 4,
+        5, 6,    7, 8,
+    };
+    const int8_t weights[2] = {1, 1};
+    const int32_t bias[1] = {10};
+
+    QPointwiseConv2D<int8_t, int8_t, int32_t, int8_t, 2, 2, 2, 1> pw;
+    pw.weights = weights;
+    pw.biases = bias;
+    pw.input_zero_point = 0;
+    pw.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    int8_t out[4] = {0};
+    pw.forward(in, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 13);  // 1+2+10
+    BOOST_TEST(static_cast<int>(out[1]) == 17);  // 3+4+10
+    BOOST_TEST(static_cast<int>(out[2]) == 21);  // 5+6+10
+    BOOST_TEST(static_cast<int>(out[3]) == 25);  // 7+8+10
+}
+
+BOOST_AUTO_TEST_CASE(qpointwiseconv2d_input_zp_subtracts)
+{
+    // 1x1 spatial, 2 in channels, 1 filter; weights [1, 1]; input_zp = 3.
+    // input = [10, 10] -> effective [7, 7] -> sum 14.
+    const int8_t in[2] = {10, 10};
+    const int8_t weights[2] = {1, 1};
+    const int32_t bias[1] = {0};
+
+    QPointwiseConv2D<int8_t, int8_t, int32_t, int8_t, 1, 1, 2, 1> pw;
+    pw.weights = weights;
+    pw.biases = bias;
+    pw.input_zero_point = 3;
+    pw.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    int8_t out[1] = {0};
+    pw.forward(in, out);
+    BOOST_TEST(static_cast<int>(out[0]) == 14);
 }
 
 BOOST_AUTO_TEST_CASE(end_to_end_quantized_dot_product)
