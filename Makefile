@@ -14,4 +14,5 @@ check :
 	cd unit_test/kan && make clean && make && make run && cd -
 	cd examples/kan_xor && make clean && make && make release && cd -
 	cd examples/kws_cortex_m && make clean && make && make release && cd -
+	cd examples/kws_cortex_m_int8 && make clean && make && make release && cd -
 	cd apps/activation && make clean && make && make release && cd -
