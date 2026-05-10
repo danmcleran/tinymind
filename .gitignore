@@ -16,3 +16,4 @@ unit_test/nn/output/
 unit_test/kan/output/
 unit_test/lookuptable/output/
 unit_test/embedded/output/
+unit_test/quantization/output/

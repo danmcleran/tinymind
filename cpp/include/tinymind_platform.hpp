@@ -65,6 +65,15 @@
  *                               Xavier initializers. On freestanding
  *                               targets without a C runtime, leave off
  *                               and supply your own RNG at the call site.
+ *
+ * TINYMIND_ENABLE_QUANTIZATION - Post-training int8 quantization path
+ *                                (qaffine.hpp + parallel Q* layer family).
+ *                                Distinct from QValue Q-format: introduces
+ *                                runtime per-tensor scale/zero-point and
+ *                                int32 accumulators with integer
+ *                                requantization between layers. Off by
+ *                                default; existing fixed-point and float
+ *                                pipelines are unaffected.
  */
 
 #ifndef TINYMIND_ENABLE_FLOAT
@@ -85,4 +94,8 @@
 
 #ifndef TINYMIND_ENABLE_HOSTED_RAND
 #define TINYMIND_ENABLE_HOSTED_RAND 0
+#endif
+
+#ifndef TINYMIND_ENABLE_QUANTIZATION
+#define TINYMIND_ENABLE_QUANTIZATION 0
 #endif
