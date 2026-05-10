@@ -16,3 +16,5 @@ These tutorials walk through complete, working examples that demonstrate TinyMin
 | [DQN Maze Solver]({{ site.baseurl }}/getting-started/dqn-maze-solver) | Deep Q-Network with neural network function approximation | ~16 KB |
 | [Keyword Spotting CNN on a Cortex-M]({{ site.baseurl }}/getting-started/keyword-spotting-cnn) | Depthwise-separable 2D CNN, bench harness, MCU porting | ~19 KB static |
 | [Predictive Maintenance on AI4I 2020]({{ site.baseurl }}/getting-started/predictive-maintenance) | Q16.16 MLP, imbalanced binary classification, confusion matrix | ~35 KB static |
+| [PyTorch -> TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) | End-to-end post-training int8 quantization: PyTorch float training, per-tensor calibration, pure-integer C++ inference | Tiny |
+| [Keyword Spotting CNN (int8)]({{ site.baseurl }}/getting-started/keyword-spotting-int8) | int8 quantized depthwise-separable CNN, per-channel depthwise, CSV cycle/byte report vs float | ~5 KB static |
