@@ -67,9 +67,12 @@ A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside*
 
 - **`QConv2D`**, **`QDepthwiseConv2D`** (per-channel weight scale, TFLite mandate), **`QPointwiseConv2D`**, **`QMaxPool2D`**, **`QAvgPool2D`**, **`QGlobalAvgPool2D`**, **`QDense`** -- int8 weights/activations, int32 accumulators, integer requantization between layers via gemmlowp-style `Requantizer<int32, int8>` (Q0.31 multiplier + shift)
 - **`qrelu` / `qrelu6`** activations plus `clampForRelu` / `clampForRelu6` helpers that fold the activation into the upstream Requantizer's saturation pass for runtime efficiency
+- **256-entry int8 sigmoid / tanh lookup tables** built host-side via `buildQSigmoidLUT` / `buildQTanhLUT` and applied at runtime via `qApplyLUT` / `qApplyLUTBuffer` -- single load per element, no `<cmath>` on the inference path
 - **Host-side calibration** in `cpp/include/qcalibration.hpp`: `RangeObserver`, `computeAffineParamsAsymmetric` / `Symmetric`, `computePerChannelSymmetricScales`, `quantizeBuffer`, `buildRequantizer` -- gated on `FLOAT && STD` so the deployable inference binary never pulls in float math
 - **Pure integer at runtime**: the inference path compiles freestanding (`FLOAT=0 STD=0 QUANT=1`); `unit_test/embedded` exercises this corner as `quant_freestanding` and the `unit_test/quantization` Boost.Test suite covers the math
-- **End-to-end example**: [`examples/kws_cortex_m_int8/`](examples/kws_cortex_m_int8/) is a side-by-side counterpart to `examples/kws_cortex_m/` -- same KWS pipeline, comparable CSV cycle/byte report, ~10x smaller weight footprint on the convolutional layers
+- **End-to-end examples**:
+  - [`examples/pytorch_quant/xor/`](examples/pytorch_quant/xor/) -- PyTorch float training + per-tensor calibration + `weights.hpp` emission, then a pure-integer C++ forward pass through `QDense` + `qrelu` + `QDense` + int8 sigmoid LUT
+  - [`examples/kws_cortex_m_int8/`](examples/kws_cortex_m_int8/) -- side-by-side counterpart to `examples/kws_cortex_m/`; same MobileNet-style KWS pipeline, comparable CSV cycle/byte report, ~4x smaller weight footprint on the convolutional layers
 
 ### Activation Functions
 
@@ -689,6 +692,8 @@ cd examples/lstm_sinusoid && make clean && make
 cd examples/maze && make clean && make
 cd examples/dqn_maze && make clean && make
 cd examples/kws_cortex_m && make clean && make
+cd examples/kws_cortex_m_int8 && make clean && make
+cd examples/pytorch_quant/xor && make clean && make
 cd examples/predictive_maintenance && make clean && make
 ```
 
@@ -738,7 +743,7 @@ tinymind/
     qpointwiseconv2d.hpp        # Quantized 1x1 pointwise conv
     qpool2d.hpp                 # QMaxPool2D, QAvgPool2D, QGlobalAvgPool2D
     qdense.hpp                  # Quantized fully-connected layer
-    qactivations.hpp            # Quantized ReLU / ReLU6 + fused-clamp helpers
+    qactivations.hpp            # Quantized ReLU / ReLU6 + fused-clamp helpers + int8 sigmoid/tanh LUTs
     activationFunctions.hpp     # Activation function policies (9 functions)
     fixedPointTransferFunctions.hpp
     adam.hpp                    # Adam optimizer policy
@@ -773,7 +778,8 @@ tinymind/
     kws_cortex_m/               # Depthwise-separable CNN pipeline with bench harness
     kws_cortex_m_int8/          # int8 quantized counterpart of kws_cortex_m (parallel Q* layers)
     predictive_maintenance/     # Binary classifier on AI4I 2020 dataset (Q16.16 MLP)
-    pytorch/                    # PyTorch weight import (MLP + GRU export)
+    pytorch/                    # PyTorch weight import (MLP + GRU export, Q-format pipeline)
+    pytorch_quant/xor/          # PyTorch -> int8 affine quantization end-to-end (XOR)
   unit_test/
     nn/                         # Neural network tests (171 test cases)
     kan/                        # KAN tests (16 test cases)
