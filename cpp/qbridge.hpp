@@ -41,9 +41,11 @@
  * All conversions run scalar at the layer boundary; the inner loops of
  * each pipeline stay native to their own type system. The conversions
  * themselves use float arithmetic, so this whole file is gated on
- * TINYMIND_ENABLE_FLOAT. A target with FPU (M4F, M7, R82, A55, x86) can
- * use the bridges at runtime; a pure-integer M0+ build keeps both
- * pipelines siloed by simply not including this header.
+ * TINYMIND_ENABLE_FLOAT. Any target whose silicon ships an FPU (capability,
+ * not CPU model — Arm publishes thousands of RTL configurations per core
+ * and FPU is often an optional component) can use the bridges at runtime;
+ * a pure-integer build keeps both pipelines siloed by simply not
+ * including this header.
  *
  * No <cmath> dependency: rounding uses sign-aware float-to-int casting.
  * No <type_traits>. Freestanding-safe at FLOAT=1, STD=0.

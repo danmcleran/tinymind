@@ -148,7 +148,7 @@ Each phase = self-contained PR. Builds on prior. Ships with regression corner + 
   - `qValueToAffine<QV>(QValue, AffineParams)` → `int8_t`
   - `affineToFloat` / `floatToAffine` promoted from calibration helpers to runtime (freestanding-safe when `FLOAT=1`)
 - New gate `TINYMIND_ENABLE_FP16` in `cpp/include/tinymind_platform.hpp`.
-- `cpp/include/tinymind_fp16.hpp` — `__fp16` (ARMv8.2) / `_Float16` (gcc) / `bf16` storage typedefs + scalar promote-to-float ops. Pure storage tier, no SIMD yet.
+- `cpp/include/tinymind_fp16.hpp` — software-only `fp16_t` (IEEE 754 binary16) and `bf16_t` (bfloat16) storage structs wrapping `uint16_t`, plus scalar promote-to-float ops via `__builtin_memcpy`. No compiler-builtin `__fp16` / `_Float16` dependency — keeps the header capability-gate-clean per the Phase 14 design rule, and the storage tier compiles on any toolchain regardless of ISA. Hosts that natively support `_Float16` / `__fp16` may add a thin adapter without disturbing this header. Pure storage tier; the matching SIMD vector specialization lands in Phase 14 as `cpp/include/simd/simd_neon_fp16.hpp`.
 - `unit_test/embedded/Makefile` — expand to 4-way `(FLOAT, STD, QUANT, FP16)` matrix. Add `fp16_hosted` corner.
 
 **Tests:** `unit_test/quantization/test_qbridge.cpp` — round-trip Q8.8 ↔ int8 ↔ Q8.8 within tolerance. fp16 ↔ fp32 round-trip.
