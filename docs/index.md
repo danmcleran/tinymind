@@ -30,7 +30,7 @@ Most ML frameworks assume abundant resources: gigabytes of RAM, a GPU, an operat
 
 Because TinyMind is a header-only template library, there is no runtime library to link. The compiler generates code only for the specific network topology, value type, and activation functions you use. Unused features are never compiled.
 
-Six preprocessor gates (`TINYMIND_ENABLE_FLOAT`, `TINYMIND_ENABLE_STD`, `TINYMIND_ENABLE_HOSTED_IO`, `TINYMIND_ENABLE_OSTREAMS`, `TINYMIND_ENABLE_HOSTED_RAND`, `TINYMIND_ENABLE_QUANTIZATION`) control optional dependencies on the FPU, the C++ stdlib (`<cmath>`/`<type_traits>`/`namespace std`), file I/O, ostreams, `rand()`, and the [int8 affine quantization]({{ site.baseurl }}/architectures/int8-quantization) layer family. All default off — a freestanding build pulls in only `<cstddef>` and `<cstdint>`. See the [README's Platform Feature Gates](https://github.com/danmcleran/tinymind#platform-feature-gates) section for the full matrix.
+Preprocessor capability gates control optional dependencies on the FPU, the C++ stdlib (`<cmath>` / `<type_traits>` / `namespace std`), file I/O, ostreams, `rand()`, the [int8 affine quantization]({{ site.baseurl }}/architectures/int8-quantization) layer family, the [fp16/bf16 storage tier]({{ site.baseurl }}/architectures/mixed-precision), the int16 cell-state variant of `QLSTMCell`, OpenMP outer-loop parallelism, and per-ISA [SIMD specializations]({{ site.baseurl }}/architectures/simd-backends) (NEON / NEON_DOTPROD / NEON_FP16 / SVE / SVE2 / Helium MVE_I / MVE_F / AVX2 / AVX_VNNI / AVX512F / AVX512_VNNI). All default off — a freestanding build pulls in only `<cstddef>` and `<cstdint>` with byte-identical output to the scalar reference. See the [README's Platform Feature Gates](https://github.com/danmcleran/tinymind#platform-feature-gates) section for the full matrix.
 
 ## What Fits Where?
 
@@ -54,7 +54,11 @@ TinyMind networks are small enough to deploy on the most constrained microcontro
 | 2D Pooling | [`MaxPool2D`, `AvgPool2D`, `GlobalAvgPool2D`]({{ site.baseurl }}/architectures/conv-pooling) | 2D downsampling; GAP replaces flatten-to-dense |
 | Binary Dense | [`BinaryDense`]({{ site.baseurl }}/architectures/quantized-networks) | XNOR+popcount (1-bit, 32x compression) |
 | Ternary Dense | [`TernaryDense`]({{ site.baseurl }}/architectures/quantized-networks) | Multiply-free ({-1,0,+1}, 16x compression) |
-| Int8 Affine | [`QDense`, `QConv2D`, `QDepthwiseConv2D`, ...]({{ site.baseurl }}/architectures/int8-quantization) | TFLite/CMSIS-NN style post-training int8 (per-tensor / per-channel calibration, integer Requantizer) |
+| Int8 Affine | [`QDense`, `QConv2D`, `QDepthwiseConv2D`, ...]({{ site.baseurl }}/architectures/int8-quantization) | TFLite/CMSIS-NN style post-training int8 (per-tensor / per-channel calibration, integer Requantizer). Phase 10–11 add `QConv2DPerChannel`, `QAdd`/`QMul`/`QConcat`/`QPad`, `QBatchNorm`/`QLayerNorm`/`QSoftmax` and `foldBatchNorm` |
+| Int8 Recurrent | [`QLSTMCell`, `QGRUCell`]({{ site.baseurl }}/architectures/int8-quantization) | Phase 12. Single-step int8 cells, TFLite gate ordering. Int16 cell-state variant for long unrolls |
+| Int8 Attention + FFT | [`QFFT1D`, `QAttention1D`, `QAttentionSoftmax1D`, `QMultiHeadLinearAttention1D`]({{ site.baseurl }}/architectures/int8-quantization) | Phase 13. Q1.15 twiddle FFT, linear and softmax attention, multi-head stack |
+| Mixed Precision | [`qbridge`, `fp16_t`, `bf16_t`]({{ site.baseurl }}/architectures/mixed-precision) | Phase 9. Pointwise converters between int8 affine / Q-format / float / fp16 / bf16 |
+| SIMD Backends | [NEON / SVE / Helium / AVX2 / AVX-512]({{ site.baseurl }}/architectures/simd-backends) | Phase 14. ISA-capability gates, byte-identical to scalar |
 | KAN | [`KolmogorovArnoldNetwork`]({{ site.baseurl }}/architectures/kan) | Learnable B-spline activations |
 | FFT | [`FFT1D`]({{ site.baseurl }}/architectures/fft) | Frequency-domain feature extraction for signal processing |
 | Elman RNN | [`ElmanNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | Simple recurrent feedback |
@@ -99,7 +103,7 @@ For many embedded applications, the optimal workflow is:
 2. **Export** weights to a text file, converting to fixed-point Q-format -- or to int8 with per-tensor / per-channel `(scale, zero_point)` calibration
 3. **Deploy** in TinyMind C++ as a non-trainable network at 40-60% less memory, or as a pure-integer int8 pipeline with the [`Q*` layer family]({{ site.baseurl }}/architectures/int8-quantization)
 
-See [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) for the Q-format flow and [PyTorch -> TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) for an end-to-end affine int8 walkthrough.
+See [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) for the Q-format flow, [PyTorch → TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) for the from-scratch affine int8 walkthrough, and [PyTorch → TinyMind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer) for the Phase 15 production importer flow that consumes a `torch.state_dict` directly and runs calibration with `PercentileObserver` / `KLDivergenceObserver` + cross-layer equalization.
 
 ## Activation Function Lookup Tables
 

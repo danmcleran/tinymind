@@ -271,3 +271,13 @@ The Q8.8 small config is real-time capable at 100-1000 Hz sensor rates on M0. Th
 - **Anomaly detection** -- attend across a time window of sensor readings to identify unusual patterns
 - **Keyword spotting** -- attend across audio feature frames (after Conv1D feature extraction)
 - **Sequence classification** -- replace or augment GRU for fixed-length sequence tasks with lower latency (no sequential dependency in the forward pass)
+
+## Int8 Quantized Counterpart
+
+Phase 13 ships pure-integer int8 attention alongside `SelfAttention1D`:
+
+- `QAttention1D` — int8 linear (ReLU-kernel) attention. Same shape and math; ReLU on Q'/K' folded into the requantizer by raising `qmin = zero_point`. Caller-owned weight, bias, and scratch buffers.
+- `QAttentionSoftmax1D` — standard softmax attention. Score requantizer folds the `1 / sqrt(d_k)` factor via `qAttentionInvSqrt(P)`; softmax uses the same 256-entry int32 exp LUT as `QSoftmax1D`.
+- `QMultiHeadLinearAttention1D` — stacks `NumHeads` independent `QAttention1D` heads along the projection axis. Scratch buffers reused across heads since they run sequentially.
+
+See [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) for the full int8 layer family and the `examples/transformer_encoder_int8/` end-to-end encoder block.

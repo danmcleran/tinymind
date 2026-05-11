@@ -248,3 +248,12 @@ FileManager::template loadNetworkWeights<ValueType, ValueType>(lstmNet, inFile);
 ```
 
 See the [Weight Import Export and PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) page for details on the weight file format and PyTorch export scripts.
+
+# Int8 Quantized Counterparts
+
+For inference-only deployment that does not need the trainable Q-format pipeline at all, Phase 12 ships pure-integer int8 cells alongside `LstmNeuralNetwork` / `GruNeuralNetwork`:
+
+- `QLSTMCell` — four gates (i, f, g, o) in TFLite ordering. Two rescalers per gate (input-MAC + recurrent-MAC) into a shared sigmoid / tanh LUT input scale; cell update via two `multiplyByQuantizedMultiplier` calls. Cell-state storage `int8_t` (default) or `int16_t` for long unroll horizons (gate `TINYMIND_ENABLE_INT16_ACCUM=1`).
+- `QGRUCell` — three gates (r, z, n) in canonical ordering. Reset-before-multiply formulation, `(1 - z_t)` computed exactly in the sigmoid grid as `-z_t`.
+
+Both are single-step cells; the caller owns the time loop and the hidden / cell state buffers. See [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) for the full int8 layer family and `buildQLSTMParams` / `buildQGRUParams` host-side calibration helpers.

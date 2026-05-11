@@ -282,3 +282,7 @@ These estimates include twiddle multiplication (2 multiplies + 2 adds per butter
 - **Audio feature extraction** -- FFT -> magnitude bins -> keyword spotting classifier, replacing MFCC pipelines that need log/DCT
 - **Motor current analysis** -- detect harmonic patterns indicating motor degradation
 - **Structural health monitoring** -- frequency-domain features from strain gauges or piezoelectric sensors
+
+## Int8 Quantized Counterpart
+
+Phase 13 ships `QFFT1D<N>`, a radix-2 DIT FFT on int16 buffers with Q1.15 twiddle factors. Twiddles are caller-owned, built host-side by `buildQFFTTwiddles(n, cos_out, sin_out)`. Scaled butterflies (right-shift by 1 per stage; total scaling 1/N) keep the int16 working register bounded. `magnitudeSquared` emits int32; the int8 boundary on either side is expressed as an ordinary `Requantizer`. Inverse via the conjugate trick. See [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) for the surrounding integer pipeline.
