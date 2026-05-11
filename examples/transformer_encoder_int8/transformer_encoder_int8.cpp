@@ -60,6 +60,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 namespace {
@@ -252,8 +253,10 @@ void quantizeSymToI8(const float* src, std::size_t n,
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+    const bool golden_mode = (argc >= 2) && std::strcmp(argv[1], "--golden") == 0;
+
     using tinymind::QAttention1D;
     using tinymind::QLayerNorm1D;
     using tinymind::QDense;
@@ -566,6 +569,7 @@ int main()
     int8_t q_scr[XE_SIZE], k_scr[XE_SIZE], v_scr[XE_SIZE], kv_scr[E * E];
     float deq_out[XE_SIZE];
 
+    std::vector<std::vector<int8_t>> all_q_out(NUM_INPUTS, std::vector<int8_t>(XE_SIZE));
     float worst_err = 0.0f;
     for (std::size_t s = 0; s < NUM_INPUTS; ++s)
     {
@@ -591,9 +595,26 @@ int main()
 
         qadd2.forward(q_skip1, q_ff2, q_out);
 
+        for (std::size_t i = 0; i < XE_SIZE; ++i) all_q_out[s][i] = q_out[i];
+
         dequantizeBuffer<int8_t>(q_out, deq_out, XE_SIZE, p_out.scale, p_out.zero_point);
         const float err = maxAbsDiff(deq_out, float_outputs[s].data(), XE_SIZE);
         if (err > worst_err) worst_err = err;
+    }
+
+    if (golden_mode)
+    {
+        std::printf("# transformer_encoder_int8 golden output\n");
+        std::printf("# samples=%zu cells=%zu\n", static_cast<size_t>(NUM_INPUTS),
+                    static_cast<size_t>(XE_SIZE));
+        for (std::size_t s = 0; s < NUM_INPUTS; ++s)
+        {
+            std::printf("sample %zu:", s);
+            for (std::size_t i = 0; i < XE_SIZE; ++i)
+                std::printf(" %d", static_cast<int>(all_q_out[s][i]));
+            std::printf("\n");
+        }
+        return 0;
     }
 
     const float out_range = obs_out.max_value - obs_out.min_value;

@@ -73,6 +73,10 @@ A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside*
 - **End-to-end examples**:
   - [`examples/pytorch_quant/xor/`](examples/pytorch_quant/xor/) -- PyTorch float training + per-tensor calibration + `weights.hpp` emission, then a pure-integer C++ forward pass through `QDense` + `qrelu` + `QDense` + int8 sigmoid LUT
   - [`examples/kws_cortex_m_int8/`](examples/kws_cortex_m_int8/) -- side-by-side counterpart to `examples/kws_cortex_m/`; same MobileNet-style KWS pipeline, comparable CSV cycle/byte report, ~4x smaller weight footprint on the convolutional layers
+  - [`examples/resnet18_block_int8/`](examples/resnet18_block_int8/) -- Phase 16 exemplar. int8 ResNet-18-shaped stem + one basic-block stage. `make run`, `make bench`, `make golden`.
+  - [`examples/mobilenetv2_int8/`](examples/mobilenetv2_int8/) -- Phase 16 exemplar. int8 MobileNetV2 inverted-residual block sequence with linear bottlenecks.
+  - [`examples/mixed_precision_kws/`](examples/mixed_precision_kws/) -- Phase 16 mixed-precision exemplar. int8 frontend -> fp16 attention head -> int8 classifier, exercises Phase 9 qbridge converters.
+  - [`unit_test/integration/`](unit_test/integration/) -- Phase 16 golden-byte regression suite. Locks the four exemplars' int8 output byte-for-byte across SIMD gate combos.
 
 ### Activation Functions
 

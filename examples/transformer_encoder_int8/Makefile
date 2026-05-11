@@ -20,5 +20,8 @@ release :
 run :
 	cd ./output && ./transformer_encoder_int8 && cd ../
 
+golden :
+	cd ./output && ./transformer_encoder_int8 --golden > transformer_encoder_int8.golden && cd ../
+
 clean :
 	rm -f ./output/*
