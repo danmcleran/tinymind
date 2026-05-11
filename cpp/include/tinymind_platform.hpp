@@ -74,6 +74,25 @@
  *                                requantization between layers. Off by
  *                                default; existing fixed-point and float
  *                                pipelines are unaffected.
+ *
+ * TINYMIND_ENABLE_FP16        - Half-precision storage tier (fp16 + bf16).
+ *                                Provides software IEEE-754 binary16 and
+ *                                bfloat16 storage types in
+ *                                tinymind_fp16.hpp, with float promotion
+ *                                helpers used by qbridge.hpp. Storage only
+ *                                in this phase; no SIMD specializations.
+ *                                Requires TINYMIND_ENABLE_FLOAT for the
+ *                                conversion paths.
+ *
+ * TINYMIND_ENABLE_INT16_ACCUM - Wider-precision carry-state for the
+ *                                quantized recurrent layers (QLSTM /
+ *                                QGRU). When on, QLSTM cells and
+ *                                long-sequence accumulator paths can be
+ *                                instantiated with int16 cell-state
+ *                                storage to retain dynamic range across
+ *                                long unroll horizons. Pure storage gate;
+ *                                no SIMD implications. Off by default to
+ *                                keep deployable footprints tight.
  */
 
 #ifndef TINYMIND_ENABLE_FLOAT
@@ -98,4 +117,12 @@
 
 #ifndef TINYMIND_ENABLE_QUANTIZATION
 #define TINYMIND_ENABLE_QUANTIZATION 0
+#endif
+
+#ifndef TINYMIND_ENABLE_FP16
+#define TINYMIND_ENABLE_FP16 0
+#endif
+
+#ifndef TINYMIND_ENABLE_INT16_ACCUM
+#define TINYMIND_ENABLE_INT16_ACCUM 0
 #endif

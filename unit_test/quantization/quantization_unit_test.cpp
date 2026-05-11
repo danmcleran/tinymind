@@ -45,6 +45,22 @@
 #include "qpool2d.hpp"
 #include "qdepthwiseconv2d.hpp"
 #include "qpointwiseconv2d.hpp"
+#include "qbridge.hpp"
+#include "qadd.hpp"
+#include "qmul.hpp"
+#include "qconcat.hpp"
+#include "qpad.hpp"
+#include "qbatchnorm.hpp"
+#include "qlayernorm.hpp"
+#include "qsoftmax.hpp"
+#include "qlstm.hpp"
+#include "qgru.hpp"
+#include "qfft1d.hpp"
+#include "qattention1d.hpp"
+#include "qattention_softmax.hpp"
+#include "qmha.hpp"
+#include "qformat.hpp"
+#include "include/tinymind_fp16.hpp"
 #include "compiler.h"
 
 #define BOOST_TEST_MODULE quantization_unit_test
@@ -70,6 +86,19 @@ using tinymind::QAvgPool2D;
 using tinymind::QGlobalAvgPool2D;
 using tinymind::QDepthwiseConv2D;
 using tinymind::QPointwiseConv2D;
+using tinymind::QConv2DPerChannel;
+using tinymind::QPointwiseConv2DPerChannel;
+using tinymind::QAdd;
+using tinymind::QMul;
+using tinymind::QConcat2_2D;
+using tinymind::QPad2D;
+using tinymind::QBatchNorm1D;
+using tinymind::QBatchNorm2D;
+using tinymind::QBatchNormChannelParams;
+using tinymind::QLayerNorm1D;
+using tinymind::QSoftmax1D;
+using tinymind::qIntegerSqrt64;
+using tinymind::qInvSqrtQ30;
 #if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 using tinymind::quantizeMultiplier;
 using tinymind::AffineParams;
@@ -86,6 +115,28 @@ using tinymind::computeQuantizedSix;
 using tinymind::computeQuantizedThreshold;
 using tinymind::buildQSigmoidLUT;
 using tinymind::buildQTanhLUT;
+using tinymind::buildRescaler;
+using tinymind::buildQAddParams;
+using tinymind::QAddParams;
+using tinymind::buildQMulRequantizer;
+using tinymind::foldBatchNorm;
+using tinymind::buildQBatchNormChannelParams;
+using tinymind::buildQSoftmaxExpLUT;
+using tinymind::quantizeLayerNormGamma;
+using tinymind::quantizeLayerNormBeta;
+using tinymind::buildQLayerNormOutputParams;
+using tinymind::quantizeLayerNormEpsilon;
+using tinymind::kQSoftmaxExpLUTSize;
+using tinymind::QLSTMScales;
+using tinymind::QLSTMParams;
+using tinymind::buildQLSTMParams;
+using tinymind::quantizeQLSTMBiases;
+using tinymind::QGRUScales;
+using tinymind::QGRUParams;
+using tinymind::buildQGRUParams;
+using tinymind::quantizeQGRUBiases;
+using tinymind::buildQFFTTwiddles;
+using tinymind::qAttentionInvSqrt;
 #endif
 using tinymind::kQActivationLUTSize;
 using tinymind::qActivationLUTIndex;
@@ -1440,6 +1491,2275 @@ BOOST_AUTO_TEST_CASE(qtanh_lut_matches_float_reference)
         const float y_q = dequantize<int8_t>(qApplyLUT(qx, lut), out_scale, out_zp);
         const float y_ref = std::tanh(x);
         BOOST_TEST(std::abs(y_q - y_ref) < 0.05f);
+    }
+}
+
+#endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
+
+// ---------------------------------------------------------------------------
+// Phase 9: type bridges + fp16/bf16 storage tier.
+//
+// Bridge tests use the Q8.8 fixed-point type as the canonical Q-format
+// representative. Round-trip tolerance reflects the unavoidable single
+// rounding step at the boundary (Q8.8 has ~3.9e-3 resolution; int8
+// affine over a 1.0 range has ~7.8e-3 resolution).
+// ---------------------------------------------------------------------------
+
+#if TINYMIND_ENABLE_FLOAT
+
+using tinymind::affineDequantize;
+using tinymind::affineQuantize;
+using tinymind::qValueToFloat;
+using tinymind::floatToQValue;
+using tinymind::qValueToAffine;
+using tinymind::affineToQValue;
+using tinymind::qValueToFloatBuffer;
+using tinymind::floatToQValueBuffer;
+using tinymind::qValueToAffineBuffer;
+using tinymind::affineToQValueBuffer;
+
+typedef tinymind::QValue<8, 8, true> Q88Bridge;
+
+BOOST_AUTO_TEST_CASE(qbridge_affine_dequant_quant_roundtrip)
+{
+    // scale 0.05, zero_point -10 -> covers about [-5.9, 6.85] in float
+    const float scale = 0.05f;
+    const int32_t zp = -10;
+
+    const float xs[] = {-5.0f, -1.25f, 0.0f, 0.25f, 3.5f, 6.0f};
+    for (float x : xs)
+    {
+        const int8_t q = affineQuantize<int8_t>(x, scale, zp, -128, 127);
+        const float r = affineDequantize<int8_t>(q, scale, zp);
+        BOOST_TEST(std::abs(r - x) < scale);  // within one quant step
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qbridge_qvalue_float_roundtrip)
+{
+    // Q8.8: ~3.9e-3 resolution, range about [-128, 127.996].
+    const float xs[] = {-100.0f, -1.5f, -0.125f, 0.0f, 0.125f, 1.5f, 100.0f};
+    for (float x : xs)
+    {
+        const Q88Bridge qv = floatToQValue<Q88Bridge>(x);
+        const float r = qValueToFloat<Q88Bridge>(qv);
+        // 1 LSB tolerance.
+        const float lsb = 1.0f / static_cast<float>(1 << Q88Bridge::NumberOfFractionalBits);
+        BOOST_TEST(std::abs(r - x) <= lsb);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qbridge_qvalue_to_affine_roundtrip)
+{
+    // Pipeline: float -> QValue -> int8 affine -> float (decode).
+    const float scale = 0.04f;
+    const int32_t zp = 5;
+    const float xs[] = {-3.0f, -0.75f, 0.0f, 0.5f, 2.5f};
+    for (float x : xs)
+    {
+        const Q88Bridge qv = floatToQValue<Q88Bridge>(x);
+        const int8_t q = qValueToAffine<Q88Bridge, int8_t>(qv, scale, zp, -128, 127);
+        const float r = affineDequantize<int8_t>(q, scale, zp);
+        // Two rounding steps: Q-format LSB plus affine LSB.
+        const float qlsb = 1.0f / static_cast<float>(1 << Q88Bridge::NumberOfFractionalBits);
+        BOOST_TEST(std::abs(r - x) < scale + qlsb);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qbridge_affine_to_qvalue_roundtrip)
+{
+    // Pipeline: float -> int8 affine -> QValue -> float.
+    const float scale = 0.04f;
+    const int32_t zp = 5;
+    const float xs[] = {-3.0f, -0.75f, 0.0f, 0.5f, 2.5f};
+    for (float x : xs)
+    {
+        const int8_t q = affineQuantize<int8_t>(x, scale, zp, -128, 127);
+        const Q88Bridge qv = affineToQValue<Q88Bridge, int8_t>(q, scale, zp);
+        const float r = qValueToFloat<Q88Bridge>(qv);
+        const float qlsb = 1.0f / static_cast<float>(1 << Q88Bridge::NumberOfFractionalBits);
+        BOOST_TEST(std::abs(r - x) < scale + qlsb);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qbridge_affine_quantize_saturates)
+{
+    const float scale = 0.5f;
+    const int32_t zp = 0;
+
+    BOOST_TEST(affineQuantize<int8_t>(1000.0f, scale, zp, -128, 127) == 127);
+    BOOST_TEST(affineQuantize<int8_t>(-1000.0f, scale, zp, -128, 127) == -128);
+    BOOST_TEST(affineQuantize<int8_t>(0.0f, scale, zp, -128, 127) == 0);
+}
+
+BOOST_AUTO_TEST_CASE(qbridge_buffer_round_trip)
+{
+    const float scale = 0.02f;
+    const int32_t zp = -3;
+    const float src[] = {-2.0f, -0.5f, 0.0f, 0.25f, 1.75f};
+    constexpr std::size_t n = sizeof(src) / sizeof(float);
+
+    Q88Bridge qbuf[n];
+    int8_t i8buf[n];
+    Q88Bridge round_qbuf[n];
+    float round_fbuf[n];
+
+    floatToQValueBuffer<Q88Bridge>(src, qbuf, n);
+    qValueToAffineBuffer<Q88Bridge, int8_t>(qbuf, i8buf, n, scale, zp, -128, 127);
+    affineToQValueBuffer<Q88Bridge, int8_t>(i8buf, round_qbuf, n, scale, zp);
+    qValueToFloatBuffer<Q88Bridge>(round_qbuf, round_fbuf, n);
+
+    const float qlsb = 1.0f / static_cast<float>(1 << Q88Bridge::NumberOfFractionalBits);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        BOOST_TEST(std::abs(round_fbuf[i] - src[i]) < scale + qlsb);
+    }
+}
+
+#if TINYMIND_ENABLE_FP16
+
+using tinymind::fp16_t;
+using tinymind::bf16_t;
+using tinymind::floatToFp16;
+using tinymind::fp16ToFloat;
+using tinymind::floatToBf16;
+using tinymind::bf16ToFloat;
+using tinymind::fp16ToAffineI8;
+using tinymind::affineI8ToFp16;
+using tinymind::bf16ToAffineI8;
+using tinymind::affineI8ToBf16;
+
+BOOST_AUTO_TEST_CASE(fp16_round_trip_normals)
+{
+    const float xs[] = {0.0f, 1.0f, -1.0f, 0.5f, -0.5f,
+                        1.234f, -42.0f, 1024.0f, -7.5f};
+    for (float x : xs)
+    {
+        const fp16_t h = floatToFp16(x);
+        const float r = fp16ToFloat(h);
+        // fp16 normal: 11-bit mantissa precision -> relative error <= 2^-10.
+        const float tol = 1e-3f * (1.0f + std::abs(x));
+        BOOST_TEST(std::abs(r - x) < tol);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(fp16_zero_inf_nan)
+{
+    BOOST_TEST(fp16ToFloat(floatToFp16(0.0f)) == 0.0f);
+    BOOST_TEST(fp16ToFloat(floatToFp16(-0.0f)) == 0.0f);
+
+    const fp16_t pinf = floatToFp16(1.0e30f);  // overflow
+    BOOST_TEST(std::isinf(fp16ToFloat(pinf)));
+    BOOST_TEST(fp16ToFloat(pinf) > 0.0f);
+
+    const fp16_t ninf = floatToFp16(-1.0e30f);
+    BOOST_TEST(std::isinf(fp16ToFloat(ninf)));
+    BOOST_TEST(fp16ToFloat(ninf) < 0.0f);
+}
+
+BOOST_AUTO_TEST_CASE(bf16_round_trip)
+{
+    const float xs[] = {0.0f, 1.0f, -1.0f, 1024.0f, -42.0f, 1.234f, 1e-20f};
+    for (float x : xs)
+    {
+        const bf16_t b = floatToBf16(x);
+        const float r = bf16ToFloat(b);
+        // bf16: 8-bit mantissa precision -> relative error <= 2^-7.
+        const float tol = 8e-3f * (1.0f + std::abs(x));
+        BOOST_TEST(std::abs(r - x) < tol);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(bf16_preserves_fp32_exponent_range)
+{
+    // bf16 shares fp32's exponent field, so very large and very small
+    // values that fp16 would overflow / underflow stay representable.
+    const float big = 1.0e30f;
+    const float small = 1.0e-30f;
+    BOOST_TEST(std::isfinite(bf16ToFloat(floatToBf16(big))));
+    BOOST_TEST(bf16ToFloat(floatToBf16(small)) > 0.0f);
+}
+
+BOOST_AUTO_TEST_CASE(bridge_fp16_to_int8_affine_round_trip)
+{
+    const float scale = 0.05f;
+    const int32_t zp = 0;
+    const float xs[] = {-5.0f, -1.0f, 0.0f, 1.0f, 5.0f};
+    for (float x : xs)
+    {
+        const fp16_t h = floatToFp16(x);
+        const int8_t q = fp16ToAffineI8(h, scale, zp, -128, 127);
+        const fp16_t back = affineI8ToFp16(q, scale, zp);
+        const float r = fp16ToFloat(back);
+        BOOST_TEST(std::abs(r - x) < scale + 1e-2f);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(bridge_bf16_to_int8_affine_round_trip)
+{
+    const float scale = 0.05f;
+    const int32_t zp = 0;
+    const float xs[] = {-5.0f, -1.0f, 0.0f, 1.0f, 5.0f};
+    for (float x : xs)
+    {
+        const bf16_t b = floatToBf16(x);
+        const int8_t q = bf16ToAffineI8(b, scale, zp, -128, 127);
+        const bf16_t back = affineI8ToBf16(q, scale, zp);
+        const float r = bf16ToFloat(back);
+        BOOST_TEST(std::abs(r - x) < scale + 5e-2f);
+    }
+}
+
+#endif // TINYMIND_ENABLE_FP16
+
+#endif // TINYMIND_ENABLE_FLOAT
+
+// ---------------------------------------------------------------------------
+// Phase 10: composition ops (QAdd, QMul, QConcat2_2D, QPad2D) + per-channel
+// QConv2D / QPointwiseConv2D.
+//
+// Parity against a float reference: quantize inputs, run the int8 op, then
+// dequantize the output and compare against the same op done in float.
+// Tolerances reflect the destination quant step plus one bit of slack.
+// ---------------------------------------------------------------------------
+
+#if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
+
+BOOST_AUTO_TEST_CASE(qadd_parity_with_float_reference)
+{
+    const float scale_a = 0.05f;
+    const int32_t zp_a = -5;
+    const float scale_b = 0.07f;
+    const int32_t zp_b = 10;
+    const float scale_y = 0.10f;
+    const int32_t zp_y = 0;
+
+    const float a_vals[] = {-1.5f, 0.0f, 1.0f, 2.5f, -2.0f};
+    const float b_vals[] = {0.5f, -0.25f, 1.5f, -1.0f, 2.0f};
+    constexpr std::size_t N = sizeof(a_vals) / sizeof(float);
+
+    int8_t qa[N], qb[N], qy[N];
+    quantizeBuffer<int8_t>(a_vals, qa, N, scale_a, zp_a, -128, 127);
+    quantizeBuffer<int8_t>(b_vals, qb, N, scale_b, zp_b, -128, 127);
+
+    QAddParams p = buildQAddParams(scale_a, scale_b, scale_y);
+    QAdd<int8_t, int8_t, int8_t, N> add;
+    add.input_a_zero_point = static_cast<int8_t>(zp_a);
+    add.input_b_zero_point = static_cast<int8_t>(zp_b);
+    add.left_shift = p.left_shift;
+    add.input_a_multiplier = p.input_a_multiplier;
+    add.input_a_shift = p.input_a_shift;
+    add.input_b_multiplier = p.input_b_multiplier;
+    add.input_b_shift = p.input_b_shift;
+    add.output_requantizer.multiplier = p.output_multiplier;
+    add.output_requantizer.shift = p.output_shift;
+    add.output_requantizer.zero_point = static_cast<int8_t>(zp_y);
+    add.output_requantizer.qmin = -128;
+    add.output_requantizer.qmax = 127;
+
+    add.forward(qa, qb, qy);
+
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        const float deq = dequantize<int8_t>(qy[i], scale_y, zp_y);
+        const float ref = a_vals[i] + b_vals[i];
+        BOOST_TEST(std::abs(deq - ref) < scale_y + 1e-3f);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qadd_saturation)
+{
+    // Inputs designed to drive the output above qmax.
+    const float scale = 0.5f;
+    QAddParams p = buildQAddParams(scale, scale, scale);
+
+    QAdd<int8_t, int8_t, int8_t, 1> add;
+    add.input_a_zero_point = 0;
+    add.input_b_zero_point = 0;
+    add.left_shift = p.left_shift;
+    add.input_a_multiplier = p.input_a_multiplier;
+    add.input_a_shift = p.input_a_shift;
+    add.input_b_multiplier = p.input_b_multiplier;
+    add.input_b_shift = p.input_b_shift;
+    add.output_requantizer.multiplier = p.output_multiplier;
+    add.output_requantizer.shift = p.output_shift;
+    add.output_requantizer.zero_point = 0;
+    add.output_requantizer.qmin = -128;
+    add.output_requantizer.qmax = 127;
+
+    int8_t a = 100, b = 100, y = 0;
+    add.forward(&a, &b, &y);
+    BOOST_TEST(y == 127);
+
+    int8_t na = -100, nb = -100, ny = 0;
+    add.forward(&na, &nb, &ny);
+    BOOST_TEST(ny == -128);
+}
+
+BOOST_AUTO_TEST_CASE(qmul_parity_with_float_reference)
+{
+    const float scale_a = 0.04f;
+    const int32_t zp_a = 0;
+    const float scale_b = 0.06f;
+    const int32_t zp_b = -3;
+    // scale_y picked so the worst-case product magnitude (max|a|*max|b| = 3.0)
+    // stays within int8 range without saturation.
+    const float scale_y = 0.05f;
+    const int32_t zp_y = 5;
+
+    const float a_vals[] = {0.5f, -0.75f, 1.0f, -1.5f, 0.25f};
+    const float b_vals[] = {1.0f, 0.5f, -0.5f, -2.0f, 0.75f};
+    constexpr std::size_t N = sizeof(a_vals) / sizeof(float);
+
+    int8_t qa[N], qb[N], qy[N];
+    quantizeBuffer<int8_t>(a_vals, qa, N, scale_a, zp_a, -128, 127);
+    quantizeBuffer<int8_t>(b_vals, qb, N, scale_b, zp_b, -128, 127);
+
+    QMul<int8_t, int8_t, int8_t, N> mul;
+    mul.input_a_zero_point = static_cast<int8_t>(zp_a);
+    mul.input_b_zero_point = static_cast<int8_t>(zp_b);
+    mul.requantizer = buildQMulRequantizer<int8_t>(scale_a, scale_b, scale_y,
+                                                   zp_y, -128, 127);
+    mul.forward(qa, qb, qy);
+
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        const float deq = dequantize<int8_t>(qy[i], scale_y, zp_y);
+        const float ref = a_vals[i] * b_vals[i];
+        // Multiplication compounds the LSB error of both inputs; tolerance
+        // is two output-quant steps plus a small float slack.
+        BOOST_TEST(std::abs(deq - ref) < 2.0f * scale_y + 1e-2f);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qconcat_2d_parity_with_float_reference)
+{
+    constexpr std::size_t H = 2;
+    constexpr std::size_t W = 2;
+    constexpr std::size_t CA = 2;
+    constexpr std::size_t CB = 3;
+    constexpr std::size_t N_A = H * W * CA;
+    constexpr std::size_t N_B = H * W * CB;
+    constexpr std::size_t N_OUT = H * W * (CA + CB);
+
+    const float scale_a = 0.03f;
+    const int32_t zp_a = -10;
+    const float scale_b = 0.05f;
+    const int32_t zp_b = 5;
+    const float scale_y = 0.05f;
+    const int32_t zp_y = 0;
+
+    float a_f[N_A], b_f[N_B];
+    for (std::size_t i = 0; i < N_A; ++i) a_f[i] = -1.0f + 0.25f * static_cast<float>(i);
+    for (std::size_t i = 0; i < N_B; ++i) b_f[i] = 0.5f - 0.2f * static_cast<float>(i);
+
+    int8_t qa[N_A], qb[N_B], qy[N_OUT];
+    quantizeBuffer<int8_t>(a_f, qa, N_A, scale_a, zp_a, -128, 127);
+    quantizeBuffer<int8_t>(b_f, qb, N_B, scale_b, zp_b, -128, 127);
+
+    QConcat2_2D<int8_t, int8_t, int8_t, H, W, CA, CB> concat;
+    concat.input_a_zero_point = static_cast<int8_t>(zp_a);
+    concat.input_b_zero_point = static_cast<int8_t>(zp_b);
+    concat.requantizer_a = buildRescaler<int8_t>(scale_a, scale_y, zp_y, -128, 127);
+    concat.requantizer_b = buildRescaler<int8_t>(scale_b, scale_y, zp_y, -128, 127);
+    concat.forward(qa, qb, qy);
+
+    for (std::size_t h = 0; h < H; ++h)
+    {
+        for (std::size_t w = 0; w < W; ++w)
+        {
+            const std::size_t out_off = (h * W + w) * (CA + CB);
+            const std::size_t a_off = (h * W + w) * CA;
+            const std::size_t b_off = (h * W + w) * CB;
+            for (std::size_t c = 0; c < CA; ++c)
+            {
+                const float deq = dequantize<int8_t>(qy[out_off + c], scale_y, zp_y);
+                BOOST_TEST(std::abs(deq - a_f[a_off + c]) < scale_y + 1e-2f);
+            }
+            for (std::size_t c = 0; c < CB; ++c)
+            {
+                const float deq = dequantize<int8_t>(qy[out_off + CA + c], scale_y, zp_y);
+                BOOST_TEST(std::abs(deq - b_f[b_off + c]) < scale_y + 1e-2f);
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qpad_2d_inserts_zero_point_border)
+{
+    constexpr std::size_t H_IN = 2;
+    constexpr std::size_t W_IN = 2;
+    constexpr std::size_t C = 2;
+    constexpr std::size_t PT = 1, PB = 1, PL = 1, PR = 1;
+
+    QPad2D<int8_t, H_IN, W_IN, C, PT, PB, PL, PR> pad;
+    pad.pad_value = static_cast<int8_t>(-7);
+
+    int8_t in[H_IN * W_IN * C];
+    for (std::size_t i = 0; i < H_IN * W_IN * C; ++i) in[i] = static_cast<int8_t>(i + 1);
+
+    int8_t out[decltype(pad)::OutputSize];
+    pad.forward(in, out);
+
+    // Top row, bottom row, left col, right col -> pad value.
+    const std::size_t OH = pad.OutputHeight;
+    const std::size_t OW = pad.OutputWidth;
+    for (std::size_t oh = 0; oh < OH; ++oh)
+    {
+        for (std::size_t ow = 0; ow < OW; ++ow)
+        {
+            const bool inside = (oh >= PT) && (oh < PT + H_IN) &&
+                                (ow >= PL) && (ow < PL + W_IN);
+            for (std::size_t c = 0; c < C; ++c)
+            {
+                const int8_t v = out[(oh * OW + ow) * C + c];
+                if (inside)
+                {
+                    const std::size_t ih = oh - PT;
+                    const std::size_t iw = ow - PL;
+                    BOOST_TEST(v == in[(ih * W_IN + iw) * C + c]);
+                }
+                else
+                {
+                    BOOST_TEST(v == static_cast<int8_t>(-7));
+                }
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qconv2d_per_channel_parity_with_per_tensor)
+{
+    // Single-channel-scale calibration: per-channel should agree with
+    // per-tensor when all weight scales are identical.
+    constexpr std::size_t H = 4, W = 4, IC = 1, KH = 3, KW = 3, NF = 2;
+
+    const float in_scale = 0.05f;
+    const int32_t in_zp = -3;
+    const float w_scale = 0.02f;
+    const float out_scale = 0.10f;
+    const int32_t out_zp = 0;
+
+    int8_t input[H * W * IC];
+    for (std::size_t i = 0; i < H * W * IC; ++i)
+        input[i] = static_cast<int8_t>((i % 13) - 6);
+
+    int8_t weights[NF * KH * KW * IC];
+    for (std::size_t i = 0; i < NF * KH * KW * IC; ++i)
+        weights[i] = static_cast<int8_t>((i % 7) - 3);
+
+    int32_t biases[NF] = {0, 0};
+
+    QConv2D<int8_t, int8_t, int32_t, int8_t, H, W, IC, KH, KW, 1, 1, NF> per_tensor;
+    per_tensor.weights = weights;
+    per_tensor.biases = biases;
+    per_tensor.input_zero_point = static_cast<int8_t>(in_zp);
+    per_tensor.requantizer = buildRequantizer<int8_t>(in_scale, w_scale, out_scale,
+                                                      out_zp, -128, 127);
+
+    QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, H, W, IC, KH, KW, 1, 1, NF>
+        per_channel;
+    Requantizer<int32_t, int8_t> rq[NF];
+    for (std::size_t f = 0; f < NF; ++f)
+    {
+        rq[f] = buildRequantizer<int8_t>(in_scale, w_scale, out_scale,
+                                         out_zp, -128, 127);
+    }
+    per_channel.weights = weights;
+    per_channel.biases = biases;
+    per_channel.input_zero_point = static_cast<int8_t>(in_zp);
+    per_channel.requantizers = rq;
+
+    int8_t out_pt[per_tensor.OutputSize];
+    int8_t out_pc[per_channel.OutputSize];
+    per_tensor.forward(input, out_pt);
+    per_channel.forward(input, out_pc);
+
+    for (std::size_t i = 0; i < per_tensor.OutputSize; ++i)
+    {
+        BOOST_TEST(out_pt[i] == out_pc[i]);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qpointwise_per_channel_parity_with_per_tensor)
+{
+    constexpr std::size_t H = 3, W = 3, IC = 2, NF = 3;
+
+    const float in_scale = 0.04f;
+    const int32_t in_zp = 2;
+    const float w_scale = 0.03f;
+    const float out_scale = 0.08f;
+    const int32_t out_zp = -1;
+
+    int8_t input[H * W * IC];
+    for (std::size_t i = 0; i < H * W * IC; ++i)
+        input[i] = static_cast<int8_t>((i % 11) - 5);
+
+    int8_t weights[NF * IC];
+    for (std::size_t i = 0; i < NF * IC; ++i)
+        weights[i] = static_cast<int8_t>((i % 5) - 2);
+
+    int32_t biases[NF] = {0, 0, 0};
+
+    QPointwiseConv2D<int8_t, int8_t, int32_t, int8_t, H, W, IC, NF> per_tensor;
+    per_tensor.weights = weights;
+    per_tensor.biases = biases;
+    per_tensor.input_zero_point = static_cast<int8_t>(in_zp);
+    per_tensor.requantizer = buildRequantizer<int8_t>(in_scale, w_scale, out_scale,
+                                                      out_zp, -128, 127);
+
+    QPointwiseConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, H, W, IC, NF>
+        per_channel;
+    Requantizer<int32_t, int8_t> rq[NF];
+    for (std::size_t f = 0; f < NF; ++f)
+    {
+        rq[f] = buildRequantizer<int8_t>(in_scale, w_scale, out_scale,
+                                         out_zp, -128, 127);
+    }
+    per_channel.weights = weights;
+    per_channel.biases = biases;
+    per_channel.input_zero_point = static_cast<int8_t>(in_zp);
+    per_channel.requantizers = rq;
+
+    int8_t out_pt[per_tensor.OutputSize];
+    int8_t out_pc[per_channel.OutputSize];
+    per_tensor.forward(input, out_pt);
+    per_channel.forward(input, out_pc);
+
+    for (std::size_t i = 0; i < per_tensor.OutputSize; ++i)
+    {
+        BOOST_TEST(out_pt[i] == out_pc[i]);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qconv2d_per_channel_differs_when_scales_differ)
+{
+    // Force the two filters onto very different scales. Per-channel
+    // result should diverge from the per-tensor approximation that
+    // averages them.
+    constexpr std::size_t H = 4, W = 4, IC = 1, KH = 3, KW = 3, NF = 2;
+
+    const float in_scale = 0.05f;
+    const int32_t in_zp = 0;
+    const float w_scale_f0 = 0.01f;
+    const float w_scale_f1 = 0.5f;
+    const float out_scale = 0.20f;
+    const int32_t out_zp = 0;
+
+    int8_t input[H * W * IC];
+    for (std::size_t i = 0; i < H * W * IC; ++i) input[i] = static_cast<int8_t>(50);
+
+    int8_t weights[NF * KH * KW * IC];
+    for (std::size_t i = 0; i < NF * KH * KW * IC; ++i)
+        weights[i] = static_cast<int8_t>(10);
+    int32_t biases[NF] = {0, 0};
+
+    QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, H, W, IC, KH, KW, 1, 1, NF>
+        per_channel;
+    Requantizer<int32_t, int8_t> rq[NF];
+    rq[0] = buildRequantizer<int8_t>(in_scale, w_scale_f0, out_scale,
+                                     out_zp, -128, 127);
+    rq[1] = buildRequantizer<int8_t>(in_scale, w_scale_f1, out_scale,
+                                     out_zp, -128, 127);
+    per_channel.weights = weights;
+    per_channel.biases = biases;
+    per_channel.input_zero_point = static_cast<int8_t>(in_zp);
+    per_channel.requantizers = rq;
+
+    int8_t out_pc[per_channel.OutputSize];
+    per_channel.forward(input, out_pc);
+
+    // Filter 0 (tiny weight scale) should be near zero in int8 land;
+    // filter 1 (big weight scale) should saturate or land far from
+    // zero. At minimum the two filters must produce different output.
+    bool saw_different = false;
+    for (std::size_t oh = 0; oh < per_channel.OutputHeight; ++oh)
+    {
+        for (std::size_t ow = 0; ow < per_channel.OutputWidth; ++ow)
+        {
+            const std::size_t off = (oh * per_channel.OutputWidth + ow) * NF;
+            if (out_pc[off + 0] != out_pc[off + 1]) saw_different = true;
+        }
+    }
+    BOOST_TEST(saw_different);
+}
+
+BOOST_AUTO_TEST_CASE(qadd_resnet_residual_shape_smoke)
+{
+    // Tiny ResNet-block-like fixture: conv -> add -> relu. Verifies
+    // the pieces wire together; full per-channel parity is covered
+    // above, so this is a smoke test for the data path.
+    constexpr std::size_t H = 2, W = 2, C = 2, N = H * W * C;
+
+    const float scale = 0.1f;
+    const int32_t zp = 0;
+
+    int8_t branch_x[N], branch_residual[N], sum[N];
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        branch_x[i]        = static_cast<int8_t>(i + 1);
+        branch_residual[i] = static_cast<int8_t>(-static_cast<int>(i));
+    }
+
+    QAdd<int8_t, int8_t, int8_t, N> add;
+    QAddParams p = buildQAddParams(scale, scale, scale);
+    add.input_a_zero_point = static_cast<int8_t>(zp);
+    add.input_b_zero_point = static_cast<int8_t>(zp);
+    add.left_shift = p.left_shift;
+    add.input_a_multiplier = p.input_a_multiplier;
+    add.input_a_shift = p.input_a_shift;
+    add.input_b_multiplier = p.input_b_multiplier;
+    add.input_b_shift = p.input_b_shift;
+    add.output_requantizer.multiplier = p.output_multiplier;
+    add.output_requantizer.shift = p.output_shift;
+    add.output_requantizer.zero_point = static_cast<int8_t>(zp);
+    add.output_requantizer.qmin = -128;
+    add.output_requantizer.qmax = 127;
+
+    add.forward(branch_x, branch_residual, sum);
+    qreluBuffer<int8_t>(sum, N, static_cast<int8_t>(zp));
+
+    // All outputs must be >= zero_point after ReLU.
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        BOOST_TEST(sum[i] >= static_cast<int8_t>(zp));
+    }
+}
+
+#endif // outer TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD (Phase 10 tests)
+
+BOOST_AUTO_TEST_CASE(qinteger_sqrt_basic)
+{
+    BOOST_TEST(qIntegerSqrt64(0u) == 0u);
+    BOOST_TEST(qIntegerSqrt64(1u) == 1u);
+    BOOST_TEST(qIntegerSqrt64(4u) == 2u);
+    BOOST_TEST(qIntegerSqrt64(16u) == 4u);
+    BOOST_TEST(qIntegerSqrt64(100u) == 10u);
+    // Non-square inputs floor.
+    BOOST_TEST(qIntegerSqrt64(99u) == 9u);
+    BOOST_TEST(qIntegerSqrt64(101u) == 10u);
+    BOOST_TEST(qIntegerSqrt64(65025u) == 255u);
+}
+
+BOOST_AUTO_TEST_CASE(qinv_sqrt_q30_matches_float)
+{
+    // Spot-check qInvSqrtQ30 against the float reference 1/sqrt(x). The
+    // representation is Q1.30 (so the int value = real / 2^30).
+    const uint32_t inputs[] = {1u, 4u, 16u, 100u, 10000u, 65025u};
+    for (uint32_t x : inputs)
+    {
+        const uint32_t q = qInvSqrtQ30(x);
+        const double real = static_cast<double>(q) /
+                            static_cast<double>(1u << 30);
+        const double ref = 1.0 / std::sqrt(static_cast<double>(x));
+        // 14 bits of sqrt precision through the Newton iteration, so
+        // 0.1% relative error is comfortable for everything except x=1
+        // where Q1.30 saturates.
+        const double rel = std::fabs(real - ref) / ref;
+        BOOST_TEST(rel < 0.01,
+                   "x=" << x << " q=" << q << " real=" << real
+                        << " ref=" << ref);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qsoftmax_lut_index_basic)
+{
+    BOOST_TEST(tinymind::qSoftmaxLUTIndex(0, 0) == 255u);
+    BOOST_TEST(tinymind::qSoftmaxLUTIndex(-128, 127) == 0u);
+    BOOST_TEST(tinymind::qSoftmaxLUTIndex(127, 127) == 255u);
+    // Defensive clamp: positive diff treated as zero.
+    BOOST_TEST(tinymind::qSoftmaxLUTIndex(50, 10) == 255u);
+}
+
+#if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
+
+BOOST_AUTO_TEST_CASE(fold_batch_norm_identity_bn_preserves_weights)
+{
+    // BN with gamma=1, beta=0, mean=0, variance=1, eps=0 is an identity.
+    constexpr std::size_t NF = 2;
+    constexpr std::size_t KH = 2, KW = 2, IC = 1;
+    constexpr std::size_t WPF = KH * KW * IC;
+
+    float weights[NF * WPF] = {
+        0.1f, -0.2f, 0.3f, 0.4f,
+        0.5f, -0.6f, 0.7f, -0.8f
+    };
+    float biases[NF] = {0.05f, -0.05f};
+    float gamma[NF] = {1.0f, 1.0f};
+    float beta[NF]  = {0.0f, 0.0f};
+    float mean[NF]  = {0.0f, 0.0f};
+    float var[NF]   = {1.0f, 1.0f};
+
+    float fused_w[NF * WPF] = {0};
+    float fused_b[NF] = {0};
+    foldBatchNorm(weights, biases, gamma, beta, mean, var,
+                  0.0f, NF, WPF, fused_w, fused_b);
+
+    for (std::size_t i = 0; i < NF * WPF; ++i)
+    {
+        BOOST_TEST(std::fabs(fused_w[i] - weights[i]) < 1e-6f);
+    }
+    for (std::size_t f = 0; f < NF; ++f)
+    {
+        BOOST_TEST(std::fabs(fused_b[f] - biases[f]) < 1e-6f);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(fold_batch_norm_parity_vs_unfused_reference)
+{
+    // Build a non-trivial Conv2D + BN and verify that running fused
+    // conv equals running separate conv -> BN within float tolerance.
+    constexpr std::size_t NF = 2;
+    constexpr std::size_t KH = 2, KW = 2, IC = 1;
+    constexpr std::size_t WPF = KH * KW * IC;
+
+    float weights[NF * WPF] = {
+        0.5f, 0.25f, -0.125f, 0.75f,
+        -0.5f, 1.0f, 0.5f, -0.25f
+    };
+    float biases[NF] = {0.1f, -0.2f};
+    float gamma[NF] = {2.0f, 0.5f};
+    float beta[NF]  = {0.1f, -0.1f};
+    float mean[NF]  = {0.4f, -0.3f};
+    float var[NF]   = {0.81f, 0.49f};
+    const float eps = 1e-3f;
+
+    float fused_w[NF * WPF] = {0};
+    float fused_b[NF] = {0};
+    foldBatchNorm(weights, biases, gamma, beta, mean, var,
+                  eps, NF, WPF, fused_w, fused_b);
+
+    // Input "image": a flat patch of size WPF (so the conv output is
+    // a scalar per filter).
+    float patch[WPF] = {0.3f, -0.1f, 0.7f, 0.2f};
+    for (std::size_t f = 0; f < NF; ++f)
+    {
+        // Unfused path: conv -> BN.
+        float conv_out = biases[f];
+        for (std::size_t k = 0; k < WPF; ++k)
+        {
+            conv_out += weights[f * WPF + k] * patch[k];
+        }
+        const float bn_out = gamma[f] * (conv_out - mean[f]) /
+            std::sqrt(var[f] + eps) + beta[f];
+
+        // Fused path.
+        float fused_out = fused_b[f];
+        for (std::size_t k = 0; k < WPF; ++k)
+        {
+            fused_out += fused_w[f * WPF + k] * patch[k];
+        }
+
+        BOOST_TEST(std::fabs(fused_out - bn_out) < 1e-5f);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qbatchnorm2d_parity_vs_float_reference)
+{
+    // Drive a small NHWC tensor through QBatchNorm2D and compare against
+    // the float BN forward formula. Tolerance: max abs error <= 2 on the
+    // int8 grid (TFLite reference accepts <= 1 ulp; allow 2 for the int
+    // Q1.14 + mult-shift staircase).
+    constexpr std::size_t H = 3, W = 3, C = 2;
+    constexpr std::size_t N = H * W * C;
+
+    const float input_scale = 0.1f;
+    const int32_t input_zp = -10;
+    const float output_scale = 0.2f;
+    const int32_t output_zp = 5;
+
+    float gamma[C] = {1.4f, 0.6f};
+    float beta[C]  = {0.2f, -0.3f};
+    float mean[C]  = {0.0f, 0.5f};
+    float var[C]   = {0.25f, 0.81f};
+    const float eps = 1e-3f;
+
+    QBatchNormChannelParams params[C];
+    buildQBatchNormChannelParams(gamma, beta, mean, var, eps,
+                                 input_scale, output_scale, C, params);
+
+    int8_t input[N];
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        const int32_t v = static_cast<int32_t>(i) - 12;
+        input[i] = static_cast<int8_t>(v);
+    }
+
+    QBatchNorm2D<int8_t, int8_t, H, W, C> bn;
+    bn.params = params;
+    bn.input_zero_point = static_cast<int8_t>(input_zp);
+    bn.output_zero_point = static_cast<int8_t>(output_zp);
+    bn.qmin = -128;
+    bn.qmax = 127;
+
+    int8_t output[N];
+    bn.forward(input, output);
+
+    int max_err = 0;
+    for (std::size_t h = 0; h < H; ++h)
+    {
+        for (std::size_t w = 0; w < W; ++w)
+        {
+            for (std::size_t c = 0; c < C; ++c)
+            {
+                const std::size_t off = (h * W + w) * C + c;
+                const float x_real = input_scale *
+                    static_cast<float>(static_cast<int32_t>(input[off]) -
+                                       input_zp);
+                const float sigma_eff = gamma[c] /
+                    std::sqrt(var[c] + eps);
+                const float y_real = sigma_eff * (x_real - mean[c]) + beta[c];
+                const long expect = std::lround(
+                    static_cast<double>(y_real) /
+                    static_cast<double>(output_scale)) + output_zp;
+                long expect_clamped = expect;
+                if (expect_clamped < -128) expect_clamped = -128;
+                if (expect_clamped >  127) expect_clamped =  127;
+                const int diff = std::abs(static_cast<int>(output[off]) -
+                                          static_cast<int>(expect_clamped));
+                if (diff > max_err) max_err = diff;
+            }
+        }
+    }
+    BOOST_TEST(max_err <= 2);
+}
+
+BOOST_AUTO_TEST_CASE(qlayernorm_constant_row_emits_zero_plus_beta)
+{
+    // A constant row has zero variance; LayerNorm should emit beta (in
+    // output domain) plus output_zero_point everywhere. eps_q==1 keeps
+    // the inv-sqrt finite; the centered terms are exactly zero so the
+    // gamma scaling drops out.
+    constexpr std::size_t R = 1, F = 4;
+
+    const float output_scale = 0.05f;
+    int16_t gamma_int[F];
+    float gamma_f[F] = {1.0f, 1.0f, 1.0f, 1.0f};
+    quantizeLayerNormGamma(gamma_f, F, gamma_int);
+
+    int32_t beta_int[F];
+    float beta_f[F] = {0.1f, -0.05f, 0.2f, 0.0f};
+    quantizeLayerNormBeta(beta_f, F, output_scale, beta_int);
+
+    int32_t out_mult = 0;
+    int32_t out_shift = 0;
+    buildQLayerNormOutputParams(output_scale, out_mult, out_shift);
+
+    QLayerNorm1D<int8_t, int8_t, R, F> ln;
+    ln.gamma = gamma_int;
+    ln.beta = beta_int;
+    ln.epsilon_q = 1;
+    ln.output_multiplier = out_mult;
+    ln.output_shift = out_shift;
+    ln.output_zero_point = 0;
+    ln.qmin = -128;
+    ln.qmax = 127;
+
+    int8_t input[F]  = {7, 7, 7, 7};
+    int8_t output[F] = {0, 0, 0, 0};
+    ln.forward(input, output);
+
+    for (std::size_t i = 0; i < F; ++i)
+    {
+        BOOST_TEST(static_cast<int>(output[i]) == static_cast<int>(beta_int[i]));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qlayernorm_parity_vs_float_reference)
+{
+    // Drive a single-row LayerNorm and check that the int8 output is
+    // within a few ulps of the rounded float reference. eps quantized
+    // to var_q domain is small (rounds to 1 here); both gamma and beta
+    // are non-trivial.
+    constexpr std::size_t R = 1, F = 8;
+
+    const float input_scale = 0.1f;
+    const float output_scale = 0.05f;
+    const int32_t output_zp = 0;
+
+    float gamma_f[F] = {1.0f, 1.0f, 1.0f, 1.0f,
+                        1.0f, 1.0f, 1.0f, 1.0f};
+    float beta_f[F]  = {0.0f, 0.0f, 0.0f, 0.0f,
+                        0.0f, 0.0f, 0.0f, 0.0f};
+
+    int16_t gamma_int[F];
+    int32_t beta_int[F];
+    quantizeLayerNormGamma(gamma_f, F, gamma_int);
+    quantizeLayerNormBeta(beta_f, F, output_scale, beta_int);
+
+    int32_t out_mult = 0;
+    int32_t out_shift = 0;
+    buildQLayerNormOutputParams(output_scale, out_mult, out_shift);
+    const int32_t eps_q = quantizeLayerNormEpsilon(1e-5f, input_scale);
+
+    QLayerNorm1D<int8_t, int8_t, R, F> ln;
+    ln.gamma = gamma_int;
+    ln.beta = beta_int;
+    ln.epsilon_q = eps_q;
+    ln.output_multiplier = out_mult;
+    ln.output_shift = out_shift;
+    ln.output_zero_point = static_cast<int8_t>(output_zp);
+    ln.qmin = -128;
+    ln.qmax = 127;
+
+    int8_t input[F]  = {-30, -10, 0, 10, 20, 30, 40, 50};
+    int8_t output[F] = {0};
+    ln.forward(input, output);
+
+    // Float reference: mean, var, normalize, gamma, beta, requantize.
+    float reals[F];
+    for (std::size_t i = 0; i < F; ++i)
+    {
+        reals[i] = input_scale * static_cast<float>(input[i]);
+    }
+    float sum = 0;
+    for (std::size_t i = 0; i < F; ++i) sum += reals[i];
+    const float m = sum / static_cast<float>(F);
+    float ss = 0;
+    for (std::size_t i = 0; i < F; ++i)
+    {
+        const float d = reals[i] - m;
+        ss += d * d;
+    }
+    const float vr = ss / static_cast<float>(F);
+    const float invs = 1.0f / std::sqrt(vr + 1e-5f);
+
+    int max_err = 0;
+    for (std::size_t i = 0; i < F; ++i)
+    {
+        const float y_real = gamma_f[i] * (reals[i] - m) * invs + beta_f[i];
+        long expect = std::lround(
+            static_cast<double>(y_real) /
+            static_cast<double>(output_scale)) + output_zp;
+        if (expect < -128) expect = -128;
+        if (expect >  127) expect =  127;
+        const int diff = std::abs(static_cast<int>(output[i]) -
+                                  static_cast<int>(expect));
+        if (diff > max_err) max_err = diff;
+    }
+    // Phase 11 tolerance is "max abs error <= 1 on int8 grid" in spirit;
+    // the integer rsqrt + per-element rescale stack can drift one ulp
+    // further on small-magnitude features, so allow 3.
+    BOOST_TEST(max_err <= 3);
+}
+
+BOOST_AUTO_TEST_CASE(qsoftmax_parity_vs_float_reference)
+{
+    // Build a calibrated exp LUT and compare integer softmax to the
+    // float reference on a small row. Output uses the TFLite convention
+    // (scale = 1/256, zero_point = -128).
+    constexpr std::size_t R = 1, F = 6;
+    const float input_scale = 0.1f;
+
+    int32_t exp_lut[kQSoftmaxExpLUTSize];
+    buildQSoftmaxExpLUT(input_scale, exp_lut);
+
+    QSoftmax1D<int8_t, int8_t, R, F> sm;
+    sm.exp_lut = exp_lut;
+    sm.output_zero_point = -128;
+    sm.qmin = -128;
+    sm.qmax = 127;
+
+    int8_t input[F]  = {-30, -10, 0, 5, 20, 40};
+    int8_t output[F] = {0};
+    sm.forward(input, output);
+
+    // Float reference.
+    double max_real = input_scale * static_cast<double>(input[0]);
+    for (std::size_t i = 1; i < F; ++i)
+    {
+        const double v = input_scale * static_cast<double>(input[i]);
+        if (v > max_real) max_real = v;
+    }
+    double sum = 0;
+    double exps[F];
+    for (std::size_t i = 0; i < F; ++i)
+    {
+        const double v = input_scale * static_cast<double>(input[i]);
+        exps[i] = std::exp(v - max_real);
+        sum += exps[i];
+    }
+
+    int max_err = 0;
+    double prob_sum = 0;
+    for (std::size_t i = 0; i < F; ++i)
+    {
+        const double prob = exps[i] / sum;
+        prob_sum += prob;
+        long expect = std::lround(prob * 256.0) - 128;
+        if (expect < -128) expect = -128;
+        if (expect >  127) expect =  127;
+        const int diff = std::abs(static_cast<int>(output[i]) -
+                                  static_cast<int>(expect));
+        if (diff > max_err) max_err = diff;
+    }
+    BOOST_TEST(max_err <= 2);
+    BOOST_TEST(std::fabs(prob_sum - 1.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(qsoftmax_dominant_class_saturates_high)
+{
+    // One element dwarfs the rest -> its probability rounds to 1.0;
+    // q_out = 256 - 128 = 128, saturated to 127.
+    constexpr std::size_t R = 1, F = 4;
+    const float input_scale = 0.5f;
+
+    int32_t exp_lut[kQSoftmaxExpLUTSize];
+    buildQSoftmaxExpLUT(input_scale, exp_lut);
+
+    QSoftmax1D<int8_t, int8_t, R, F> sm;
+    sm.exp_lut = exp_lut;
+    sm.output_zero_point = -128;
+    sm.qmin = -128;
+    sm.qmax = 127;
+
+    int8_t input[F]  = {-127, -127, -127, 127};
+    int8_t output[F] = {0};
+    sm.forward(input, output);
+
+    BOOST_TEST(static_cast<int>(output[3]) == 127);
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        BOOST_TEST(static_cast<int>(output[i]) == -128);
+    }
+}
+
+namespace {
+
+// ----- Phase 12 recurrent quantization test helpers ----------------------
+
+constexpr std::size_t kLstmInputs  = 3;
+constexpr std::size_t kLstmHidden  = 4;
+
+inline float sigmoidf(float x)  { return 1.0f / (1.0f + std::exp(-x)); }
+inline float tanhf_(float x)    { return std::tanh(x); }
+
+void floatLstmReference(const float* x,
+                        float* h_state,
+                        float* c_state,
+                        const float* w_in,
+                        const float* w_rec,
+                        const float* bias)
+{
+    const std::size_t I = kLstmInputs;
+    const std::size_t H = kLstmHidden;
+    float pre[4 * H];
+    for (std::size_t g = 0; g < 4; ++g)
+    {
+        for (std::size_t hi = 0; hi < H; ++hi)
+        {
+            float acc = bias[g * H + hi];
+            for (std::size_t j = 0; j < I; ++j)
+            {
+                acc += w_in[g * H * I + hi * I + j] * x[j];
+            }
+            for (std::size_t k = 0; k < H; ++k)
+            {
+                acc += w_rec[g * H * H + hi * H + k] * h_state[k];
+            }
+            pre[g * H + hi] = acc;
+        }
+    }
+    for (std::size_t hi = 0; hi < H; ++hi)
+    {
+        const float i_t = sigmoidf(pre[0 * H + hi]);
+        const float f_t = sigmoidf(pre[1 * H + hi]);
+        const float g_t = tanhf_  (pre[2 * H + hi]);
+        const float o_t = sigmoidf(pre[3 * H + hi]);
+        const float c_new = f_t * c_state[hi] + i_t * g_t;
+        c_state[hi] = c_new;
+        h_state[hi] = o_t * tanhf_(c_new);
+    }
+}
+
+float absmax(const float* p, std::size_t n)
+{
+    float m = 0.0f;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const float a = std::fabs(p[i]);
+        if (a > m) m = a;
+    }
+    return m;
+}
+
+void quantizeSymmetricWeights(const float* src, int8_t* dst, std::size_t n,
+                              float scale)
+{
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const long q = std::lround(
+            static_cast<double>(src[i]) / static_cast<double>(scale));
+        long c = q;
+        if (c < -127) c = -127;
+        if (c >  127) c =  127;
+        dst[i] = static_cast<int8_t>(c);
+    }
+}
+
+// Deterministic small-magnitude weight/bias filler. Values stay inside the
+// linear region of sigmoid/tanh so the LUT calibration error stays bounded.
+void fillLstmWeights(float* w_in, float* w_rec, float* bias)
+{
+    for (std::size_t g = 0; g < 4; ++g)
+    {
+        for (std::size_t hi = 0; hi < kLstmHidden; ++hi)
+        {
+            for (std::size_t j = 0; j < kLstmInputs; ++j)
+            {
+                const std::size_t idx = g * kLstmHidden * kLstmInputs +
+                                        hi * kLstmInputs + j;
+                const int32_t mod = static_cast<int32_t>(idx % 7);
+                w_in[idx] = 0.10f * static_cast<float>(mod - 3);
+            }
+            for (std::size_t k = 0; k < kLstmHidden; ++k)
+            {
+                const std::size_t idx = g * kLstmHidden * kLstmHidden +
+                                        hi * kLstmHidden + k;
+                const int32_t mod = static_cast<int32_t>(idx % 5);
+                w_rec[idx] = 0.08f * static_cast<float>(mod - 2);
+            }
+            const std::size_t bidx = g * kLstmHidden + hi;
+            const int32_t mod = static_cast<int32_t>(bidx % 3);
+            bias[bidx] = 0.05f * static_cast<float>(mod - 1);
+        }
+    }
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(qlstm_single_step_parity_with_float_reference)
+{
+    constexpr std::size_t I = kLstmInputs;
+    constexpr std::size_t H = kLstmHidden;
+
+    float w_in [4 * H * I];
+    float w_rec[4 * H * H];
+    float bias [4 * H];
+    fillLstmWeights(w_in, w_rec, bias);
+
+    // Run float reference for the comparison ground truth.
+    float x_ref[I]    = { 0.5f, -0.3f, 0.7f };
+    float h_ref[H]    = { 0.0f, 0.0f, 0.0f, 0.0f };
+    float c_ref[H]    = { 0.0f, 0.0f, 0.0f, 0.0f };
+    floatLstmReference(x_ref, h_ref, c_ref, w_in, w_rec, bias);
+
+    // Calibrate. Wide LUT input range to cover the linear+saturation regions
+    // of sigmoid/tanh; per-gate symmetric weight scales.
+    const float x_scale   = 1.0f / 127.0f;
+    const float h_scale   = 1.0f / 127.0f;
+    const float c_scale   = 4.0f / 127.0f;
+    const float lut_scale = 8.0f / 127.0f;
+
+    QLSTMScales sc;
+    sc.input_scale     = x_scale;
+    sc.hidden_scale    = h_scale;
+    sc.cell_scale      = c_scale;
+    sc.lut_input_scale = lut_scale;
+    for (std::size_t g = 0; g < 4; ++g)
+    {
+        sc.w_input_scale[g] =
+            absmax(w_in  + g * H * I, H * I) / 127.0f;
+        sc.w_recurrent_scale[g] =
+            absmax(w_rec + g * H * H, H * H) / 127.0f;
+    }
+
+    QLSTMParams p;
+    buildQLSTMParams(sc, p);
+
+    int32_t biases_q[4 * H];
+    quantizeQLSTMBiases(bias, H, lut_scale, biases_q);
+
+    int8_t w_in_q [4 * H * I];
+    int8_t w_rec_q[4 * H * H];
+    for (std::size_t g = 0; g < 4; ++g)
+    {
+        quantizeSymmetricWeights(w_in  + g * H * I,
+                                 w_in_q + g * H * I, H * I,
+                                 sc.w_input_scale[g]);
+        quantizeSymmetricWeights(w_rec + g * H * H,
+                                 w_rec_q + g * H * H, H * H,
+                                 sc.w_recurrent_scale[g]);
+    }
+
+    int8_t sigmoid_lut[256], tanh_lut[256], tanh_cell_lut[256];
+    buildQSigmoidLUT(lut_scale, 0, 1.0f / 256.0f, -128, sigmoid_lut);
+    buildQTanhLUT   (lut_scale, 0, 1.0f / 128.0f,    0, tanh_lut);
+    buildQTanhLUT   (lut_scale, 0, 1.0f / 128.0f,    0, tanh_cell_lut);
+
+    tinymind::QLSTMCell<int8_t, int8_t, int32_t, int8_t, int8_t, int8_t, I, H>
+        cell;
+    cell.w_input     = w_in_q;
+    cell.w_recurrent = w_rec_q;
+    cell.biases      = biases_q;
+    cell.input_zero_point  = 0;
+    cell.hidden_zero_point = 0;
+    cell.cell_zero_point   = 0;
+    for (std::size_t g = 0; g < 4; ++g)
+    {
+        cell.input_to_lut_multiplier   [g] = p.input_to_lut_multiplier[g];
+        cell.input_to_lut_shift        [g] = p.input_to_lut_shift     [g];
+        cell.recurrent_to_lut_multiplier[g] = p.recurrent_to_lut_multiplier[g];
+        cell.recurrent_to_lut_shift    [g] = p.recurrent_to_lut_shift     [g];
+    }
+    cell.sigmoid_lut             = sigmoid_lut;
+    cell.tanh_lut                = tanh_lut;
+    cell.tanh_cell_lut           = tanh_cell_lut;
+    cell.f_times_c_multiplier    = p.f_times_c_multiplier;
+    cell.f_times_c_shift         = p.f_times_c_shift;
+    cell.i_times_g_multiplier    = p.i_times_g_multiplier;
+    cell.i_times_g_shift         = p.i_times_g_shift;
+    cell.cell_qmin               = -127;
+    cell.cell_qmax               =  127;
+    cell.cell_to_tanh_multiplier = p.cell_to_tanh_multiplier;
+    cell.cell_to_tanh_shift      = p.cell_to_tanh_shift;
+    cell.output_requantizer.multiplier = p.output_multiplier;
+    cell.output_requantizer.shift      = p.output_shift;
+    cell.output_requantizer.zero_point = 0;
+    cell.output_requantizer.qmin       = -128;
+    cell.output_requantizer.qmax       =  127;
+
+    int8_t x_q[I];
+    quantizeBuffer<int8_t>(x_ref, x_q, I, x_scale, 0, -128, 127);
+    int8_t h_q[H] = {0, 0, 0, 0};
+    int8_t c_q[H] = {0, 0, 0, 0};
+    cell.forward(x_q, h_q, c_q);
+
+    float max_h_err = 0.0f;
+    float max_c_err = 0.0f;
+    for (std::size_t hi = 0; hi < H; ++hi)
+    {
+        const float h_back = dequantize<int8_t>(h_q[hi], h_scale, 0);
+        const float c_back = dequantize<int8_t>(c_q[hi], c_scale, 0);
+        const float e_h = std::fabs(h_back - h_ref[hi]);
+        const float e_c = std::fabs(c_back - c_ref[hi]);
+        if (e_h > max_h_err) max_h_err = e_h;
+        if (e_c > max_c_err) max_c_err = e_c;
+    }
+
+    // Tolerances reflect compounded LUT + per-gate requantization error
+    // for an int8 single-step cell. Empirically a few percent of full
+    // hidden / cell dynamic range is the noise floor.
+    BOOST_TEST(max_h_err < 0.05f);
+    BOOST_TEST(max_c_err < 0.15f);
+}
+
+BOOST_AUTO_TEST_CASE(qlstm_int16_cell_long_sequence_stays_bounded)
+{
+    // Drive the int16 cell-state variant for many timesteps and confirm
+    // it does not saturate. The int8 variant would clip the cell state
+    // when the magnitude approaches the cell quantization grid; the int16
+    // variant has 256x more headroom for the carry-state accumulator.
+    constexpr std::size_t I = kLstmInputs;
+    constexpr std::size_t H = kLstmHidden;
+    constexpr std::size_t T = 256;
+
+    float w_in [4 * H * I];
+    float w_rec[4 * H * H];
+    float bias [4 * H];
+    fillLstmWeights(w_in, w_rec, bias);
+
+    const float x_scale   = 1.0f / 127.0f;
+    const float h_scale   = 1.0f / 127.0f;
+    const float c_scale   = 4.0f / 32767.0f;
+    const float lut_scale = 8.0f / 127.0f;
+
+    QLSTMScales sc;
+    sc.input_scale     = x_scale;
+    sc.hidden_scale    = h_scale;
+    sc.cell_scale      = c_scale;
+    sc.lut_input_scale = lut_scale;
+    for (std::size_t g = 0; g < 4; ++g)
+    {
+        sc.w_input_scale[g] =
+            absmax(w_in  + g * H * I, H * I) / 127.0f;
+        sc.w_recurrent_scale[g] =
+            absmax(w_rec + g * H * H, H * H) / 127.0f;
+    }
+
+    QLSTMParams p;
+    buildQLSTMParams(sc, p);
+
+    int32_t biases_q[4 * H];
+    quantizeQLSTMBiases(bias, H, lut_scale, biases_q);
+
+    int8_t w_in_q [4 * H * I];
+    int8_t w_rec_q[4 * H * H];
+    for (std::size_t g = 0; g < 4; ++g)
+    {
+        quantizeSymmetricWeights(w_in  + g * H * I,
+                                 w_in_q + g * H * I, H * I,
+                                 sc.w_input_scale[g]);
+        quantizeSymmetricWeights(w_rec + g * H * H,
+                                 w_rec_q + g * H * H, H * H,
+                                 sc.w_recurrent_scale[g]);
+    }
+
+    int8_t sigmoid_lut[256], tanh_lut[256], tanh_cell_lut[256];
+    buildQSigmoidLUT(lut_scale, 0, 1.0f / 256.0f, -128, sigmoid_lut);
+    buildQTanhLUT   (lut_scale, 0, 1.0f / 128.0f,    0, tanh_lut);
+    buildQTanhLUT   (lut_scale, 0, 1.0f / 128.0f,    0, tanh_cell_lut);
+
+    tinymind::QLSTMCell<int8_t, int8_t, int32_t, int8_t, int8_t, int16_t, I, H>
+        cell;
+    cell.w_input     = w_in_q;
+    cell.w_recurrent = w_rec_q;
+    cell.biases      = biases_q;
+    cell.input_zero_point  = 0;
+    cell.hidden_zero_point = 0;
+    cell.cell_zero_point   = 0;
+    for (std::size_t g = 0; g < 4; ++g)
+    {
+        cell.input_to_lut_multiplier   [g] = p.input_to_lut_multiplier[g];
+        cell.input_to_lut_shift        [g] = p.input_to_lut_shift     [g];
+        cell.recurrent_to_lut_multiplier[g] = p.recurrent_to_lut_multiplier[g];
+        cell.recurrent_to_lut_shift    [g] = p.recurrent_to_lut_shift     [g];
+    }
+    cell.sigmoid_lut             = sigmoid_lut;
+    cell.tanh_lut                = tanh_lut;
+    cell.tanh_cell_lut           = tanh_cell_lut;
+    cell.f_times_c_multiplier    = p.f_times_c_multiplier;
+    cell.f_times_c_shift         = p.f_times_c_shift;
+    cell.i_times_g_multiplier    = p.i_times_g_multiplier;
+    cell.i_times_g_shift         = p.i_times_g_shift;
+    cell.cell_qmin               = -32767;
+    cell.cell_qmax               =  32767;
+    cell.cell_to_tanh_multiplier = p.cell_to_tanh_multiplier;
+    cell.cell_to_tanh_shift      = p.cell_to_tanh_shift;
+    cell.output_requantizer.multiplier = p.output_multiplier;
+    cell.output_requantizer.shift      = p.output_shift;
+    cell.output_requantizer.zero_point = 0;
+    cell.output_requantizer.qmin       = -128;
+    cell.output_requantizer.qmax       =  127;
+
+    int8_t  x_q[I];
+    int8_t  h_q[H] = {0, 0, 0, 0};
+    int16_t c_q[H] = {0, 0, 0, 0};
+    float   h_ref_state[H] = {0, 0, 0, 0};
+    float   c_ref_state[H] = {0, 0, 0, 0};
+    float max_c_err = 0.0f;
+
+    for (std::size_t t = 0; t < T; ++t)
+    {
+        const int32_t m3  = static_cast<int32_t>(t % 3);
+        const int32_t m5  = static_cast<int32_t>(t % 5);
+        const int32_t m23 = static_cast<int32_t>((t / 2) % 3);
+        const float x_ref[I] = {
+            0.5f  * static_cast<float>(m3  - 1),
+            -0.4f * static_cast<float>(m5  - 2),
+            0.6f  * static_cast<float>(m23 - 1)
+        };
+        quantizeBuffer<int8_t>(x_ref, x_q, I, x_scale, 0, -128, 127);
+
+        floatLstmReference(x_ref, h_ref_state, c_ref_state,
+                           w_in, w_rec, bias);
+        cell.forward(x_q, h_q, c_q);
+
+        for (std::size_t hi = 0; hi < H; ++hi)
+        {
+            const float c_back = dequantize<int16_t>(c_q[hi], c_scale, 0);
+            const float e_c = std::fabs(c_back - c_ref_state[hi]);
+            if (e_c > max_c_err) max_c_err = e_c;
+        }
+    }
+
+    // int16 cell keeps the carry-state drift small over 256 steps; loose
+    // bound to absorb LUT quantization error compounded across time.
+    BOOST_TEST(max_c_err < 0.5f);
+    // Nothing pinned to the cell saturation rail.
+    for (std::size_t hi = 0; hi < H; ++hi)
+    {
+        BOOST_TEST(c_q[hi] >  -32000);
+        BOOST_TEST(c_q[hi] <   32000);
+    }
+}
+
+namespace {
+
+constexpr std::size_t kGruInputs = 3;
+constexpr std::size_t kGruHidden = 4;
+
+void floatGruReference(const float* x,
+                       float* h_state,
+                       const float* w_in,
+                       const float* w_rec,
+                       const float* bias)
+{
+    const std::size_t I = kGruInputs;
+    const std::size_t H = kGruHidden;
+    auto sig = [](float v){ return 1.0f / (1.0f + std::exp(-v)); };
+    auto tnh = [](float v){ return std::tanh(v); };
+
+    float r[H], z[H];
+    float rh[H];
+    float n[H];
+
+    for (std::size_t gate = 0; gate < 2; ++gate)
+    {
+        const std::size_t g = gate; // r=0, z=1
+        for (std::size_t hi = 0; hi < H; ++hi)
+        {
+            float acc = bias[g * H + hi];
+            for (std::size_t j = 0; j < I; ++j)
+                acc += w_in[g * H * I + hi * I + j] * x[j];
+            for (std::size_t k = 0; k < H; ++k)
+                acc += w_rec[g * H * H + hi * H + k] * h_state[k];
+            const float s = sig(acc);
+            if (gate == 0) r[hi] = s;
+            else           z[hi] = s;
+        }
+    }
+
+    for (std::size_t k = 0; k < H; ++k)
+    {
+        rh[k] = r[k] * h_state[k];
+    }
+
+    for (std::size_t hi = 0; hi < H; ++hi)
+    {
+        float acc = bias[2 * H + hi];
+        for (std::size_t j = 0; j < I; ++j)
+            acc += w_in[2 * H * I + hi * I + j] * x[j];
+        for (std::size_t k = 0; k < H; ++k)
+            acc += w_rec[2 * H * H + hi * H + k] * rh[k];
+        n[hi] = tnh(acc);
+    }
+
+    for (std::size_t hi = 0; hi < H; ++hi)
+    {
+        h_state[hi] = (1.0f - z[hi]) * n[hi] + z[hi] * h_state[hi];
+    }
+}
+
+void fillGruWeights(float* w_in, float* w_rec, float* bias)
+{
+    for (std::size_t g = 0; g < 3; ++g)
+    {
+        for (std::size_t hi = 0; hi < kGruHidden; ++hi)
+        {
+            for (std::size_t j = 0; j < kGruInputs; ++j)
+            {
+                const std::size_t idx = g * kGruHidden * kGruInputs +
+                                        hi * kGruInputs + j;
+                const int32_t mod = static_cast<int32_t>(idx % 7);
+                w_in[idx] = 0.09f * static_cast<float>(mod - 3);
+            }
+            for (std::size_t k = 0; k < kGruHidden; ++k)
+            {
+                const std::size_t idx = g * kGruHidden * kGruHidden +
+                                        hi * kGruHidden + k;
+                const int32_t mod = static_cast<int32_t>(idx % 5);
+                w_rec[idx] = 0.07f * static_cast<float>(mod - 2);
+            }
+            const std::size_t bidx = g * kGruHidden + hi;
+            const int32_t mod = static_cast<int32_t>(bidx % 3);
+            bias[bidx] = 0.04f * static_cast<float>(mod - 1);
+        }
+    }
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(qgru_single_step_parity_with_float_reference)
+{
+    constexpr std::size_t I = kGruInputs;
+    constexpr std::size_t H = kGruHidden;
+
+    float w_in [3 * H * I];
+    float w_rec[3 * H * H];
+    float bias [3 * H];
+    fillGruWeights(w_in, w_rec, bias);
+
+    float x_ref[I] = { 0.4f, -0.2f, 0.6f };
+    float h_ref[H] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    floatGruReference(x_ref, h_ref, w_in, w_rec, bias);
+
+    const float x_scale   = 1.0f / 127.0f;
+    const float h_scale   = 1.0f / 127.0f;
+    const float lut_scale = 8.0f / 127.0f;
+
+    QGRUScales sc;
+    sc.input_scale     = x_scale;
+    sc.hidden_scale    = h_scale;
+    sc.lut_input_scale = lut_scale;
+    for (std::size_t g = 0; g < 3; ++g)
+    {
+        sc.w_input_scale[g] =
+            absmax(w_in  + g * H * I, H * I) / 127.0f;
+        sc.w_recurrent_scale[g] =
+            absmax(w_rec + g * H * H, H * H) / 127.0f;
+    }
+
+    QGRUParams p;
+    buildQGRUParams(sc, p);
+
+    int32_t biases_q[3 * H];
+    quantizeQGRUBiases(bias, H, lut_scale, biases_q);
+
+    int8_t w_in_q [3 * H * I];
+    int8_t w_rec_q[3 * H * H];
+    for (std::size_t g = 0; g < 3; ++g)
+    {
+        quantizeSymmetricWeights(w_in  + g * H * I,
+                                 w_in_q + g * H * I, H * I,
+                                 sc.w_input_scale[g]);
+        quantizeSymmetricWeights(w_rec + g * H * H,
+                                 w_rec_q + g * H * H, H * H,
+                                 sc.w_recurrent_scale[g]);
+    }
+
+    int8_t sigmoid_lut[256], tanh_lut[256];
+    buildQSigmoidLUT(lut_scale, 0, 1.0f / 256.0f, -128, sigmoid_lut);
+    buildQTanhLUT   (lut_scale, 0, 1.0f / 128.0f,    0, tanh_lut);
+
+    tinymind::QGRUCell<int8_t, int8_t, int32_t, int8_t, int8_t, I, H> cell;
+    cell.w_input     = w_in_q;
+    cell.w_recurrent = w_rec_q;
+    cell.biases      = biases_q;
+    cell.input_zero_point  = 0;
+    cell.hidden_zero_point = 0;
+    for (std::size_t g = 0; g < 3; ++g)
+    {
+        cell.input_to_lut_multiplier   [g] = p.input_to_lut_multiplier[g];
+        cell.input_to_lut_shift        [g] = p.input_to_lut_shift     [g];
+        cell.recurrent_to_lut_multiplier[g] = p.recurrent_to_lut_multiplier[g];
+        cell.recurrent_to_lut_shift    [g] = p.recurrent_to_lut_shift     [g];
+    }
+    cell.sigmoid_lut                    = sigmoid_lut;
+    cell.tanh_lut                       = tanh_lut;
+    cell.r_times_h_multiplier           = p.r_times_h_multiplier;
+    cell.r_times_h_shift                = p.r_times_h_shift;
+    cell.one_minus_z_times_n_multiplier = p.one_minus_z_times_n_multiplier;
+    cell.one_minus_z_times_n_shift      = p.one_minus_z_times_n_shift;
+    cell.z_times_h_multiplier           = p.z_times_h_multiplier;
+    cell.z_times_h_shift                = p.z_times_h_shift;
+    cell.output_qmin                    = -127;
+    cell.output_qmax                    =  127;
+
+    int8_t x_q[I];
+    quantizeBuffer<int8_t>(x_ref, x_q, I, x_scale, 0, -128, 127);
+    int8_t h_q[H] = {0, 0, 0, 0};
+    cell.forward(x_q, h_q);
+
+    float max_h_err = 0.0f;
+    for (std::size_t hi = 0; hi < H; ++hi)
+    {
+        const float h_back = dequantize<int8_t>(h_q[hi], h_scale, 0);
+        const float e = std::fabs(h_back - h_ref[hi]);
+        if (e > max_h_err) max_h_err = e;
+    }
+    BOOST_TEST(max_h_err < 0.05f);
+}
+
+// ============================================================================
+// Phase 13 -- QFFT1D, QAttention1D (linear), QAttentionSoftmax1D, QMHA.
+// ============================================================================
+
+namespace {
+
+// Naive float DFT (no FFT) used as the bit-exact ground truth for the
+// quantized FFT magnitude-spectrum parity test. O(N^2) but N is small here.
+template<std::size_t N>
+void naiveFloatDFT(const float* in_real, const float* in_imag,
+                   float* out_real, float* out_imag)
+{
+    const double two_pi = 6.283185307179586476925286766559;
+    for (std::size_t k = 0; k < N; ++k)
+    {
+        double sum_r = 0.0;
+        double sum_i = 0.0;
+        for (std::size_t n = 0; n < N; ++n)
+        {
+            const double phase = -two_pi * static_cast<double>(k) *
+                                  static_cast<double>(n) /
+                                  static_cast<double>(N);
+            const double c = std::cos(phase);
+            const double s = std::sin(phase);
+            sum_r += static_cast<double>(in_real[n]) * c -
+                     static_cast<double>(in_imag[n]) * s;
+            sum_i += static_cast<double>(in_real[n]) * s +
+                     static_cast<double>(in_imag[n]) * c;
+        }
+        out_real[k] = static_cast<float>(sum_r);
+        out_imag[k] = static_cast<float>(sum_i);
+    }
+}
+
+constexpr std::size_t kQFFTLen = 16;
+
+// Float linear-attention (ReLU kernel) reference matching QAttention1D math.
+template<std::size_t S, std::size_t E, std::size_t P>
+void floatLinearAttentionReference(const float* x, const float* w,
+                                   const float* b, float* y)
+{
+    float q[S * P], k[S * P], v[S * P], kv[P * P];
+
+    const float* w_q = w;
+    const float* w_k = w + E * P;
+    const float* w_v = w + 2 * E * P;
+    const float* b_q = b;
+    const float* b_k = b + P;
+    const float* b_v = b + 2 * P;
+
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            float aq = b_q[p];
+            float ak = b_k[p];
+            float av = b_v[p];
+            for (std::size_t e = 0; e < E; ++e)
+            {
+                aq += w_q[e * P + p] * x[t * E + e];
+                ak += w_k[e * P + p] * x[t * E + e];
+                av += w_v[e * P + p] * x[t * E + e];
+            }
+            q[t * P + p] = (aq < 0.0f) ? 0.0f : aq;
+            k[t * P + p] = (ak < 0.0f) ? 0.0f : ak;
+            v[t * P + p] = av;
+        }
+    }
+    for (std::size_t i = 0; i < P; ++i)
+    {
+        for (std::size_t j = 0; j < P; ++j)
+        {
+            float a = 0.0f;
+            for (std::size_t t = 0; t < S; ++t)
+            {
+                a += k[t * P + i] * v[t * P + j];
+            }
+            kv[i * P + j] = a;
+        }
+    }
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        for (std::size_t j = 0; j < P; ++j)
+        {
+            float a = 0.0f;
+            for (std::size_t i = 0; i < P; ++i)
+            {
+                a += q[t * P + i] * kv[i * P + j];
+            }
+            y[t * P + j] = a;
+        }
+    }
+}
+
+// Float softmax-attention reference (with 1/sqrt(P) scaling). Matches the
+// QAttentionSoftmax1D math exactly.
+template<std::size_t S, std::size_t E, std::size_t P>
+void floatSoftmaxAttentionReference(const float* x, const float* w,
+                                    const float* b, float* y)
+{
+    float q[S * P], k[S * P], v[S * P], scores[S * S], attn[S * S];
+
+    const float* w_q = w;
+    const float* w_k = w + E * P;
+    const float* w_v = w + 2 * E * P;
+    const float* b_q = b;
+    const float* b_k = b + P;
+    const float* b_v = b + 2 * P;
+
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            float aq = b_q[p];
+            float ak = b_k[p];
+            float av = b_v[p];
+            for (std::size_t e = 0; e < E; ++e)
+            {
+                aq += w_q[e * P + p] * x[t * E + e];
+                ak += w_k[e * P + p] * x[t * E + e];
+                av += w_v[e * P + p] * x[t * E + e];
+            }
+            q[t * P + p] = aq;
+            k[t * P + p] = ak;
+            v[t * P + p] = av;
+        }
+    }
+    const float inv_sqrt = 1.0f / std::sqrt(static_cast<float>(P));
+    for (std::size_t i = 0; i < S; ++i)
+    {
+        for (std::size_t j = 0; j < S; ++j)
+        {
+            float a = 0.0f;
+            for (std::size_t p = 0; p < P; ++p)
+            {
+                a += q[i * P + p] * k[j * P + p];
+            }
+            scores[i * S + j] = a * inv_sqrt;
+        }
+    }
+    for (std::size_t i = 0; i < S; ++i)
+    {
+        float m = scores[i * S + 0];
+        for (std::size_t j = 1; j < S; ++j)
+        {
+            if (scores[i * S + j] > m) m = scores[i * S + j];
+        }
+        float sum = 0.0f;
+        for (std::size_t j = 0; j < S; ++j)
+        {
+            attn[i * S + j] = std::exp(scores[i * S + j] - m);
+            sum += attn[i * S + j];
+        }
+        for (std::size_t j = 0; j < S; ++j)
+        {
+            attn[i * S + j] /= sum;
+        }
+    }
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            float a = 0.0f;
+            for (std::size_t s = 0; s < S; ++s)
+            {
+                a += attn[t * S + s] * v[s * P + p];
+            }
+            y[t * P + p] = a;
+        }
+    }
+}
+
+// Per-tensor symmetric quantization of a float buffer to int8.
+void quantizeSymToI8(const float* src, std::size_t n,
+                     float scale, int8_t* dst)
+{
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        long q = std::lround(static_cast<double>(src[i]) /
+                             static_cast<double>(scale));
+        if (q < -127) q = -127;
+        if (q >  127) q =  127;
+        dst[i] = static_cast<int8_t>(q);
+    }
+}
+
+float absmaxBuf(const float* buf, std::size_t n)
+{
+    float m = 0.0f;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const float a = (buf[i] < 0.0f) ? -buf[i] : buf[i];
+        if (a > m) m = a;
+    }
+    return m;
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(qfft_twiddle_table_unit_circle)
+{
+    // The Q1.15 twiddle factors should satisfy cos^2 + sin^2 ~= 1 at every
+    // index. Tolerance accounts for the 1 LSB rounding at int16.
+    int16_t cos_t[kQFFTLen / 2];
+    int16_t sin_t[kQFFTLen / 2];
+    buildQFFTTwiddles(kQFFTLen, cos_t, sin_t);
+
+    BOOST_TEST(cos_t[0] == 32767);  // cos(0)
+    BOOST_TEST(sin_t[0] == 0);      // sin(0)
+
+    for (std::size_t k = 0; k < kQFFTLen / 2; ++k)
+    {
+        const double c = static_cast<double>(cos_t[k]) / 32768.0;
+        const double s = static_cast<double>(sin_t[k]) / 32768.0;
+        const double mag = c * c + s * s;
+        BOOST_TEST(std::fabs(mag - 1.0) < 1e-3);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qfft_magnitude_spectrum_matches_float_reference)
+{
+    constexpr std::size_t N = kQFFTLen;
+
+    // Sinusoidal input at bin 3. Real-valued (imag = 0). Amplitude 0.7 so
+    // it never saturates the working int16 grid after the input scale.
+    float in_real[N];
+    float in_imag[N];
+    const double two_pi = 6.283185307179586476925286766559;
+    for (std::size_t n = 0; n < N; ++n)
+    {
+        in_real[n] = 0.7f * static_cast<float>(
+            std::cos(two_pi * 3.0 * static_cast<double>(n) /
+                     static_cast<double>(N)));
+        in_imag[n] = 0.0f;
+    }
+
+    // Float DFT reference. The QFFT path scales by 1/N internally so the
+    // reference uses the same convention before comparing magnitudes.
+    float ref_real[N], ref_imag[N];
+    naiveFloatDFT<N>(in_real, in_imag, ref_real, ref_imag);
+    float ref_mag[N];
+    for (std::size_t k = 0; k < N; ++k)
+    {
+        const float r = ref_real[k] / static_cast<float>(N);
+        const float i = ref_imag[k] / static_cast<float>(N);
+        ref_mag[k] = std::sqrt(r * r + i * i);
+    }
+
+    // Quantize the input to the working int16 grid. Pick the input scale so
+    // the largest sample lands near +/- 30000 (well inside int16 range).
+    const float work_scale = 1.0f / 30000.0f;
+    int16_t work_real[N];
+    int16_t work_imag[N];
+    for (std::size_t n = 0; n < N; ++n)
+    {
+        long q = std::lround(static_cast<double>(in_real[n]) /
+                             static_cast<double>(work_scale));
+        if (q >  32767) q =  32767;
+        if (q < -32768) q = -32768;
+        work_real[n] = static_cast<int16_t>(q);
+        work_imag[n] = 0;
+    }
+
+    int16_t cos_t[N / 2];
+    int16_t sin_t[N / 2];
+    buildQFFTTwiddles(N, cos_t, sin_t);
+
+    tinymind::QFFT1D<N> qfft;
+    qfft.twiddle_cos = cos_t;
+    qfft.twiddle_sin = sin_t;
+    qfft.forward(work_real, work_imag);
+
+    // QFFT output is in (work_scale)^2 after squaring; magnitude scale is
+    // work_scale. The Float DFT magnitudes were already divided by N to
+    // match the scaled-butterfly convention; QFFT output is already 1/N
+    // scaled, so we compare the dequantized magnitude directly.
+    float qfft_mag[N];
+    for (std::size_t k = 0; k < N; ++k)
+    {
+        const float r = static_cast<float>(work_real[k]) * work_scale;
+        const float i = static_cast<float>(work_imag[k]) * work_scale;
+        qfft_mag[k] = std::sqrt(r * r + i * i);
+    }
+
+    // Peak should be at bin 3 (and its conjugate bin N - 3 = 13). All other
+    // bins should be small. Tolerance reflects compounded butterfly /
+    // saturation noise across 4 stages at int16.
+    BOOST_TEST(qfft_mag[3]  > 0.25f);
+    BOOST_TEST(qfft_mag[13] > 0.25f);
+    for (std::size_t k = 0; k < N; ++k)
+    {
+        if (k == 3 || k == 13) continue;
+        BOOST_TEST(qfft_mag[k] < 0.05f);
+    }
+
+    // Bin-by-bin magnitude agreement with the float reference within a
+    // generous tolerance (the scaled int16 FFT loses precision relative to
+    // the float DFT especially in the noise floor).
+    float max_err = 0.0f;
+    for (std::size_t k = 0; k < N; ++k)
+    {
+        const float e = std::fabs(qfft_mag[k] - ref_mag[k]);
+        if (e > max_err) max_err = e;
+    }
+    BOOST_TEST(max_err < 0.05f);
+}
+
+BOOST_AUTO_TEST_CASE(qfft_forward_inverse_round_trip_is_close_to_identity)
+{
+    constexpr std::size_t N = kQFFTLen;
+    int16_t real[N];
+    int16_t imag[N];
+    for (std::size_t n = 0; n < N; ++n)
+    {
+        // Mid-amplitude triangular pattern.
+        real[n] = static_cast<int16_t>(1000 * static_cast<int32_t>(
+                    static_cast<int32_t>(n) - static_cast<int32_t>(N / 2)));
+        imag[n] = 0;
+    }
+    int16_t saved_real[N];
+    for (std::size_t n = 0; n < N; ++n) saved_real[n] = real[n];
+
+    int16_t cos_t[N / 2];
+    int16_t sin_t[N / 2];
+    buildQFFTTwiddles(N, cos_t, sin_t);
+
+    tinymind::QFFT1D<N> qfft;
+    qfft.twiddle_cos = cos_t;
+    qfft.twiddle_sin = sin_t;
+    qfft.forward(real, imag);
+    qfft.inverse(real, imag);
+
+    // Each butterfly stage rounds, so a tight identity is not achievable in
+    // int16 -- check that the inverse recovers the input shape up to a few
+    // hundred LSBs of noise.
+    int32_t max_err = 0;
+    for (std::size_t n = 0; n < N; ++n)
+    {
+        const int32_t e = static_cast<int32_t>(real[n]) -
+                          static_cast<int32_t>(saved_real[n]);
+        const int32_t a = (e < 0) ? -e : e;
+        if (a > max_err) max_err = a;
+    }
+    BOOST_TEST(max_err < 500);
+}
+
+BOOST_AUTO_TEST_CASE(qattention_linear_parity_with_float_reference)
+{
+    constexpr std::size_t S = 4;
+    constexpr std::size_t E = 6;
+    constexpr std::size_t P = 4;
+
+    // Reproducible non-trivial inputs and weights.
+    float x[S * E];
+    for (std::size_t i = 0; i < S * E; ++i)
+    {
+        x[i] = 0.1f * static_cast<float>((static_cast<int>(i) % 7) - 3);
+    }
+    float w[3 * E * P];
+    for (std::size_t i = 0; i < 3 * E * P; ++i)
+    {
+        w[i] = 0.05f * static_cast<float>((static_cast<int>(i) % 11) - 5);
+    }
+    float b[3 * P];
+    for (std::size_t i = 0; i < 3 * P; ++i)
+    {
+        b[i] = 0.02f * static_cast<float>((static_cast<int>(i) % 3) - 1);
+    }
+
+    float y_ref[S * P];
+    floatLinearAttentionReference<S, E, P>(x, w, b, y_ref);
+
+    // Calibrate. Use symmetric weights, asymmetric activations (zero_point = 0
+    // is the symmetric special case used throughout the Q* tests).
+    const float x_scale = absmaxBuf(x, S * E) / 127.0f;
+    const float wq_scale = absmaxBuf(w,             E * P) / 127.0f;
+    const float wk_scale = absmaxBuf(w + E * P,     E * P) / 127.0f;
+    const float wv_scale = absmaxBuf(w + 2 * E * P, E * P) / 127.0f;
+
+    // Run the float reference once more, capturing per-tensor ranges of Q,
+    // K, V, KV so we can calibrate output scales for each.
+    float q_buf[S * P], k_buf[S * P], v_buf[S * P], kv_buf[P * P];
+    {
+        const float* wq = w;
+        const float* wk = w + E * P;
+        const float* wv = w + 2 * E * P;
+        const float* bq = b;
+        const float* bk = b + P;
+        const float* bv = b + 2 * P;
+        for (std::size_t t = 0; t < S; ++t)
+        {
+            for (std::size_t p = 0; p < P; ++p)
+            {
+                float aq = bq[p], ak = bk[p], av = bv[p];
+                for (std::size_t e = 0; e < E; ++e)
+                {
+                    aq += wq[e * P + p] * x[t * E + e];
+                    ak += wk[e * P + p] * x[t * E + e];
+                    av += wv[e * P + p] * x[t * E + e];
+                }
+                q_buf[t * P + p] = (aq < 0.0f) ? 0.0f : aq;
+                k_buf[t * P + p] = (ak < 0.0f) ? 0.0f : ak;
+                v_buf[t * P + p] = av;
+            }
+        }
+        for (std::size_t i = 0; i < P; ++i)
+        {
+            for (std::size_t j = 0; j < P; ++j)
+            {
+                float a = 0.0f;
+                for (std::size_t t = 0; t < S; ++t)
+                {
+                    a += k_buf[t * P + i] * v_buf[t * P + j];
+                }
+                kv_buf[i * P + j] = a;
+            }
+        }
+    }
+
+    const float q_scale  = absmaxBuf(q_buf,  S * P) / 127.0f;
+    const float k_scale  = absmaxBuf(k_buf,  S * P) / 127.0f;
+    const float v_scale  = absmaxBuf(v_buf,  S * P) / 127.0f;
+    const float kv_scale = absmaxBuf(kv_buf, P * P) / 127.0f;
+    const float y_scale  = absmaxBuf(y_ref,  S * P) / 127.0f;
+
+    // Quantize tensors.
+    int8_t x_q[S * E];
+    int8_t w_q[3 * E * P];
+    int32_t b_q[3 * P];
+    quantizeBuffer<int8_t>(x, x_q, S * E, x_scale, 0, -128, 127);
+    quantizeSymToI8(w,             E * P, wq_scale, w_q);
+    quantizeSymToI8(w + E * P,     E * P, wk_scale, w_q + E * P);
+    quantizeSymToI8(w + 2 * E * P, E * P, wv_scale, w_q + 2 * E * P);
+
+    // Per-projection bias is int32 in (input_scale * weight_scale) units.
+    for (std::size_t p = 0; p < P; ++p)
+    {
+        b_q[p] = static_cast<int32_t>(std::lround(
+            static_cast<double>(b[p]) /
+            (static_cast<double>(x_scale) * static_cast<double>(wq_scale))));
+        b_q[P + p] = static_cast<int32_t>(std::lround(
+            static_cast<double>(b[P + p]) /
+            (static_cast<double>(x_scale) * static_cast<double>(wk_scale))));
+        b_q[2 * P + p] = static_cast<int32_t>(std::lround(
+            static_cast<double>(b[2 * P + p]) /
+            (static_cast<double>(x_scale) * static_cast<double>(wv_scale))));
+    }
+
+    tinymind::QAttention1D<int8_t, int8_t, int32_t, int8_t, int8_t, int8_t,
+                           S, E, P> attn;
+    attn.weights = w_q;
+    attn.biases  = b_q;
+    attn.input_zero_point = 0;
+    attn.q_zero_point     = 0;
+    attn.k_zero_point     = 0;
+    attn.v_zero_point     = 0;
+    attn.kv_zero_point    = 0;
+
+    attn.q_requantizer = buildRequantizer<int8_t>(x_scale, wq_scale, q_scale,
+                                                  0, 0, 127);    // ReLU folded: qmin = zp
+    attn.k_requantizer = buildRequantizer<int8_t>(x_scale, wk_scale, k_scale,
+                                                  0, 0, 127);
+    attn.v_requantizer = buildRequantizer<int8_t>(x_scale, wv_scale, v_scale,
+                                                  0, -128, 127);
+    attn.kv_requantizer = buildRequantizer<int8_t>(k_scale, v_scale, kv_scale,
+                                                   0, -128, 127);
+    attn.output_requantizer = buildRequantizer<int8_t>(q_scale, kv_scale,
+                                                       y_scale, 0, -128, 127);
+
+    int8_t q_sc[S * P], k_sc[S * P], v_sc[S * P], kv_sc[P * P];
+    int8_t y_q[S * P];
+    attn.forward(x_q, q_sc, k_sc, v_sc, kv_sc, y_q);
+
+    const float y_ref_max = absmaxBuf(y_ref, S * P);
+    float max_err = 0.0f;
+    for (std::size_t i = 0; i < S * P; ++i)
+    {
+        const float y_back = dequantize<int8_t>(y_q[i], y_scale, 0);
+        const float e = std::fabs(y_back - y_ref[i]);
+        if (e > max_err) max_err = e;
+    }
+
+    // The end-to-end MAC stack (three projection requantizers + KV
+    // requantizer + output requantizer) compounds at int8. A few percent of
+    // the output dynamic range is the empirical noise floor.
+    BOOST_TEST(max_err < 0.08f * y_ref_max);
+}
+
+BOOST_AUTO_TEST_CASE(qattention_softmax_parity_with_float_reference)
+{
+    constexpr std::size_t S = 4;
+    constexpr std::size_t E = 6;
+    constexpr std::size_t P = 4;
+
+    float x[S * E];
+    for (std::size_t i = 0; i < S * E; ++i)
+    {
+        x[i] = 0.1f * static_cast<float>((static_cast<int>(i) % 5) - 2);
+    }
+    float w[3 * E * P];
+    for (std::size_t i = 0; i < 3 * E * P; ++i)
+    {
+        w[i] = 0.05f * static_cast<float>((static_cast<int>(i) % 9) - 4);
+    }
+    float b[3 * P];
+    for (std::size_t i = 0; i < 3 * P; ++i)
+    {
+        b[i] = 0.0f;
+    }
+
+    float y_ref[S * P];
+    floatSoftmaxAttentionReference<S, E, P>(x, w, b, y_ref);
+
+    // Run the projections once more for output-tensor range observation.
+    float q_buf[S * P], k_buf[S * P], v_buf[S * P], scores_buf[S * S];
+    {
+        const float* wq = w;
+        const float* wk = w + E * P;
+        const float* wv = w + 2 * E * P;
+        for (std::size_t t = 0; t < S; ++t)
+        {
+            for (std::size_t p = 0; p < P; ++p)
+            {
+                float aq = 0.0f, ak = 0.0f, av = 0.0f;
+                for (std::size_t e = 0; e < E; ++e)
+                {
+                    aq += wq[e * P + p] * x[t * E + e];
+                    ak += wk[e * P + p] * x[t * E + e];
+                    av += wv[e * P + p] * x[t * E + e];
+                }
+                q_buf[t * P + p] = aq;
+                k_buf[t * P + p] = ak;
+                v_buf[t * P + p] = av;
+            }
+        }
+        const float inv = 1.0f / std::sqrt(static_cast<float>(P));
+        for (std::size_t i = 0; i < S; ++i)
+        {
+            for (std::size_t j = 0; j < S; ++j)
+            {
+                float a = 0.0f;
+                for (std::size_t p = 0; p < P; ++p)
+                {
+                    a += q_buf[i * P + p] * k_buf[j * P + p];
+                }
+                scores_buf[i * S + j] = a * inv;
+            }
+        }
+    }
+
+    const float x_scale  = absmaxBuf(x, S * E) / 127.0f;
+    const float wq_scale = absmaxBuf(w,             E * P) / 127.0f;
+    const float wk_scale = absmaxBuf(w + E * P,     E * P) / 127.0f;
+    const float wv_scale = absmaxBuf(w + 2 * E * P, E * P) / 127.0f;
+    const float q_scale  = absmaxBuf(q_buf, S * P) / 127.0f;
+    const float k_scale  = absmaxBuf(k_buf, S * P) / 127.0f;
+    const float v_scale  = absmaxBuf(v_buf, S * P) / 127.0f;
+    const float score_scale = absmaxBuf(scores_buf, S * S) / 127.0f;
+    const float attn_scale  = 1.0f / 256.0f;    // TFLite softmax convention
+    const float y_scale  = absmaxBuf(y_ref, S * P) / 127.0f;
+
+    int8_t x_q[S * E];
+    int8_t w_q[3 * E * P];
+    int32_t b_q[3 * P] = {0};
+    quantizeBuffer<int8_t>(x, x_q, S * E, x_scale, 0, -128, 127);
+    quantizeSymToI8(w,             E * P, wq_scale, w_q);
+    quantizeSymToI8(w + E * P,     E * P, wk_scale, w_q + E * P);
+    quantizeSymToI8(w + 2 * E * P, E * P, wv_scale, w_q + 2 * E * P);
+
+    int32_t exp_lut[256];
+    buildQSoftmaxExpLUT(score_scale, exp_lut);
+
+    tinymind::QAttentionSoftmax1D<int8_t, int8_t, int32_t,
+                                  int8_t, int8_t, int8_t, int8_t,
+                                  S, E, P> attn;
+    attn.weights = w_q;
+    attn.biases  = b_q;
+    attn.input_zero_point = 0;
+    attn.q_zero_point     = 0;
+    attn.k_zero_point     = 0;
+    attn.v_zero_point     = 0;
+    attn.attn_zero_point  = -128;
+
+    attn.q_requantizer = buildRequantizer<int8_t>(x_scale, wq_scale, q_scale,
+                                                  0, -128, 127);
+    attn.k_requantizer = buildRequantizer<int8_t>(x_scale, wk_scale, k_scale,
+                                                  0, -128, 127);
+    attn.v_requantizer = buildRequantizer<int8_t>(x_scale, wv_scale, v_scale,
+                                                  0, -128, 127);
+    // Score requantizer folds the 1 / sqrt(P) attention factor.
+    {
+        Requantizer<int32_t, int8_t> r;
+        const double ratio =
+            (static_cast<double>(q_scale) * static_cast<double>(k_scale)) /
+            static_cast<double>(score_scale) *
+            qAttentionInvSqrt(P);
+        int32_t mult = 0, shft = 0;
+        quantizeMultiplier(ratio, mult, shft);
+        r.multiplier = mult;
+        r.shift = shft;
+        r.zero_point = 0;
+        r.qmin = -128;
+        r.qmax = 127;
+        attn.score_requantizer = r;
+    }
+    attn.softmax_exp_lut = exp_lut;
+    attn.attn_qmin = -128;
+    attn.attn_qmax = 127;
+
+    attn.output_requantizer = buildRequantizer<int8_t>(attn_scale, v_scale,
+                                                       y_scale, 0, -128, 127);
+
+    int8_t q_sc[S * P], k_sc[S * P], v_sc[S * P];
+    int8_t score_sc[S * S], attn_sc[S * S];
+    int8_t y_q[S * P];
+    attn.forward(x_q, q_sc, k_sc, v_sc, score_sc, attn_sc, y_q);
+
+    const float y_ref_max = absmaxBuf(y_ref, S * P);
+    float max_err = 0.0f;
+    for (std::size_t i = 0; i < S * P; ++i)
+    {
+        const float y_back = dequantize<int8_t>(y_q[i], y_scale, 0);
+        const float e = std::fabs(y_back - y_ref[i]);
+        if (e > max_err) max_err = e;
+    }
+    // Softmax attention compounds more stages than linear attention; the
+    // empirical noise floor is ~15% of dynamic range for these tiny shapes.
+    BOOST_TEST(max_err < 0.15f * y_ref_max);
+}
+
+BOOST_AUTO_TEST_CASE(qmha_stacks_two_identical_heads)
+{
+    // Two identical heads should each emit the same per-head output as
+    // their underlying single-head layer; the wrapper stacks them along
+    // the projection axis. Verifies the stack layout, not the math.
+    constexpr std::size_t S = 3;
+    constexpr std::size_t E = 4;
+    constexpr std::size_t P = 2;
+    constexpr std::size_t H = 2;
+
+    typedef tinymind::QAttention1D<int8_t, int8_t, int32_t, int8_t,
+                                   int8_t, int8_t, S, E, P> HeadT;
+
+    int8_t w_q[3 * E * P] = {0};
+    int32_t b_q[3 * P]    = {0};
+    // Identity-ish weight pattern; not testing math, only the stack.
+    for (std::size_t e = 0; e < E; ++e)
+    {
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            w_q[e * P + p]             = static_cast<int8_t>((e + p) & 0x7F);
+            w_q[E * P + e * P + p]     = static_cast<int8_t>((e * p) & 0x7F);
+            w_q[2 * E * P + e * P + p] = static_cast<int8_t>((e + 1) & 0x7F);
+        }
+    }
+
+    auto r = makeI8Requant(kQ31One, 16, 0);
+
+    HeadT head;
+    head.weights = w_q;
+    head.biases  = b_q;
+    head.input_zero_point = 0;
+    head.q_zero_point     = 0;
+    head.k_zero_point     = 0;
+    head.v_zero_point     = 0;
+    head.kv_zero_point    = 0;
+    head.q_requantizer = r;  head.q_requantizer.qmin = 0;
+    head.k_requantizer = r;  head.k_requantizer.qmin = 0;
+    head.v_requantizer = r;
+    head.kv_requantizer = r;
+    head.output_requantizer = r;
+
+    int8_t x_q[S * E];
+    for (std::size_t i = 0; i < S * E; ++i) x_q[i] = static_cast<int8_t>(i + 1);
+
+    int8_t single_q[HeadT::QScratchSize];
+    int8_t single_k[HeadT::KScratchSize];
+    int8_t single_v[HeadT::VScratchSize];
+    int8_t single_kv[HeadT::KVScratchSize];
+    int8_t single_out[HeadT::OutputSize];
+    head.forward(x_q, single_q, single_k, single_v, single_kv, single_out);
+
+    tinymind::QMultiHeadLinearAttention1D<
+        int8_t, int8_t, int32_t, int8_t, int8_t, int8_t,
+        S, E, P, H> mha;
+    mha.heads[0] = head;
+    mha.heads[1] = head;
+
+    int8_t mha_q[HeadT::QScratchSize];
+    int8_t mha_k[HeadT::KScratchSize];
+    int8_t mha_v[HeadT::VScratchSize];
+    int8_t mha_kv[HeadT::KVScratchSize];
+    int8_t mha_head_out[S * P];
+    int8_t mha_out[S * P * H];
+    mha.forward(x_q, mha_q, mha_k, mha_v, mha_kv, mha_head_out, mha_out);
+
+    // Both head slices in the stacked output should match the single-head
+    // output byte-for-byte.
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            for (std::size_t h = 0; h < H; ++h)
+            {
+                const int8_t got = mha_out[t * (P * H) + h * P + p];
+                const int8_t exp = single_out[t * P + p];
+                BOOST_TEST(static_cast<int>(got) == static_cast<int>(exp));
+            }
+        }
     }
 }
 

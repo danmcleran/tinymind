@@ -6,7 +6,7 @@ MKDIR=mkdir -p ./output
 CC=g++
 WARN=-Wall -Wextra -Werror -Wpedantic
 SOURCES=quantization_unit_test.cpp
-DEFINES=-DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_STD=1
+DEFINES=-DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_STD=1 -DTINYMIND_ENABLE_FP16=1
 INCLUDES=-I../../include -I../../cpp -I../../cpp/include -I${BOOST_HOME}
 OUT=./output/quantization_unit_test
 

@@ -125,4 +125,83 @@ namespace tinymind {
         }
     };
 
+    /**
+     * Per-output-channel variant of QPointwiseConv2D.
+     *
+     * 1x1 convolution with per-filter Requantizer (one per output
+     * channel). The bias for filter f carries effective scale
+     * input_scale * weight_scale[f]. Matches the TFLite per-channel
+     * convention; same calibration code as QDepthwiseConv2D and
+     * QConv2DPerChannel populates the requantizers array.
+     */
+    template<
+        typename InputStorage_,
+        typename WeightStorage_,
+        typename AccumType_,
+        typename OutputStorage_,
+        std::size_t H_,
+        std::size_t W_,
+        std::size_t InChannels_,
+        std::size_t NumFilters_>
+    struct QPointwiseConv2DPerChannel
+    {
+        typedef InputStorage_ InputType;
+        typedef WeightStorage_ WeightType;
+        typedef AccumType_ AccumulatorType;
+        typedef OutputStorage_ OutputType;
+
+        static constexpr std::size_t InputHeight   = H_;
+        static constexpr std::size_t InputWidth    = W_;
+        static constexpr std::size_t InputChannels = InChannels_;
+        static constexpr std::size_t NumFilters    = NumFilters_;
+
+        static constexpr std::size_t OutputHeight = H_;
+        static constexpr std::size_t OutputWidth  = W_;
+        static constexpr std::size_t OutputSize   = H_ * W_ * NumFilters_;
+        static constexpr std::size_t InputSize    = H_ * W_ * InChannels_;
+        static constexpr std::size_t WeightsPerFilter = InChannels_;
+        static constexpr std::size_t TotalWeights     = NumFilters_ * WeightsPerFilter;
+
+        static_assert(H_ > 0 && W_ > 0, "Spatial dims must be > 0.");
+        static_assert(InChannels_ > 0, "Input channels must be > 0.");
+        static_assert(NumFilters_ > 0, "Number of filters must be > 0.");
+
+        const WeightType* weights;
+        const AccumulatorType* biases;
+        InputType input_zero_point;
+        const Requantizer<AccumulatorType, OutputType>* requantizers; // [NumFilters]
+
+        void forward(const InputType* input, OutputType* output) const
+        {
+            for (std::size_t h = 0; h < H_; ++h)
+            {
+                for (std::size_t w = 0; w < W_; ++w)
+                {
+                    const std::size_t inPixelOffset  = (h * W_ + w) * InChannels_;
+                    const std::size_t outPixelOffset = (h * W_ + w) * NumFilters_;
+
+                    for (std::size_t f = 0; f < NumFilters_; ++f)
+                    {
+                        const std::size_t weightOffset = f * WeightsPerFilter;
+                        AccumulatorType acc = (biases != nullptr)
+                            ? biases[f]
+                            : static_cast<AccumulatorType>(0);
+
+                        for (std::size_t ci = 0; ci < InChannels_; ++ci)
+                        {
+                            const AccumulatorType x =
+                                static_cast<AccumulatorType>(input[inPixelOffset + ci]) -
+                                static_cast<AccumulatorType>(input_zero_point);
+                            const AccumulatorType wv =
+                                static_cast<AccumulatorType>(weights[weightOffset + ci]);
+                            acc += wv * x;
+                        }
+
+                        output[outPixelOffset + f] = requantizers[f].apply(acc);
+                    }
+                }
+            }
+        }
+    };
+
 } // namespace tinymind

@@ -121,3 +121,241 @@ From investigation 2026-05-08:
 - `cpp/include/tinymind_traits.hpp` — `enable_if`, `is_floating_point` available for SFINAE at `STD=0`.
 
 These confirm: quantization cannot retrofit cleanly into the existing single-`ValueType` templates without invasive changes. Parallel layer set is the right call.
+
+---
+
+# Mixed-Precision Inference Roadmap (Phases 9–16)
+
+Continuation after Phase 8 ships. Goal: enable TinyMind to emulate common GPU-deployed models — CNN (ResNet/MobileNetV2/V3/EfficientNet), recurrent (LSTM/GRU), transformer (encoder block), and mixed-precision hybrids — across MCU through application-class CPUs (M0+, M4F/M7, Cortex-R82, Cortex-A55, x86).
+
+Each phase = self-contained PR. Builds on prior. Ships with regression corner + at least one example. Additive only — existing Q-format and Phase 1–8 int8 layers untouched.
+
+## Cross-Phase Invariants
+
+- **Freestanding-clean.** Every runtime header compiles under `FLOAT=0 STD=0 QUANT=1` (M0+ deployable shape). Calibration / fold / SIMD-host helpers gated on `FLOAT && STD`.
+- **Caller-owned buffers.** No malloc in runtime path. Matches existing `q*.hpp` pattern.
+- **Bit-exact across SIMD gates.** Scalar reference is source of truth. SIMD specializations validated against it.
+- **Embedded regression corner per phase.** `unit_test/embedded/Makefile` adds a new corner when a new gate lands.
+- **Copyright.** New files Dan McLeran copyright only.
+
+## Phase 9 — Type Bridges + Storage Tiers
+
+**Goal:** make precisions composable. End orphaned-pipelines problem between `QValue` (Q-format) and `QAffineTensor` (int8 affine).
+
+**Scope:**
+- `cpp/qbridge.hpp` — new header:
+  - `affineToQValue<QV>(int8_t q, AffineParams)` → `QValue`
+  - `qValueToAffine<QV>(QValue, AffineParams)` → `int8_t`
+  - `affineToFloat` / `floatToAffine` promoted from calibration helpers to runtime (freestanding-safe when `FLOAT=1`)
+- New gate `TINYMIND_ENABLE_FP16` in `cpp/include/tinymind_platform.hpp`.
+- `cpp/include/tinymind_fp16.hpp` — `__fp16` (ARMv8.2) / `_Float16` (gcc) / `bf16` storage typedefs + scalar promote-to-float ops. Pure storage tier, no SIMD yet.
+- `unit_test/embedded/Makefile` — expand to 4-way `(FLOAT, STD, QUANT, FP16)` matrix. Add `fp16_hosted` corner.
+
+**Tests:** `unit_test/quantization/test_qbridge.cpp` — round-trip Q8.8 ↔ int8 ↔ Q8.8 within tolerance. fp16 ↔ fp32 round-trip.
+
+**Success criteria:** existing Q-format LSTM / attention / FFT consumable by int8 frontend output via converter call. No perf regression.
+
+**Risk:** low. Pure new code, no edits to existing headers.
+
+## Phase 10 — Skip-Connection + Composition Ops
+
+**Goal:** unlock ResNet, MobileNetV2/V3, EfficientNet, U-Net architectures.
+
+**Scope:**
+- `cpp/qadd.hpp` — `QAdd<InA, InB, Out>` with two input Requantizers + one output Requantizer (TFLite ADD semantics).
+- `cpp/qmul.hpp` — elementwise multiply (SE-block gating).
+- `cpp/qconcat.hpp` — channel-dim concat with per-input Requantizer rescaling to common output scale.
+- `cpp/qpad.hpp` — zero-pad / replicate pad (needed for SAME-padding conv).
+- Promote `QConv2D` and `QPointwiseConv2D` to **per-channel** weight scales. Keep per-tensor as default template default for back-compat. Mirror depthwise pattern (`cpp/qdepthwiseconv2d.hpp:72`).
+
+**Tests:** Boost.Test additions in `unit_test/quantization/`:
+- ADD round-trip parity vs float reference
+- Per-channel QConv2D parity
+- ResNet-block-shaped fixture (Conv → BN-folded → ReLU → Conv → Add → ReLU)
+
+**Example:** `examples/resnet_block_int8/` — single residual block, CSV cycle/byte report alongside `kws_cortex_m_int8`.
+
+**Success criteria:** MobileNetV2-shaped block runs int8 end-to-end. Per-channel `QConv2D` matches TFLite reference within 1 ulp on output int8 grid.
+
+**Risk:** medium. Per-channel touches existing layer template signature — needs careful default to avoid breaking `kws_cortex_m_int8`.
+
+## Phase 11 — Normalization + Softmax + BN Fold
+
+**Goal:** unlock any modern CNN trained with BatchNorm + any classifier with softmax output. Foundational for transformer (Phase 13).
+
+**Scope:**
+- `cpp/include/qcalibration.hpp` additions:
+  - `foldBatchNorm(conv_w, conv_b, bn_gamma, bn_beta, bn_mean, bn_var, eps)` → fused conv weights/bias. Host-only, gated on `FLOAT && STD`.
+- `cpp/qbatchnorm.hpp` — standalone int8 batchnorm for cases that cannot fold (post-pool BN). Per-channel scale + shift.
+- `cpp/qlayernorm.hpp` — int8 LayerNorm: integer mean + rsqrt LUT or Newton iteration. Required for transformer.
+- `cpp/qsoftmax.hpp` — int8 → int8 softmax. exp LUT + integer normalize. Output scale fixed 1/256, zero_point = -128 (TFLite convention).
+
+**Tests:** per-layer parity vs float reference (max abs error ≤ 1 on int8 grid). Fold-pass regression: float Conv+BN vs int8 fused Conv must agree pre-quantization.
+
+**Example:** extend `examples/kws_cortex_m_int8/` with BN-folded variant. Add `examples/mnist_int8/` with softmax output.
+
+**Success criteria:** model with Conv+BN+ReLU+Softmax classifier deployable end-to-end int8.
+
+**Risk:** medium. Softmax integer normalization is tricky — must avoid overflow on max-shift before exp.
+
+## Phase 12 — Recurrent Quant (LSTM / GRU) [SHIPPED]
+
+**Goal:** unlock sequence models — language, audio, time-series prediction.
+
+**Scope (shipped):**
+- `cpp/qlstm.hpp` — `QLSTMCell<InputStorage, WeightStorage, AccumStorage, GateActStorage, HiddenStorage, CellStorage, NumInputs, NumHidden>`. Per-gate (i, f, g, o) two-MAC pre-activation in a shared LUT input scale, sigmoid/tanh via existing `qApplyLUT`. Cell update is `f * c_prev + i * g` through two `multiplyByQuantizedMultiplier` calls; output is `o * tanh(c)` through one `Requantizer`. `CellStorage` template parameter selects `int8_t` (default, deployable) or `int16_t` (wide carry-state).
+- `cpp/qgru.hpp` — `QGRUCell` with three gates (r, z, n), reset-before-multiply variant: `n_t = tanh(W_n x + R_n (r_t * h_{t-1}) + b_n)` then `h_t = (1-z_t)*n_t + z_t*h_{t-1}`. `(1-z_t)` derived in the sigmoid grid as `-z_t` (real-domain identity).
+- `cpp/include/qcalibration.hpp` additions: `QLSTMScales`/`QLSTMParams`/`buildQLSTMParams` + `quantizeQLSTMBiases`, and `QGRUScales`/`QGRUParams`/`buildQGRUParams` + `quantizeQGRUBiases`. Host-only.
+- New gate `TINYMIND_ENABLE_INT16_ACCUM=1` advertises the int16 cell-state corner to the embedded matrix.
+
+**Tests (shipped):**
+- `qlstm_single_step_parity_with_float_reference` — float reference vs int8 cell parity within ~5% of hidden dynamic range.
+- `qlstm_int16_cell_long_sequence_stays_bounded` — 256-step drive of the int16 cell-state variant; verifies the carry-state stays well inside its range and tracks the float reference.
+- `qgru_single_step_parity_with_float_reference` — float GRU reference vs int8 cell parity.
+
+**Embedded regression:** new corner `int16_accum_freestanding` (`QUANT=1 INT16_ACCUM=1 FLOAT=0 STD=0`) exercises QLSTM (int8 + int16 cell) and QGRU at the deployable freestanding shape.
+
+**Status:** Sinusoid example and direct float MSE bench deferred to Phase 16 (mixed-precision exemplars).
+
+**Risk:** medium-high. Quantized recurrent state is notoriously hard; the int16 cell variant ships as an opt-in template parameter for callers running long unroll horizons.
+
+## Phase 13 — Attention + FFT [SHIPPED]
+
+**Goal:** unlock transformer encoders + audio front-ends.
+
+**Scope (shipped):**
+- `cpp/qattention1d.hpp` — `QAttention1D<...>`. Linear (ReLU-kernel) self-attention. Q/K/V projections inlined (sharing the MAC over X to spare one pass over the input); each MAC has its own `Requantizer`. ReLU on Q'/K' is folded by `qmin = zero_point` on the projection requantizers (matches `clampForRelu`). Caller-owned scratch buffers for Q', K', V', KV.
+- `cpp/qattention_softmax.hpp` — `QAttentionSoftmax1D<...>`. Standard softmax-attention. Adds an S x S score buffer and an attention buffer (1/256 scale, zp -128 per TFLite). Score requantizer folds the `1 / sqrt(d_k)` factor via `qAttentionInvSqrt(P)`. Reuses the 256-entry int32 exp LUT from Phase 11 (`buildQSoftmaxExpLUT`).
+- `cpp/qfft1d.hpp` — `QFFT1D<N>`. Radix-2 DIT FFT on int16 buffers with Q1.15 twiddle factors (caller-owned, built host-side by `buildQFFTTwiddles`). Scaled butterflies (right-shift by 1 each stage; total 1/N) keep the int16 working register bounded. `magnitudeSquared` returns int32; the int8 boundary on either side is expressed as an ordinary `Requantizer`. Inverse via the conjugate trick (unscaled).
+- `cpp/qmha.hpp` — `QMultiHeadLinearAttention1D<..., NumHeads>`. Holds `NumHeads` independent `QAttention1D` heads and stacks their per-head outputs along the projection axis. Scratch buffers (Q', K', V', KV, per-head output) are reused across heads.
+- `cpp/include/qcalibration.hpp` additions: `buildQFFTTwiddles` (Q1.15 sin/cos table), `QAttention1DScales` / `QAttentionSoftmaxScales` documentation structs, and `qAttentionInvSqrt(P)` for folding the score-scaling factor host-side.
+
+**Tests (shipped):**
+- `qfft_twiddle_table_unit_circle` — every twiddle satisfies cos^2 + sin^2 ~= 1 within 1 ulp at int16.
+- `qfft_magnitude_spectrum_matches_float_reference` — sinusoid at bin 3 of length 16; QFFT magnitudes within 0.05 of a naive float DFT reference and the peak is at the expected bins.
+- `qfft_forward_inverse_round_trip_is_close_to_identity` — int16 forward/inverse recovers the input within a few hundred LSBs of int16 noise.
+- `qattention_linear_parity_with_float_reference` — small S/E/P shape; output within 8% of the float linear-attention reference's dynamic range.
+- `qattention_softmax_parity_with_float_reference` — same shape with TFLite-conventional softmax; output within 15% of the float softmax-attention reference.
+- `qmha_stacks_two_identical_heads` — two identical heads emit byte-identical stacked output to the single-head ground truth.
+
+**Embedded regression:** `quant_freestanding` corner now exercises `QFFT1D`, `QAttention1D`, `QAttentionSoftmax1D`, and `QMultiHeadLinearAttention1D` so the new headers stay free of `<cmath>` / `<type_traits>` / stdlib.
+
+**Example:** `examples/transformer_encoder_int8/` — single encoder block (LayerNorm + linear attention + Add + LayerNorm + Dense+ReLU+Dense + Add). Calibrates every intermediate tensor on a small synthetic dataset, quantizes weights and biases, runs end-to-end on int8 and reports max-abs error vs the float reference (~2 % of output range on the bundled dataset; tolerance set at 40 %).
+
+**Success criteria:** transformer encoder block runs int8 end-to-end. ✓ shipped. QFFT magnitude spectrum tracks float DFT within ~0.5 dB on the bundled sinusoid. ✓ shipped.
+
+**Risk:** high. Attention numerics sensitive — linear-attention variant first reduced risk; softmax variant ships alongside.
+
+## Phase 14 — SIMD Performance Backend
+
+**Goal:** make Cortex-R82 / A55 / x86 path competitive with TFLite-Micro / XNNPACK on cycle count. M0+ path untouched (scalar).
+
+**Scope:** specialize inner loops behind feature gates. Library otherwise unchanged.
+
+- `cpp/include/simd/` — new directory:
+  - `simd_neon_dot.hpp` — `SDOT`/`UDOT` ARMv8.2-A specializations of `QConv2D`, `QDepthwiseConv2D`, `QDense` inner loop. Gate `TINYMIND_ENABLE_NEON_DOT=1`.
+  - `simd_avx_vnni.hpp` — `VPDPBUSD` on x86 Cascade Lake+. Gate `TINYMIND_ENABLE_AVX_VNNI=1`.
+  - `simd_avx2.hpp` — `PMADDUBSW` fallback for pre-VNNI x86.
+- `cpp/include/threading.hpp` — optional `#pragma omp parallel for` over output-channel dim for conv layers. Gate `TINYMIND_ENABLE_OPENMP=1`.
+
+**Tests:** SIMD specializations must be **bit-exact** with scalar reference. Boost.Test corner per gate combo.
+
+**Example:** `examples/perf_matrix/` — runs MobileNetV2 block across (scalar | NEON | AVX-VNNI | AVX2) corners, emits comparison CSV.
+
+**Success criteria:** ≥6× speedup on A55 vs scalar for conv-dominated workload. ≥10× on x86 with AVX-VNNI. Bit-exact output across gates.
+
+**Risk:** medium. Bit-exactness across SIMD widths needs careful order-of-accumulation handling. Build-system intrinsics matrix is friction.
+
+## Phase 15 — Calibration Upgrades + Importer Tooling
+
+**Goal:** reduce accuracy gap vs PyTorch / TFLite reference. Lower friction to deploy.
+
+**Scope:**
+- `cpp/include/qcalibration.hpp` additions:
+  - `PercentileObserver` — 99.9 / 99.99 percentile clipping vs naive min/max
+  - `KLDivergenceObserver` — TensorRT-style entropy calibration
+  - `CrossLayerEqualization` — pre-quantization weight balancing (Markus Nagel paper)
+- New tool `apps/import_pytorch/` — Python script consumes PyTorch state-dict + traced graph, emits TinyMind C++ `weights.hpp` + Requantizer constants. Generalizes pattern from `examples/pytorch_quant/xor/`.
+- New tool `apps/import_onnx/` — ONNX-runtime PTQ output → `weights.hpp` emitter.
+- Layer-fusion pass: conv+bn+relu detection in importer; calls `foldBatchNorm` from Phase 11.
+
+**Tests:** importer round-trip — PyTorch float forward → import → C++ int8 forward → max abs delta vs PyTorch int8 forward < N ulp.
+
+**Example:** `examples/import_demo/` — ResNet block trained in PyTorch, imported, verified.
+
+**Success criteria:** one-command import from PyTorch quantized model to deployable C++ stack.
+
+**Risk:** low-medium. Mostly Python tooling, isolated from runtime.
+
+## Phase 16 — Mixed-Precision Exemplars + Verification
+
+**Goal:** prove end-to-end models really run. Lock with regression tests.
+
+**Scope:** four reference models, each a directory under `examples/`:
+
+1. `examples/resnet18_block_int8/` — int8 ResNet stem + 1 stage. Exercises Phase 10 ops.
+2. `examples/mobilenetv2_int8/` — full MobileNetV2 (depthwise-separable + inverted-residual). Exercises Phase 10 ops at scale.
+3. `examples/transformer_encoder_int8/` — single encoder block with int8 attention + int8 LayerNorm + int8 softmax. Exercises Phase 11+13.
+4. `examples/mixed_precision_kws/` — **mixed-precision exemplar:** int8 CNN feature extractor → fp16 attention head → int8 dense classifier. Exercises Phase 9 bridges in production shape.
+
+Each ships with:
+- CSV cycle/byte report (extends existing `bench::report.hpp`)
+- Golden float reference in Python, parity test in C++
+- README documenting precision tier per layer
+
+**Tests:** `unit_test/integration/` — new directory. Boost.Test fixtures load exemplar weights and verify int8 output matches stored golden int8 output, byte-for-byte. Locks regressions across SIMD gate combos.
+
+**Success criteria:** repo ships four working mixed-precision models with reproducible benchmark numbers. Future PRs cannot regress them silently.
+
+**Risk:** low. Final phase — all components landed in prior phases.
+
+## Dependency Graph
+
+```
+Phase 9 (bridges, fp16)
+   |
+   v
+Phase 10 (add/concat/per-channel)
+   |
+   v
+Phase 11 (BN/LN/softmax/fold)
+   |
+   +--> Phase 12 (LSTM/GRU)        --+
+   |                                 |
+   +--> Phase 13 (attention/FFT)   --+--> Phase 16 (exemplars)
+                                     |
+Phase 14 (SIMD) -- independent ------+
+Phase 15 (importer) -- needs Phase 11 fold
+```
+
+**Parallelizable:** Phase 14 can ship anytime after Phase 10. Phases 12 and 13 are independent of each other. Phase 15 needs Phase 11.
+
+## Effort / Risk Summary
+
+| Phase | Size | Risk | Unlocks |
+|-------|------|------|---------|
+| 9 | S | low | Q-format ↔ int8 interop, fp16 storage |
+| 10 | M | medium | ResNet / MobileNetV2/V3 / EfficientNet |
+| 11 | M | medium | Conv+BN+ReLU+Softmax pipelines |
+| 12 | L | high | LSTM / GRU sequence models |
+| 13 | L | high | Transformer encoder, audio FFT |
+| 14 | L | medium | R82 / A55 / x86 perf parity |
+| 15 | M | low-medium | One-command PyTorch / ONNX import |
+| 16 | M | low | Regression-locked mixed-precision exemplars |
+
+Total: roughly 8–12 PRs depending on splitting. Phase 9 alone unblocks usefulness on bigger CPUs. Phases 10+11 alone close most of the CNN-class gap. Phases 12+13 are the transformer / sequence-model unlocks. Phase 14 is the perf unlock for application-class CPUs.
+
+## Target-Tier Implications
+
+- **M0+ / freestanding:** Phases 9–13 land new ops but every runtime header stays freestanding-clean. Phase 14 SIMD gates default off. Phase 15 tooling host-only.
+- **M4F/M7:** same as M0+ plus optional fp16 storage (Phase 9 gate).
+- **Cortex-R82:** Phase 14 NEON-int8 gate matters most. Determinism story preserved by scalar fallback.
+- **Cortex-A55:** Phase 14 NEON `SDOT` + Phase 9 fp16 + optional OpenMP. Closes the gap to TFLite-Micro / XNNPACK.
+- **x86:** Phase 14 AVX-VNNI specialization is the headline. Phase 9 bf16 path on Sapphire Rapids+.
+
+## Non-Goals (Still)
+
+- **No QAT** in this roadmap. Post-training quantization remains the deployment path.
+- **No sub-4-bit / mixed precision below int8.** Storage tier list is {int8, int16-accum, fp16, bf16, fp32, Q-format}.
+- **No dynamic / runtime model loading.** Compile-time template shapes remain — codegen-from-PyTorch flow is the integration model (Phase 15).
+

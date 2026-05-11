@@ -1,6 +1,6 @@
 # Embedded smoke test matrix.
 #
-# Exercises the (FLOAT, STD, QUANT) gate matrix to catch accidental
+# Exercises the (FLOAT, STD, QUANT, FP16) gate matrix to catch accidental
 # regressions where new code reintroduces a hosted-only or FPU-only path
 # into headers used by embedded targets:
 #
@@ -37,6 +37,24 @@
 #                                          the deployable target shape for
 #                                          quantized models on a Cortex-M
 #                                          MCU.
+#
+#   fp16_freestanding   FLOAT=1 STD=0 FP16=1 -- Phase 9 half-precision
+#                                          storage tier plus type bridges.
+#                                          Requires FPU but no C++ stdlib;
+#                                          confirms tinymind_fp16.hpp and
+#                                          qbridge.hpp stay free of
+#                                          <cmath>/<type_traits> when the
+#                                          gate is on.
+#
+#   int16_accum_freestanding
+#                       FLOAT=0 STD=0 QUANT=1 INT16_ACCUM=1
+#                                       -- Phase 12 recurrent quantization.
+#                                          Exercises QLSTM with an int16
+#                                          cell-state template instantiation
+#                                          and QGRU at the deployable
+#                                          freestanding shape; confirms the
+#                                          new headers stay clear of
+#                                          <cmath>/<type_traits>/stdlib.
 MKDIR=mkdir -p ./output
 CC=g++
 WARN=-Wall -Wextra -Werror -Wpedantic
@@ -48,12 +66,14 @@ OUT_NO_STDLIB=./output/embedded_smoke_no_stdlib
 OUT_NO_FPU=./output/embedded_smoke_no_fpu
 OUT_HOSTED=./output/embedded_smoke_hosted
 OUT_QUANT_FREESTANDING=./output/embedded_smoke_quant_freestanding
+OUT_FP16_FREESTANDING=./output/embedded_smoke_fp16_freestanding
+OUT_INT16_ACCUM_FREESTANDING=./output/embedded_smoke_int16_accum_freestanding
 
-.PHONY: all embedded_smoke_test freestanding no_stdlib no_fpu hosted quant_freestanding run clean
+.PHONY: all embedded_smoke_test freestanding no_stdlib no_fpu hosted quant_freestanding fp16_freestanding int16_accum_freestanding run clean
 
 # Default target keeps the historical name pointing at the matrix build, so
 # `make` from the top-level driver still does the right thing.
-all: freestanding no_stdlib no_fpu hosted quant_freestanding
+all: freestanding no_stdlib no_fpu hosted quant_freestanding fp16_freestanding int16_accum_freestanding
 
 embedded_smoke_test: all
 
@@ -77,12 +97,22 @@ quant_freestanding:
 	$(MKDIR)
 	$(CC) -ggdb $(WARN) -o $(OUT_QUANT_FREESTANDING) $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1
 
+fp16_freestanding:
+	$(MKDIR)
+	$(CC) -ggdb $(WARN) -o $(OUT_FP16_FREESTANDING) $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_FP16=1 -DTINYMIND_ENABLE_QUANTIZATION=1
+
+int16_accum_freestanding:
+	$(MKDIR)
+	$(CC) -ggdb $(WARN) -o $(OUT_INT16_ACCUM_FREESTANDING) $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_INT16_ACCUM=1
+
 run:
 	$(OUT_FREESTANDING)
 	$(OUT_NO_STDLIB)
 	$(OUT_NO_FPU)
 	$(OUT_HOSTED)
 	$(OUT_QUANT_FREESTANDING)
+	$(OUT_FP16_FREESTANDING)
+	$(OUT_INT16_ACCUM_FREESTANDING)
 
 clean:
 	rm -f ./output/*

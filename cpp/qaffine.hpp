@@ -95,6 +95,32 @@ namespace tinymind {
     }
 
     /**
+     * Combine saturatingRoundingDoublingHighMul with roundingDivideByPOT,
+     * and handle the left-shift case (shift < 0) up front. This is the
+     * gemmlowp / TFLite "MultiplyByQuantizedMultiplier" primitive: takes
+     * an int32 accumulator and an integer (multiplier, shift) pair and
+     * returns the rescaled int32 without zero-point bias or saturation.
+     *
+     * Phase 10 callers (QAdd's per-input rescaling, QConcat) use this
+     * directly when they need the int32 intermediate before the final
+     * Requantizer; the existing Requantizer.apply continues to call the
+     * primitives separately for back-compat.
+     */
+    inline int32_t multiplyByQuantizedMultiplier(int32_t x, int32_t multiplier,
+                                                 int32_t shift)
+    {
+        const int32_t left_shift  = (shift < 0) ? -shift : 0;
+        const int32_t right_shift = (shift > 0) ?  shift : 0;
+        int32_t shifted = x;
+        if (left_shift > 0)
+        {
+            shifted = shifted * (static_cast<int32_t>(1) << left_shift);
+        }
+        const int32_t mul = saturatingRoundingDoublingHighMul(shifted, multiplier);
+        return roundingDivideByPOT(mul, right_shift);
+    }
+
+    /**
      * Per-tensor affine quantization metadata.
      *
      * StorageType is the runtime representation (e.g. int8_t). The scale
