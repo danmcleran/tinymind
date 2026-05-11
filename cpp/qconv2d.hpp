@@ -23,6 +23,8 @@
 #pragma once
 
 #include "include/tinymind_platform.hpp"
+#include "include/simd/simd_dispatch.hpp"
+#include "include/threading.hpp"
 #include "qaffine.hpp"
 
 #include <cstddef>
@@ -116,6 +118,7 @@ namespace tinymind {
                     const std::size_t outPixelOffset =
                         (oh * OutputWidth + ow) * NumFilters_;
 
+                    TINYMIND_PARALLEL_FOR_OUTER
                     for (std::size_t f = 0; f < NumFilters_; ++f)
                     {
                         const std::size_t weightOffset = f * WeightsPerFilter;
@@ -134,16 +137,11 @@ namespace tinymind {
                                 const std::size_t kPixelOffset =
                                     (kh * KW_ + kw) * InChannels_;
 
-                                for (std::size_t ci = 0; ci < InChannels_; ++ci)
-                                {
-                                    const AccumulatorType x =
-                                        static_cast<AccumulatorType>(input[inPixelOffset + ci]) -
-                                        static_cast<AccumulatorType>(input_zero_point);
-                                    const AccumulatorType w =
-                                        static_cast<AccumulatorType>(
-                                            weights[weightOffset + kPixelOffset + ci]);
-                                    acc += w * x;
-                                }
+                                acc += simd::dotProductWithZeroPoint<
+                                    InputType, WeightType, AccumulatorType>(
+                                    input + inPixelOffset,
+                                    weights + weightOffset + kPixelOffset,
+                                    InChannels_, input_zero_point);
                             }
                         }
 
@@ -230,6 +228,7 @@ namespace tinymind {
                     const std::size_t outPixelOffset =
                         (oh * OutputWidth + ow) * NumFilters_;
 
+                    TINYMIND_PARALLEL_FOR_OUTER
                     for (std::size_t f = 0; f < NumFilters_; ++f)
                     {
                         const std::size_t weightOffset = f * WeightsPerFilter;
@@ -248,16 +247,11 @@ namespace tinymind {
                                 const std::size_t kPixelOffset =
                                     (kh * KW_ + kw) * InChannels_;
 
-                                for (std::size_t ci = 0; ci < InChannels_; ++ci)
-                                {
-                                    const AccumulatorType x =
-                                        static_cast<AccumulatorType>(input[inPixelOffset + ci]) -
-                                        static_cast<AccumulatorType>(input_zero_point);
-                                    const AccumulatorType w =
-                                        static_cast<AccumulatorType>(
-                                            weights[weightOffset + kPixelOffset + ci]);
-                                    acc += w * x;
-                                }
+                                acc += simd::dotProductWithZeroPoint<
+                                    InputType, WeightType, AccumulatorType>(
+                                    input + inPixelOffset,
+                                    weights + weightOffset + kPixelOffset,
+                                    InChannels_, input_zero_point);
                             }
                         }
 

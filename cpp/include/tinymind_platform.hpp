@@ -93,6 +93,56 @@
  *                                long unroll horizons. Pure storage gate;
  *                                no SIMD implications. Off by default to
  *                                keep deployable footprints tight.
+ *
+ * Phase 14 SIMD capability gates. Each names an ISA extension, never a
+ * CPU model. The scalar fallback is the default body of every layer, so
+ * leaving all gates off produces the same bytes the pre-Phase-14 build
+ * emitted. Gates honor Arm's architectural prerequisite chain (each
+ * dependent gate's header opens with a static_assert that the
+ * prerequisite is also on); misconfiguration fails at compile time
+ * rather than producing silent miscompiles.
+ *
+ * TINYMIND_ENABLE_SIMD_NEON          - Armv7 / Armv8-A Advanced SIMD
+ *                                       baseline (VMULL, VPADDL). Implicit
+ *                                       prerequisite for every other Arm
+ *                                       application-class gate.
+ * TINYMIND_ENABLE_SIMD_NEON_DOTPROD  - Armv8.2-A FEAT_DotProd (SDOT/UDOT).
+ *                                       Requires SIMD_NEON. Headline int8
+ *                                       MAC accelerator on Arm.
+ * TINYMIND_ENABLE_SIMD_NEON_FP16     - Armv8.2-A FEAT_FP16 vector forms.
+ *                                       Requires SIMD_NEON. Pairs with the
+ *                                       Phase 9 fp16_t storage tier.
+ * TINYMIND_ENABLE_SIMD_SVE           - Scalable Vector Extension,
+ *                                       vector-length-agnostic loops.
+ *                                       Requires SIMD_NEON (per GCC
+ *                                       AArch64 docs: "+sve also enables
+ *                                       Advanced SIMD and floating-point
+ *                                       instructions").
+ * TINYMIND_ENABLE_SIMD_SVE2          - SVE2 superset. Requires SIMD_SVE.
+ * TINYMIND_ENABLE_SIMD_HELIUM_MVE_I  - Armv8.1-M MVE-I (integer Helium).
+ *                                       M-profile only; mutually
+ *                                       exclusive with SIMD_NEON / SVE.
+ * TINYMIND_ENABLE_SIMD_HELIUM_MVE_F  - Armv8.1-M MVE-F (float Helium).
+ *                                       Independent of MVE-I per Arm
+ *                                       Helium docs (a core may
+ *                                       implement either alone).
+ * TINYMIND_ENABLE_SIMD_AVX2          - x86 AVX2 + SSSE3 baseline
+ *                                       (PMADDUBSW path).
+ * TINYMIND_ENABLE_SIMD_AVX_VNNI      - 256-bit AVX-VNNI (VPDPBUSD on
+ *                                       Alder Lake+). Requires
+ *                                       SIMD_AVX2. Note: AVX-VNNI is
+ *                                       independent of AVX-512 VNNI; a
+ *                                       CPU may ship one without the
+ *                                       other.
+ * TINYMIND_ENABLE_SIMD_AVX512F       - AVX-512 foundation.
+ * TINYMIND_ENABLE_SIMD_AVX512_VNNI   - AVX-512-VNNI. Requires
+ *                                       SIMD_AVX512F.
+ *
+ * TINYMIND_ENABLE_OPENMP             - Optional `#pragma omp parallel
+ *                                       for` over the output-channel
+ *                                       dim of conv layers. Orthogonal
+ *                                       to every SIMD gate. Caller must
+ *                                       pass `-fopenmp` to the compiler.
  */
 
 #ifndef TINYMIND_ENABLE_FLOAT
@@ -125,4 +175,52 @@
 
 #ifndef TINYMIND_ENABLE_INT16_ACCUM
 #define TINYMIND_ENABLE_INT16_ACCUM 0
+#endif
+
+#ifndef TINYMIND_ENABLE_SIMD_NEON
+#define TINYMIND_ENABLE_SIMD_NEON 0
+#endif
+
+#ifndef TINYMIND_ENABLE_SIMD_NEON_DOTPROD
+#define TINYMIND_ENABLE_SIMD_NEON_DOTPROD 0
+#endif
+
+#ifndef TINYMIND_ENABLE_SIMD_NEON_FP16
+#define TINYMIND_ENABLE_SIMD_NEON_FP16 0
+#endif
+
+#ifndef TINYMIND_ENABLE_SIMD_SVE
+#define TINYMIND_ENABLE_SIMD_SVE 0
+#endif
+
+#ifndef TINYMIND_ENABLE_SIMD_SVE2
+#define TINYMIND_ENABLE_SIMD_SVE2 0
+#endif
+
+#ifndef TINYMIND_ENABLE_SIMD_HELIUM_MVE_I
+#define TINYMIND_ENABLE_SIMD_HELIUM_MVE_I 0
+#endif
+
+#ifndef TINYMIND_ENABLE_SIMD_HELIUM_MVE_F
+#define TINYMIND_ENABLE_SIMD_HELIUM_MVE_F 0
+#endif
+
+#ifndef TINYMIND_ENABLE_SIMD_AVX2
+#define TINYMIND_ENABLE_SIMD_AVX2 0
+#endif
+
+#ifndef TINYMIND_ENABLE_SIMD_AVX_VNNI
+#define TINYMIND_ENABLE_SIMD_AVX_VNNI 0
+#endif
+
+#ifndef TINYMIND_ENABLE_SIMD_AVX512F
+#define TINYMIND_ENABLE_SIMD_AVX512F 0
+#endif
+
+#ifndef TINYMIND_ENABLE_SIMD_AVX512_VNNI
+#define TINYMIND_ENABLE_SIMD_AVX512_VNNI 0
+#endif
+
+#ifndef TINYMIND_ENABLE_OPENMP
+#define TINYMIND_ENABLE_OPENMP 0
 #endif

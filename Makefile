@@ -6,7 +6,7 @@ check :
 	cd unit_test/qformat && make clean && make && make run && cd -
 	cd unit_test/qlearn && make clean && make && make run && cd -
 	cd unit_test/lookuptable && make clean && make && make run && cd -
-	cd unit_test/embedded && make clean && make && make run && cd -
+	cd unit_test/embedded && make clean && make && make run && make simd_prereq_regressions && cd -
 	cd unit_test/quantization && make clean && make && make run && cd -
 	cd examples/xor && make clean && make && make release && cd -
 	cd examples/maze && make clean && make && make release && cd -
@@ -18,4 +18,6 @@ check :
 	cd examples/resnet_block_int8 && make clean && make && make release && make run && cd -
 	cd examples/transformer_encoder_int8 && make clean && make && make release && make run && cd -
 	cd examples/pytorch_quant/xor && make clean && make && make release && make run && cd -
+	cd examples/import_demo && make clean && make && make release && make run && cd -
+	cd examples/perf_matrix && make clean && make && make report && cd -
 	cd apps/activation && make clean && make && make release && cd -

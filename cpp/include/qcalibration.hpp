@@ -51,9 +51,11 @@
 
 #include "qaffine.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace tinymind {
 
@@ -798,6 +800,409 @@ namespace tinymind {
     inline double qAttentionInvSqrt(std::size_t n)
     {
         return 1.0 / std::sqrt(static_cast<double>(n));
+    }
+
+    /**
+     * Phase 15 -- Percentile-based range observer.
+     *
+     * Records every sample so that an arbitrary percentile pair can be
+     * queried after the dataset has been streamed. Heavy-tail activations
+     * (post-softmax, large-receptive-field conv outputs) often have a few
+     * extreme samples that pin the naive min/max range and waste most of
+     * the int8 grid on outliers. Clipping at e.g. 0.05 / 99.95 percentile
+     * trades a few saturating outliers for tighter mid-range resolution.
+     *
+     * Range query is O(n log n) on the recorded buffer; std::nth_element
+     * gives O(n) average per percentile but two calls cost roughly the
+     * same as one sort, so the implementation sorts once and indexes.
+     *
+     * has_data flips on the first sample so callers can tell "all zeros"
+     * apart from "no samples yet", same convention as RangeObserver.
+     */
+    struct PercentileObserver
+    {
+        std::vector<float> samples;
+        bool has_data;
+
+        PercentileObserver()
+            : samples(), has_data(false)
+        {
+        }
+
+        void reset()
+        {
+            samples.clear();
+            has_data = false;
+        }
+
+        void reserve(std::size_t n)
+        {
+            samples.reserve(n);
+        }
+
+        void observe(float x)
+        {
+            samples.push_back(x);
+            has_data = true;
+        }
+
+        void observe(const float* xs, std::size_t n)
+        {
+            samples.reserve(samples.size() + n);
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                samples.push_back(xs[i]);
+            }
+            if (n > 0) has_data = true;
+        }
+
+        /**
+         * Compute the [lower, upper] percentile range.
+         *
+         * Percentiles are in [0.0, 100.0]. lower and upper may be equal;
+         * the returned range degenerates to a single value (which the
+         * downstream AffineParams builder will widen to include zero).
+         * Mutates the internal buffer (sorts in place).
+         */
+        void rangeAtPercentile(float lower_pct, float upper_pct,
+                               float& fmin_out, float& fmax_out)
+        {
+            if (samples.empty())
+            {
+                fmin_out = 0.0f;
+                fmax_out = 0.0f;
+                return;
+            }
+            std::sort(samples.begin(), samples.end());
+            const std::size_t n = samples.size();
+            const double lo_d = static_cast<double>(lower_pct) / 100.0;
+            const double hi_d = static_cast<double>(upper_pct) / 100.0;
+            std::size_t lo_idx = static_cast<std::size_t>(
+                lo_d * static_cast<double>(n - 1) + 0.5);
+            std::size_t hi_idx = static_cast<std::size_t>(
+                hi_d * static_cast<double>(n - 1) + 0.5);
+            if (lo_idx >= n) lo_idx = n - 1;
+            if (hi_idx >= n) hi_idx = n - 1;
+            fmin_out = samples[lo_idx];
+            fmax_out = samples[hi_idx];
+        }
+    };
+
+    /**
+     * Phase 15 -- KL-divergence (entropy) range observer.
+     *
+     * TensorRT-style symmetric calibration for activation tensors. The
+     * float distribution is histogrammed into kNumBins; sweep candidate
+     * clip thresholds T (in bin units) from kTargetBins (== 128, matches
+     * int8 symmetric range) up to kNumBins, fold the |x| > T tail into
+     * the boundary target bin, and compute the KL divergence between the
+     * reference distribution (clipped + tail-folded) and the int8-quantized
+     * distribution mapped back through the same threshold. The threshold
+     * that minimizes KL is the calibrated absmax.
+     *
+     * Symmetric output: zero_point is forced to 0, scale = |T| / qmax.
+     * Use computeAffineParamsSymmetric on the returned range to lift the
+     * threshold into AffineParams when wiring into a weight tensor; for
+     * activations whose zero-point need not be zero, prefer
+     * PercentileObserver instead.
+     */
+    struct KLDivergenceObserver
+    {
+        static constexpr std::size_t kNumBins   = 2048;
+        static constexpr std::size_t kTargetBins = 128;
+
+        float absmax;
+        std::vector<std::size_t> histogram;
+        bool has_data;
+
+        KLDivergenceObserver()
+            : absmax(0.0f), histogram(kNumBins, 0u), has_data(false)
+        {
+        }
+
+        void reset()
+        {
+            absmax = 0.0f;
+            for (std::size_t i = 0; i < kNumBins; ++i) histogram[i] = 0u;
+            has_data = false;
+        }
+
+        /**
+         * First pass: record the absolute-value range. Caller streams the
+         * dataset through observeAbsRange before observeHistogram so the
+         * histogram bin width is fixed for the second pass.
+         */
+        void observeAbsRange(float x)
+        {
+            const float ax = (x < 0.0f) ? -x : x;
+            if (ax > absmax) absmax = ax;
+            has_data = true;
+        }
+
+        void observeAbsRange(const float* xs, std::size_t n)
+        {
+            for (std::size_t i = 0; i < n; ++i) observeAbsRange(xs[i]);
+        }
+
+        /**
+         * Second pass: drop each sample into the |x| histogram.
+         */
+        void observeHistogram(float x)
+        {
+            if (absmax <= 0.0f) return;
+            const float ax = (x < 0.0f) ? -x : x;
+            std::size_t bin = static_cast<std::size_t>(
+                (static_cast<double>(ax) / static_cast<double>(absmax)) *
+                 static_cast<double>(kNumBins));
+            if (bin >= kNumBins) bin = kNumBins - 1;
+            histogram[bin] += 1u;
+        }
+
+        void observeHistogram(const float* xs, std::size_t n)
+        {
+            for (std::size_t i = 0; i < n; ++i) observeHistogram(xs[i]);
+        }
+
+        /**
+         * Sweep candidate thresholds, return the bin-unit threshold that
+         * minimizes the KL divergence. The float clip-threshold returned
+         * by computeThreshold() is `(best_bin / kNumBins) * absmax`.
+         */
+        std::size_t findBestThresholdBin() const
+        {
+            double best_kl = -1.0;
+            std::size_t best_bin = kTargetBins;
+            for (std::size_t T = kTargetBins; T <= kNumBins; ++T)
+            {
+                std::vector<double> P(T, 0.0);
+                for (std::size_t i = 0; i < T; ++i)
+                {
+                    P[i] = static_cast<double>(histogram[i]);
+                }
+                double outliers = 0.0;
+                for (std::size_t i = T; i < kNumBins; ++i)
+                {
+                    outliers += static_cast<double>(histogram[i]);
+                }
+                P[T - 1] += outliers;
+
+                std::vector<double> Q(T, 0.0);
+                for (std::size_t k = 0; k < kTargetBins; ++k)
+                {
+                    const double start_d =
+                        (static_cast<double>(k) * static_cast<double>(T)) /
+                         static_cast<double>(kTargetBins);
+                    const double end_d =
+                        (static_cast<double>(k + 1) *
+                         static_cast<double>(T)) /
+                         static_cast<double>(kTargetBins);
+                    const std::size_t start =
+                        static_cast<std::size_t>(start_d);
+                    const std::size_t end =
+                        (end_d > static_cast<double>(T))
+                        ? T : static_cast<std::size_t>(end_d);
+                    double sum = 0.0;
+                    std::size_t nonzero = 0;
+                    for (std::size_t i = start; i < end; ++i)
+                    {
+                        sum += P[i];
+                        if (histogram[i] > 0u) ++nonzero;
+                    }
+                    if (nonzero == 0 || sum == 0.0) continue;
+                    const double avg = sum / static_cast<double>(nonzero);
+                    for (std::size_t i = start; i < end; ++i)
+                    {
+                        if (histogram[i] > 0u) Q[i] = avg;
+                    }
+                }
+                double P_sum = 0.0;
+                double Q_sum = 0.0;
+                for (std::size_t i = 0; i < T; ++i)
+                {
+                    P_sum += P[i];
+                    Q_sum += Q[i];
+                }
+                if (P_sum <= 0.0 || Q_sum <= 0.0) continue;
+                double kl = 0.0;
+                for (std::size_t i = 0; i < T; ++i)
+                {
+                    const double p = P[i] / P_sum;
+                    const double q = Q[i] / Q_sum;
+                    if (p > 0.0 && q > 0.0)
+                    {
+                        kl += p * std::log(p / q);
+                    }
+                }
+                if (best_kl < 0.0 || kl < best_kl)
+                {
+                    best_kl = kl;
+                    best_bin = T;
+                }
+            }
+            return best_bin;
+        }
+
+        /**
+         * Calibrated absmax (clip threshold) in the float domain. Feed
+         * this into computeAffineParamsSymmetric or buildRequantizer as
+         * the weight/activation absmax.
+         */
+        float computeThreshold() const
+        {
+            if (!has_data || absmax <= 0.0f) return 0.0f;
+            const std::size_t best_bin = findBestThresholdBin();
+            return absmax *
+                   (static_cast<float>(best_bin) /
+                    static_cast<float>(kNumBins));
+        }
+    };
+
+    /**
+     * Phase 15 -- Cross-Layer Equalization (Nagel et al. 2019).
+     *
+     * Adjacent layers whose per-channel weight ranges are wildly imbalanced
+     * suffer disproportionate quantization error: a channel with absmax
+     * 0.01 next to one with absmax 1.0 loses 6+ bits of resolution under
+     * per-tensor symmetric quantization. CLE rebalances those ranges by
+     * pushing a positive scale through the activation; for ReLU / identity
+     * (positively homogeneous) activations the model output is unchanged.
+     *
+     * Two adjacent dense layers (row-major, [out, in]):
+     *
+     *   y1 = W1 @ x + b1          ; W1 shape [C, In]
+     *   y2 = W2 @ act(y1) + b2    ; W2 shape [Out, C]
+     *
+     * For each channel c of the intermediate tensor:
+     *
+     *   r1[c] = max_i |W1[c, i]|
+     *   r2[c] = max_o |W2[o, c]|
+     *   s[c]  = sqrt(r1[c] / r2[c])   (geometric mean equalization)
+     *
+     *   W1[c, :] /= s[c]
+     *   b1[c]   /= s[c]
+     *   W2[:, c] *= s[c]
+     *
+     * Zero / near-zero rows (r1[c] == 0) are skipped (no scaling possible
+     * without losing the channel). The transform is fully float-domain
+     * and runs before any quantization step.
+     */
+    inline void crossLayerEqualizeDense(float* w1, float* b1, float* w2,
+                                        std::size_t in_dim,
+                                        std::size_t mid_dim,
+                                        std::size_t out_dim,
+                                        float epsilon = 1.0e-8f)
+    {
+        for (std::size_t c = 0; c < mid_dim; ++c)
+        {
+            float r1 = 0.0f;
+            for (std::size_t i = 0; i < in_dim; ++i)
+            {
+                const float v = w1[c * in_dim + i];
+                const float a = (v < 0.0f) ? -v : v;
+                if (a > r1) r1 = a;
+            }
+            float r2 = 0.0f;
+            for (std::size_t o = 0; o < out_dim; ++o)
+            {
+                const float v = w2[o * mid_dim + c];
+                const float a = (v < 0.0f) ? -v : v;
+                if (a > r2) r2 = a;
+            }
+            if (r1 <= epsilon || r2 <= epsilon) continue;
+            const float s = std::sqrt(r1 / r2);
+            if (s <= epsilon) continue;
+            const float inv_s = 1.0f / s;
+            for (std::size_t i = 0; i < in_dim; ++i)
+            {
+                w1[c * in_dim + i] *= inv_s;
+            }
+            if (b1 != nullptr)
+            {
+                b1[c] *= inv_s;
+            }
+            for (std::size_t o = 0; o < out_dim; ++o)
+            {
+                w2[o * mid_dim + c] *= s;
+            }
+        }
+    }
+
+    /**
+     * Conv2D variant of CLE.
+     *
+     * w1 is the upstream conv weights in OHWI layout
+     *   [num_filters_1][kh1][kw1][in_channels_1].
+     * w2 is the downstream conv weights in OHWI layout
+     *   [num_filters_2][kh2][kw2][in_channels_2 == num_filters_1].
+     * b1 is the upstream conv bias [num_filters_1] (may be null).
+     *
+     * Channel c of the intermediate is filter c of w1 and input channel c
+     * of w2. Range queries collapse the spatial / non-channel axes via
+     * absmax.
+     */
+    inline void crossLayerEqualizeConv2D(float* w1, float* b1, float* w2,
+                                         std::size_t num_filters_1,
+                                         std::size_t weights_per_filter_1,
+                                         std::size_t num_filters_2,
+                                         std::size_t kh2,
+                                         std::size_t kw2,
+                                         float epsilon = 1.0e-8f)
+    {
+        const std::size_t in_channels_2 = num_filters_1;
+        const std::size_t per_filter_2 = kh2 * kw2 * in_channels_2;
+        for (std::size_t c = 0; c < num_filters_1; ++c)
+        {
+            float r1 = 0.0f;
+            for (std::size_t i = 0; i < weights_per_filter_1; ++i)
+            {
+                const float v = w1[c * weights_per_filter_1 + i];
+                const float a = (v < 0.0f) ? -v : v;
+                if (a > r1) r1 = a;
+            }
+            float r2 = 0.0f;
+            for (std::size_t f = 0; f < num_filters_2; ++f)
+            {
+                for (std::size_t kh = 0; kh < kh2; ++kh)
+                {
+                    for (std::size_t kw = 0; kw < kw2; ++kw)
+                    {
+                        const std::size_t idx =
+                            f * per_filter_2 +
+                            kh * (kw2 * in_channels_2) +
+                            kw * in_channels_2 + c;
+                        const float v = w2[idx];
+                        const float a = (v < 0.0f) ? -v : v;
+                        if (a > r2) r2 = a;
+                    }
+                }
+            }
+            if (r1 <= epsilon || r2 <= epsilon) continue;
+            const float s = std::sqrt(r1 / r2);
+            if (s <= epsilon) continue;
+            const float inv_s = 1.0f / s;
+            for (std::size_t i = 0; i < weights_per_filter_1; ++i)
+            {
+                w1[c * weights_per_filter_1 + i] *= inv_s;
+            }
+            if (b1 != nullptr)
+            {
+                b1[c] *= inv_s;
+            }
+            for (std::size_t f = 0; f < num_filters_2; ++f)
+            {
+                for (std::size_t kh = 0; kh < kh2; ++kh)
+                {
+                    for (std::size_t kw = 0; kw < kw2; ++kw)
+                    {
+                        const std::size_t idx =
+                            f * per_filter_2 +
+                            kh * (kw2 * in_channels_2) +
+                            kw * in_channels_2 + c;
+                        w2[idx] *= s;
+                    }
+                }
+            }
+        }
     }
 
 } // namespace tinymind

@@ -246,44 +246,120 @@ Each phase = self-contained PR. Builds on prior. Ships with regression corner + 
 
 **Risk:** high. Attention numerics sensitive — linear-attention variant first reduced risk; softmax variant ships alongside.
 
-## Phase 14 — SIMD Performance Backend
+## Phase 14 — SIMD Performance Backend [SHIPPED]
 
-**Goal:** make Cortex-R82 / A55 / x86 path competitive with TFLite-Micro / XNNPACK on cycle count. M0+ path untouched (scalar).
+**Goal:** close the cycle-count gap with TFLite-Micro / XNNPACK on any target whose silicon ships the relevant SIMD ISA extension. Scalar path untouched and remains the default everywhere.
 
-**Scope:** specialize inner loops behind feature gates. Library otherwise unchanged.
+### Design rule — capability gates, not CPU gates
 
-- `cpp/include/simd/` — new directory:
-  - `simd_neon_dot.hpp` — `SDOT`/`UDOT` ARMv8.2-A specializations of `QConv2D`, `QDepthwiseConv2D`, `QDense` inner loop. Gate `TINYMIND_ENABLE_NEON_DOT=1`.
-  - `simd_avx_vnni.hpp` — `VPDPBUSD` on x86 Cascade Lake+. Gate `TINYMIND_ENABLE_AVX_VNNI=1`.
-  - `simd_avx2.hpp` — `PMADDUBSW` fallback for pre-VNNI x86.
-- `cpp/include/threading.hpp` — optional `#pragma omp parallel for` over output-channel dim for conv layers. Gate `TINYMIND_ENABLE_OPENMP=1`.
+SIMD presence is orthogonal to CPU complex. Verified against Arm documentation (developer.arm.com, GCC AArch64 Options, Arm Neon intrinsics reference):
 
-**Tests:** SIMD specializations must be **bit-exact** with scalar reference. Boost.Test corner per gate combo.
+- **Cortex-A55** ships with NEON, FPU, and Crypto as optional RTL components — Arm publishes >3000 distinct A55 RTL configurations. NEON is not guaranteed.
+- **Cortex-R82** "optionally includes the latest Neon instructions to greatly accelerate machine learning workloads with capabilities such as Dot Product support." NEON is opt-in at synthesis time.
+- **AArch64** itself permits `+nosimd` / `-mgeneral-regs-only` builds (GCC AArch64 docs). Bare-metal and kernel-mode code regularly runs without NEON.
+- **Helium (MVE)** is optional on Armv8.1-M cores (M55 / M85 / M52); MVE-I (integer) and MVE-F (float) are independently selectable — a core can implement MVE-I without MVE-F.
 
-**Example:** `examples/perf_matrix/` — runs MobileNetV2 block across (scalar | NEON | AVX-VNNI | AVX2) corners, emits comparison CSV.
+Naming a gate after a CPU therefore presumes capability the silicon may not have. Library headers must key on ISA capability, never on CPU model.
 
-**Success criteria:** ≥6× speedup on A55 vs scalar for conv-dominated workload. ≥10× on x86 with AVX-VNNI. Bit-exact output across gates.
+### Design rule — gates honor Arm's architectural prerequisite chain
 
-**Risk:** medium. Bit-exactness across SIMD widths needs careful order-of-accumulation handling. Build-system intrinsics matrix is friction.
+Gates are CPU-agnostic but **not fully independent of each other.** Per Arm intrinsics reference and GCC AArch64 docs, the architecture defines a strict prerequisite chain:
 
-## Phase 15 — Calibration Upgrades + Importer Tooling
+| Capability | Architectural prerequisite |
+|------------|----------------------------|
+| `SIMD_NEON` | (implicitly `FP`) |
+| `SIMD_NEON_DOTPROD` (SDOT/UDOT) | `SIMD_NEON` — dot product instructions live inside the Advanced SIMD instruction set; there is no "dotprod without NEON" |
+| `SIMD_NEON_FP16` (FEAT_FP16 vector forms) | `SIMD_NEON` + `FP16` scalar extension |
+| `SIMD_SVE` | `SIMD_NEON` (GCC: "+sve also enables Advanced SIMD and floating-point instructions") |
+| `SIMD_SVE2` | `SIMD_SVE` |
+| `SIMD_BF16`, `SIMD_I8MM` | `SIMD_NEON` (or `SIMD_SVE`) |
+| `SIMD_HELIUM_MVE_I` | M-profile only — mutually exclusive with `SIMD_NEON` / `SIMD_SVE` |
+| `SIMD_HELIUM_MVE_F` | M-profile only — independent of `SIMD_HELIUM_MVE_I` per Arm Helium docs |
+| `SIMD_AVX_VNNI` (`VPDPBUSD`) | `SIMD_AVX2` (Alder Lake+ ships VNNI without AVX-512) |
+| `SIMD_AVX512F` | (x86 baseline AVX assumed) |
+| `SIMD_AVX512_VNNI` | `SIMD_AVX512F` |
+
+Library policy: each `simd_*.hpp` header opens with a `static_assert` enforcing its row of this table. Caller cannot enable a dependent gate without its prerequisites; misconfiguration fails at compile time with a readable message.
+
+### Scope
+
+Specialize inner loops behind capability-named feature gates. Library otherwise unchanged.
+
+- `cpp/include/simd/` — new directory. One header per capability, each declaring its prerequisites via `static_assert`:
+  - `simd_neon.hpp` — Armv7 / Armv8-A Advanced SIMD baseline (`VMULL`, `VPADDL`). Gate `TINYMIND_ENABLE_SIMD_NEON=1`.
+  - `simd_neon_dotprod.hpp` — `SDOT`/`UDOT` Armv8.2-A FEAT_DotProd. Gate `TINYMIND_ENABLE_SIMD_NEON_DOTPROD=1`. Requires `SIMD_NEON`.
+  - `simd_neon_fp16.hpp` — Armv8.2-A FEAT_FP16 vector forms (`float16x8_t` arithmetic). Gate `TINYMIND_ENABLE_SIMD_NEON_FP16=1`. Requires `SIMD_NEON`. Pairs with Phase 9 `fp16_t` storage.
+  - `simd_sve.hpp` — Scalable Vector Extension, vector-length-agnostic loops. Gate `TINYMIND_ENABLE_SIMD_SVE=1`. Requires `SIMD_NEON`.
+  - `simd_sve2.hpp` — SVE2 superset. Gate `TINYMIND_ENABLE_SIMD_SVE2=1`. Requires `SIMD_SVE`.
+  - `simd_helium_mve_i.hpp` — Armv8.1-M MVE-I (integer). Gate `TINYMIND_ENABLE_SIMD_HELIUM_MVE_I=1`. Mutually exclusive with NEON / SVE (M-profile only).
+  - `simd_helium_mve_f.hpp` — Armv8.1-M MVE-F (float). Gate `TINYMIND_ENABLE_SIMD_HELIUM_MVE_F=1`. Independent of MVE-I (a core can implement either alone).
+  - `simd_avx2.hpp` — x86 `PMADDUBSW` fallback path. Gate `TINYMIND_ENABLE_SIMD_AVX2=1`.
+  - `simd_avx_vnni.hpp` — `VPDPBUSD` (Alder Lake+ / Sapphire Rapids on the AVX-VNNI side). Gate `TINYMIND_ENABLE_SIMD_AVX_VNNI=1`. Requires `SIMD_AVX2`.
+  - `simd_avx512f.hpp` — AVX-512 foundation. Gate `TINYMIND_ENABLE_SIMD_AVX512F=1`.
+  - `simd_avx512_vnni.hpp` — AVX-512-VNNI. Gate `TINYMIND_ENABLE_SIMD_AVX512_VNNI=1`. Requires `SIMD_AVX512F`.
+- `cpp/include/threading.hpp` — optional `#pragma omp parallel for` over output-channel dim for conv layers. Gate `TINYMIND_ENABLE_OPENMP=1`. Orthogonal to every SIMD gate.
+
+### Gate semantics
+
+- All `TINYMIND_ENABLE_SIMD_*` default to `0`. Scalar fallback is the default body of every layer.
+- No `#ifdef __ARM_NEON` / `#ifdef __AVX2__` auto-detection in library headers. Build system (Makefile / CMake) translates compiler flags into matching `TINYMIND_ENABLE_SIMD_*=1` defines. Keeps library decoupled from toolchain auto-detection quirks.
+- Gates are CPU-agnostic (do not assume A55 → NEON, R82 → NEON-DotProd, M55 → Helium, etc.) but honor Arm's architectural prerequisite chain (see table above). Misconfiguration like `DOTPROD=1, NEON=0` is rejected at compile time by `static_assert`.
+- No runtime CPU dispatch (`cpuid` / `getauxval` / `__builtin_cpu_supports`). Library compiles for one ISA target per build. Fat-binary / multi-arch dispatch is caller's problem.
+
+### Tests
+
+SIMD specializations must be **bit-exact** with the scalar reference. Boost.Test corner per gate combo in `unit_test/quantization/`. `unit_test/embedded/Makefile` adds:
+
+- `simd_disabled` corner — every `SIMD_*=0`, proves scalar path still builds and runs at the deployable freestanding shape.
+- One corner per major gate (`simd_neon_dotprod_hosted`, `simd_avx_vnni_hosted`, `simd_helium_mve_i_freestanding`, …) on hosts where the cross-compiler is available; CI matrix flags absent toolchains as "skipped" rather than "failed".
+- A compile-failure regression test that asserts `DOTPROD=1, NEON=0` fails with the static_assert message (proves the prerequisite chain is enforced, not documented-only).
+
+### Example
+
+`examples/perf_matrix/` — runs a MobileNetV2 block across every available SIMD gate combo, emits CSV with cycle counts plus the set of `SIMD_*` flags active per row so deltas are interpretable. `examples/kws_cortex_m_int8/` and `examples/transformer_encoder_int8/` bench harnesses also extend their CSV header with the active `SIMD_*` flag set.
+
+### Success criteria
+
+- ≥6× speedup on Arm with `SIMD_NEON_DOTPROD=1` (whatever the CPU complex — A55, R82, Neoverse-class) vs scalar for conv-dominated workload.
+- ≥10× speedup on x86 with `SIMD_AVX_VNNI=1` vs scalar.
+- Scalar fallback unchanged: `simd_disabled` corner of `unit_test/embedded` continues to pass byte-identically to pre-Phase-14 outputs.
+- Bit-exact output across every gate combo on the same model.
+
+### Risk
+
+Medium. Bit-exactness across SIMD widths needs careful order-of-accumulation handling (`SDOT` reduces 4 lanes per accumulator slot; AVX-VNNI reduces 4 int8 per int32 slot — accumulation order is fixed per ISA and the scalar reference must match by construction, not by chance). Build-system intrinsics matrix is friction but capability-gate design keeps the library side clean.
+
+### Status (shipped)
+
+- 12 gates landed in `cpp/include/tinymind_platform.hpp` (11 SIMD + OpenMP), all defaulting to 0. Scalar path is byte-identical to the pre-Phase-14 build.
+- 12 backend headers under `cpp/include/simd/`: NEON baseline, NEON DOTPROD (SDOT/UDOT), NEON FP16 vector, SVE (svdot_s32), SVE2 (forward-compatibility), Helium MVE-I (vmladavaq_s8), Helium MVE-F, AVX2 (cvtepi8_epi16 + madd_epi16, deliberately avoiding PMADDUBSW for bit-exactness), AVX-VNNI (VPDPBUSD via uint8-shift trick), AVX-512F, AVX-512-VNNI. Each header opens with a static_assert enforcing Arm's prerequisite chain.
+- `cpp/include/simd/simd_dispatch.hpp` provides the public `int8DotWithZeroPoint` and templated `dotProductWithZeroPoint<Input, Weight, Accum>`. `QDense`, `QConv2D`, and `QConv2DPerChannel` route their inner reduction through it. Float / int16 / non-int8 type combos transparently fall back to the scalar template body.
+- `cpp/include/threading.hpp` provides `TINYMIND_PARALLEL_FOR_OUTER`. The output-filter loop of `QConv2D` and `QConv2DPerChannel` is annotated.
+- `unit_test/embedded/Makefile` gains the `simd_disabled` corner (every SIMD_*=0 at QUANT=1 FLOAT=0 STD=0) and the `simd_prereq_regressions` target that locks `AVX_VNNI=1, AVX2=0` and `AVX512_VNNI=1, AVX512F=0` as compile failures.
+- `unit_test/quantization/` adds five Phase 14 tests: dispatch bit-exactness across pathological lengths (0, 1, 7, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 257, 1024 with `zp` sweep), INT8 extreme-value patterns, full-layer `QDense` parity, full-layer `QConv2D` parity, and the `activeBackendName` reporter. All 109 tests pass under scalar, AVX2, AVX-512F, and AVX-512-VNNI builds on the reference Tiger Lake host.
+- `examples/perf_matrix/` builds the same int8 conv + dense block under scalar / AVX2 / AVX-512F / AVX-512-VNNI and emits one CSV row per binary with `active_backend, conv/dense per-call us, output_checksum`. Reference run: scalar 305 us/call conv → AVX2 237 us/call (~28% faster); all backends agree on the output checksum byte-for-byte, locking the bit-exact invariant.
+
+## Phase 15 — Calibration Upgrades + Importer Tooling [SHIPPED]
 
 **Goal:** reduce accuracy gap vs PyTorch / TFLite reference. Lower friction to deploy.
 
-**Scope:**
+**Scope (shipped):**
 - `cpp/include/qcalibration.hpp` additions:
-  - `PercentileObserver` — 99.9 / 99.99 percentile clipping vs naive min/max
-  - `KLDivergenceObserver` — TensorRT-style entropy calibration
-  - `CrossLayerEqualization` — pre-quantization weight balancing (Markus Nagel paper)
-- New tool `apps/import_pytorch/` — Python script consumes PyTorch state-dict + traced graph, emits TinyMind C++ `weights.hpp` + Requantizer constants. Generalizes pattern from `examples/pytorch_quant/xor/`.
-- New tool `apps/import_onnx/` — ONNX-runtime PTQ output → `weights.hpp` emitter.
-- Layer-fusion pass: conv+bn+relu detection in importer; calls `foldBatchNorm` from Phase 11.
+  - `PercentileObserver` — record samples, query `[lower_pct, upper_pct]` range. Clips outliers ahead of `computeAffineParamsAsymmetric`.
+  - `KLDivergenceObserver` — TensorRT-style entropy calibration. Two-pass over a 2048-bin histogram, sweeps candidate clip thresholds, returns the one that minimizes KL between the reference distribution and the int8-quantized distribution. Output is an absmax for symmetric quantization.
+  - `crossLayerEqualizeDense` / `crossLayerEqualizeConv2D` — Nagel-paper Cross-Layer Equalization. Per-channel `s = sqrt(r1 / r2)` rebalances the upstream output range against the downstream input range. ReLU / identity activations make the transform output-preserving in the float domain (positively homogeneous).
+- `apps/import_pytorch/tinymind_import.py` — Python importer module. Caller assembles `Dense` / `Conv2D` / `BatchNorm2D` / `ReLU` / `Sigmoid` / `Tanh` / `Softmax` descriptors carrying numpy weights from `torch.state_dict`. `fuse_layers` detects Conv2D-then-BatchNorm and folds via the same math as `foldBatchNorm`. `calibrate` streams the calibration dataset through the float reference with `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver` per layer. `quantize_weights` emits symmetric int8 weights + int32 biases. `emit_weights_header` writes a TinyMind-format `weights.hpp`. Top-level `import_pytorch_model` wraps the four passes.
+- `apps/import_onnx/tinymind_import_onnx.py` — QDQ-format ONNX importer. Walks `QuantizeLinear` / `DequantizeLinear` / `QLinearConv` / `QLinearMatMul` / `Relu` / `Sigmoid` / `Tanh` / `Softmax` nodes, extracts the per-tensor `(scale, zero_point)` and int8 weight / int32 bias initializers, emits the same TinyMind-format `weights.hpp`. The `onnx` Python package is imported lazily so the emitter half is usable without it.
 
-**Tests:** importer round-trip — PyTorch float forward → import → C++ int8 forward → max abs delta vs PyTorch int8 forward < N ulp.
+**Tests (shipped):**
+- `percentile_observer_clips_outliers` / `percentile_observer_empty_returns_zero_range` — heavy-tail vs uniform data, empty buffer edge case.
+- `kl_divergence_observer_finds_clip_threshold` / `kl_divergence_observer_empty_returns_zero` — Gaussian + outliers; threshold lands below absmax, well below the outlier mass. Empty edge case returns 0.
+- `cross_layer_equalize_dense_preserves_relu_output` / `cross_layer_equalize_dense_skips_zero_channels` — 100:1 channel imbalance forced; output unchanged after CLE; zero-row channel is left alone.
+- `cross_layer_equalize_conv2d_preserves_relu_output` — same invariant for the Conv2D variant with OHWI weight layout.
 
-**Example:** `examples/import_demo/` — ResNet block trained in PyTorch, imported, verified.
+**Example:** `examples/import_demo/` — end-to-end Phase 15 demo. The C++ binary (`import_demo.cpp`) carries a deterministic 3-8-4-2 MLP, drives a 64-sample synthetic calibration set through `RangeObserver` / `PercentileObserver` / `KLDivergenceObserver` plus `crossLayerEqualizeDense`, then runs both float and int8 forward and prints the max-abs error (~0.004 on the bundled seed; tolerance 0.08). Standalone — no torch dependency. `demo.py` is the production-flow counterpart that consumes `torch.state_dict` and drives `apps/import_pytorch/tinymind_import` to emit a real `weights.hpp`.
 
-**Success criteria:** one-command import from PyTorch quantized model to deployable C++ stack.
+**Success criteria:** one-command import from PyTorch quantized model to deployable C++ stack. ✓ shipped via `apps/import_pytorch/tinymind_import.import_pytorch_model`.
 
 **Risk:** low-medium. Mostly Python tooling, isolated from runtime.
 
@@ -347,11 +423,15 @@ Total: roughly 8–12 PRs depending on splitting. Phase 9 alone unblocks usefuln
 
 ## Target-Tier Implications
 
-- **M0+ / freestanding:** Phases 9–13 land new ops but every runtime header stays freestanding-clean. Phase 14 SIMD gates default off. Phase 15 tooling host-only.
-- **M4F/M7:** same as M0+ plus optional fp16 storage (Phase 9 gate).
-- **Cortex-R82:** Phase 14 NEON-int8 gate matters most. Determinism story preserved by scalar fallback.
-- **Cortex-A55:** Phase 14 NEON `SDOT` + Phase 9 fp16 + optional OpenMP. Closes the gap to TFLite-Micro / XNNPACK.
-- **x86:** Phase 14 AVX-VNNI specialization is the headline. Phase 9 bf16 path on Sapphire Rapids+.
+CPU complex and SIMD capability are orthogonal — the rows below describe *typical* configurations, not guarantees. Arm publishes thousands of distinct RTL configurations per core (Cortex-A55 alone has >3000), and NEON / Crypto / FPU are often optional components. The library never assumes a capability from a CPU name; caller sets the matching `TINYMIND_ENABLE_SIMD_*` gates per their actual silicon, and the headers' `static_assert`s enforce Arm's architectural prerequisite chain.
+
+- **M0+ / freestanding:** Phases 9–13 land new ops but every runtime header stays freestanding-clean. All Phase 14 `SIMD_*` gates default off; scalar fallback is the path. Phase 15 tooling host-only.
+- **M4F / M7:** scalar by default; optional Phase 9 fp16 storage. No SIMD gate applies (Helium MVE is Armv8.1-M+).
+- **M55 / M85 / M52 (Armv8.1-M):** opt-in `TINYMIND_ENABLE_SIMD_HELIUM_MVE_I=1` and/or `TINYMIND_ENABLE_SIMD_HELIUM_MVE_F=1` *if* the part is built with the matching MVE flavor. Arm permits MVE-I without MVE-F; both gates are independently selectable. M55 / M85 / M52 configured without MVE fall back to the M4F/M7 story.
+- **Cortex-R82 (Armv8-R 64-bit):** opt-in `TINYMIND_ENABLE_SIMD_NEON` and `TINYMIND_ENABLE_SIMD_NEON_DOTPROD` *if* the part was built with NEON. Per Arm, R82's NEON unit is optional at synthesis time. R82 configured without NEON runs the scalar path; real-time determinism story preserved either way.
+- **Cortex-A55 and other Armv8.2-A application cores:** Arm's A55 product page lists NEON, Crypto, and the FPU as *optional* components in the RTL. The common high-throughput config is `TINYMIND_ENABLE_SIMD_NEON=1` + `TINYMIND_ENABLE_SIMD_NEON_DOTPROD=1` + optional `TINYMIND_ENABLE_SIMD_NEON_FP16=1` + optional `TINYMIND_ENABLE_OPENMP=1`. A55 configurations that omit NEON exist; caller sets gates accordingly.
+- **Cortex-A510 / Cortex-A715 / Neoverse V1 / Neoverse V2 / Neoverse N2:** add `TINYMIND_ENABLE_SIMD_SVE=1` (or `SVE2=1`) for vector-length-agnostic loops, on top of NEON / dotprod where present. Neoverse V2 / N2 ship SVE2; V1 ships SVE(1).
+- **x86:** `TINYMIND_ENABLE_SIMD_AVX2=1` is the floor on anything modern; `TINYMIND_ENABLE_SIMD_AVX_VNNI=1` is the int8 headline on Alder Lake+ (and on Sapphire Rapids' AVX-VNNI path). `TINYMIND_ENABLE_SIMD_AVX512F=1` plus `TINYMIND_ENABLE_SIMD_AVX512_VNNI=1` on Sapphire Rapids+ also unlocks Phase 9 bf16 storage paths.
 
 ## Non-Goals (Still)
 

@@ -61,6 +61,7 @@
 #include "qmha.hpp"
 #include "qformat.hpp"
 #include "include/tinymind_fp16.hpp"
+#include "include/simd/simd_dispatch.hpp"
 #include "compiler.h"
 
 #define BOOST_TEST_MODULE quantization_unit_test
@@ -137,6 +138,10 @@ using tinymind::buildQGRUParams;
 using tinymind::quantizeQGRUBiases;
 using tinymind::buildQFFTTwiddles;
 using tinymind::qAttentionInvSqrt;
+using tinymind::PercentileObserver;
+using tinymind::KLDivergenceObserver;
+using tinymind::crossLayerEqualizeDense;
+using tinymind::crossLayerEqualizeConv2D;
 #endif
 using tinymind::kQActivationLUTSize;
 using tinymind::qActivationLUTIndex;
@@ -1491,6 +1496,351 @@ BOOST_AUTO_TEST_CASE(qtanh_lut_matches_float_reference)
         const float y_q = dequantize<int8_t>(qApplyLUT(qx, lut), out_scale, out_zp);
         const float y_ref = std::tanh(x);
         BOOST_TEST(std::abs(y_q - y_ref) < 0.05f);
+    }
+}
+
+// Phase 15 -- calibration upgrades.
+BOOST_AUTO_TEST_CASE(percentile_observer_clips_outliers)
+{
+    PercentileObserver obs;
+    // Bulk sample mass in [-1, 1] plus a handful of >> 1 outliers. Naive
+    // min/max would set absmax to the outlier value; percentile clipping
+    // at 1.0 / 99.0 should land near 1.0.
+    for (int i = -1000; i <= 1000; ++i)
+    {
+        obs.observe(static_cast<float>(i) / 1000.0f);
+    }
+    const float kOutliers[] = {50.0f, -50.0f, 75.0f, -75.0f};
+    obs.observe(kOutliers, sizeof(kOutliers) / sizeof(kOutliers[0]));
+
+    float fmin = 0.0f;
+    float fmax = 0.0f;
+    obs.rangeAtPercentile(1.0f, 99.0f, fmin, fmax);
+    BOOST_TEST(std::abs(fmin - (-0.98f)) < 0.01f);
+    BOOST_TEST(std::abs(fmax -   0.98f) < 0.01f);
+
+    // 0.0 / 100.0 returns the true min/max including outliers.
+    PercentileObserver obs_full;
+    for (int i = -1000; i <= 1000; ++i)
+    {
+        obs_full.observe(static_cast<float>(i) / 1000.0f);
+    }
+    obs_full.observe(kOutliers, sizeof(kOutliers) / sizeof(kOutliers[0]));
+    float fmin_full = 0.0f;
+    float fmax_full = 0.0f;
+    obs_full.rangeAtPercentile(0.0f, 100.0f, fmin_full, fmax_full);
+    BOOST_TEST(fmin_full <= -50.0f);
+    BOOST_TEST(fmax_full >=  50.0f);
+}
+
+BOOST_AUTO_TEST_CASE(percentile_observer_empty_returns_zero_range)
+{
+    PercentileObserver obs;
+    float fmin = -42.0f;
+    float fmax =  42.0f;
+    obs.rangeAtPercentile(0.0f, 100.0f, fmin, fmax);
+    BOOST_TEST(fmin == 0.0f);
+    BOOST_TEST(fmax == 0.0f);
+    BOOST_TEST(obs.has_data == false);
+}
+
+BOOST_AUTO_TEST_CASE(kl_divergence_observer_finds_clip_threshold)
+{
+    // Build a Gaussian-ish distribution with heavy tail outliers. KL
+    // calibration should pick a threshold well below the absmax.
+    KLDivergenceObserver obs;
+    std::vector<float> data;
+    data.reserve(20000 + 50);
+    for (int i = 0; i < 20000; ++i)
+    {
+        const float u = static_cast<float>((i % 1024) - 512) / 512.0f;
+        data.push_back(u * 0.7f);
+    }
+    for (int i = 0; i < 50; ++i)
+    {
+        data.push_back((i & 1) ? 8.0f : -8.0f);
+    }
+    obs.observeAbsRange(data.data(), data.size());
+    obs.observeHistogram(data.data(), data.size());
+    const float threshold = obs.computeThreshold();
+    BOOST_TEST(obs.absmax >= 7.5f);
+    BOOST_TEST(threshold > 0.0f);
+    BOOST_TEST(threshold <= obs.absmax);
+    // Clip threshold should be substantially below the outlier absmax.
+    BOOST_TEST(threshold < obs.absmax * 0.5f);
+}
+
+BOOST_AUTO_TEST_CASE(kl_divergence_observer_empty_returns_zero)
+{
+    KLDivergenceObserver obs;
+    BOOST_TEST(obs.computeThreshold() == 0.0f);
+    BOOST_TEST(obs.has_data == false);
+}
+
+BOOST_AUTO_TEST_CASE(cross_layer_equalize_dense_preserves_relu_output)
+{
+    // Two-layer ReLU MLP. CLE rescales W1/b1/W2 by per-channel s[c];
+    // because ReLU is positively homogeneous, model output must be
+    // bitwise unchanged in the float domain (up to numerical noise).
+    constexpr std::size_t In = 4;
+    constexpr std::size_t Mid = 6;
+    constexpr std::size_t Out = 3;
+    float w1[Mid * In];
+    float b1[Mid];
+    float w2[Out * Mid];
+    // Engineered imbalance: channel 0 of mid has tiny upstream weights
+    // but huge downstream weights; channel 1 is the opposite.
+    for (std::size_t c = 0; c < Mid; ++c)
+    {
+        const float scale_up   = (c == 0) ? 0.01f : (c == 1) ? 10.0f : 1.0f;
+        const float scale_down = (c == 0) ? 10.0f : (c == 1) ? 0.01f : 1.0f;
+        for (std::size_t i = 0; i < In; ++i)
+        {
+            w1[c * In + i] = scale_up * (0.5f + 0.1f * static_cast<float>(i + c));
+        }
+        b1[c] = scale_up * 0.25f;
+        for (std::size_t o = 0; o < Out; ++o)
+        {
+            w2[o * Mid + c] = scale_down *
+                              (0.3f + 0.07f * static_cast<float>(o + c));
+        }
+    }
+
+    const float x[In] = {0.7f, -0.2f, 0.5f, 0.1f};
+
+    auto forward = [&](const float* W1, const float* B1, const float* W2,
+                       float* y) {
+        float h[Mid];
+        for (std::size_t c = 0; c < Mid; ++c)
+        {
+            float acc = B1[c];
+            for (std::size_t i = 0; i < In; ++i)
+            {
+                acc += W1[c * In + i] * x[i];
+            }
+            h[c] = (acc > 0.0f) ? acc : 0.0f;
+        }
+        for (std::size_t o = 0; o < Out; ++o)
+        {
+            float acc = 0.0f;
+            for (std::size_t c = 0; c < Mid; ++c)
+            {
+                acc += W2[o * Mid + c] * h[c];
+            }
+            y[o] = acc;
+        }
+    };
+
+    float y_before[Out];
+    forward(w1, b1, w2, y_before);
+
+    // Record per-channel ranges before / after to confirm equalization.
+    float r1_before[Mid];
+    float r2_before[Mid];
+    for (std::size_t c = 0; c < Mid; ++c)
+    {
+        float r1 = 0.0f;
+        for (std::size_t i = 0; i < In; ++i)
+        {
+            const float a = std::abs(w1[c * In + i]);
+            if (a > r1) r1 = a;
+        }
+        float r2 = 0.0f;
+        for (std::size_t o = 0; o < Out; ++o)
+        {
+            const float a = std::abs(w2[o * Mid + c]);
+            if (a > r2) r2 = a;
+        }
+        r1_before[c] = r1;
+        r2_before[c] = r2;
+    }
+
+    crossLayerEqualizeDense(w1, b1, w2, In, Mid, Out);
+
+    float y_after[Out];
+    forward(w1, b1, w2, y_after);
+    for (std::size_t o = 0; o < Out; ++o)
+    {
+        BOOST_TEST(std::abs(y_after[o] - y_before[o]) < 1.0e-4f);
+    }
+
+    // Channels 0 and 1 had ratios 0.01/10 and 10/0.01 = 1e6; after CLE
+    // the per-channel r1/r2 ratio should be close to 1.
+    for (std::size_t c = 0; c < 2; ++c)
+    {
+        float r1 = 0.0f;
+        float r2 = 0.0f;
+        for (std::size_t i = 0; i < In; ++i)
+        {
+            const float a = std::abs(w1[c * In + i]);
+            if (a > r1) r1 = a;
+        }
+        for (std::size_t o = 0; o < Out; ++o)
+        {
+            const float a = std::abs(w2[o * Mid + c]);
+            if (a > r2) r2 = a;
+        }
+        const float ratio_after = r1 / r2;
+        const float ratio_before = r1_before[c] / r2_before[c];
+        BOOST_TEST(std::abs(ratio_after - 1.0f) < 0.05f);
+        // Original imbalance must have been at least 50x in either
+        // direction; CLE pulls it back to near 1.0.
+        const float log_before = std::log(ratio_before);
+        BOOST_TEST(std::abs(log_before) > 4.0f);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(cross_layer_equalize_dense_skips_zero_channels)
+{
+    // Channel 0 of W1 is identically zero. CLE must leave that channel
+    // alone (no division by zero, output still preserved).
+    constexpr std::size_t In = 2;
+    constexpr std::size_t Mid = 3;
+    constexpr std::size_t Out = 2;
+    float w1[Mid * In] = {
+        0.0f, 0.0f,
+        1.0f, 0.5f,
+        -0.3f, 0.7f,
+    };
+    float b1[Mid] = {0.1f, 0.2f, -0.05f};
+    float w2[Out * Mid] = {
+        0.4f,  0.8f, -0.6f,
+        -0.2f, 0.9f,  0.1f,
+    };
+
+    const float x[In] = {0.5f, -0.25f};
+    auto forward = [&](const float* W1, const float* B1, const float* W2,
+                       float* y) {
+        float h[Mid];
+        for (std::size_t c = 0; c < Mid; ++c)
+        {
+            float acc = B1[c];
+            for (std::size_t i = 0; i < In; ++i) acc += W1[c * In + i] * x[i];
+            h[c] = (acc > 0.0f) ? acc : 0.0f;
+        }
+        for (std::size_t o = 0; o < Out; ++o)
+        {
+            float acc = 0.0f;
+            for (std::size_t c = 0; c < Mid; ++c)
+                acc += W2[o * Mid + c] * h[c];
+            y[o] = acc;
+        }
+    };
+
+    float y_before[Out];
+    forward(w1, b1, w2, y_before);
+    crossLayerEqualizeDense(w1, b1, w2, In, Mid, Out);
+    float y_after[Out];
+    forward(w1, b1, w2, y_after);
+    for (std::size_t o = 0; o < Out; ++o)
+    {
+        BOOST_TEST(std::abs(y_after[o] - y_before[o]) < 1.0e-5f);
+    }
+    BOOST_TEST(w1[0] == 0.0f);
+    BOOST_TEST(w1[1] == 0.0f);
+    BOOST_TEST(b1[0] == 0.1f);
+}
+
+BOOST_AUTO_TEST_CASE(cross_layer_equalize_conv2d_preserves_relu_output)
+{
+    // Conv -> ReLU -> Conv. CLE on per-output-filter channel of the first
+    // conv, matching input channel of the second. Output unchanged.
+    constexpr std::size_t F1 = 3;   // filters of conv1
+    constexpr std::size_t Kh1 = 2;
+    constexpr std::size_t Kw1 = 2;
+    constexpr std::size_t IC1 = 1;  // input channels to conv1
+    constexpr std::size_t WPF1 = Kh1 * Kw1 * IC1;
+    constexpr std::size_t F2 = 2;
+    constexpr std::size_t Kh2 = 1;
+    constexpr std::size_t Kw2 = 1;
+    constexpr std::size_t WPF2 = Kh2 * Kw2 * F1;
+    // Input image 3x3x1
+    constexpr std::size_t H = 3;
+    constexpr std::size_t W = 3;
+    float w1[F1 * WPF1];
+    float b1[F1];
+    float w2[F2 * WPF2];
+
+    for (std::size_t f = 0; f < F1; ++f)
+    {
+        const float s_up = (f == 0) ? 0.01f : (f == 1) ? 5.0f : 1.0f;
+        for (std::size_t k = 0; k < WPF1; ++k)
+        {
+            w1[f * WPF1 + k] = s_up * (0.2f + 0.05f * static_cast<float>(k));
+        }
+        b1[f] = s_up * 0.1f;
+    }
+    for (std::size_t f = 0; f < F2; ++f)
+    {
+        for (std::size_t c = 0; c < F1; ++c)
+        {
+            const float s_dn = (c == 0) ? 5.0f : (c == 1) ? 0.01f : 1.0f;
+            w2[f * WPF2 + c] = s_dn * (0.3f + 0.1f * static_cast<float>(f + c));
+        }
+    }
+
+    float input[H * W * IC1];
+    for (std::size_t i = 0; i < H * W; ++i)
+    {
+        input[i] = static_cast<float>(i) * 0.1f - 0.4f;
+    }
+
+    auto conv_forward = [&](const float* W1, const float* B1,
+                            const float* W2_, float* y) {
+        // conv1: 3x3 input, 2x2 VALID -> 2x2 output, F1 channels.
+        // y2 shape: 2 x 2 x F2.
+        float mid[(H - 1) * (W - 1) * F1];
+        for (std::size_t oh = 0; oh < H - 1; ++oh)
+        {
+            for (std::size_t ow = 0; ow < W - 1; ++ow)
+            {
+                for (std::size_t f = 0; f < F1; ++f)
+                {
+                    float acc = B1[f];
+                    for (std::size_t kh = 0; kh < Kh1; ++kh)
+                    {
+                        for (std::size_t kw = 0; kw < Kw1; ++kw)
+                        {
+                            const std::size_t in_idx =
+                                (oh + kh) * W + (ow + kw);
+                            const std::size_t w_idx =
+                                f * WPF1 + (kh * Kw1 + kw) * IC1;
+                            acc += W1[w_idx] * input[in_idx];
+                        }
+                    }
+                    mid[(oh * (W - 1) + ow) * F1 + f] = (acc > 0.0f) ? acc : 0.0f;
+                }
+            }
+        }
+        // conv2: 1x1 over 2x2 mid -> 2x2 x F2.
+        for (std::size_t oh = 0; oh < H - 1; ++oh)
+        {
+            for (std::size_t ow = 0; ow < W - 1; ++ow)
+            {
+                for (std::size_t f = 0; f < F2; ++f)
+                {
+                    float acc = 0.0f;
+                    for (std::size_t c = 0; c < F1; ++c)
+                    {
+                        acc += W2_[f * WPF2 + c] *
+                               mid[(oh * (W - 1) + ow) * F1 + c];
+                    }
+                    y[(oh * (W - 1) + ow) * F2 + f] = acc;
+                }
+            }
+        }
+    };
+
+    float y_before[(H - 1) * (W - 1) * F2];
+    conv_forward(w1, b1, w2, y_before);
+
+    crossLayerEqualizeConv2D(w1, b1, w2, F1, WPF1, F2, Kh2, Kw2);
+
+    float y_after[(H - 1) * (W - 1) * F2];
+    conv_forward(w1, b1, w2, y_after);
+    for (std::size_t i = 0; i < (H - 1) * (W - 1) * F2; ++i)
+    {
+        BOOST_TEST(std::abs(y_after[i] - y_before[i]) < 1.0e-4f);
     }
 }
 
@@ -3764,5 +4114,233 @@ BOOST_AUTO_TEST_CASE(qmha_stacks_two_identical_heads)
 }
 
 #endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
+
+// ---------------------------------------------------------------------------
+// Phase 14: SIMD dispatch bit-exactness.
+//
+// Whichever TINYMIND_ENABLE_SIMD_* gate is on at build time, the dispatched
+// int8 dot product must match the scalar reference bit-for-bit across
+// pathological inputs: aligned vector lengths, mid-vector tails, sign-mix
+// of weights and inputs, edge-of-int8-range values, and zero_point != 0.
+// The same invariant carries up into QDense and QConv2D since both call
+// into the dispatch helper for the inner reduction.
+// ---------------------------------------------------------------------------
+
+namespace simd_test {
+
+    inline int32_t scalarDot(const int8_t* x, const int8_t* w,
+                             std::size_t n, int8_t zp)
+    {
+        return tinymind::simd::int8DotWithZeroPointScalar(x, w, n, zp);
+    }
+
+    inline int32_t dispatchedDot(const int8_t* x, const int8_t* w,
+                                 std::size_t n, int8_t zp)
+    {
+        return tinymind::simd::int8DotWithZeroPoint(x, w, n, zp);
+    }
+
+    // Deterministic fill — same seed every run keeps the bit-exactness
+    // check reproducible across builds.
+    inline void fillSawtooth(int8_t* p, std::size_t n, int seed)
+    {
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const int v = static_cast<int>((i * 7 + seed * 13) & 0xFF) - 128;
+            p[i] = static_cast<int8_t>(v);
+        }
+    }
+
+}
+
+BOOST_AUTO_TEST_CASE(simd_int8_dot_bit_exact_across_lengths)
+{
+    // Lengths span: short scalar-tail-only, vector-aligned, vector + 1,
+    // long contiguous, and odd primes that hit every tail residue.
+    const std::size_t lengths[] = { 0, 1, 7, 15, 16, 17, 31, 32, 33,
+                                    63, 64, 65, 127, 128, 129, 257, 1024 };
+    int8_t x[1024];
+    int8_t w[1024];
+
+    for (std::size_t li = 0; li < sizeof(lengths) / sizeof(lengths[0]); ++li)
+    {
+        const std::size_t n = lengths[li];
+        simd_test::fillSawtooth(x, n, 11);
+        simd_test::fillSawtooth(w, n, 47);
+
+        // Sweep zero_point over the full asymmetric int8 range so the
+        // bias-correction term (zp * sum_w) is exercised at every bit.
+        for (int zp = -128; zp <= 127; zp += 31)
+        {
+            const int32_t a = simd_test::scalarDot(x, w, n,
+                                                   static_cast<int8_t>(zp));
+            const int32_t b = simd_test::dispatchedDot(x, w, n,
+                                                       static_cast<int8_t>(zp));
+            BOOST_TEST(a == b);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(simd_int8_dot_extreme_values_bit_exact)
+{
+    // INT8_MIN x INT8_MIN, INT8_MAX x INT8_MAX, mixed signs — saturate-
+    // sensitive backends (PMADDUBSW chain on AVX2 without the cvtepi8
+    // widening) would fail this; the chosen implementation does not.
+    int8_t x[128];
+    int8_t w[128];
+    for (std::size_t i = 0; i < 128; ++i)
+    {
+        x[i] = (i & 1) ? static_cast<int8_t>(127)
+                       : static_cast<int8_t>(-128);
+        w[i] = (i & 2) ? static_cast<int8_t>(127)
+                       : static_cast<int8_t>(-128);
+    }
+    for (int zp : { -128, -1, 0, 1, 127 })
+    {
+        const int32_t a = simd_test::scalarDot(x, w, 128,
+                                               static_cast<int8_t>(zp));
+        const int32_t b = simd_test::dispatchedDot(x, w, 128,
+                                                   static_cast<int8_t>(zp));
+        BOOST_TEST(a == b);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(simd_qdense_bit_exact_vs_scalar_reference)
+{
+    // QDense calls into the dispatch helper for every output row. Build a
+    // reference by re-doing the math with the scalar primitive and compare
+    // the int8 output element-by-element.
+    constexpr std::size_t In  = 200;
+    constexpr std::size_t Out = 7;
+    QDense<int8_t, int8_t, int32_t, int8_t, In, Out> dense;
+
+    int8_t w[In * Out];
+    int32_t b[Out];
+    int8_t x[In];
+    int8_t y[Out];
+
+    simd_test::fillSawtooth(x, In, 3);
+    for (std::size_t o = 0; o < Out; ++o)
+    {
+        simd_test::fillSawtooth(w + o * In, In, static_cast<int>(o) * 5 + 1);
+        b[o] = static_cast<int32_t>(o) * 64 - 96;
+    }
+
+    Requantizer<int32_t, int8_t> r;
+    r.multiplier = static_cast<int32_t>(1) << 30;
+    r.shift = 6;
+    r.zero_point = -2;
+    r.qmin = -128;
+    r.qmax = 127;
+
+    dense.weights = w;
+    dense.biases = b;
+    dense.input_zero_point = static_cast<int8_t>(11);
+    dense.requantizer = r;
+    dense.forward(x, y);
+
+    for (std::size_t o = 0; o < Out; ++o)
+    {
+        int32_t acc = b[o] +
+            simd_test::scalarDot(x, w + o * In, In,
+                                 static_cast<int8_t>(11));
+        const int8_t expected = r.apply(acc);
+        BOOST_TEST(static_cast<int>(y[o]) == static_cast<int>(expected));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(simd_qconv2d_bit_exact_vs_scalar_reference)
+{
+    // Small but realistic conv shape: 6x6 input, 3x3 kernel, stride 1,
+    // 4 in-channels, 5 filters. InChannels=4 exercises the SIMD tail
+    // (most backends operate on >=8 or >=16 lanes); the kernel loop
+    // amortizes many short-tail invocations.
+    constexpr std::size_t H = 6, W = 6, IC = 4, KH = 3, KW = 3, F = 5;
+    QConv2D<int8_t, int8_t, int32_t, int8_t, H, W, IC, KH, KW, 1, 1, F>
+        conv;
+
+    constexpr std::size_t TotalW = F * KH * KW * IC;
+    constexpr std::size_t OutH = (H - KH) + 1;
+    constexpr std::size_t OutW = (W - KW) + 1;
+
+    int8_t w[TotalW];
+    int32_t b[F];
+    int8_t x[H * W * IC];
+    int8_t y[OutH * OutW * F];
+
+    simd_test::fillSawtooth(x, H * W * IC, 9);
+    simd_test::fillSawtooth(w, TotalW, 21);
+    for (std::size_t f = 0; f < F; ++f)
+    {
+        b[f] = static_cast<int32_t>(f) * 17 - 30;
+    }
+
+    Requantizer<int32_t, int8_t> r;
+    r.multiplier = static_cast<int32_t>(1) << 29;
+    r.shift = 5;
+    r.zero_point = 3;
+    r.qmin = -128;
+    r.qmax = 127;
+
+    conv.weights = w;
+    conv.biases = b;
+    conv.input_zero_point = static_cast<int8_t>(-7);
+    conv.requantizer = r;
+    conv.forward(x, y);
+
+    // Scalar reference: recompute everything via simd_test::scalarDot and
+    // compare element-by-element.
+    for (std::size_t oh = 0; oh < OutH; ++oh)
+    {
+        for (std::size_t ow = 0; ow < OutW; ++ow)
+        {
+            for (std::size_t f = 0; f < F; ++f)
+            {
+                int32_t acc = b[f];
+                for (std::size_t kh = 0; kh < KH; ++kh)
+                {
+                    for (std::size_t kw = 0; kw < KW; ++kw)
+                    {
+                        const std::size_t in_off =
+                            ((oh + kh) * W + (ow + kw)) * IC;
+                        const std::size_t w_off =
+                            (f * KH * KW + kh * KW + kw) * IC;
+                        acc += simd_test::scalarDot(x + in_off, w + w_off,
+                                                    IC,
+                                                    static_cast<int8_t>(-7));
+                    }
+                }
+                const int8_t expected = r.apply(acc);
+                const std::size_t out_idx = (oh * OutW + ow) * F + f;
+                BOOST_TEST(static_cast<int>(y[out_idx]) ==
+                           static_cast<int>(expected));
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(simd_active_backend_name_reports_a_known_value)
+{
+    // The dispatch reports which backend it resolved to. The exact value
+    // depends on the build's TINYMIND_ENABLE_SIMD_* flags, but it must be
+    // one of the documented names.
+    const char* const name = tinymind::simd::activeBackendName();
+    BOOST_TEST(name != nullptr);
+    static const char* const kKnown[] = {
+        "scalar", "avx2", "avx_vnni", "avx512f", "avx512_vnni",
+        "neon", "neon_dotprod", "sve", "helium_mve_i"
+    };
+    bool found = false;
+    for (size_t i = 0; i < sizeof(kKnown) / sizeof(kKnown[0]); ++i)
+    {
+        // string compare without pulling in <cstring> stylistically; the
+        // test fixture already includes <cstring> transitively via Boost.
+        const char* a = name;
+        const char* b = kKnown[i];
+        while (*a && (*a == *b)) { ++a; ++b; }
+        if (*a == *b) { found = true; break; }
+    }
+    BOOST_TEST(found);
+}
 
 BOOST_AUTO_TEST_SUITE_END()

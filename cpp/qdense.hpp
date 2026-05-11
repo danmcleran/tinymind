@@ -23,6 +23,7 @@
 #pragma once
 
 #include "include/tinymind_platform.hpp"
+#include "include/simd/simd_dispatch.hpp"
 #include "qaffine.hpp"
 
 #include <cstddef>
@@ -91,13 +92,9 @@ namespace tinymind {
                     : static_cast<AccumulatorType>(0);
 
                 const WeightType* w_row = weights + o * NumInputs_;
-                for (std::size_t i = 0; i < NumInputs_; ++i)
-                {
-                    const AccumulatorType x =
-                        static_cast<AccumulatorType>(input[i]) -
-                        static_cast<AccumulatorType>(input_zero_point);
-                    acc += static_cast<AccumulatorType>(w_row[i]) * x;
-                }
+                acc += simd::dotProductWithZeroPoint<InputType, WeightType,
+                                                     AccumulatorType>(
+                    input, w_row, NumInputs_, input_zero_point);
 
                 output[o] = requantizer.apply(acc);
             }
