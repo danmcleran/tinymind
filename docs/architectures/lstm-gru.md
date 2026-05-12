@@ -251,7 +251,7 @@ See the [Weight Import Export and PyTorch Interoperability]({{ site.baseurl }}/t
 
 # Int8 Quantized Counterparts
 
-For inference-only deployment that does not need the trainable Q-format pipeline at all, Phase 12 ships pure-integer int8 cells alongside `LstmNeuralNetwork` / `GruNeuralNetwork`:
+For inference-only deployment that does not need the trainable Q-format pipeline at all, TinyMind ships pure-integer int8 cells alongside `LstmNeuralNetwork` / `GruNeuralNetwork`:
 
 - `QLSTMCell` — four gates (i, f, g, o) in TFLite ordering. Two rescalers per gate (input-MAC + recurrent-MAC) into a shared sigmoid / tanh LUT input scale; cell update via two `multiplyByQuantizedMultiplier` calls. Cell-state storage `int8_t` (default) or `int16_t` for long unroll horizons (gate `TINYMIND_ENABLE_INT16_ACCUM=1`).
 - `QGRUCell` — three gates (r, z, n) in canonical ordering. Reset-before-multiply formulation, `(1 - z_t)` computed exactly in the sigmoid grid as `-z_t`.

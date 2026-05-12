@@ -7,7 +7,7 @@ nav_order: 7
 
 # PyTorch → TinyMind int8 (production importer)
 
-This tutorial walks the **Phase 15 importer flow**: take a trained PyTorch model, pull weights from `torch.state_dict`, run per-layer calibration with any of `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver`, optionally apply Cross-Layer Equalization to recover accuracy on imbalanced layers, and emit a TinyMind-format `weights.hpp` that snaps straight into the int8 `Q*` layer family.
+This tutorial walks the **production PyTorch importer flow**: take a trained PyTorch model, pull weights from `torch.state_dict`, run per-layer calibration with any of `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver`, optionally apply Cross-Layer Equalization to recover accuracy on imbalanced layers, and emit a TinyMind-format `weights.hpp` that snaps straight into the int8 `Q*` layer family.
 
 It's the heavier-lift counterpart to [PyTorch → TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor). Same destination — pure-integer C++ inference — but instead of hand-rolling the calibration loop for one tiny network, you describe each layer once and the importer handles range estimation, Conv+BN fusion, weight quantization, and header emission.
 
@@ -88,7 +88,7 @@ The three observers cover different activation shapes:
 | `PercentileObserver(lo, hi)` | Heavy-tail activations (post-conv with large receptive field, pre-softmax logits). `(0.05, 99.95)` clips the worst ~0.1% so the int8 grid is not wasted on a handful of extreme samples |
 | `KLDivergenceObserver` | When percentile clipping is too crude. TensorRT-style: fix a 2048-bin histogram width, fill it, sweep threshold T in `[128, 2048]` to minimize KL between the clipped float distribution and its int8-quantized form. Heaviest but highest fidelity |
 
-Match the observer to each tensor's empirical shape; the importer does not try to auto-pick. The Phase 15 [`examples/import_demo/`](https://github.com/danmcleran/tinymind/tree/master/examples/import_demo) C++ binary exercises all three on a deterministic 3-8-4-2 MLP so the calibration math is easy to inspect side by side.
+Match the observer to each tensor's empirical shape; the importer does not try to auto-pick. The [`examples/import_demo/`](https://github.com/danmcleran/tinymind/tree/master/examples/import_demo) C++ binary exercises all three on a deterministic 3-8-4-2 MLP so the calibration math is easy to inspect side by side.
 
 ## Cross-Layer Equalization
 

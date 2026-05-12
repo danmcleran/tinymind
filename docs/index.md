@@ -54,11 +54,11 @@ TinyMind networks are small enough to deploy on the most constrained microcontro
 | 2D Pooling | [`MaxPool2D`, `AvgPool2D`, `GlobalAvgPool2D`]({{ site.baseurl }}/architectures/conv-pooling) | 2D downsampling; GAP replaces flatten-to-dense |
 | Binary Dense | [`BinaryDense`]({{ site.baseurl }}/architectures/quantized-networks) | XNOR+popcount (1-bit, 32x compression) |
 | Ternary Dense | [`TernaryDense`]({{ site.baseurl }}/architectures/quantized-networks) | Multiply-free ({-1,0,+1}, 16x compression) |
-| Int8 Affine | [`QDense`, `QConv2D`, `QDepthwiseConv2D`, ...]({{ site.baseurl }}/architectures/int8-quantization) | TFLite/CMSIS-NN style post-training int8 (per-tensor / per-channel calibration, integer Requantizer). Phase 10–11 add `QConv2DPerChannel`, `QAdd`/`QMul`/`QConcat`/`QPad`, `QBatchNorm`/`QLayerNorm`/`QSoftmax` and `foldBatchNorm` |
-| Int8 Recurrent | [`QLSTMCell`, `QGRUCell`]({{ site.baseurl }}/architectures/int8-quantization) | Phase 12. Single-step int8 cells, TFLite gate ordering. Int16 cell-state variant for long unrolls |
-| Int8 Attention + FFT | [`QFFT1D`, `QAttention1D`, `QAttentionSoftmax1D`, `QMultiHeadLinearAttention1D`]({{ site.baseurl }}/architectures/int8-quantization) | Phase 13. Q1.15 twiddle FFT, linear and softmax attention, multi-head stack |
-| Mixed Precision | [`qbridge`, `fp16_t`, `bf16_t`]({{ site.baseurl }}/architectures/mixed-precision) | Phase 9. Pointwise converters between int8 affine / Q-format / float / fp16 / bf16 |
-| SIMD Backends | [NEON / SVE / Helium / AVX2 / AVX-512]({{ site.baseurl }}/architectures/simd-backends) | Phase 14. ISA-capability gates, byte-identical to scalar |
+| Int8 Affine | [`QDense`, `QConv2D`, `QDepthwiseConv2D`, ...]({{ site.baseurl }}/architectures/int8-quantization) | TFLite/CMSIS-NN style post-training int8 (per-tensor / per-channel calibration, integer Requantizer). Composition ops: `QConv2DPerChannel`, `QAdd`/`QMul`/`QConcat`/`QPad`, `QBatchNorm`/`QLayerNorm`/`QSoftmax` and `foldBatchNorm` |
+| Int8 Recurrent | [`QLSTMCell`, `QGRUCell`]({{ site.baseurl }}/architectures/int8-quantization) | Single-step int8 cells, TFLite gate ordering. Int16 cell-state variant for long unrolls |
+| Int8 Attention + FFT | [`QFFT1D`, `QAttention1D`, `QAttentionSoftmax1D`, `QMultiHeadLinearAttention1D`]({{ site.baseurl }}/architectures/int8-quantization) | Q1.15 twiddle FFT, linear and softmax attention, multi-head stack |
+| Mixed Precision | [`qbridge`, `fp16_t`, `bf16_t`]({{ site.baseurl }}/architectures/mixed-precision) | Pointwise converters between int8 affine / Q-format / float / fp16 / bf16 |
+| SIMD Backends | [NEON / SVE / Helium / AVX2 / AVX-512]({{ site.baseurl }}/architectures/simd-backends) | ISA-capability gates, byte-identical to scalar |
 | KAN | [`KolmogorovArnoldNetwork`]({{ site.baseurl }}/architectures/kan) | Learnable B-spline activations |
 | FFT | [`FFT1D`]({{ site.baseurl }}/architectures/fft) | Frequency-domain feature extraction for signal processing |
 | Elman RNN | [`ElmanNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | Simple recurrent feedback |
@@ -103,7 +103,7 @@ For many embedded applications, the optimal workflow is:
 2. **Export** weights to a text file, converting to fixed-point Q-format -- or to int8 with per-tensor / per-channel `(scale, zero_point)` calibration
 3. **Deploy** in TinyMind C++ as a non-trainable network at 40-60% less memory, or as a pure-integer int8 pipeline with the [`Q*` layer family]({{ site.baseurl }}/architectures/int8-quantization)
 
-See [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) for the Q-format flow, [PyTorch → TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) for the from-scratch affine int8 walkthrough, and [PyTorch → TinyMind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer) for the Phase 15 production importer flow that consumes a `torch.state_dict` directly and runs calibration with `PercentileObserver` / `KLDivergenceObserver` + cross-layer equalization.
+See [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) for the Q-format flow, [PyTorch → TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) for the from-scratch affine int8 walkthrough, and [PyTorch → TinyMind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer) for the production importer flow that consumes a `torch.state_dict` directly and runs calibration with `PercentileObserver` / `KLDivergenceObserver` + cross-layer equalization.
 
 ## Activation Function Lookup Tables
 

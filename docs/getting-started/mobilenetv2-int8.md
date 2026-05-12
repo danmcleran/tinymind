@@ -7,9 +7,9 @@ nav_order: 8
 
 # MobileNetV2-shaped int8
 
-This tutorial walks the Phase 16 [`examples/mobilenetv2_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/mobilenetv2_int8) exemplar — a deterministic int8 MobileNetV2-shaped pipeline that exercises the inverted-residual block, linear bottlenecks, residual skips through `QAdd`, and the GAP + dense head. The build pattern in this file scales linearly to a full MobileNetV2-1.0 model (same block, 17× with the channel and stride schedule from the spec).
+This tutorial walks the [`examples/mobilenetv2_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/mobilenetv2_int8) exemplar — a deterministic int8 MobileNetV2-shaped pipeline that exercises the inverted-residual block, linear bottlenecks, residual skips through `QAdd`, and the GAP + dense head. The build pattern in this file scales linearly to a full MobileNetV2-1.0 model (same block, 17× with the channel and stride schedule from the spec).
 
-It is also the first exemplar that ships a `make golden` mode — the int8 logit byte stream is locked by the `unit_test/integration/` Boost.Test suite, regardless of which Phase 14 SIMD backend the build resolves to.
+The exemplar ships a `make golden` mode — the int8 logit byte stream is locked by the `unit_test/integration/` Boost.Test suite, regardless of which SIMD backend the build resolves to.
 
 ## Pipeline (NHWC)
 
@@ -89,7 +89,7 @@ make golden      # int8 logits for the bundled 4-sample test set
 
 `make run` prints per-tensor affine params and the worst max-abs error vs the float reference; the bundled dataset passes within 50% of the logits range.
 
-`make golden` writes a stable text dump of the int8 logit bytes that the integration suite asserts byte-for-byte. Because Phase 14's bit-exactness guarantee holds for every enabled SIMD backend, the same expected string passes regardless of which gate combination the example binary was built with.
+`make golden` writes a stable text dump of the int8 logit bytes that the integration suite asserts byte-for-byte. Because the SIMD backends' bit-exactness guarantee holds for every enabled backend, the same expected string passes regardless of which gate combination the example binary was built with.
 
 ## What the integration suite catches
 

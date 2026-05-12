@@ -92,7 +92,7 @@ The two helpers `saturatingRoundingDoublingHighMul` and `roundingDivideByPOT` fo
 
 All layers are templated on `<InputType, WeightType, AccumType, OutputType>` (plus shape/size constants). Each carries its own `Requantizer` and accepts caller-owned weight / bias / lookup-table buffers — the same model can be built once on the host and re-used across many MCU targets.
 
-### Core layers (Phase 1–8)
+### Core layers
 
 | Header | Layer | Notes |
 |---|---|---|
@@ -105,7 +105,7 @@ All layers are templated on `<InputType, WeightType, AccumType, OutputType>` (pl
 
 Per-channel scales for `QDepthwiseConv2D` are mandatory in TFLite for accuracy reasons (the absolute weight magnitudes vary wildly across depthwise channels). The depthwise layer carries a `Requantizer` array of length `NumChannels`; everything else uses a single per-tensor `Requantizer`.
 
-### Per-channel siblings and composition ops (Phase 10)
+### Per-channel siblings and composition ops
 
 | Header | Layer | Notes |
 |---|---|---|
@@ -116,7 +116,7 @@ Per-channel scales for `QDepthwiseConv2D` are mandatory in TFLite for accuracy r
 | [`qconcat.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qconcat.hpp) | `QConcat2_2D` | Channel-axis concat with a per-input rescaler |
 | [`qpad.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qpad.hpp) | `QPad2D` | Constant pad. Padded cells get the input's `zero_point` so they decode to true zero in the affine domain |
 
-### Normalization (Phase 11)
+### Normalization
 
 | Header | Layer | Notes |
 |---|---|---|
@@ -126,7 +126,7 @@ Per-channel scales for `QDepthwiseConv2D` are mandatory in TFLite for accuracy r
 
 `foldBatchNorm` (in `qcalibration.hpp`) is the matching host-side helper: fuse a `Conv2D` + `BatchNorm` pair into one fused `Conv2D` **pre-quantization** so the deployed graph never sees a BN layer.
 
-### Quantized recurrent cells (Phase 12)
+### Quantized recurrent cells
 
 | Header | Layer | Notes |
 |---|---|---|
@@ -135,7 +135,7 @@ Per-channel scales for `QDepthwiseConv2D` are mandatory in TFLite for accuracy r
 
 Standalone single-step cells; the caller owns the time loop and the hidden / cell state buffers. The matching `buildQLSTMParams` / `buildQGRUParams` host helpers turn float scales into the gate-by-gate (multiplier, shift) triples.
 
-### Quantized attention + FFT (Phase 13)
+### Quantized attention + FFT
 
 | Header | Layer | Notes |
 |---|---|---|
@@ -217,7 +217,7 @@ The LUTs themselves are pure data — drop them into flash on the MCU and the in
 | `computePerChannelSymmetricScales(weights, num_channels, ...)` | Per-channel weight scales for depthwise / `QConv2DPerChannel` |
 | `quantize<DstStorage>(x, scale, zp, qmin, qmax)`, `quantizeBuffer(...)` | Float → int8 with `std::lround` rounding and saturation |
 
-### Rescaler / composition (Phase 10)
+### Rescaler / composition
 
 | Helper | Purpose |
 |---|---|
@@ -230,20 +230,20 @@ The LUTs themselves are pure data — drop them into flash on the MCU and the in
 
 | Helper | Purpose |
 |---|---|
-| `foldBatchNorm(conv_w, conv_b, bn_gamma, bn_beta, bn_mean, bn_var, eps, ...)` | Phase 11. Fold a `Conv2D` + `BatchNorm` pair into one fused `Conv2D` pre-quantization. Deployed graph never sees a BN layer |
-| `crossLayerEqualizeDense(W1, b1, W2, in, mid, out)` | Phase 15. Nagel-paper cross-layer equalization. Per intermediate channel `c`, compute `r1 = max\|W1[c, :]\|`, `r2 = max\|W2[:, c]\|`, `s = sqrt(r1 / r2)`, scale `W1[c, :] /= s; b1[c] /= s; W2[:, c] *= s`. Output preserved under ReLU / identity (positively homogeneous). Zero-row channels skipped |
+| `foldBatchNorm(conv_w, conv_b, bn_gamma, bn_beta, bn_mean, bn_var, eps, ...)` | Fold a `Conv2D` + `BatchNorm` pair into one fused `Conv2D` pre-quantization. Deployed graph never sees a BN layer |
+| `crossLayerEqualizeDense(W1, b1, W2, in, mid, out)` | Nagel-paper cross-layer equalization. Per intermediate channel `c`, compute `r1 = max\|W1[c, :]\|`, `r2 = max\|W2[:, c]\|`, `s = sqrt(r1 / r2)`, scale `W1[c, :] /= s; b1[c] /= s; W2[:, c] *= s`. Output preserved under ReLU / identity (positively homogeneous). Zero-row channels skipped |
 | `crossLayerEqualizeConv2D(...)` | Same equalization, conv variant |
 
 ### Normalization + softmax + RNN + FFT host params
 
 | Helper | Purpose |
 |---|---|
-| `buildQBatchNormChannelParams(gamma, beta, mean, var, eps, in_scale, out_scale, ...)` | Phase 11. Per-channel int32 triple for standalone `QBatchNorm` (when fold is not appropriate) |
-| `buildQSoftmaxExpLUT(in_scale, lut_out)` | Phase 11. 256-entry int32 exp table for `QSoftmax1D` |
-| `QLSTMScales` / `QLSTMParams` / `buildQLSTMParams` / `quantizeQLSTMBiases` | Phase 12. Decompose per-gate float scales into the (multiplier, shift) triples `QLSTMCell` consumes |
-| `QGRUScales` / `QGRUParams` / `buildQGRUParams` / `quantizeQGRUBiases` | Phase 12. Same for `QGRUCell` |
-| `buildQFFTTwiddles(n, cos_out, sin_out)` | Phase 13. Q1.15 sin/cos table for `QFFT1D` |
-| `QAttention1DScales` / `QAttentionSoftmaxScales` / `qAttentionInvSqrt(P)` | Phase 13. Score-scaling helper for softmax attention |
+| `buildQBatchNormChannelParams(gamma, beta, mean, var, eps, in_scale, out_scale, ...)` | Per-channel int32 triple for standalone `QBatchNorm` (when fold is not appropriate) |
+| `buildQSoftmaxExpLUT(in_scale, lut_out)` | 256-entry int32 exp table for `QSoftmax1D` |
+| `QLSTMScales` / `QLSTMParams` / `buildQLSTMParams` / `quantizeQLSTMBiases` | Decompose per-gate float scales into the (multiplier, shift) triples `QLSTMCell` consumes |
+| `QGRUScales` / `QGRUParams` / `buildQGRUParams` / `quantizeQGRUBiases` | Same for `QGRUCell` |
+| `buildQFFTTwiddles(n, cos_out, sin_out)` | Q1.15 sin/cos table for `QFFT1D` |
+| `QAttention1DScales` / `QAttentionSoftmaxScales` / `qAttentionInvSqrt(P)` | Score-scaling helper for softmax attention |
 
 Typical workflow:
 
@@ -265,11 +265,11 @@ A side-by-side comparison runs in [`examples/kws_cortex_m_int8/`](https://github
 
 ## SIMD acceleration
 
-Phase 14 wires ISA-capability-gated SIMD specializations into the inner reduction loop of `QDense`, `QConv2D`, and `QConv2DPerChannel`. Every gate defaults to `0`; with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the pre-Phase-14 build. Backend precedence: x86 `AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 > scalar`; Arm `NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > scalar`. The orthogonal `TINYMIND_ENABLE_OPENMP=1` gate adds outer-loop parallelism on the output-filter axis. See [SIMD Backends]({{ site.baseurl }}/architectures/simd-backends) for the gate matrix, prerequisite chain, bit-exactness invariant, and the `examples/perf_matrix/` bench harness.
+ISA-capability-gated SIMD specializations live inside the inner reduction loop of `QDense`, `QConv2D`, and `QConv2DPerChannel`. Every gate defaults to `0`; with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the scalar reference. Backend precedence: x86 `AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 > scalar`; Arm `NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > scalar`. The orthogonal `TINYMIND_ENABLE_OPENMP=1` gate adds outer-loop parallelism on the output-filter axis. See [SIMD Backends]({{ site.baseurl }}/architectures/simd-backends) for the gate matrix, prerequisite chain, bit-exactness invariant, and the `examples/perf_matrix/` bench harness.
 
 ## Mixed precision and fp16 storage
 
-Phase 9 adds composability between the int8 affine pipeline, the existing `QValue` Q-format pipeline, and a software half-precision storage tier. [`cpp/qbridge.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qbridge.hpp) provides pointwise converters at layer boundaries (`affineDequantize` / `affineQuantize`, `qValueToFloat` / `floatToQValue`, `qValueToAffine` / `affineToQValue`, plus `fp16` / `bf16` counterparts when `TINYMIND_ENABLE_FP16=1`). This is what enables hybrid pipelines like *int8 affine CNN frontend → fp16 attention head → int8 classifier*. See [Mixed Precision]({{ site.baseurl }}/architectures/mixed-precision) for the converter list, the fp16/bf16 storage tier, and the `mixed_precision_kws` exemplar.
+[`cpp/qbridge.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qbridge.hpp) provides pointwise converters at layer boundaries between the int8 affine pipeline, the `QValue` Q-format pipeline, float, and a software half-precision storage tier (`affineDequantize` / `affineQuantize`, `qValueToFloat` / `floatToQValue`, `qValueToAffine` / `affineToQValue`, plus `fp16` / `bf16` counterparts when `TINYMIND_ENABLE_FP16=1`). This is what enables hybrid pipelines like *int8 affine CNN frontend → fp16 attention head → int8 classifier*. See [Mixed Precision]({{ site.baseurl }}/architectures/mixed-precision) for the converter list, the fp16/bf16 storage tier, and the `mixed_precision_kws` exemplar.
 
 ## Importer tooling
 
@@ -285,34 +285,34 @@ The [PyTorch → TinyMind int8 (importer)]({{ site.baseurl }}/getting-started/py
 The int8 path is intentionally minimal:
 
 - **No quantization-aware training (QAT)** — post-training only. The expectation is that you train in your favorite float framework and import.
-- **No int4 quantization** — int8 weights, int8 activations, int32 accumulators. (Mixed precision *is* supported via the Phase 9 `qbridge.hpp` converters into the `QValue` Q-format pipeline and the `fp16_t` / `bf16_t` storage tier — see [Mixed Precision]({{ site.baseurl }}/architectures/mixed-precision).)
-- **No whole-graph conv+bn+relu auto-fusion pass** — each layer is standalone. ReLU folds into the upstream `Requantizer` via `clampForRelu`; Conv2D + BatchNorm fuses **pre-quantization** via `foldBatchNorm` (Phase 11). The library never walks the graph to do this for you — the importer / caller stitches the fused weights together at calibration time.
-- **No runtime CPU dispatch** — Phase 14 SIMD gates are compile-time; the library compiles for one ISA per build. Fat-binary dispatch is the caller's problem.
+- **No int4 quantization** — int8 weights, int8 activations, int32 accumulators. (Mixed precision *is* supported via the `qbridge.hpp` converters into the `QValue` Q-format pipeline and the `fp16_t` / `bf16_t` storage tier — see [Mixed Precision]({{ site.baseurl }}/architectures/mixed-precision).)
+- **No whole-graph conv+bn+relu auto-fusion pass** — each layer is standalone. ReLU folds into the upstream `Requantizer` via `clampForRelu`; Conv2D + BatchNorm fuses **pre-quantization** via `foldBatchNorm`. The library never walks the graph to do this for you — the importer / caller stitches the fused weights together at calibration time.
+- **No runtime CPU dispatch** — SIMD gates are compile-time; the library compiles for one ISA per build. Fat-binary dispatch is the caller's problem.
 
 ## Tests and Examples
 
 ### Tests
 
-- [`unit_test/quantization/`](https://github.com/danmcleran/tinymind/tree/master/unit_test/quantization) — Boost.Test suite. Covers `Requantizer` round-trip; per-tensor and per-channel calibration; `QConv2D` / `QConv2DPerChannel` / `QDepthwiseConv2D` / `QPointwiseConv2D` / `QPool2D` / `QDense` float parity; sigmoid / tanh LUT builders; `foldBatchNorm` parity vs unfused conv→BN; `QBatchNorm2D` / `QLayerNorm1D` / `QSoftmax1D` parity (Phase 11); `QLSTMCell` / `QLSTMCell` int16-state drift / `QGRUCell` (Phase 12); Q1.15 twiddle / `QFFT1D` magnitude + round-trip / `QAttention1D` / `QAttentionSoftmax1D` / `QMultiHeadLinearAttention1D` (Phase 13); SIMD dispatch parity, INT8 extreme-value patterns, `activeBackendName()` (Phase 14); `PercentileObserver` + `KLDivergenceObserver` + `crossLayerEqualize*` (Phase 15).
+- [`unit_test/quantization/`](https://github.com/danmcleran/tinymind/tree/master/unit_test/quantization) — Boost.Test suite. Covers `Requantizer` round-trip; per-tensor and per-channel calibration; `QConv2D` / `QConv2DPerChannel` / `QDepthwiseConv2D` / `QPointwiseConv2D` / `QPool2D` / `QDense` float parity; sigmoid / tanh LUT builders; `foldBatchNorm` parity vs unfused conv→BN; `QBatchNorm2D` / `QLayerNorm1D` / `QSoftmax1D` parity; `QLSTMCell` / `QLSTMCell` int16-state drift / `QGRUCell`; Q1.15 twiddle / `QFFT1D` magnitude + round-trip / `QAttention1D` / `QAttentionSoftmax1D` / `QMultiHeadLinearAttention1D`; SIMD dispatch parity, INT8 extreme-value patterns, `activeBackendName()`; `PercentileObserver` + `KLDivergenceObserver` + `crossLayerEqualize*`.
 - [`unit_test/embedded/`](https://github.com/danmcleran/tinymind/tree/master/unit_test/embedded) — Eight-corner cross-build matrix: `freestanding`, `no_stdlib`, `no_fpu`, `hosted`, `quant_freestanding`, `fp16_freestanding`, `int16_accum_freestanding`, `simd_disabled`. Plus a `simd_prereq_regressions` make target locking the static_assert prerequisite chain via compile-failure checks.
-- [`unit_test/integration/`](https://github.com/danmcleran/tinymind/tree/master/unit_test/integration) — Phase 16 golden-byte suite. One fixture per exemplar shells out to `make golden` and asserts the int8 byte stream matches a baked-in expected string. Catches silent regressions in the inference path regardless of which SIMD backend dispatch resolves to.
+- [`unit_test/integration/`](https://github.com/danmcleran/tinymind/tree/master/unit_test/integration) — Golden-byte suite. One fixture per exemplar shells out to `make golden` and asserts the int8 byte stream matches a baked-in expected string. Catches silent regressions in the inference path regardless of which SIMD backend dispatch resolves to.
 
 ### Examples
 
 - [`examples/pytorch_quant/xor/`](https://github.com/danmcleran/tinymind/tree/master/examples/pytorch_quant/xor) — End-to-end PyTorch training + per-tensor calibration + `weights.hpp` emission + pure-integer C++ inference. Good entry point.
 - [`examples/kws_cortex_m_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/kws_cortex_m_int8) — Full MobileNet-style depthwise-separable pipeline in int8, with a CSV cycle/byte report directly comparable to the float `kws_cortex_m`.
-- [`examples/resnet_block_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/resnet_block_int8) — Phase 10. int8 residual block: `QPad2D` → `QConv2DPerChannel` → `qrelu` → `QPad2D` → `QConv2DPerChannel` → `QAdd` skip → `qrelu`. Reports max-abs error vs the float reference.
-- [`examples/transformer_encoder_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/transformer_encoder_int8) — Phase 13. int8 transformer encoder block (LayerNorm + linear attention + Add + LayerNorm + Dense + ReLU + Dense + Add). ~2% max-abs error vs the float reference on the bundled dataset.
-- [`examples/perf_matrix/`](https://github.com/danmcleran/tinymind/tree/master/examples/perf_matrix) — Phase 14 SIMD bench. Builds the same int8 `QConv2D` + `QDense` block under each enabled `TINYMIND_ENABLE_SIMD_*` combination and emits one CSV row per backend with `output_checksum` (invariant across backends) and per-call timing.
-- [`examples/import_demo/`](https://github.com/danmcleran/tinymind/tree/master/examples/import_demo) — Phase 15 importer end-to-end. C++ binary exercises `RangeObserver` + `PercentileObserver` + `KLDivergenceObserver` + `crossLayerEqualizeDense` on a deterministic 3-8-4-2 MLP; `demo.py` drives `apps/import_pytorch/tinymind_import` from a real `torch.state_dict`.
-- [`examples/resnet18_block_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/resnet18_block_int8) — Phase 16. int8 ResNet-18-shaped stem + one basic-block stage. `make run` / `make bench` / `make golden`.
-- [`examples/mobilenetv2_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/mobilenetv2_int8) — Phase 16. int8 MobileNetV2-shaped pipeline: stride-2 stem + stride-1 inverted-residual block with skip + stride-2 inverted-residual block + GAP + dense.
-- [`examples/mixed_precision_kws/`](https://github.com/danmcleran/tinymind/tree/master/examples/mixed_precision_kws) — Phase 16. int8 `QDense` frontend → Phase 9 `affineI8ToFp16` bridge → fp16 linear-attention head with residual + mean-pool → Phase 9 `fp16ToAffineI8` bridge → int8 classifier. Requires `TINYMIND_ENABLE_FP16=1`.
+- [`examples/resnet_block_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/resnet_block_int8) — int8 residual block: `QPad2D` → `QConv2DPerChannel` → `qrelu` → `QPad2D` → `QConv2DPerChannel` → `QAdd` skip → `qrelu`. Reports max-abs error vs the float reference.
+- [`examples/transformer_encoder_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/transformer_encoder_int8) — int8 transformer encoder block (LayerNorm + linear attention + Add + LayerNorm + Dense + ReLU + Dense + Add). ~2% max-abs error vs the float reference on the bundled dataset.
+- [`examples/perf_matrix/`](https://github.com/danmcleran/tinymind/tree/master/examples/perf_matrix) — SIMD bench. Builds the same int8 `QConv2D` + `QDense` block under each enabled `TINYMIND_ENABLE_SIMD_*` combination and emits one CSV row per backend with `output_checksum` (invariant across backends) and per-call timing.
+- [`examples/import_demo/`](https://github.com/danmcleran/tinymind/tree/master/examples/import_demo) — Importer end-to-end. C++ binary exercises `RangeObserver` + `PercentileObserver` + `KLDivergenceObserver` + `crossLayerEqualizeDense` on a deterministic 3-8-4-2 MLP; `demo.py` drives `apps/import_pytorch/tinymind_import` from a real `torch.state_dict`.
+- [`examples/resnet18_block_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/resnet18_block_int8) — int8 ResNet-18-shaped stem + one basic-block stage. `make run` / `make bench` / `make golden`.
+- [`examples/mobilenetv2_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/mobilenetv2_int8) — int8 MobileNetV2-shaped pipeline: stride-2 stem + stride-1 inverted-residual block with skip + stride-2 inverted-residual block + GAP + dense.
+- [`examples/mixed_precision_kws/`](https://github.com/danmcleran/tinymind/tree/master/examples/mixed_precision_kws) — int8 `QDense` frontend → `affineI8ToFp16` bridge → fp16 linear-attention head with residual + mean-pool → `fp16ToAffineI8` bridge → int8 classifier. Requires `TINYMIND_ENABLE_FP16=1`.
 
 ## See Also
 
-- [SIMD Backends]({{ site.baseurl }}/architectures/simd-backends) — Phase 14 capability-gated SIMD specializations.
-- [Mixed Precision]({{ site.baseurl }}/architectures/mixed-precision) — Phase 9 qbridge converters + fp16/bf16 storage tier.
+- [SIMD Backends]({{ site.baseurl }}/architectures/simd-backends) — capability-gated SIMD specializations.
+- [Mixed Precision]({{ site.baseurl }}/architectures/mixed-precision) — qbridge converters + fp16/bf16 storage tier.
 - [Quantized Networks (Binary / Ternary)]({{ site.baseurl }}/architectures/quantized-networks) — extreme-quantization siblings; pick this path when you need 32x compression and a multiply-free MAC.
 - [Q-Format (Fixed-Point)]({{ site.baseurl }}/q-format) — the existing `QValue` pipeline. Affine quantization composes with this via `qbridge.hpp`; `QValue` predates the int8 path.
 - [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) — float / Q-format weight import. For the int8 path, see [PyTorch → TinyMind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer).

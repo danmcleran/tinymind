@@ -7,19 +7,17 @@ nav_order: 8
 
 # Mixed Precision
 
-Phase 9 adds composability between the previously orphaned numeric pipelines and a software half-precision storage tier. The result is a small set of **pointwise converters** that live at layer boundaries, so a single network can run an int8 affine CNN frontend, hand off to a Q-format LSTM head, hand off again to an fp16 attention block, and project back to int8 for the classifier — every layer keeps the runtime cost of its own grid, the bridges only run once per tensor crossing.
+TinyMind composes its three numeric pipelines through a small set of **pointwise converters** that live at layer boundaries, plus a software half-precision storage tier. A single network can run an int8 affine CNN frontend, hand off to a Q-format LSTM head, hand off again to an fp16 attention block, and project back to int8 for the classifier — every layer keeps the runtime cost of its own grid, the bridges only run once per tensor crossing.
 
 ## Three pipelines, one model
-
-Pre-Phase-9, TinyMind shipped three numeric pipelines that did not talk to each other:
 
 | Pipeline | Storage | Where it lives | When it wins |
 |---|---|---|---|
 | `QValue` Q-format | int8 / int16 / int32 / int64 with a compile-time binary point | `cpp/qformat.hpp` + `cpp/neuralnet.hpp` | Trainable on-MCU, single global grid, no per-tensor metadata |
 | Float | `float` / `double` | Same templates, different `ValueType` | Host development, training |
-| Int8 affine | int8 weights + int8 activations + per-tensor `(scale, zero_point)` | `cpp/q*.hpp` family (Phase 1–8) | TFLite-shape inference, multi-grid (each tensor picks its own range) |
+| Int8 affine | int8 weights + int8 activations + per-tensor `(scale, zero_point)` | `cpp/q*.hpp` family | TFLite-shape inference, multi-grid (each tensor picks its own range) |
 
-Phase 9 wires the three together. Phase 14's `simd_neon_fp16.hpp` later added vector specializations for fp16 storage; this page covers the storage tier and the converters.
+The qbridge converters tie the three together. The `simd_neon_fp16.hpp` backend adds vector specializations for fp16 storage on Arm hardware that supports it; this page covers the storage tier and the converters.
 
 ## qbridge.hpp — pointwise converters
 
@@ -74,20 +72,20 @@ The `unit_test/embedded/Makefile` exercises this corner as `fp16_freestanding` (
 
 ## Mixed-precision exemplar — `mixed_precision_kws`
 
-[`examples/mixed_precision_kws/`](https://github.com/danmcleran/tinymind/tree/master/examples/mixed_precision_kws) (Phase 16) wires the qbridge converters in production shape:
+[`examples/mixed_precision_kws/`](https://github.com/danmcleran/tinymind/tree/master/examples/mixed_precision_kws) wires the qbridge converters in production shape:
 
 ```
 input  [S=8][E=8]   float
    ----[ int8 frontend ]----------------------------
    QDense  E -> E (one call per sequence step)
    qrelu                                  -> [S][E] int8
-   ----[ Phase 9 bridge: affineI8 -> fp16 ]---------
+   ----[ qbridge: affineI8 -> fp16 ]----------------
                                           -> [S][E] fp16
    ----[ fp16 attention head ]----------------------
    Linear (ReLU-kernel) self-attention with residual
    skip from the post-relu feature buffer, then
    mean-pool over S                       -> [E] fp16
-   ----[ Phase 9 bridge: fp16 -> affineI8 ]---------
+   ----[ qbridge: fp16 -> affineI8 ]----------------
                                           -> [E] int8
    ----[ int8 classifier ]--------------------------
    QDense  E -> NUM_CLASSES               -> [NUM_CLASSES] int8 logits
@@ -105,7 +103,7 @@ The precision-tier pattern — int8 front + classifier bracketing an fp16 head �
 
 - **Not QAT.** Mixed precision is a deployment story, not a training story.
 - **Not fp16 arithmetic.** The library treats fp16 as a storage tier; inner arithmetic promotes to float. The vector fp16 ISA gates (`SIMD_NEON_FP16`, AVX-512 fp16) get there on hardware that supports it, but the library does not synthesize fp16 software arithmetic.
-- **Not int4.** Storage is int8 / int16 / int32 / fp16 / bf16 / float / double. Sub-byte storage is a non-goal of this phase.
+- **Not int4.** Storage is int8 / int16 / int32 / fp16 / bf16 / float / double. Sub-byte storage is out of scope.
 
 ## See Also
 

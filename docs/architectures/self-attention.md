@@ -274,7 +274,7 @@ The Q8.8 small config is real-time capable at 100-1000 Hz sensor rates on M0. Th
 
 ## Int8 Quantized Counterpart
 
-Phase 13 ships pure-integer int8 attention alongside `SelfAttention1D`:
+TinyMind ships pure-integer int8 attention alongside `SelfAttention1D`:
 
 - `QAttention1D` — int8 linear (ReLU-kernel) attention. Same shape and math; ReLU on Q'/K' folded into the requantizer by raising `qmin = zero_point`. Caller-owned weight, bias, and scratch buffers.
 - `QAttentionSoftmax1D` — standard softmax attention. Score requantizer folds the `1 / sqrt(d_k)` factor via `qAttentionInvSqrt(P)`; softmax uses the same 256-entry int32 exp LUT as `QSoftmax1D`.

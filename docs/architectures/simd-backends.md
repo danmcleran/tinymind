@@ -7,7 +7,7 @@ nav_order: 7
 
 # SIMD Backends
 
-Phase 14 wires ISA-capability-gated SIMD specializations into the inner reduction loop of the int8 affine layer family (`QDense`, `QConv2D`, `QConv2DPerChannel`). The library never sniffs the CPU. Every backend lives behind a `TINYMIND_ENABLE_SIMD_*` preprocessor gate, every gate defaults to `0`, and with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the pre-Phase-14 build.
+TinyMind ships ISA-capability-gated SIMD specializations in the inner reduction loop of the int8 affine layer family (`QDense`, `QConv2D`, `QConv2DPerChannel`). The library never sniffs the CPU. Every backend lives behind a `TINYMIND_ENABLE_SIMD_*` preprocessor gate, every gate defaults to `0`, and with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the scalar reference.
 
 ## Design rules
 
@@ -59,7 +59,7 @@ The public entry point is `tinymind::simd::int8DotWithZeroPoint` in [`cpp/includ
 
 ## Bit-exactness invariant — why it matters
 
-The integer SIMD backends produce byte-identical output to the scalar reference for any input. The Phase 16 integration suite (`unit_test/integration/`) leans on this: each exemplar's `make golden` mode emits an int8 byte stream, and the integration test asserts that stream matches a baked-in expected string. Because the inference path is deterministic and the SIMD backends are bit-exact, the same expected string passes regardless of which gate combination the example binary was built with. Any silent drift in `qaffine.hpp`, `qcalibration.hpp`, or any SIMD specialization that claims bit-exactness trips the test.
+The integer SIMD backends produce byte-identical output to the scalar reference for any input. The integration suite (`unit_test/integration/`) leans on this: each exemplar's `make golden` mode emits an int8 byte stream, and the integration test asserts that stream matches a baked-in expected string. Because the inference path is deterministic and the SIMD backends are bit-exact, the same expected string passes regardless of which gate combination the example binary was built with. Any silent drift in `qaffine.hpp`, `qcalibration.hpp`, or any SIMD specialization that claims bit-exactness trips the test.
 
 The AVX2 backend deliberately avoids `PMADDUBSW`: that instruction saturates on the pair-sum step, which would break the bit-exactness guarantee on pathological inputs. AVX-VNNI and AVX-512-VNNI use the canonical uint8-shift trick so `VPDPBUSD` reduces a uint8 / int8 product exactly.
 
@@ -96,11 +96,11 @@ Run the resulting binary on the target hardware (or under `qemu-aarch64` for cor
 
 ## What about non-int8 layers?
 
-Phase 14 specializes the int8 affine layer family because that is where the integer dot product wins big. The Q-format pipeline (`QValue<Q, F, signed>`) and float pipeline rely on compiler auto-vectorization with `-O3 -march=native` — no library-side specialization. The `SIMD_NEON_FP16` and `SIMD_HELIUM_MVE_F` float gates land via `cpp/include/simd/simd_neon_fp16.hpp`, used by the mixed-precision exemplar.
+TinyMind specializes the int8 affine layer family because that is where the integer dot product wins big. The Q-format pipeline (`QValue<Q, F, signed>`) and float pipeline rely on compiler auto-vectorization with `-O3 -march=native` — no library-side specialization. The `SIMD_NEON_FP16` and `SIMD_HELIUM_MVE_F` float gates land via `cpp/include/simd/simd_neon_fp16.hpp`, used by the mixed-precision exemplar.
 
 ## See Also
 
 - [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) — the layer family these backends accelerate.
-- [Mixed Precision]({{ site.baseurl }}/architectures/mixed-precision) — Phase 9 qbridge + fp16 storage, the consumer of the float vector gates.
+- [Mixed Precision]({{ site.baseurl }}/architectures/mixed-precision) — qbridge + fp16 storage, the consumer of the float vector gates.
 - [`examples/perf_matrix/`](https://github.com/danmcleran/tinymind/tree/master/examples/perf_matrix) — bench source.
 - [`cpp/include/simd/`](https://github.com/danmcleran/tinymind/tree/master/cpp/include/simd) — backend headers (one per capability).
