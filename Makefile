@@ -20,6 +20,7 @@ check :
 	cd examples/resnet18_block_int8 && make clean && make && make release && make run && cd -
 	cd examples/mobilenetv2_int8 && make clean && make && make release && make run && cd -
 	cd examples/mixed_precision_kws && make clean && make && make release && make run && cd -
+	cd examples/mixed_precision_mlp_int8_qformat && make clean && make && make release && make run && cd -
 	cd unit_test/integration && make clean && make && make run && cd -
 	cd examples/pytorch_quant/xor && make clean && make && make release && make run && cd -
 	cd examples/import_demo && make clean && make && make release && make run && cd -

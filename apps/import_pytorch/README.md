@@ -82,3 +82,77 @@ MinMax.
 
 `examples/import_demo/` exercises this importer on a small MLP and
 verifies the C++ int8 forward against the float reference.
+
+## Hybrid int8 + Q-format models
+
+The importer also handles models that mix an int8 affine tier with the
+TinyMind Q-format (`QValue`) pipeline -- useful when an existing
+`NeuralNet<Q8.8>` hand-tuned for the MCU sits between two int8 layers
+exported from PyTorch, or when a specific hidden layer wants Q-format's
+compile-time fixed/fractional bit split.
+
+Two extra descriptor kinds:
+
+  * `QFormatDense` -- Q-format dense layer carrying float weights /
+    bias plus the QValue tag (`fixed_bits`, `fractional_bits`, `signed`).
+    The emitter writes raw QValue integers, no scale or zero_point.
+  * `HybridBoundary` -- precision-tier transition between two adjacent
+    layers (`kind = "affine_to_qvalue"` or `"qvalue_to_affine"`,
+    plus a `qformat` pointer carrying the fractional-bit count).
+
+Pass a `boundaries` list to `import_pytorch_model`; the emitter writes
+one precomputed integer triple per boundary -- the same
+`(multiplier, shift, zero_point)` that `cpp/qbridge.hpp::affineToQValueInt`
+and `qValueToAffineInt` consume pure-integer. The deployable target shape
+`TINYMIND_ENABLE_QUANTIZATION=1, FLOAT=0, STD=0` reads them as data,
+no host-side helper call at startup.
+
+```python
+mid = QFormatDense(name="qfmt_mid",
+                   weight=w_mid, bias=b_mid,
+                   input_name="hidden",
+                   forward=lambda x: x @ w_mid.T + b_mid,
+                   fractional_bits=8, fixed_bits=8, signed=True,
+                   observer=MinMaxObserver())
+layers = [
+    Dense(name="fc1", weight=w1, bias=b1, input_name="input",
+          forward=lambda x: x @ w1.T + b1,
+          observer=MinMaxObserver()),
+    ReLU(name="hidden", input_name="fc1"),
+    mid,
+    Dense(name="fc2", weight=w2, bias=b2, input_name="qfmt_mid",
+          forward=lambda x: x @ w2.T + b2,
+          observer=MinMaxObserver()),
+]
+boundaries = [
+    HybridBoundary(from_name="hidden", to_name="qfmt_mid",
+                   kind="affine_to_qvalue", qformat=mid),
+    HybridBoundary(from_name="qfmt_mid", to_name="fc2",
+                   kind="qvalue_to_affine", qformat=mid,
+                   qmin=-128, qmax=127),
+]
+import_pytorch_model(layers, ..., boundaries=boundaries)
+```
+
+`examples/mixed_precision_mlp_int8_qformat/` is the runnable C++
+counterpart -- it builds the same pipeline shape with hand-crafted
+weights and reports max-abs error vs the float reference.
+
+## Importing from TensorFlow / Keras
+
+The PyTorch importer also covers Keras / TensorFlow models via the
+ONNX QDQ recipe described in `apps/import_onnx/README.md`. The short
+form:
+
+1.  Train + export TF / Keras model.
+2.  Convert to ONNX: `python -m tf2onnx.convert --saved-model ... --output model.onnx`.
+3.  Post-training quantize: `onnxruntime.quantization.quantize_static(
+    model.onnx, model_int8.onnx, calibration_data_reader=...,
+    quant_format=QuantFormat.QDQ, weight_type=QInt8, activation_type=QInt8)`.
+4.  Parse with `apps/import_onnx/tinymind_import_onnx.py` and emit
+    `weights.hpp`.
+
+The hybrid int8 + Q-format flow above plugs into either entry point --
+the ONNX path emits the int8 layers' descriptors, then the caller
+inserts `QFormatDense` + `HybridBoundary` entries in the layer list
+before calling the emitter.

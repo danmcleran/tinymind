@@ -105,6 +105,51 @@ def quantize_bias_int32(b: np.ndarray, bias_scale: float) -> np.ndarray:
     return np.array(q, dtype=np.int32)
 
 
+def quantize_multiplier(ratio: float) -> tuple[int, int]:
+    """Mirror cpp/qaffine.hpp::quantizeMultiplier.
+
+    Decomposes a positive real ratio into a Q0.31 (multiplier, shift) pair
+    consumed by cpp/qaffine.hpp::multiplyByQuantizedMultiplier. Shift > 0
+    right-shifts after the multiply; shift < 0 left-shifts before it.
+    """
+    if ratio == 0.0:
+        return 0, 0
+    mantissa, exponent = math.frexp(ratio)
+    q = lround(mantissa * float(1 << 31))
+    if q == (1 << 31):
+        q >>= 1
+        exponent += 1
+    return int(q), -int(exponent)
+
+
+def quantize_qformat_weights(w: np.ndarray, fractional_bits: int,
+                             raw_width_bits: int, signed: bool) -> np.ndarray:
+    """Convert float weights to raw QValue integers.
+
+    The raw integer fits in `raw_width_bits` so the caller can choose an
+    int8/int16/int32/int64 storage cell. Rounding is round-half-away-from-zero
+    matching cpp/qformat.hpp::floatToQValue.
+    """
+    scale = float(1 << fractional_bits)
+    if signed:
+        qmin = -(1 << (raw_width_bits - 1))
+        qmax = (1 << (raw_width_bits - 1)) - 1
+    else:
+        qmin = 0
+        qmax = (1 << raw_width_bits) - 1
+    flat = w.reshape(-1).tolist()
+    q = [max(qmin, min(qmax, lround(v * scale))) for v in flat]
+    if raw_width_bits <= 8:
+        dt = np.int8 if signed else np.uint8
+    elif raw_width_bits <= 16:
+        dt = np.int16 if signed else np.uint16
+    elif raw_width_bits <= 32:
+        dt = np.int32 if signed else np.uint32
+    else:
+        dt = np.int64 if signed else np.uint64
+    return np.array(q, dtype=dt).reshape(w.shape)
+
+
 # ----------------------------------------------------------------------------
 # Observers.
 # ----------------------------------------------------------------------------
@@ -298,6 +343,57 @@ class Softmax(Layer):
     axis: int = -1
 
 
+@dataclass
+class QFormatDense(Layer):
+    """Q-format dense layer (TinyMind QValue pipeline).
+
+    Drops alongside the int8 affine layers so a hybrid model can mix
+    QDense (int8) with QFormatDense (Q-format) inside the same weights.hpp.
+    The weights/bias are emitted as raw QValue integers — no scale or
+    zero_point metadata at runtime. Boundaries with int8 layers should be
+    declared via HybridBoundary so the emitter writes the precomputed
+    integer-bridge params for cpp/qbridge.hpp::affineToQValueInt /
+    qValueToAffineInt.
+    """
+    weight: np.ndarray = None          # [out, in]
+    bias: Optional[np.ndarray] = None
+    input_name: str = ""
+    forward: Optional[Callable[[np.ndarray], np.ndarray]] = None
+    fractional_bits: int = 8
+    fixed_bits: int = 8
+    signed: bool = True
+    # Filled by importer:
+    q_weight: np.ndarray = None
+    q_bias: np.ndarray = None
+
+    @property
+    def raw_width_bits(self) -> int:
+        return self.fixed_bits + self.fractional_bits
+
+    @property
+    def qformat_tag(self) -> str:
+        s = "" if self.signed else "u"
+        return f"Q{self.fixed_bits}_{self.fractional_bits}{s}"
+
+
+@dataclass
+class HybridBoundary:
+    """Precision-tier transition between two adjacent layers.
+
+    `from_name` produces the tensor; `to_name` consumes it. `kind` is one of
+    "affine_to_qvalue" (int8 -> QValue) or "qvalue_to_affine" (QValue -> int8).
+    `qformat` is the QFormatDense the bridge talks to, used to fold the
+    fractional-bits factor into the integer multiplier/shift. The emitter
+    writes one C++ struct literal per boundary.
+    """
+    from_name: str
+    to_name: str
+    kind: str                          # "affine_to_qvalue" | "qvalue_to_affine"
+    qformat: "QFormatDense"            # carries fractional_bits / signed
+    qmin: int = -128
+    qmax: int = 127
+
+
 # ----------------------------------------------------------------------------
 # Fusion pass.
 # ----------------------------------------------------------------------------
@@ -379,7 +475,7 @@ def calibrate(layers: Sequence[Layer],
         per_sample: dict[str, np.ndarray] = {input_name: x_f}
         for layer in layers:
             parent = per_sample[layer.input_name]
-            if isinstance(layer, (Dense, Conv2D)):
+            if isinstance(layer, (Dense, Conv2D, QFormatDense)):
                 y = layer.forward(parent)
             elif isinstance(layer, BatchNorm2D):
                 sigma_eff = layer.gamma / np.sqrt(layer.variance + layer.eps)
@@ -433,6 +529,14 @@ def quantize_weights(layers: Sequence[Layer],
                 input_scale = ranges[layer.input_name][0]
                 bias_scale = input_scale * layer.weight_scale
                 layer.q_bias = quantize_bias_int32(layer.bias, bias_scale)
+        elif isinstance(layer, QFormatDense):
+            layer.q_weight = quantize_qformat_weights(
+                layer.weight, layer.fractional_bits,
+                layer.raw_width_bits, layer.signed)
+            if layer.bias is not None:
+                layer.q_bias = quantize_qformat_weights(
+                    layer.bias, layer.fractional_bits,
+                    layer.raw_width_bits, layer.signed)
 
 
 # ----------------------------------------------------------------------------
@@ -458,17 +562,71 @@ COPYRIGHT_BLOCK = """/**
 */"""
 
 
+def _qformat_cpp_storage_type(width_bits: int, signed: bool) -> str:
+    if width_bits <= 8:
+        return "int8_t" if signed else "uint8_t"
+    if width_bits <= 16:
+        return "int16_t" if signed else "uint16_t"
+    if width_bits <= 32:
+        return "int32_t" if signed else "uint32_t"
+    return "int64_t" if signed else "uint64_t"
+
+
+def _emit_bridge_params(boundary: HybridBoundary,
+                        ranges: dict[str, tuple[float, int]]) -> str:
+    """Emit one bridge-param struct literal.
+
+    affine_to_qvalue: encode ratio = upstream_scale * 2^F
+                      (cpp/qbridge.hpp::buildAffineToQValueIntParams).
+    qvalue_to_affine: encode ratio = 1 / (downstream_scale * 2^F)
+                      (cpp/qbridge.hpp::buildQValueToAffineIntParams).
+    """
+    q = boundary.qformat
+    frac = float(1 << q.fractional_bits)
+    if boundary.kind == "affine_to_qvalue":
+        upstream_scale, upstream_zp = ranges[boundary.from_name]
+        ratio = float(upstream_scale) * frac
+        m, s = quantize_multiplier(ratio)
+        nm = f"k{boundary.from_name}_to_{boundary.to_name}_Bridge"
+        return (
+            f"    // affine ({boundary.from_name}) -> QValue ({boundary.to_name}).\n"
+            f"    constexpr int32_t {nm}_Multiplier = {m};\n"
+            f"    constexpr int32_t {nm}_Shift      = {s};\n"
+            f"    constexpr int32_t {nm}_ZeroPoint  = {int(upstream_zp)};\n"
+        )
+    if boundary.kind == "qvalue_to_affine":
+        downstream_scale, downstream_zp = ranges[boundary.to_name]
+        ratio = 1.0 / (float(downstream_scale) * frac)
+        m, s = quantize_multiplier(ratio)
+        nm = f"k{boundary.from_name}_to_{boundary.to_name}_Bridge"
+        return (
+            f"    // QValue ({boundary.from_name}) -> affine ({boundary.to_name}).\n"
+            f"    constexpr int32_t {nm}_Multiplier = {m};\n"
+            f"    constexpr int32_t {nm}_Shift      = {s};\n"
+            f"    constexpr int32_t {nm}_ZeroPoint  = {int(downstream_zp)};\n"
+            f"    constexpr int32_t {nm}_QMin       = {int(boundary.qmin)};\n"
+            f"    constexpr int32_t {nm}_QMax       = {int(boundary.qmax)};\n"
+        )
+    raise ValueError(f"unknown boundary kind: {boundary.kind}")
+
+
 def emit_weights_header(path: str,
                         namespace: str,
                         layers: Sequence[Layer],
                         ranges: dict[str, tuple[float, int]],
                         input_name: str,
-                        meta: Optional[dict[str, int]] = None) -> None:
+                        meta: Optional[dict[str, int]] = None,
+                        boundaries: Sequence[HybridBoundary] = ()) -> None:
     """Write a TinyMind-format weights.hpp.
 
-    namespace : C++ namespace for the constants.
-    meta      : optional dict of NameInCpp -> integer literal (e.g.
-                {"NumInputs": 2, "HiddenSize": 4}).
+    namespace  : C++ namespace for the constants.
+    meta       : optional dict of NameInCpp -> integer literal (e.g.
+                 {"NumInputs": 2, "HiddenSize": 4}).
+    boundaries : optional precision-tier transitions. For each entry the
+                 emitter writes the precomputed integer-bridge triple consumed
+                 by cpp/qbridge.hpp::affineToQValueInt / qValueToAffineInt so
+                 the deployable freestanding shape needs no host-side
+                 buildAffineToQValueIntParams call at startup.
     """
     parts: list[str] = []
     parts.append(COPYRIGHT_BLOCK)
@@ -497,6 +655,33 @@ def emit_weights_header(path: str,
             parts.append(_fmt_int_array(f"k{nm}_Biases",
                                         layer.q_bias.tolist(),
                                         "int32_t"))
+
+    if any(isinstance(layer, QFormatDense) for layer in layers):
+        parts.append("\n    // Q-format weights (TinyMind QValue pipeline).\n")
+        for layer in layers:
+            if not isinstance(layer, QFormatDense):
+                continue
+            nm = layer.name.replace("/", "_").replace("-", "_")
+            storage = _qformat_cpp_storage_type(layer.raw_width_bits, layer.signed)
+            parts.append(f"    // {nm}: {layer.qformat_tag} "
+                         f"(fixed={layer.fixed_bits}, frac={layer.fractional_bits})\n")
+            parts.append(f"    constexpr std::size_t k{nm}_FractionalBits = "
+                         f"{layer.fractional_bits};\n")
+            parts.append(f"    constexpr std::size_t k{nm}_FixedBits      = "
+                         f"{layer.fixed_bits};\n")
+            parts.append(_fmt_int_array(f"k{nm}_Weights",
+                                        layer.q_weight.reshape(-1).tolist(),
+                                        storage))
+            if layer.q_bias is not None:
+                parts.append(_fmt_int_array(f"k{nm}_Biases",
+                                            layer.q_bias.reshape(-1).tolist(),
+                                            storage))
+
+    if boundaries:
+        parts.append("\n    // Hybrid precision-tier bridges (cpp/qbridge.hpp).\n")
+        for b in boundaries:
+            parts.append(_emit_bridge_params(b, ranges))
+
     parts.append(f"}} // namespace {namespace}\n")
     with open(path, "w") as f:
         f.write("".join(parts))
@@ -513,13 +698,21 @@ def import_pytorch_model(layers: Sequence[Layer],
                          dataset: Iterable[np.ndarray],
                          output_path: str,
                          namespace: str,
-                         meta: Optional[dict[str, int]] = None) -> dict[str, tuple[float, int]]:
+                         meta: Optional[dict[str, int]] = None,
+                         boundaries: Sequence[HybridBoundary] = ()
+                         ) -> dict[str, tuple[float, int]]:
     """End-to-end: fuse -> calibrate -> quantize -> emit weights.hpp.
+
+    boundaries declares any int8 <-> QFormatDense transitions; the emitter
+    writes the precomputed integer-bridge triples alongside the rest of the
+    weights so the deployable freestanding shape FLOAT=0 STD=0 QUANT=1
+    consumes them as data.
 
     Returns the activation ranges dict (useful for diagnostics / parity tests).
     """
     fused = fuse_layers(layers)
     ranges = calibrate(fused, input_name, input_observer, dataset)
     quantize_weights(fused, ranges)
-    emit_weights_header(output_path, namespace, fused, ranges, input_name, meta)
+    emit_weights_header(output_path, namespace, fused, ranges, input_name,
+                        meta, boundaries)
     return ranges

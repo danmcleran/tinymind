@@ -38,21 +38,200 @@
  *   float input               ->  int8 affine layer
  *   int8 affine output        ->  fp16 / bf16 head
  *
- * All conversions run scalar at the layer boundary; the inner loops of
- * each pipeline stay native to their own type system. The conversions
- * themselves use float arithmetic, so this whole file is gated on
- * TINYMIND_ENABLE_FLOAT. Any target whose silicon ships an FPU (capability,
- * not CPU model — Arm publishes thousands of RTL configurations per core
- * and FPU is often an optional component) can use the bridges at runtime;
- * a pure-integer build keeps both pipelines siloed by simply not
- * including this header.
+ * Two flavors are exposed:
  *
- * No <cmath> dependency: rounding uses sign-aware float-to-int casting.
- * No <type_traits>. Freestanding-safe at FLOAT=1, STD=0.
+ *   1. Float-mediated bridges (this file, gated on TINYMIND_ENABLE_FLOAT).
+ *      Conversions pass through a float intermediate, so the per-sample
+ *      math matches the calibration-time math byte-for-byte. Available on
+ *      any target with an FPU.
+ *
+ *   2. Pure-integer bridges (this file, gated on TINYMIND_ENABLE_QUANTIZATION).
+ *      Conversions use the same (multiplier, shift) Q0.31 primitive that
+ *      Requantizer uses. No <cmath>, no <type_traits>, no float at runtime.
+ *      The deployable freestanding shape FLOAT=0 STD=0 QUANT=1 picks this
+ *      path. Caller builds the conversion params host-side once via the
+ *      buildAffineToQValueIntParams / buildQValueToAffineIntParams helpers
+ *      (FLOAT && STD gated) and ships the resulting integer triple to the
+ *      target along with the rest of the quantized model.
  *
  * Bridges intentionally do NOT touch layer internals. They are pointwise
  * value converters; cascading them through a buffer is the caller's job.
  */
+
+#if TINYMIND_ENABLE_QUANTIZATION
+
+#include "qaffine.hpp"
+#include "qformat.hpp"
+
+namespace tinymind {
+
+    /**
+     * Pure-integer affine -> Q-format conversion params.
+     *
+     * qval = round(scale * (q - zero_point) * 2^F) saturated to QValue range,
+     * with the scale * 2^F factor encoded as a (multiplier, shift) Q0.31 pair.
+     * Built host-side by buildAffineToQValueIntParams (FLOAT && STD); shipped
+     * to the target as three int32s.
+     */
+    template<typename QV>
+    struct AffineToQValueIntParams
+    {
+        int32_t multiplier;
+        int32_t shift;
+        int32_t zero_point;
+    };
+
+    /**
+     * Pure-integer Q-format -> affine conversion params.
+     *
+     * q = round(qval / (scale * 2^F)) + zero_point clamped to [qmin, qmax].
+     * The reciprocal-scale factor 1 / (scale * 2^F) is encoded as a
+     * (multiplier, shift) pair.
+     */
+    template<typename QV>
+    struct QValueToAffineIntParams
+    {
+        int32_t multiplier;
+        int32_t shift;
+        int32_t zero_point;
+        int32_t qmin;
+        int32_t qmax;
+    };
+
+    namespace detail {
+
+        /**
+         * Saturating cast of a Q-format raw value to int32. QValue raw types
+         * up to int32 pass through unchanged; the wider Q32.32 / Q64.0 raw
+         * type saturates here rather than wrapping. Callers needing the full
+         * dynamic range of a wide Q-format on the target should pre-narrow
+         * before the bridge.
+         */
+        inline int32_t qBridgeRawToInt32Sat(int64_t raw)
+        {
+            const int64_t hi = static_cast<int64_t>(0x7FFFFFFF);
+            const int64_t lo = -hi - 1;
+            if (raw > hi) return static_cast<int32_t>(hi);
+            if (raw < lo) return static_cast<int32_t>(lo);
+            return static_cast<int32_t>(raw);
+        }
+
+    } // namespace detail
+
+    /**
+     * affine int8 -> Q-format, pure-integer path. Inverse of
+     * qValueToAffineInt. Composes multiplyByQuantizedMultiplier on the
+     * zero-point-removed accumulator and saturates to the QValue range.
+     */
+    template<typename QV, typename SrcStorage>
+    inline QV affineToQValueInt(SrcStorage q, const AffineToQValueIntParams<QV>& p)
+    {
+        typedef typename QV::FullWidthValueType RawType;
+        const int32_t shifted = static_cast<int32_t>(q) - p.zero_point;
+        const int32_t scaled = multiplyByQuantizedMultiplier(shifted, p.multiplier, p.shift);
+
+        const int64_t lo = static_cast<int64_t>(QV::QFormatMinValue());
+        const int64_t hi = static_cast<int64_t>(QV::QFormatMaxValue());
+        int64_t out = static_cast<int64_t>(scaled);
+        if (out < lo) out = lo;
+        if (out > hi) out = hi;
+
+        return QV(static_cast<RawType>(out));
+    }
+
+    /**
+     * Q-format -> affine int8, pure-integer path. Multiplies the raw
+     * QValue by the precomputed reciprocal-scale (multiplier, shift),
+     * adds the destination zero_point, and saturates to [qmin, qmax].
+     */
+    template<typename QV, typename DstStorage>
+    inline DstStorage qValueToAffineInt(const QV& qv, const QValueToAffineIntParams<QV>& p)
+    {
+        const int32_t raw = detail::qBridgeRawToInt32Sat(
+            static_cast<int64_t>(qv.getValue()));
+        const int32_t scaled = multiplyByQuantizedMultiplier(raw, p.multiplier, p.shift);
+        int32_t with_zp = scaled + p.zero_point;
+        if (with_zp < p.qmin) with_zp = p.qmin;
+        if (with_zp > p.qmax) with_zp = p.qmax;
+        return static_cast<DstStorage>(with_zp);
+    }
+
+    template<typename QV, typename SrcStorage>
+    inline void affineToQValueIntBuffer(const SrcStorage* src, QV* dst,
+                                        std::size_t n,
+                                        const AffineToQValueIntParams<QV>& p)
+    {
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            dst[i] = affineToQValueInt<QV, SrcStorage>(src[i], p);
+        }
+    }
+
+    template<typename QV, typename DstStorage>
+    inline void qValueToAffineIntBuffer(const QV* src, DstStorage* dst,
+                                        std::size_t n,
+                                        const QValueToAffineIntParams<QV>& p)
+    {
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            dst[i] = qValueToAffineInt<QV, DstStorage>(src[i], p);
+        }
+    }
+
+} // namespace tinymind
+
+#if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
+
+#include <cmath>
+
+namespace tinymind {
+
+    /**
+     * Build the integer affine -> Q-format conversion params from the
+     * affine (scale, zero_point) calibration metadata. Host-only; the
+     * resulting struct is what the target consumes.
+     */
+    template<typename QV>
+    inline AffineToQValueIntParams<QV>
+    buildAffineToQValueIntParams(float scale, int32_t zero_point)
+    {
+        const double frac =
+            static_cast<double>(static_cast<uint64_t>(1) << QV::NumberOfFractionalBits);
+        const double ratio = static_cast<double>(scale) * frac;
+        AffineToQValueIntParams<QV> p;
+        quantizeMultiplier(ratio, p.multiplier, p.shift);
+        p.zero_point = zero_point;
+        return p;
+    }
+
+    /**
+     * Build the integer Q-format -> affine conversion params from the
+     * downstream affine (scale, zero_point) plus the destination saturation
+     * range. The encoded ratio is 1 / (scale * 2^F); the destination
+     * zero_point and qmin/qmax pass through unchanged.
+     */
+    template<typename QV>
+    inline QValueToAffineIntParams<QV>
+    buildQValueToAffineIntParams(float scale, int32_t zero_point,
+                                 int32_t qmin, int32_t qmax)
+    {
+        const double frac =
+            static_cast<double>(static_cast<uint64_t>(1) << QV::NumberOfFractionalBits);
+        const double ratio = 1.0 / (static_cast<double>(scale) * frac);
+        QValueToAffineIntParams<QV> p;
+        quantizeMultiplier(ratio, p.multiplier, p.shift);
+        p.zero_point = zero_point;
+        p.qmin = qmin;
+        p.qmax = qmax;
+        return p;
+    }
+
+} // namespace tinymind
+
+#endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
+
+#endif // TINYMIND_ENABLE_QUANTIZATION
+
 
 #if TINYMIND_ENABLE_FLOAT
 

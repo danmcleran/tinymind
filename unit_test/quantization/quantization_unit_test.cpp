@@ -1966,6 +1966,127 @@ BOOST_AUTO_TEST_CASE(qbridge_buffer_round_trip)
     }
 }
 
+// Phase 17: pure-integer Q <-> int8 bridge. Same round-trip semantics as
+// the float-mediated bridge above, but uses the (multiplier, shift) Q0.31
+// primitive instead of an internal float. Built host-side, consumed by the
+// deployable freestanding shape (FLOAT=0 STD=0 QUANT=1).
+
+using tinymind::AffineToQValueIntParams;
+using tinymind::QValueToAffineIntParams;
+using tinymind::affineToQValueInt;
+using tinymind::qValueToAffineInt;
+using tinymind::buildAffineToQValueIntParams;
+using tinymind::buildQValueToAffineIntParams;
+using tinymind::affineToQValueIntBuffer;
+using tinymind::qValueToAffineIntBuffer;
+
+BOOST_AUTO_TEST_CASE(qbridge_int_affine_to_qvalue_matches_float_bridge)
+{
+    const float scale = 0.04f;
+    const int32_t zp = 5;
+    const AffineToQValueIntParams<Q88Bridge> params =
+        buildAffineToQValueIntParams<Q88Bridge>(scale, zp);
+
+    for (int32_t qi = -64; qi <= 64; qi += 8)
+    {
+        const int8_t q = static_cast<int8_t>(qi);
+        const Q88Bridge fbridge = affineToQValue<Q88Bridge, int8_t>(q, scale, zp);
+        const Q88Bridge ibridge = affineToQValueInt<Q88Bridge, int8_t>(q, params);
+        // Integer bridge uses gemmlowp Q0.31 rounding; float bridge uses
+        // round-half-away-from-zero on a float. Allow 1 LSB drift.
+        const int64_t diff = static_cast<int64_t>(ibridge.getValue())
+                           - static_cast<int64_t>(fbridge.getValue());
+        BOOST_TEST((diff >= -1 && diff <= 1));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qbridge_int_qvalue_to_affine_matches_float_bridge)
+{
+    const float scale = 0.04f;
+    const int32_t zp = 5;
+    const QValueToAffineIntParams<Q88Bridge> params =
+        buildQValueToAffineIntParams<Q88Bridge>(scale, zp, -128, 127);
+
+    const float xs[] = {-3.0f, -1.0f, -0.25f, 0.0f, 0.25f, 1.0f, 3.0f};
+    for (float x : xs)
+    {
+        const Q88Bridge qv = floatToQValue<Q88Bridge>(x);
+        const int8_t fbridge = qValueToAffine<Q88Bridge, int8_t>(qv, scale, zp,
+                                                                 -128, 127);
+        const int8_t ibridge = qValueToAffineInt<Q88Bridge, int8_t>(qv, params);
+        const int32_t diff = static_cast<int32_t>(ibridge)
+                           - static_cast<int32_t>(fbridge);
+        BOOST_TEST((diff >= -1 && diff <= 1));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qbridge_int_round_trip_within_tolerance)
+{
+    // float -> QValue -> int8 (integer bridge) -> QValue (integer bridge) ->
+    // float must close back within one affine LSB plus one QValue LSB.
+    const float scale = 0.04f;
+    const int32_t zp = -3;
+    const QValueToAffineIntParams<Q88Bridge> q2a =
+        buildQValueToAffineIntParams<Q88Bridge>(scale, zp, -128, 127);
+    const AffineToQValueIntParams<Q88Bridge> a2q =
+        buildAffineToQValueIntParams<Q88Bridge>(scale, zp);
+
+    const float xs[] = {-2.5f, -0.5f, 0.0f, 0.5f, 2.5f};
+    for (float x : xs)
+    {
+        const Q88Bridge qv_in  = floatToQValue<Q88Bridge>(x);
+        const int8_t   q       = qValueToAffineInt<Q88Bridge, int8_t>(qv_in, q2a);
+        const Q88Bridge qv_out = affineToQValueInt<Q88Bridge, int8_t>(q, a2q);
+        const float    r       = qValueToFloat<Q88Bridge>(qv_out);
+        const float    qlsb    = 1.0f /
+            static_cast<float>(1 << Q88Bridge::NumberOfFractionalBits);
+        BOOST_TEST(std::abs(r - x) < scale + qlsb);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qbridge_int_qvalue_to_affine_saturates)
+{
+    // scale tight enough that any reasonable QValue saturates int8 range.
+    const float scale = 0.001f;
+    const int32_t zp = 0;
+    const QValueToAffineIntParams<Q88Bridge> p =
+        buildQValueToAffineIntParams<Q88Bridge>(scale, zp, -128, 127);
+
+    const Q88Bridge big = floatToQValue<Q88Bridge>(100.0f);
+    const Q88Bridge sm  = floatToQValue<Q88Bridge>(-100.0f);
+    BOOST_TEST((qValueToAffineInt<Q88Bridge, int8_t>(big, p) == 127));
+    BOOST_TEST((qValueToAffineInt<Q88Bridge, int8_t>(sm,  p) == -128));
+}
+
+BOOST_AUTO_TEST_CASE(qbridge_int_buffer_round_trip)
+{
+    const float scale = 0.02f;
+    const int32_t zp = -3;
+    const QValueToAffineIntParams<Q88Bridge> q2a =
+        buildQValueToAffineIntParams<Q88Bridge>(scale, zp, -128, 127);
+    const AffineToQValueIntParams<Q88Bridge> a2q =
+        buildAffineToQValueIntParams<Q88Bridge>(scale, zp);
+
+    const float src[] = {-2.0f, -0.5f, 0.0f, 0.25f, 1.75f};
+    constexpr std::size_t n = sizeof(src) / sizeof(float);
+
+    Q88Bridge qbuf[n];
+    int8_t i8buf[n];
+    Q88Bridge round_qbuf[n];
+    float round_fbuf[n];
+
+    floatToQValueBuffer<Q88Bridge>(src, qbuf, n);
+    qValueToAffineIntBuffer<Q88Bridge, int8_t>(qbuf, i8buf, n, q2a);
+    affineToQValueIntBuffer<Q88Bridge, int8_t>(i8buf, round_qbuf, n, a2q);
+    qValueToFloatBuffer<Q88Bridge>(round_qbuf, round_fbuf, n);
+
+    const float qlsb = 1.0f / static_cast<float>(1 << Q88Bridge::NumberOfFractionalBits);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        BOOST_TEST(std::abs(round_fbuf[i] - src[i]) < scale + qlsb);
+    }
+}
+
 #if TINYMIND_ENABLE_FP16
 
 using tinymind::fp16_t;

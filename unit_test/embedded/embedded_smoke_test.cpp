@@ -74,6 +74,7 @@
 
 #if TINYMIND_ENABLE_QUANTIZATION
 #include "qaffine.hpp"
+#include "qbridge.hpp"
 #include "qconv2d.hpp"
 #include "qdepthwiseconv2d.hpp"
 #include "qpointwiseconv2d.hpp"
@@ -584,6 +585,41 @@ bool exerciseQuantPipeline()
         && (sm_out[0] == sm_out[0])
         && (mha_out[0] == mha_out[0]);
 }
+int32_t gIntegerBridgeSink[2];
+
+// Pure-integer Q <-> int8 bridge. Must compile at QUANT=1 FLOAT=0 STD=0:
+// no <cmath>, no quantizeMultiplier (which is FLOAT && STD gated). Params
+// are passed as raw int32 triples — host-side helpers
+// buildAffineToQValueIntParams / buildQValueToAffineIntParams compute them
+// at calibration time and the deployable target consumes them as data.
+bool exerciseIntegerBridges()
+{
+    typedef int8_t I8;
+
+    tinymind::AffineToQValueIntParams<Q88> a2q;
+    a2q.multiplier = static_cast<int32_t>(0x40000000); // Q0.31 = 0.5
+    a2q.shift = -8;                                    // ratio = 128
+    a2q.zero_point = -3;
+
+    const Q88 fromI8 = tinymind::affineToQValueInt<Q88, I8>(static_cast<I8>(10), a2q);
+
+    tinymind::QValueToAffineIntParams<Q88> q2a;
+    q2a.multiplier = static_cast<int32_t>(0x40000000);
+    q2a.shift = 7;                                     // ratio = 1/256
+    q2a.zero_point = -3;
+    q2a.qmin = -128;
+    q2a.qmax = 127;
+
+    const Q88 qv = Q88(static_cast<Q88::FullWidthValueType>(0x0180)); // 1.5
+    const I8 toI8 = tinymind::qValueToAffineInt<Q88, I8>(qv, q2a);
+
+    // Smoke test cares only that the bridge compiled and ran. Use the
+    // same array-self-compare idiom the QUANT pipeline above relies on.
+    gIntegerBridgeSink[0] = static_cast<int32_t>(fromI8.getValue());
+    gIntegerBridgeSink[1] = static_cast<int32_t>(toI8);
+    return (gIntegerBridgeSink[0] == gIntegerBridgeSink[0])
+        && (gIntegerBridgeSink[1] == gIntegerBridgeSink[1]);
+}
 #endif // TINYMIND_ENABLE_QUANTIZATION
 
 #if TINYMIND_ENABLE_FLOAT
@@ -694,6 +730,7 @@ int main()
 
 #if TINYMIND_ENABLE_QUANTIZATION
     ok = ok && exerciseQuantPipeline();
+    ok = ok && exerciseIntegerBridges();
 #endif
 
 #if TINYMIND_ENABLE_FLOAT

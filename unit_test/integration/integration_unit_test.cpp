@@ -113,6 +113,14 @@ const char* kGoldenMixedPrecisionKws =
     "sample 2: 51 76 4 -127\n"
     "sample 3: 57 98 30 -112\n";
 
+const char* kGoldenMixedPrecisionMlpInt8QFormat =
+    "# mixed_precision_mlp_int8_qformat golden output\n"
+    "# samples=4 classes=4\n"
+    "sample 0: -57 -17 -37 -105\n"
+    "sample 1: 1 73 38 -86\n"
+    "sample 2: -106 -81 -81 -107\n"
+    "sample 3: -73 -11 -12 -74\n";
+
 const char* kGoldenTransformerEncoder =
     "# transformer_encoder_int8 golden output\n"
     "# samples=8 cells=32\n"
@@ -153,4 +161,11 @@ BOOST_AUTO_TEST_CASE(transformer_encoder_int8_golden_match)
     requireGoldenMatch(
         "../../../examples/transformer_encoder_int8/output/transformer_encoder_int8",
         kGoldenTransformerEncoder);
+}
+
+BOOST_AUTO_TEST_CASE(mixed_precision_mlp_int8_qformat_golden_match)
+{
+    requireGoldenMatch(
+        "../../../examples/mixed_precision_mlp_int8_qformat/output/mixed_precision_mlp_int8_qformat",
+        kGoldenMixedPrecisionMlpInt8QFormat);
 }

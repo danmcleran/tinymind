@@ -433,6 +433,28 @@ CPU complex and SIMD capability are orthogonal — the rows below describe *typi
 ## Non-Goals (Still)
 
 - **No QAT** in this roadmap. Post-training quantization remains the deployment path.
-- **No sub-4-bit / mixed precision below int8.** Storage tier list is {int8, int16-accum, fp16, bf16, fp32, Q-format}.
+- **No sub-4-bit / mixed precision below int8.** Storage tier list (in mixed-precision peer relationship via Phase 9 bridges and Phase 17 pure-integer bridges) is {int8 affine, int16-accum, fp16, bf16, fp32, **Q-format `QValue<I,F>`** as a first-class peer — Phase 17 closes the loop with integer-only `affineToQValueInt` / `qValueToAffineInt` so the Q-format tier participates in hybrid models at the deployable freestanding shape `FLOAT=0 STD=0 QUANT=1`}.
 - **No dynamic / runtime model loading.** Compile-time template shapes remain — codegen-from-PyTorch flow is the integration model (Phase 15).
+
+## Phase 17 — Pure-Integer Q-format <-> int8 Bridge + Hybrid Importer [SHIPPED]
+
+**Goal:** close the gap for the offline-training -> embedded-inference story where a model wants the int8 affine grid at the boundaries (PyTorch / TF / ONNX QDQ export shape) but a Q-format middle tier (existing `NeuralNet<Q8.8>` MCU code, or a hidden layer that prefers `QValue`'s compile-time fixed/fractional bit split). Phase 9 added the float-mediated `qValueToAffine` / `affineToQValue` bridges; Phase 17 ships the pure-integer counterparts so the inference path needs no `<cmath>` and no float at runtime.
+
+**Scope (shipped):**
+- `cpp/qbridge.hpp` additions: `AffineToQValueIntParams<QV>` / `QValueToAffineIntParams<QV>` (integer triples) plus `affineToQValueInt` / `qValueToAffineInt` (+ buffer variants). Uses the same Q0.31 `multiplyByQuantizedMultiplier` primitive that `Requantizer` does — no new runtime dependency. Gated on `TINYMIND_ENABLE_QUANTIZATION`, independent of `TINYMIND_ENABLE_FLOAT`. Host-side helper builders `buildAffineToQValueIntParams<QV>` / `buildQValueToAffineIntParams<QV>` gated on `FLOAT && STD`.
+- `apps/import_pytorch/tinymind_import.py` additions: `QFormatDense` layer descriptor (Q-format dense weights/biases emitted as raw QValue integers, no scale or zero_point at runtime), `HybridBoundary` precision-tier transition descriptor, and `quantize_multiplier` / `quantize_qformat_weights` helpers. The emitter writes precomputed `(multiplier, shift, zero_point)` triples (plus `qmin`/`qmax` on the `qvalue_to_affine` side) directly into `weights.hpp` so the deployable target consumes them as data.
+- `apps/import_onnx/README.md` + `apps/import_pytorch/README.md` document the TensorFlow / Keras path via `tf2onnx` + `onnxruntime.quantization.quantize_static(quant_format=QuantFormat.QDQ)` plus the hybrid `QFormatDense` + `HybridBoundary` flow.
+
+**Tests (shipped):**
+- `qbridge_int_affine_to_qvalue_matches_float_bridge` / `qbridge_int_qvalue_to_affine_matches_float_bridge` — pure-integer bridge stays within 1 LSB of the float bridge across the int8 / Q88 grid.
+- `qbridge_int_round_trip_within_tolerance` — float -> Q88 -> int8 (integer bridge) -> Q88 (integer bridge) -> float closes back within one affine LSB plus one QValue LSB.
+- `qbridge_int_qvalue_to_affine_saturates` — out-of-range Q88 inputs saturate to `[qmin, qmax]`.
+- `qbridge_int_buffer_round_trip` — buffer-variant parity.
+- `unit_test/embedded/embedded_smoke_test.cpp` exercises `affineToQValueInt` / `qValueToAffineInt` in the `quant_freestanding` corner, confirming the integer bridge stays freestanding-clean (no `<cmath>`, no `<type_traits>`, no stdlib).
+
+**Example:** `examples/mixed_precision_mlp_int8_qformat/` — int8 `QDense` -> `qrelu` -> Phase 17 `affineToQValueInt` bridge -> Q8.8 dense matvec -> Phase 17 `qValueToAffineInt` bridge -> int8 `QDense` classifier. `make run` reports max-abs error vs the float reference (~0.005 on the bundled dataset, well below the 60 %-of-output-range tolerance). `make golden` emits a deterministic int8 byte stream that the new `mixed_precision_mlp_int8_qformat_golden_match` integration fixture in `unit_test/integration/` locks at byte granularity.
+
+**Success criteria:** an offline-trained model with one or more Q-format hidden layers and int8 affine boundaries deployable end-to-end at `FLOAT=0 STD=0 QUANT=1`. ✓ shipped.
+
+**Risk:** low. Pure addition — no edits to existing runtime headers' behavior at any pre-Phase-17 gate combination.
 
