@@ -65,18 +65,50 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 
 A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside** the existing single-`ValueType` pipeline (no changes to `QValue`, `NeuralNet<>`, or any current layer):
 
-- **`QConv2D`**, **`QDepthwiseConv2D`** (per-channel weight scale, TFLite mandate), **`QPointwiseConv2D`**, **`QMaxPool2D`**, **`QAvgPool2D`**, **`QGlobalAvgPool2D`**, **`QDense`** -- int8 weights/activations, int32 accumulators, integer requantization between layers via gemmlowp-style `Requantizer<int32, int8>` (Q0.31 multiplier + shift)
-- **`qrelu` / `qrelu6`** activations plus `clampForRelu` / `clampForRelu6` helpers that fold the activation into the upstream Requantizer's saturation pass for runtime efficiency
-- **256-entry int8 sigmoid / tanh lookup tables** built host-side via `buildQSigmoidLUT` / `buildQTanhLUT` and applied at runtime via `qApplyLUT` / `qApplyLUTBuffer` -- single load per element, no `<cmath>` on the inference path
-- **Host-side calibration** in `cpp/include/qcalibration.hpp`: `RangeObserver`, `computeAffineParamsAsymmetric` / `Symmetric`, `computePerChannelSymmetricScales`, `quantizeBuffer`, `buildRequantizer` -- gated on `FLOAT && STD` so the deployable inference binary never pulls in float math
-- **Pure integer at runtime**: the inference path compiles freestanding (`FLOAT=0 STD=0 QUANT=1`); `unit_test/embedded` exercises this corner as `quant_freestanding` and the `unit_test/quantization` Boost.Test suite covers the math
+- **Convolution / dense family** -- `QConv2D`, `QConv2DPerChannel`, `QDepthwiseConv2D` (per-channel weight scale, TFLite mandate), `QPointwiseConv2D`, `QPointwiseConv2DPerChannel`, `QMaxPool2D`, `QAvgPool2D`, `QGlobalAvgPool2D`, `QDense` -- int8 weights/activations, int32 accumulators, integer requantization between layers via gemmlowp-style `Requantizer<int32, int8>` (Q0.31 multiplier + shift)
+- **Composition ops** -- `QAdd` (TFLite ADD semantics, left_shift + 3 multiplier/shift triples), `QMul` (single-Requantizer elementwise multiply), `QConcat2_2D` (channel-axis concat with per-input rescaler), `QPad2D` (constant pad using input zero_point so padded cells decode to true zero)
+- **Normalization** -- `QBatchNorm1D` / `QBatchNorm2D` (per-channel (multiplier, shift, bias) triple), `QLayerNorm1D` (integer mean/variance per row, `qInvSqrtQ30` Newton iteration), `QSoftmax1D` (two-pass int8->int8 softmax via 256-entry int32 exp LUT, output 1/256, zp -128)
+- **Recurrent cells** -- `QLSTMCell` (4 gates, TFLite ordering, int8 or int16 cell state via `TINYMIND_ENABLE_INT16_ACCUM=1`) and `QGRUCell` (3 gates, reset-before-multiply). Standalone single-step; caller owns time loop and hidden/cell buffers
+- **Attention + FFT** -- `QFFT1D` (radix-2 DIT on int16 buffers, Q1.15 twiddles, scaled butterflies), `QAttention1D` (int8 linear-attention with ReLU kernel), `QAttentionSoftmax1D` (standard softmax attention with `1/sqrt(d_k)` folded into score Requantizer), `QMultiHeadLinearAttention1D` (stacks N heads)
+- **Activations** -- `qrelu` / `qrelu6` plus `clampForRelu` / `clampForRelu6` helpers that fold the activation into the upstream Requantizer's saturation pass; 256-entry int8 sigmoid / tanh LUTs via `buildQSigmoidLUT` / `buildQTanhLUT` + `qApplyLUT` / `qApplyLUTBuffer` -- no `<cmath>` on the inference path
+- **Host-side calibration** (`cpp/include/qcalibration.hpp`, gated on `FLOAT && STD`) -- `RangeObserver`, `PercentileObserver`, `KLDivergenceObserver` (TensorRT entropy), `crossLayerEqualizeDense` / `crossLayerEqualizeConv2D` (Nagel CLE), `computeAffineParamsAsymmetric` / `Symmetric`, `computePerChannelSymmetricScales`, `quantizeBuffer`, `buildRequantizer`, `buildRescaler`, `buildQAddParams`, `buildQMulRequantizer`, `foldBatchNorm` (Conv2D+BN fusion), `buildQBatchNormChannelParams`, `buildQSoftmaxExpLUT`, `buildQLSTMParams` / `quantizeQLSTMBiases`, `buildQGRUParams` / `quantizeQGRUBiases`, `buildQFFTTwiddles`, `qAttentionInvSqrt`
+- **Pure integer at runtime**: deployable shape is `TINYMIND_ENABLE_QUANTIZATION=1, FLOAT=0, STD=0`; `unit_test/embedded` exercises this corner as `quant_freestanding`; `unit_test/quantization` Boost.Test suite covers the math (Requantizer round-trip, per-channel depthwise, calibration, Phase 11-15 ops, SIMD bit-exactness)
 - **End-to-end examples**:
   - [`examples/pytorch_quant/xor/`](examples/pytorch_quant/xor/) -- PyTorch float training + per-tensor calibration + `weights.hpp` emission, then a pure-integer C++ forward pass through `QDense` + `qrelu` + `QDense` + int8 sigmoid LUT
   - [`examples/kws_cortex_m_int8/`](examples/kws_cortex_m_int8/) -- side-by-side counterpart to `examples/kws_cortex_m/`; same MobileNet-style KWS pipeline, comparable CSV cycle/byte report, ~4x smaller weight footprint on the convolutional layers
-  - [`examples/resnet18_block_int8/`](examples/resnet18_block_int8/) -- Phase 16 exemplar. int8 ResNet-18-shaped stem + one basic-block stage. `make run`, `make bench`, `make golden`.
-  - [`examples/mobilenetv2_int8/`](examples/mobilenetv2_int8/) -- Phase 16 exemplar. int8 MobileNetV2 inverted-residual block sequence with linear bottlenecks.
-  - [`examples/mixed_precision_kws/`](examples/mixed_precision_kws/) -- Phase 16 mixed-precision exemplar. int8 frontend -> fp16 attention head -> int8 classifier, exercises Phase 9 qbridge converters.
-  - [`unit_test/integration/`](unit_test/integration/) -- Phase 16 golden-byte regression suite. Locks the four exemplars' int8 output byte-for-byte across SIMD gate combos.
+  - [`examples/resnet_block_int8/`](examples/resnet_block_int8/) -- int8 residual block (`QPad2D` -> `QConv2DPerChannel` -> `qrelu` -> `QPad2D` -> `QConv2DPerChannel` -> `QAdd` -> `qrelu`) with per-channel weight scales
+  - [`examples/resnet18_block_int8/`](examples/resnet18_block_int8/) -- int8 ResNet-18-shaped stem + one basic-block stage. `make run`, `make bench`, `make golden`
+  - [`examples/mobilenetv2_int8/`](examples/mobilenetv2_int8/) -- int8 MobileNetV2 inverted-residual block sequence with linear bottlenecks
+  - [`examples/transformer_encoder_int8/`](examples/transformer_encoder_int8/) -- int8 encoder block: `QLayerNorm1D` -> `QAttention1D` -> `QAdd` -> `QLayerNorm1D` -> `QDense` + `qrelu` -> `QDense` -> `QAdd`. ~2% max-abs error vs float on bundled dataset
+  - [`examples/mixed_precision_kws/`](examples/mixed_precision_kws/) -- mixed-precision: int8 frontend -> fp16 attention head -> int8 classifier. Exercises Phase 9 qbridge converters
+  - [`examples/mixed_precision_mlp_int8_qformat/`](examples/mixed_precision_mlp_int8_qformat/) -- hybrid int8 affine <-> Q8.8 via Phase 17 pure-integer bridges. Deployable at `QUANT=1 FLOAT=0 STD=0`
+  - [`examples/import_demo/`](examples/import_demo/) -- end-to-end Phase 15 importer flow. 3-8-4-2 MLP, three observers + CLE, ~0.004 max-abs error vs float
+  - [`examples/perf_matrix/`](examples/perf_matrix/) -- SIMD gate bench. Same int8 conv + dense block under each enabled `TINYMIND_ENABLE_SIMD_*` combo, emits CSV per backend with invariant `output_checksum`
+  - [`unit_test/integration/`](unit_test/integration/) -- Phase 16/17 golden-byte regression suite. Locks five exemplars' int8 output byte-for-byte across SIMD gate combos
+
+### Mixed-Precision Bridges (optional, `TINYMIND_ENABLE_FP16=1` and/or `TINYMIND_ENABLE_FLOAT=1`)
+
+Composability between the previously orphaned `QValue` (Q-format) and `QAffineTensor` (int8 affine) pipelines, plus a half-precision storage tier:
+
+- **`cpp/qbridge.hpp`** -- pointwise type converters at layer boundaries: `affineDequantize` / `affineQuantize`, `qValueToFloat` / `floatToQValue`, `qValueToAffine` / `affineToQValue`, buffer-batch versions. Float path gated on `TINYMIND_ENABLE_FLOAT`. Pure-integer parallel path gated on `TINYMIND_ENABLE_QUANTIZATION` (independent of `FLOAT`): `affineToQValueInt` / `qValueToAffineInt` reuse the gemmlowp Q0.31 `multiplyByQuantizedMultiplier` primitive so the deployable freestanding shape `FLOAT=0 STD=0 QUANT=1` can mix Q-format and int8 affine tiers without `<cmath>`
+- **`cpp/include/tinymind_fp16.hpp`** -- software-only `fp16_t` (IEEE 754 binary16) and `bf16_t` (bfloat16) storage structs over `uint16_t`. Conversion helpers handle normals, subnormals, Inf, NaN. SIMD specialization via Phase 14's `simd_neon_fp16.hpp` on NEON FEAT_FP16 targets
+- **Bridge variants** -- `fp16ToAffineI8`, `affineI8ToFp16`, `bf16ToAffineI8`, `affineI8ToBf16` when `TINYMIND_ENABLE_FP16=1`
+
+### SIMD Performance Backend (optional, `TINYMIND_ENABLE_SIMD_*=1`)
+
+ISA-capability-gated SIMD specializations on the inner reduction loop of `QDense`, `QConv2D`, `QConv2DPerChannel`. Every gate defaults to `0`; with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the pre-SIMD build.
+
+- **Gates** -- `TINYMIND_ENABLE_SIMD_NEON`, `_NEON_DOTPROD`, `_NEON_FP16`, `_SVE`, `_SVE2`, `_HELIUM_MVE_I`, `_HELIUM_MVE_F`, `_AVX2`, `_AVX_VNNI`, `_AVX512F`, `_AVX512_VNNI`, plus the orthogonal `TINYMIND_ENABLE_OPENMP`
+- **Prerequisite chain** -- each `simd_*.hpp` opens with a `static_assert` enforcing Arm's dependency table: `DOTPROD` requires `NEON`; `SVE`/`SVE2`/FP16-vector require `NEON`; `AVX_VNNI` requires `AVX2`; `AVX512_VNNI` requires `AVX512F`; the two Helium gates are M-profile only and mutually exclusive with `NEON`/`SVE`. Misconfiguration fails at compile time
+- **Dispatch** -- public entry point `tinymind::simd::int8DotWithZeroPoint` in `cpp/include/simd/simd_dispatch.hpp`. Backend precedence on x86: `AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 > scalar`; on Arm: `NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > scalar`. `activeBackendName()` reports the resolved choice
+- **Bit-exactness** -- every integer backend is bit-exact with the scalar reference. AVX2 avoids `PMADDUBSW` (saturates); AVX-VNNI / AVX-512-VNNI use the uint8-shift trick so `VPDPBUSD` reduces exactly. Float SIMD reductions are not bit-exact -- invariant applies to integer paths only
+- **Threading** -- `cpp/include/threading.hpp` exposes `TINYMIND_PARALLEL_FOR_OUTER` (expands to `#pragma omp parallel for` when `TINYMIND_ENABLE_OPENMP=1`, nothing otherwise). Wired on the output-filter loop of `QConv2D` / `QConv2DPerChannel`. Orthogonal to every SIMD gate; caller passes `-fopenmp`
+- **No runtime CPU dispatch** -- library compiles for one ISA per build; fat-binary dispatch is the caller's problem. No `__builtin_cpu_supports` / `getauxval` in library headers; the build system maps `-march=` flags to `TINYMIND_ENABLE_SIMD_*=1`
+
+### Importer Tooling
+
+- **`apps/import_pytorch/tinymind_import.py`** -- PyTorch -> TinyMind int8 importer (pure-numpy core). Caller assembles `Dense` / `Conv2D` / `BatchNorm2D` / `ReLU` / `Sigmoid` / `Tanh` / `Softmax` descriptors carrying numpy weights from `torch.state_dict`. `fuse_layers` folds Conv2D-then-BatchNorm pairs. `calibrate` streams data through the float reference with `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver` per layer. `emit_weights_header` writes a TinyMind-format `weights.hpp`. No PyTorch dependency at module import
+- **`apps/import_onnx/tinymind_import_onnx.py`** -- QDQ-format ONNX importer. Walks `QuantizeLinear` / `DequantizeLinear` / `QLinearConv` / `QLinearMatMul` / `Relu` / `Sigmoid` / `Tanh` / `Softmax` from a model produced by `onnxruntime.quantization.quantize_static`, emits the same TinyMind-format `weights.hpp`. The `onnx` package is imported lazily inside `parse_onnx_model`
 
 ### Activation Functions
 
@@ -699,6 +731,14 @@ cd examples/kws_cortex_m && make clean && make
 cd examples/kws_cortex_m_int8 && make clean && make
 cd examples/pytorch_quant/xor && make clean && make
 cd examples/predictive_maintenance && make clean && make
+cd examples/resnet_block_int8 && make clean && make
+cd examples/resnet18_block_int8 && make clean && make
+cd examples/mobilenetv2_int8 && make clean && make
+cd examples/transformer_encoder_int8 && make clean && make
+cd examples/mixed_precision_kws && make clean && make
+cd examples/mixed_precision_mlp_int8_qformat && make clean && make
+cd examples/import_demo && make clean && make
+cd examples/perf_matrix && make clean && make
 ```
 
 ### Compiler Flags
@@ -708,7 +748,7 @@ cd examples/predictive_maintenance && make clean && make
 
 ### Platform Feature Gates
 
-TinyMind compiles cleanly on freestanding embedded targets that lack an FPU, a hosted C++ stdlib, or a C runtime `rand()`. Six preprocessor macros control which dependencies are pulled in. **All default to 0** so embedded targets get the strictest configuration out of the box; hosted users opt in via `-DTINYMIND_ENABLE_*=1`. The gates are orthogonal — pick exactly the subset your toolchain provides.
+TinyMind compiles cleanly on freestanding embedded targets that lack an FPU, a hosted C++ stdlib, or a C runtime `rand()`. Preprocessor macros control which dependencies are pulled in. **All default to 0** so embedded targets get the strictest configuration out of the box; hosted users opt in via `-DTINYMIND_ENABLE_*=1`. The gates are orthogonal — pick exactly the subset your toolchain (and ISA) provides.
 
 | Macro | What it enables |
 |---|---|
@@ -717,16 +757,28 @@ TinyMind compiles cleanly on freestanding embedded targets that lack an FPU, a h
 | `TINYMIND_ENABLE_HOSTED_IO` | `<fstream>`, `<vector>`, `<cstdlib>`, `<cstdio>`; required for `NetworkPropertiesFileManager` weight serialization |
 | `TINYMIND_ENABLE_OSTREAMS` | `<ostream>` and `QValue::operator<<` for debug printing |
 | `TINYMIND_ENABLE_HOSTED_RAND` | `<cstdlib>` `rand()`/`RAND_MAX`; required by `Dropout` (training mode), `ScheduledSampling`, and `Xavier` |
-| `TINYMIND_ENABLE_QUANTIZATION` | Parallel int8 quantization layer family (`cpp/q*.hpp`) plus `Requantizer`. Calibration helpers in `cpp/include/qcalibration.hpp` are additionally gated on `FLOAT && STD` (host-only). |
+| `TINYMIND_ENABLE_QUANTIZATION` | Parallel int8 quantization layer family (`cpp/q*.hpp`) plus `Requantizer`. Calibration helpers in `cpp/include/qcalibration.hpp` are additionally gated on `FLOAT && STD` (host-only) |
+| `TINYMIND_ENABLE_FP16` | `fp16_t` (IEEE 754 binary16) and `bf16_t` (bfloat16) storage tier in `cpp/include/tinymind_fp16.hpp`. Conversion helpers additionally require `TINYMIND_ENABLE_FLOAT` |
+| `TINYMIND_ENABLE_INT16_ACCUM` | Wide cell-state for `QLSTMCell` (cell stored as `int16_t` rather than `int8_t`) for long unroll horizons |
+| `TINYMIND_ENABLE_SIMD_NEON` | Arm NEON int8 dot-product specialization |
+| `TINYMIND_ENABLE_SIMD_NEON_DOTPROD` | Arm NEON FEAT_DOTPROD (`SDOT`/`UDOT`); requires `_NEON` |
+| `TINYMIND_ENABLE_SIMD_NEON_FP16` | Arm NEON FEAT_FP16 vector arithmetic; requires `_NEON` |
+| `TINYMIND_ENABLE_SIMD_SVE` / `_SVE2` | Arm Scalable Vector Extension; requires `_NEON` |
+| `TINYMIND_ENABLE_SIMD_HELIUM_MVE_I` / `_MVE_F` | M-profile Helium MVE (integer/float). Mutually exclusive with `_NEON`/`_SVE` |
+| `TINYMIND_ENABLE_SIMD_AVX2` | x86 AVX2 |
+| `TINYMIND_ENABLE_SIMD_AVX_VNNI` | AVX-VNNI (`VPDPBUSD`); requires `_AVX2` |
+| `TINYMIND_ENABLE_SIMD_AVX512F` | x86 AVX-512 Foundation |
+| `TINYMIND_ENABLE_SIMD_AVX512_VNNI` | AVX-512-VNNI; requires `_AVX512F` |
+| `TINYMIND_ENABLE_OPENMP` | OpenMP parallelization of the output-filter loop in `QConv2D` / `QConv2DPerChannel`. Orthogonal to every SIMD gate; caller passes `-fopenmp` separately |
 
-With all six at 0, no header in `cpp/` includes anything beyond `<cstddef>`, `<cstdint>`, and placement `<new>` — all required by freestanding C++. With `FLOAT=1, STD=0` you get an FPU-but-no-stdlib build for float forward-pass inference. With `QUANT=1, FLOAT=0, STD=0` you get the deployable int8 inference shape (no float, no calibration helpers). The `unit_test/embedded` matrix builds and runs five corners (`freestanding`, `no_stdlib`, `no_fpu`, `hosted`, `quant_freestanding`) as part of `make check`.
+With all gates at 0, no header in `cpp/` includes anything beyond `<cstddef>`, `<cstdint>`, and placement `<new>` — all required by freestanding C++. With `FLOAT=1, STD=0` you get an FPU-but-no-stdlib build for float forward-pass inference. With `QUANT=1, FLOAT=0, STD=0` you get the deployable int8 inference shape (no float, no calibration helpers). The `unit_test/embedded` matrix builds and runs **eight corners** (`freestanding`, `no_stdlib`, `no_fpu`, `hosted`, `quant_freestanding`, `fp16_freestanding`, `int16_accum_freestanding`, `simd_disabled`) as part of `make check`. A separate `simd_prereq_regressions` target locks the static_assert prerequisite chain via compile-failure checks (e.g. `AVX_VNNI=1, AVX2=0` must fail to compile).
 
 ## Project Structure
 
 ```
 tinymind/
   cpp/                          # Core library headers
-    neuralnet.hpp               # Neural network templates (~5700 lines)
+    neuralnet.hpp               # Neural network templates (~4500 lines)
     kan.hpp                     # Kolmogorov-Arnold Network templates
     bspline.hpp                 # B-spline evaluation engine (De Boor algorithm)
     kanTransferFunctions.hpp    # KAN transfer functions and SiLU activation
@@ -734,25 +786,40 @@ tinymind/
     conv2d.hpp                  # 2D convolution layer (NHWC, VALID padding)
     depthwiseconv2d.hpp         # Depthwise 2D convolution (per-channel kernels)
     pointwiseconv2d.hpp         # 1x1 pointwise convolution (channel mixing / dense)
+    pool1d.hpp                  # MaxPool1D and AvgPool1D layers
     pool2d.hpp                  # MaxPool2D, AvgPool2D, GlobalAvgPool2D
     selfattention1d.hpp         # Linear self-attention layer
     fft1d.hpp                   # Radix-2 FFT with compile-time bit-reversal tables
+    batchnorm.hpp               # Batch normalization (training/inference)
     binarylayer.hpp             # Binary neural network layer (XNOR+popcount)
     ternarylayer.hpp            # Ternary neural network layer ({-1,0,+1} weights)
     qformat.hpp                 # Fixed-point arithmetic
     qlearn.hpp                  # Q-learning and DQN
     qaffine.hpp                 # Affine quantization primitives + Requantizer (TINYMIND_ENABLE_QUANTIZATION)
-    qconv2d.hpp                 # Quantized 2D convolution (per-tensor weight scale)
+    qconv2d.hpp                 # Quantized 2D convolution (per-tensor + per-channel)
     qdepthwiseconv2d.hpp        # Quantized depthwise 2D conv (per-channel weight scale, TFLite mandate)
-    qpointwiseconv2d.hpp        # Quantized 1x1 pointwise conv
+    qpointwiseconv2d.hpp        # Quantized 1x1 pointwise conv (per-tensor + per-channel)
     qpool2d.hpp                 # QMaxPool2D, QAvgPool2D, QGlobalAvgPool2D
     qdense.hpp                  # Quantized fully-connected layer
     qactivations.hpp            # Quantized ReLU / ReLU6 + fused-clamp helpers + int8 sigmoid/tanh LUTs
+    qadd.hpp                    # QAdd (TFLite ADD semantics)
+    qmul.hpp                    # QMul (elementwise int8 multiply)
+    qconcat.hpp                 # QConcat2_2D (channel-axis concat)
+    qpad.hpp                    # QPad2D (constant pad using zero_point)
+    qbatchnorm.hpp              # QBatchNorm1D / QBatchNorm2D (standalone, non-fused)
+    qlayernorm.hpp              # QLayerNorm1D (integer mean/var + qInvSqrtQ30 Newton)
+    qsoftmax.hpp                # QSoftmax1D (two-pass int8->int8 via int32 exp LUT)
+    qlstm.hpp                   # QLSTMCell (int8 or int16 cell state)
+    qgru.hpp                    # QGRUCell (3 gates, reset-before-multiply)
+    qfft1d.hpp                  # QFFT1D (int16 radix-2 DIT, Q1.15 twiddles)
+    qattention1d.hpp            # QAttention1D (int8 linear attention)
+    qattention_softmax.hpp      # QAttentionSoftmax1D (standard softmax attention)
+    qmha.hpp                    # QMultiHeadLinearAttention1D
+    qbridge.hpp                 # Mixed-precision bridges (qformat <-> affine <-> fp16/bf16/float)
     activationFunctions.hpp     # Activation function policies (9 functions)
     fixedPointTransferFunctions.hpp
     adam.hpp                    # Adam optimizer policy
     rmsprop.hpp                 # RMSprop optimizer policy
-    pool1d.hpp                  # MaxPool1D and AvgPool1D layers
     dropout.hpp                 # Inverted dropout regularization layer
     gradientClipping.hpp        # Gradient clipping policies
     weightDecay.hpp             # L2 weight decay policies
@@ -762,13 +829,22 @@ tinymind/
     truncatedBPTT.hpp           # Truncated BPTT training utility
     networkStats.hpp            # Compile-time network statistics
     xavier.hpp                  # Xavier weight initialization
-    lookupTables.cpp            # Pre-computed activation tables (~3MB)
+    lookupTables.cpp            # Pre-computed activation tables (~4.6 MB)
     include/                    # Support headers
-      tinymind_platform.hpp     # Platform feature gates (FLOAT/STD/HOSTED_IO/OSTREAMS/HOSTED_RAND/QUANTIZATION)
+      tinymind_platform.hpp     # Platform feature gates (FLOAT/STD/HOSTED_IO/OSTREAMS/HOSTED_RAND/QUANTIZATION/FP16/INT16_ACCUM/SIMD_*/OPENMP)
       tinymind_traits.hpp       # Minimal in-house enable_if / is_floating_point for STD=0 builds
+      tinymind_fp16.hpp         # fp16_t / bf16_t storage structs + float converters
+      threading.hpp             # TINYMIND_PARALLEL_FOR_OUTER OpenMP macro
       nnproperties.hpp          # Weight file manager (MLP, LSTM, GRU, KAN)
-      qcalibration.hpp          # Host-only int8 calibration helpers (RangeObserver, buildRequantizer, ...)
+      qcalibration.hpp          # Host-only int8 calibration (RangeObserver, PercentileObserver, KLDivergenceObserver, CLE, fold, ...)
       constants.hpp, limits.hpp, random.hpp, ...
+      simd/                     # ISA-capability SIMD specializations (Phase 14)
+        simd_dispatch.hpp       # Public entry + active backend selection
+        simd_neon.hpp, simd_neon_dotprod.hpp, simd_neon_fp16.hpp
+        simd_sve.hpp, simd_sve2.hpp
+        simd_helium_mve_i.hpp, simd_helium_mve_f.hpp
+        simd_avx2.hpp, simd_avx_vnni.hpp
+        simd_avx512f.hpp, simd_avx512_vnni.hpp
       bench/                    # Benchmark harness
         platform.hpp            # Cycle counter (Cortex-M DWT / host chrono) + stack watermarks
         report.hpp              # LayerStat CSV rows and ScopedTimer
@@ -784,15 +860,27 @@ tinymind/
     predictive_maintenance/     # Binary classifier on AI4I 2020 dataset (Q16.16 MLP)
     pytorch/                    # PyTorch weight import (MLP + GRU export, Q-format pipeline)
     pytorch_quant/xor/          # PyTorch -> int8 affine quantization end-to-end (XOR)
+    resnet_block_int8/          # int8 residual block (Phase 10 per-channel + QAdd)
+    resnet18_block_int8/        # int8 ResNet-18-shaped stem + basic block
+    mobilenetv2_int8/           # int8 MobileNetV2 inverted-residual sequence
+    transformer_encoder_int8/   # int8 transformer encoder block (LayerNorm + attention + dense)
+    mixed_precision_kws/        # int8 -> fp16 -> int8 KWS (Phase 9 qbridge)
+    mixed_precision_mlp_int8_qformat/ # Hybrid int8 affine <-> Q8.8 (Phase 17 integer bridges)
+    import_demo/                # End-to-end Phase 15 importer (3-8-4-2 MLP, three observers + CLE)
+    perf_matrix/                # SIMD gate bench (CSV per backend, invariant output_checksum)
   unit_test/
     nn/                         # Neural network tests (171 test cases)
     kan/                        # KAN tests (16 test cases)
     qformat/                    # Fixed-point type tests (static_assert)
     qlearn/                     # Q-learning tests
-    quantization/               # int8 quantization path: Requantizer, calibration, Q* layer correctness
-    embedded/                   # Five-corner (FLOAT, STD, QUANT) regression matrix
+    quantization/               # int8 path: Requantizer, calibration, Q* layer correctness, SIMD bit-exactness
+    lookuptable/                # Activation lookup-table generator regressions
+    embedded/                   # Eight-corner (FLOAT, STD, QUANT, FP16, INT16_ACCUM, SIMD_*) regression matrix + simd_prereq_regressions
+    integration/                # Golden-byte regression suite for the Phase 16/17 exemplars
   apps/
     activation/                 # Lookup table generator tool
+    import_pytorch/             # PyTorch -> TinyMind int8 importer (numpy core)
+    import_onnx/                # QDQ-format ONNX -> TinyMind int8 importer
 ```
 
 ## Documentation
