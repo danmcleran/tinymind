@@ -121,20 +121,27 @@ result.
 ## 4. Realistic deployment pattern (two stages)
 
 ```
-Stage 1 — HOST, float:
-    PyTorch (or similar) + autograd over inputs  →  PDE residual loss  →  train PINN
-    export weights
+Stage 1 — HOST:  train PINN (autograd over inputs for the PDE residual), export weights
 
-Stage 2 — MCU, Q-format:
-    TinyMind forward pass  u(x, t)  =  inference only
+Stage 2 — inference only, plain forward pass u(x, t).  Two precision options:
+    (a) double  -> double      FPU targets; exact, no quantization error
+    (b) double  -> Q-format    MCU/no-FPU; small quantization error
 ```
 
-- **Works today (verified):** Stage 2 is a plain forward pass, matching
-  TinyMind's documented "float training on host, post-training Q-format
-  conversion, inference-only on MCU" workflow. `examples/pinn_heat1d/` evaluates
-  the same field in float and in Q16.16 fixed point and confirms the inference
-  values agree to ~1.7e-3 — no autodiff needed at inference, since deploying a
-  trained PINN is just evaluating `u(x, t)`. **This is the primary use case.**
+Deploying a trained PINN needs **no autodiff at inference** — it is just
+evaluating `u(x, t)`. Two supported precision paths, both verified in
+`examples/pinn_heat1d/`:
+
+- **(a) double → double (recommended where an FPU exists).** Train in `double`,
+  infer in `double`. Zero quantization error — inference reproduces the trained
+  field bit-faithfully (the exemplar's double inference matches the analytic
+  field to 0.0). Still header-only, no OS, no GPU. TinyMind's `NeuralNet<double>`
+  already trains *and* infers in double (see the floating-point NN unit tests),
+  so this path needs nothing new. **This is the simplest and most accurate
+  option, and the primary one for FPU-class targets.**
+- **(b) double → Q-format (for no-FPU MCUs).** Same field in Q16.16 fixed point
+  agrees with the double reference to ~1.7e-3 on the exemplar grid. Use when the
+  target has no FPU and the accuracy budget allows it.
 - **Now possible:** the residual *itself* (input derivatives) can be computed
   on-device, in float or fixed-point, via `Dual` — so residual monitoring and
   adaptive collocation sampling no longer require host autograd. Full on-device

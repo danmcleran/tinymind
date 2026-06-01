@@ -125,8 +125,12 @@ int main(int argc, char** argv)
     int failures = 0;
     const int GX = 5, GT = 4;
 
-    // --- Check 1: exact solution -> residual ~ 0 -----------------------------
+    // --- Check 1: exact solution -> residual ~ 0, and double inference of the
+    //     field value reproduces the analytic solution exactly. The latter is
+    //     the simplest deployment: train in double, infer in double (FPU
+    //     targets) -- no quantization error at all.
     double maxAbsResExact = 0.0;
+    double maxInferErrDouble = 0.0;
     for (int i = 0; i < GX; ++i)
     {
         for (int k = 0; k < GT; ++k)
@@ -139,13 +143,23 @@ int main(int argc, char** argv)
             const double uxx = fieldExact<D2>(xv, tv).deriv.deriv;
             const double res = ut - NU * uxx;
             if (std::fabs(res) > maxAbsResExact) maxAbsResExact = std::fabs(res);
+
+            // Double inference vs the closed form u = x^2/2 + nu*t.
+            const double u_infer = fieldExact<double>(x, t);
+            const double u_analytic = 0.5 * x * x + NU * t;
+            maxInferErrDouble = std::fmax(maxInferErrDouble,
+                                          std::fabs(u_infer - u_analytic));
         }
     }
     std::printf("[exact solution u = x^2/2 + nu*t]\n");
-    std::printf("  max |residual| over %dx%d grid = %.3e  (expect ~0)\n",
+    std::printf("  max |residual| over %dx%d grid       = %.3e  (expect ~0)\n",
                 GX, GT, maxAbsResExact);
-    if (maxAbsResExact > 1e-9) { ++failures; std::printf("  FAIL\n"); }
-    else                       { std::printf("  OK\n"); }
+    std::printf("  max |double inference - analytic|    = %.3e  (expect ~0)\n",
+                maxInferErrDouble);
+    if (maxAbsResExact > 1e-9 || maxInferErrDouble > 1e-12)
+        { ++failures; std::printf("  FAIL\n"); }
+    else
+        { std::printf("  OK (residual ~0; double inference is exact)\n"); }
 
     // --- Check 2: nonlinear field, autodiff vs central finite differences ----
     const double h = 1e-5;
