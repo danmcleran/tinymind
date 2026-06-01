@@ -2181,6 +2181,101 @@ BOOST_AUTO_TEST_CASE(bridge_bf16_to_int8_affine_round_trip)
     }
 }
 
+BOOST_AUTO_TEST_CASE(fp16_subnormals_round_trip)
+{
+    // Smallest fp16 normal is 2^-14 (~6.10e-5). Values below that land in
+    // the subnormal range down to 2^-24 (~5.96e-8): exercises floatToFp16's
+    // subnormal branch (implicit-1 shift + round) and fp16ToFloat's
+    // renormalize loop.
+    const float xs[] = {6.0e-5f, 3.0e-5f, 1.0e-5f, 5.0e-6f, 1.0e-6f,
+                        1.0e-7f, -3.0e-5f, -1.0e-6f};
+    for (float x : xs)
+    {
+        const fp16_t h = floatToFp16(x);
+        const float r = fp16ToFloat(h);
+        // Subnormal step is 2^-24; allow one step of absolute error.
+        BOOST_TEST(std::abs(r - x) <= 6.0e-8f + 1e-9f);
+        BOOST_TEST((r > 0.0f) == (x > 0.0f));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(fp16_underflow_to_zero)
+{
+    // Magnitude below half the smallest subnormal (2^-25) rounds to a
+    // signed zero: exercises the new_exp < -10 early return.
+    BOOST_TEST(fp16ToFloat(floatToFp16(1.0e-10f)) == 0.0f);
+    BOOST_TEST(fp16ToFloat(floatToFp16(-1.0e-10f)) == 0.0f);
+}
+
+BOOST_AUTO_TEST_CASE(fp16_nan_input_preserved)
+{
+    // exp_f == 0xFF with non-zero mantissa: NaN in, NaN out (sets the
+    // fp16 quiet-NaN mantissa bit, decoded back through the exp==0x1F path).
+    BOOST_TEST(std::isnan(fp16ToFloat(floatToFp16(NAN))));
+}
+
+BOOST_AUTO_TEST_CASE(fp16_true_infinity_input)
+{
+    // exp_f == 0xFF with zero mantissa (genuine Inf input, distinct from
+    // the finite-overflow path the existing test covers).
+    const fp16_t pinf = floatToFp16(INFINITY);
+    const fp16_t ninf = floatToFp16(-INFINITY);
+    BOOST_TEST(std::isinf(fp16ToFloat(pinf)));
+    BOOST_TEST(fp16ToFloat(pinf) > 0.0f);
+    BOOST_TEST(std::isinf(fp16ToFloat(ninf)));
+    BOOST_TEST(fp16ToFloat(ninf) < 0.0f);
+}
+
+BOOST_AUTO_TEST_CASE(fp16_rounding_carries_into_exponent)
+{
+    // 65535.0 sits just above the largest finite fp16 (65504): rounding the
+    // mantissa carries past 0x3FF, bumps the exponent to 0x1F, and snaps to
+    // Inf -- exercises the mantissa-overflow / exponent-bump branch.
+    BOOST_TEST(std::isinf(fp16ToFloat(floatToFp16(65535.0f))));
+
+    // A dense normal-range sweep also walks the ties-to-even carry path that
+    // bumps the mantissa without overflowing the exponent.
+    for (int i = 1; i < 4000; ++i)
+    {
+        const float x = static_cast<float>(i) * 0.017f;
+        const float r = fp16ToFloat(floatToFp16(x));
+        BOOST_TEST(std::abs(r - x) < 1e-2f * (1.0f + std::abs(x)));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(bf16_nan_and_inf_preserved)
+{
+    // exp_field == 0xFF, mantissa != 0: NaN preservation branch.
+    BOOST_TEST(std::isnan(bf16ToFloat(floatToBf16(NAN))));
+    // Genuine Inf flows through the round-to-nearest path unchanged.
+    BOOST_TEST(std::isinf(bf16ToFloat(floatToBf16(INFINITY))));
+    BOOST_TEST(bf16ToFloat(floatToBf16(INFINITY)) > 0.0f);
+    BOOST_TEST(bf16ToFloat(floatToBf16(-INFINITY)) < 0.0f);
+}
+
+BOOST_AUTO_TEST_CASE(fp16_bf16_buffer_round_trip)
+{
+    const float src[] = {0.0f, 1.0f, -2.5f, 42.0f, -0.125f, 1024.0f};
+    const std::size_t n = sizeof(src) / sizeof(src[0]);
+
+    fp16_t hbuf[n];
+    float hback[n];
+    tinymind::floatToFp16Buffer(src, hbuf, n);
+    tinymind::fp16ToFloatBuffer(hbuf, hback, n);
+
+    bf16_t bbuf[n];
+    float bback[n];
+    tinymind::floatToBf16Buffer(src, bbuf, n);
+    tinymind::bf16ToFloatBuffer(bbuf, bback, n);
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const float tol = 1.0f + std::abs(src[i]);
+        BOOST_TEST(std::abs(hback[i] - src[i]) < 1e-2f * tol);
+        BOOST_TEST(std::abs(bback[i] - src[i]) < 1e-1f * tol);
+    }
+}
+
 #endif // TINYMIND_ENABLE_FP16
 
 #endif // TINYMIND_ENABLE_FLOAT
