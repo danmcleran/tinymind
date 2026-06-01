@@ -42,6 +42,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "qformat.hpp"
@@ -114,8 +115,167 @@ S fieldMLP(const S& x, const S& t)
     return acc;
 }
 
+// ===========================================================================
+// --train: a host-side PINN training loop. This is the "what remains" piece
+// from docs/pinn-feasibility.md, and it is purely host code -- "on-device"
+// describes the deployment footprint, not a build requirement.
+//
+// A small MLP u(x,t) = w2 . tanh(W1 [x,t] + b1) + b2 is fit to the 1-D heat
+// equation on x in [0,1], t in [0,T] with the analytic reference solution
+//     u*(x,t) = exp(-nu*pi^2*t) * sin(pi*x).
+// The PINN loss is mean(residual^2) + bc + ic, where:
+//   - residual r = u_t - nu*u_xx is computed by EXACT forward-mode autodiff
+//     (u_t via a first-order dual, u_xx via a nested second-order dual);
+//   - the gradient of the loss w.r.t. the WEIGHTS is taken by finite
+//     difference (option 1: no new core machinery). A production trainer would
+//     use reverse-over-forward instead; that is an efficiency upgrade, not a
+//     prerequisite, and is equally host-side.
+// ===========================================================================
+namespace train {
+
+static const double PI = 3.14159265358979323846;
+static const double T_MAX = 0.30;
+
+static const int H  = 10;                 // hidden units
+static const int NP = H * 2 + H + H + 1;  // params: W1(Hx2), b1(H), w2(H), b2
+// Flat layout: [0,2H) W1 ; [2H,3H) b1 ; [3H,4H) w2 ; [4H] b2.
+
+template<typename S>
+S net(const double* p, const S& x, const S& t)
+{
+    S out = Lit<S>::make(p[4 * H]);
+    for (int h = 0; h < H; ++h)
+    {
+        const S z = Lit<S>::make(p[2 * h]) * x
+                  + Lit<S>::make(p[2 * h + 1]) * t
+                  + Lit<S>::make(p[2 * H + h]);
+        out = out + Lit<S>::make(p[3 * H + h])
+                  * tinymind::DualScalarActivation<S>::tanhValue(z);
+    }
+    return out;
+}
+
+double uVal(const double* p, double x, double t) { return net<double>(p, x, t); }
+
+double residualAt(const double* p, double x, double t)
+{
+    const double ut = net<D1>(p, D1(x), D1(t, 1.0)).deriv;          // du/dt
+    const D2 xv(D1(x, 1.0), D1(1.0, 0.0));
+    const D2 tv(D1(t), D1(0.0));
+    const double uxx = net<D2>(p, xv, tv).deriv.deriv;             // d2u/dx2
+    return ut - NU * uxx;
+}
+
+double analytic(double x, double t) { return std::exp(-NU * PI * PI * t) * std::sin(PI * x); }
+
+// PINN loss: PDE residual on interior collocation points + boundary + initial.
+double loss(const double* p)
+{
+    const int CX = 7, CT = 5;
+    double pde = 0.0; int npde = 0;
+    for (int i = 1; i < CX - 1; ++i)          // interior x only
+        for (int k = 1; k < CT; ++k)          // t > 0
+        {
+            const double x = static_cast<double>(i) / (CX - 1);
+            const double t = T_MAX * k / (CT - 1);
+            const double r = residualAt(p, x, t);
+            pde += r * r; ++npde;
+        }
+
+    double bc = 0.0; int nbc = 0;
+    for (int k = 0; k < CT; ++k)
+    {
+        const double t = T_MAX * k / (CT - 1);
+        const double u0 = uVal(p, 0.0, t);    // u(0,t) = 0
+        const double u1 = uVal(p, 1.0, t);    // u(1,t) = 0
+        bc += u0 * u0 + u1 * u1; nbc += 2;
+    }
+
+    double ic = 0.0; int nic = 0;
+    for (int i = 0; i < CX; ++i)
+    {
+        const double x = static_cast<double>(i) / (CX - 1);
+        const double e = uVal(p, x, 0.0) - std::sin(PI * x);   // u(x,0) = sin(pi x)
+        ic += e * e; ++nic;
+    }
+
+    return pde / npde + 10.0 * (bc / nbc) + 10.0 * (ic / nic);
+}
+
+// Mean-squared solution error against the analytic field on a test grid.
+double solutionError(const double* p)
+{
+    double se = 0.0; int n = 0;
+    for (int i = 0; i <= 10; ++i)
+        for (int k = 0; k <= 6; ++k)
+        {
+            const double x = i / 10.0, t = T_MAX * k / 6.0;
+            const double e = uVal(p, x, t) - analytic(x, t);
+            se += e * e; ++n;
+        }
+    return std::sqrt(se / n);
+}
+
+int run()
+{
+    double p[NP], grad[NP], vel[NP];
+    std::srand(12345u);
+    for (int i = 0; i < NP; ++i)
+    {
+        p[i] = 0.2 * (static_cast<double>(std::rand()) / RAND_MAX - 0.5); // small init
+        vel[i] = 0.0;
+    }
+
+    const double lr = 0.02, momentum = 0.9, fd = 1e-6;
+    const int epochs = 1500;
+
+    const double loss0 = loss(p);
+    const double err0 = solutionError(p);
+    std::printf("PINN training (heat eq, host-side; exact-autodiff residual,\n");
+    std::printf("               finite-difference weight gradients)\n");
+    std::printf("  net 2->%d->1, %d params, %d epochs\n", H, NP, epochs);
+    std::printf("  epoch %5d   loss %.4e   solL2 %.4e\n", 0, loss0, err0);
+
+    for (int e = 1; e <= epochs; ++e)
+    {
+        const double base = loss(p);
+        for (int i = 0; i < NP; ++i)         // forward finite-difference gradient
+        {
+            const double save = p[i];
+            p[i] = save + fd;
+            grad[i] = (loss(p) - base) / fd;
+            p[i] = save;
+        }
+        for (int i = 0; i < NP; ++i)
+        {
+            vel[i] = momentum * vel[i] - lr * grad[i];
+            p[i] += vel[i];
+        }
+        if (e % 300 == 0)
+            std::printf("  epoch %5d   loss %.4e   solL2 %.4e\n", e, loss(p), solutionError(p));
+    }
+
+    const double lossF = loss(p);
+    const double errF = solutionError(p);
+    std::printf("\n  loss   %.4e -> %.4e  (%.1fx lower)\n", loss0, lossF, loss0 / lossF);
+    std::printf("  sol L2 %.4e -> %.4e\n", err0, errF);
+
+    // The mechanism works if the residual loss fell substantially; tight
+    // solution accuracy needs a real optimizer (Adam/L-BFGS) + more points and
+    // is out of scope for this PoC.
+    const bool ok = (lossF < 0.25 * loss0);
+    std::printf("\n%s\n", ok ? "ON-HOST PINN TRAINING VERIFIED (loss decreased)"
+                             : "TRAINING DID NOT CONVERGE");
+    return ok ? 0 : 1;
+}
+
+} // namespace train
+
 int main(int argc, char** argv)
 {
+    if (argc > 1 && std::strcmp(argv[1], "--train") == 0)
+        return train::run();
+
     const bool bench = (argc > 1) && (std::strcmp(argv[1], "--bench") == 0);
     (void)bench;
 

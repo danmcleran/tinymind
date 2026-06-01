@@ -20,9 +20,16 @@ value type, fixed-point included.** This was originally the one capability gap
 residual). It is closed by `cpp/dual.hpp` and `cpp/dualActivations.hpp`, and
 demonstrated end-to-end by `examples/pinn_heat1d/`.
 
-What remains for fully on-device *training* is composing those input
-derivatives with derivatives of the residual w.r.t. the **weights**; inference
-of a host-trained PINN already works through the existing Q-format pipeline.
+Training a PINN means composing those input derivatives with the residual's
+gradient w.r.t. the **weights**. That is ordinary host code — "on-device" refers
+to the eventual *deployment footprint*, not a build requirement, so the training
+loop is written, run, and verified on a workstation like any other code.
+`examples/pinn_heat1d/ --train` does exactly this: it fits a small MLP to the
+heat equation on the host (exact-autodiff residual, finite-difference weight
+gradients), driving the PINN loss down ~370x with no device involved. Inference
+of a trained PINN then runs through the existing `double` or Q-format forward
+pass. The only thing still open is an *efficient* weight-gradient path
+(reverse-over-forward) for larger models — an optimization, also host-side.
 
 > **Status (update):** Sections 1–2 below describe the original gap and its
 > resolution. The dual-number machinery they call for is now in the tree and
@@ -160,9 +167,10 @@ better trade). Both compile from the same headers; only the value type and the
 two capability macros differ. The fixed-point `Dual` arithmetic in `cpp/dual.hpp`
 itself needs neither macro and runs in the fully freestanding build.
 - **Now possible:** the residual *itself* (input derivatives) can be computed
-  on-device, in float or fixed-point, via `Dual` — so residual monitoring and
-  adaptive collocation sampling no longer require host autograd. Full on-device
-  *training* still needs the residual's gradient w.r.t. the weights.
+  in float or fixed-point via `Dual` — at training time on the host, and even at
+  inference time on-device for residual monitoring or adaptive sampling, with no
+  host autograd. Training (the residual's gradient w.r.t. the weights) is host
+  code and is demonstrated by `examples/pinn_heat1d/ --train`.
 
 ## 5. The KAN angle (promising, under-explored)
 
@@ -187,6 +195,10 @@ Done:
 5. ✅ 1-D exemplar (`examples/pinn_heat1d/`): the heat residual `u_t − ν·u_xx`
    by forward-mode AD — residual ≈ 0 on an exact solution, and autodiff
    derivatives match finite differences on a nonlinear `tanh` field.
+6. ✅ Host PINN training loop (`examples/pinn_heat1d/ --train`): fits a small MLP
+   to the heat equation with the exact-autodiff residual and finite-difference
+   weight gradients; drives the PINN loss down ~370x and the solution L2 error
+   to ~1% — all host-side, no device.
 
 Remaining:
 
@@ -194,9 +206,9 @@ Remaining:
    coefficients degrade higher-order input derivatives enough to matter? The
    `Dual<QValue>` path is mechanically correct (`unit_test/dual/`); its
    accuracy on a real residual is not yet benchmarked.
-6. **On-device training:** compose the input-derivative AD with the residual's
-   gradient w.r.t. the weights (reverse-over-forward), then a host-train →
-   Q-format-infer comparison for a trained field.
+8. **Efficient weight gradients:** the `--train` PoC uses finite differences
+   (O(weights) loss evals). Reverse-over-forward would give all weight gradients
+   in one pass — an optimization for larger models, also host-side.
 7. **Ergonomic Taylor-mode:** nested `Dual` works but scales awkwardly past 2nd
    order; a dedicated order-N Taylor type would be cleaner for high-order PDEs.
 

@@ -22,5 +22,12 @@ release :
 run :
 	cd ./output && ./pinn_heat1d && cd ../
 
+# Host-side PINN training loop (exact-autodiff residual, FD weight gradients).
+# Built -O3 since it runs ~1500 epochs; still well under a second.
+train :
+	$(MKDIR)
+	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+	cd ./output && ./pinn_heat1d --train && cd ../
+
 clean :
 	rm -f ./output/*

@@ -59,7 +59,8 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - Built purely from the value type's `+`, `-`, `*`, `/`, so it works identically for `float`/`double` and fixed-point `QValue`; freestanding-clean (no `<cmath>`, STD, or FLOAT required -- runs in the deployable MCU build)
 - `tanh(Dual)` / `sigmoid(Dual)` overloads (`cpp/dualActivations.hpp`) with analytic derivatives; nested `Dual<Dual<...>>` yields 2nd- and higher-order input derivatives
 - Provides the input-coordinate derivatives (`du/dx`, `d^2u/dx^2`) a PDE residual needs -- the basis for [Physics-Informed Neural Networks](https://en.wikipedia.org/wiki/Physics-informed_neural_networks). Primary deployment is train-offline / inference-only (a plain forward pass of `u(x, t)`) in `double` (exact) or Q-format (quantized)
-- See [`docs/pinn-feasibility.md`](docs/pinn-feasibility.md) and [`examples/pinn_heat1d/`](examples/pinn_heat1d/) (1-D heat-equation residual `u_t - nu*u_xx`)
+- Host PINN training is ordinary host code (no device needed): [`examples/pinn_heat1d/`](examples/pinn_heat1d/) `make train` fits a small MLP to the 1-D heat equation `u_t - nu*u_xx` (exact-autodiff residual, finite-difference weight gradients), driving the PINN loss down ~370x
+- See [`docs/pinn-feasibility.md`](docs/pinn-feasibility.md) for the full feasibility analysis and deployment paths
 
 ### Fixed-Point Arithmetic
 

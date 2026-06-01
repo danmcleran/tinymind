@@ -9,7 +9,7 @@ check :
 	cd unit_test/embedded && make clean && make && make run && make simd_prereq_regressions && cd -
 	cd unit_test/quantization && make clean && make && make run && cd -
 	cd unit_test/dual && make clean && make && make run && cd -
-	cd examples/pinn_heat1d && make clean && make && make release && make run && cd -
+	cd examples/pinn_heat1d && make clean && make && make release && make run && make train && cd -
 	cd examples/xor && make clean && make && make release && cd -
 	cd examples/maze && make clean && make && make release && cd -
 	cd examples/dqn_maze && make clean && make && make release && cd -
