@@ -3090,6 +3090,31 @@ BOOST_AUTO_TEST_CASE(qsoftmax_dominant_class_saturates_high)
     }
 }
 
+BOOST_AUTO_TEST_CASE(qsoftmax_zero_lut_emits_clamped_zero_point)
+{
+    // An all-zero exp LUT (degenerate / mis-calibrated input_scale) makes the
+    // row sum 0; the forward must take the divide-by-zero guard and emit the
+    // clamped output zero_point rather than dividing.
+    constexpr std::size_t R = 1, F = 4;
+
+    int32_t exp_lut[kQSoftmaxExpLUTSize] = {0};
+
+    QSoftmax1D<int8_t, int8_t, R, F> sm;
+    sm.exp_lut = exp_lut;
+    sm.output_zero_point = -128;
+    sm.qmin = -128;
+    sm.qmax = 127;
+
+    int8_t input[F]  = {10, -20, 30, 0};
+    int8_t output[F] = {1, 1, 1, 1};
+    sm.forward(input, output);
+
+    for (std::size_t i = 0; i < F; ++i)
+    {
+        BOOST_TEST(static_cast<int>(output[i]) == -128);
+    }
+}
+
 namespace {
 
 // ----- Phase 12 recurrent quantization test helpers ----------------------
@@ -4245,6 +4270,48 @@ BOOST_AUTO_TEST_CASE(qattention_softmax_parity_with_float_reference)
     // Softmax attention compounds more stages than linear attention; the
     // empirical noise floor is ~15% of dynamic range for these tiny shapes.
     BOOST_TEST(max_err < 0.15f * y_ref_max);
+}
+
+BOOST_AUTO_TEST_CASE(qattention_softmax_zero_lut_clamps_attention_row)
+{
+    // Zero weights -> zero scores -> an all-zero softmax exp LUT makes every
+    // score-row sum 0. The forward must take the divide-by-zero guard and
+    // fill each attention row with the clamped attn_zero_point.
+    constexpr std::size_t S = 2, E = 2, P = 2;
+
+    int8_t w_q[3 * E * P] = {0};
+    int32_t b_q[3 * P]    = {0};
+    int32_t exp_lut[256]  = {0};
+
+    tinymind::QAttentionSoftmax1D<int8_t, int8_t, int32_t,
+                                  int8_t, int8_t, int8_t, int8_t,
+                                  S, E, P> attn;
+    attn.weights = w_q;
+    attn.biases  = b_q;
+    attn.input_zero_point = 0;
+    attn.q_zero_point = 0;
+    attn.k_zero_point = 0;
+    attn.v_zero_point = 0;
+    attn.attn_zero_point = -128;
+    attn.q_requantizer = makeI8Requant(kQ31One, 0, 0);
+    attn.k_requantizer = makeI8Requant(kQ31One, 0, 0);
+    attn.v_requantizer = makeI8Requant(kQ31One, 0, 0);
+    attn.score_requantizer = makeI8Requant(kQ31One, 0, 0);
+    attn.softmax_exp_lut = exp_lut;
+    attn.attn_qmin = -128;
+    attn.attn_qmax = 127;
+    attn.output_requantizer = makeI8Requant(kQ31One, 0, 0);
+
+    int8_t x_q[S * E] = {5, -5, 10, -10};
+    int8_t q_sc[S * P], k_sc[S * P], v_sc[S * P];
+    int8_t score_sc[S * S], attn_sc[S * S] = {1, 1, 1, 1};
+    int8_t y_q[S * P];
+    attn.forward(x_q, q_sc, k_sc, v_sc, score_sc, attn_sc, y_q);
+
+    for (std::size_t i = 0; i < S * S; ++i)
+    {
+        BOOST_TEST(static_cast<int>(attn_sc[i]) == -128);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(qmha_stacks_two_identical_heads)

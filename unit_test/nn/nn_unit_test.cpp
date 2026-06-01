@@ -4141,6 +4141,37 @@ BOOST_AUTO_TEST_CASE(test_case_network_stats)
     BOOST_TEST(true); // test counts toward suite
 }
 
+BOOST_AUTO_TEST_CASE(test_case_hidden_layer_accessor_out_of_range)
+{
+    // With a single hidden layer, InnerHiddenLayerChainType is EmptyLayerChain.
+    // An out-of-range hidden-layer index falls past the last-hidden-layer fast
+    // path into the ChainHiddenLayerAccessor<EmptyLayerChain> terminal methods:
+    // getters return a default-constructed value, setters are no-ops.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::FixedPointTransferFunctions<
+        ValueType,
+        UniformRealRandomNumberGenerator<ValueType>,
+        tinymind::TanhActivationPolicy<ValueType>,
+        tinymind::TanhActivationPolicy<ValueType>> TF;
+    typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<5>, 1, TF> NNType;
+
+    NNType nn;
+    const size_t outOfRange = 1; // only valid hidden-layer index is 0
+
+    BOOST_TEST(nn.getHiddenLayerBiasNeuronWeightForConnection(outOfRange, 0) ==
+               ValueType());
+    BOOST_TEST(nn.getHiddenLayerWeightForNeuronAndConnection(outOfRange, 0, 0) ==
+               ValueType());
+
+    // Setters on the terminal chain are no-ops; they must not touch the real
+    // layer-0 weights. Capture a valid weight, run the no-op setters, re-read.
+    const ValueType before =
+        nn.getHiddenLayerWeightForNeuronAndConnection(0, 0, 0);
+    nn.setHiddenLayerBiasNeuronWeightForConnection(outOfRange, 0, ValueType(1, 0));
+    nn.setHiddenLayerWeightForNeuronAndConnection(outOfRange, 0, 0, ValueType(1, 0));
+    BOOST_TEST(nn.getHiddenLayerWeightForNeuronAndConnection(0, 0, 0) == before);
+}
+
 BOOST_AUTO_TEST_CASE(test_case_teacher_forcing)
 {
     tinymind::ScheduledSampling<double> sampler(100);
@@ -4163,6 +4194,63 @@ BOOST_AUTO_TEST_CASE(test_case_teacher_forcing)
     // Reset should restore ratio to 1.0
     sampler.reset();
     BOOST_TEST(fabs(sampler.getTeacherForcingRatio() - 1.0) < 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_teacher_forcing_rand_branch)
+{
+    // Exercises the TINYMIND_ENABLE_HOSTED_RAND path of selectInput, which the
+    // post-decay test above skips (it only hits the early-out at step >= total).
+    tinymind::ScheduledSampling<double> sampler(100);
+
+    // Step 0: threshold == 1000, so rand() % 1000 is always below it ->
+    // selectInput always returns ground truth.
+    for (int i = 0; i < 50; ++i)
+    {
+        BOOST_TEST(fabs(sampler.selectInput(1.0, 0.5) - 1.0) < 1e-9);
+    }
+
+    // Halfway through decay (threshold ~500): both outcomes must occur across
+    // many rolls. rand() is deterministically seeded, so this is reproducible.
+    for (int i = 0; i < 50; ++i) sampler.step();
+    bool saw_ground_truth = false;
+    bool saw_prediction   = false;
+    for (int i = 0; i < 500; ++i)
+    {
+        const double r = sampler.selectInput(1.0, 0.5);
+        if (fabs(r - 1.0) < 1e-9) saw_ground_truth = true;
+        if (fabs(r - 0.5) < 1e-9) saw_prediction = true;
+    }
+    BOOST_TEST(saw_ground_truth);
+    BOOST_TEST(saw_prediction);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_qformat_minmax_saturate_policy)
+{
+    // Direct coverage of MinMaxSaturatePolicy saturation arms, which the
+    // default QValue overflow policy does not route through.
+    typedef tinymind::MinMaxSaturatePolicy<int> Policy;
+    const int lo = -100;
+    const int hi = 100;
+
+    // Addition: positive overflow, negative underflow, and the zero no-op.
+    BOOST_TEST(Policy::saturate(90, 20, lo, hi, tinymind::AdditionOp) == hi);
+    BOOST_TEST(Policy::saturate(-90, -20, lo, hi, tinymind::AdditionOp) == lo);
+    BOOST_TEST(Policy::saturate(7, 0, lo, hi, tinymind::AdditionOp) == 7);
+
+    // Subtraction: positive-target underflow, negative-target overflow, zero.
+    BOOST_TEST(Policy::saturate(-90, 20, lo, hi, tinymind::SubtractionOp) == lo);
+    BOOST_TEST(Policy::saturate(90, -20, lo, hi, tinymind::SubtractionOp) == hi);
+    BOOST_TEST(Policy::saturate(7, 0, lo, hi, tinymind::SubtractionOp) == 7);
+
+    // Multiplication: overflow and underflow saturation.
+    BOOST_TEST(Policy::saturate(50, 50, lo, hi, tinymind::MultiplicationOp) == hi);
+    BOOST_TEST(Policy::saturate(50, -50, lo, hi, tinymind::MultiplicationOp) == lo);
+
+    // Division: by-zero (sign-dependent), plus overflow / underflow.
+    BOOST_TEST(Policy::saturate(5, 0, lo, hi, tinymind::DivisionOp) == hi);
+    BOOST_TEST(Policy::saturate(-5, 0, lo, hi, tinymind::DivisionOp) == lo);
+    BOOST_TEST(Policy::saturate(1000, 2, lo, hi, tinymind::DivisionOp) == hi);
+    BOOST_TEST(Policy::saturate(-1000, 2, lo, hi, tinymind::DivisionOp) == lo);
 }
 
 BOOST_AUTO_TEST_CASE(test_case_conv1d_forward)

@@ -842,5 +842,79 @@ BOOST_AUTO_TEST_CASE(test_untrained_qlearner_iterate)
     } while(iterations < 1000);
 }
 
+BOOST_AUTO_TEST_CASE(test_qlearn_invalid_state_action_queries)
+{
+    // Out-of-range state/action exercises the invalid-query guards in both
+    // QTableRewardPolicy::getRewardForStateAndAction and
+    // QValueTablePolicy::getQValue, which all valid-path tests skip.
+    QLearnerType ql(learningRate, discountFactor, 100);
+
+    const state_t  badState  = static_cast<state_t>(NUMBER_OF_STATES + 10);
+    const action_t badAction = static_cast<action_t>(NUMBER_OF_ACTIONS + 10);
+
+    BOOST_TEST(static_cast<QValueType>(0) ==
+               ql.getEnvironment().getRewardForStateAndAction(badState, badAction));
+    BOOST_TEST(static_cast<QValueType>(0) == ql.getQValue(badState, badAction));
+
+    // numberOfValidActions == 0 hits the case-0 arm of
+    // chooseRandomActionFromValidActions.
+    action_t dummy[1] = {0};
+    BOOST_TEST(static_cast<action_t>(MazeEnvironmentType::EnvironmentInvalidAction) ==
+               ql.getEnvironment().chooseRandomActionFromValidActions(dummy, 0));
+}
+
+BOOST_AUTO_TEST_CASE(test_qlearn_argmax_exactly_two_actions)
+{
+    // decisionPoint 0 -> shouldChooseRandomAction() is always false, so
+    // chooseAction routes through ArgMaxPolicy::selectBestActionForState.
+    // A state with exactly two valid actions hits its case-2 arm; making the
+    // first action's Q-value larger exercises the qValue0 > qValue1 branch.
+    QLearnerType ql(learningRate, discountFactor, 0);
+
+    const state_t state = 0;
+    for (action_t a = 0; a < NUMBER_OF_ACTIONS; ++a)
+    {
+        ql.getEnvironment().setRewardForStateAndAction(
+            state, a, MazeEnvironmentType::EnvironmentInvalidActionValue);
+    }
+    // Actions 1 and 2 are the only valid ones.
+    ql.getEnvironment().setRewardForStateAndAction(
+        state, 1, MazeEnvironmentType::EnvironmentNoRewardValue);
+    ql.getEnvironment().setRewardForStateAndAction(
+        state, 2, MazeEnvironmentType::EnvironmentNoRewardValue);
+
+    ql.setQValue(state, 1, QValueType(9, 0));
+    ql.setQValue(state, 2, QValueType(1, 0));
+
+    BOOST_TEST(static_cast<action_t>(1) == ql.takeAction(state));
+}
+
+BOOST_AUTO_TEST_CASE(test_qlearn_future_value_with_no_valid_actions)
+{
+    // A newState with no valid actions makes chooseAction return InvalidAction,
+    // exercising calculateFutureQValue's InvalidAction arm (future value 0) as
+    // well as the case-0 arms of selectBestActionForState and
+    // chooseRandomActionFromValidActions.
+    QLearnerType ql(learningRate, discountFactor, 0);
+
+    const state_t deadEnd = 4;
+    for (action_t a = 0; a < NUMBER_OF_ACTIONS; ++a)
+    {
+        ql.getEnvironment().setRewardForStateAndAction(
+            deadEnd, a, MazeEnvironmentType::EnvironmentInvalidActionValue);
+    }
+
+    QLearnerType::experience_t experience;
+    experience.state    = 0;
+    experience.action   = 1;
+    experience.newState = deadEnd;
+    experience.reward   = reward;
+
+    // Should complete without dereferencing an invalid action; the future
+    // value contribution collapses to zero.
+    ql.updateFromExperience(experience);
+    BOOST_TEST(deadEnd == ql.getState());
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 

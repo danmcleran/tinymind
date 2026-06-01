@@ -163,6 +163,49 @@ BOOST_AUTO_TEST_CASE(piecewise_linear_spline_derivative)
     BOOST_CHECK_CLOSE(deriv, 1.0, 1e-6);
 }
 
+BOOST_AUTO_TEST_CASE(bspline_findspan_out_of_range_clamps)
+{
+    // Inputs below the first interior knot and above the last clamp to the
+    // span boundaries (general degree>=2 findKnotSpan), rather than indexing
+    // out of bounds. Constant coefficients make the clamped value exact.
+    tinymind::UniformKnotVector<double, 3, 2> knotVector;
+    knotVector.initialize(-1.0, 1.0);
+    double coefficients[5] = {2.0, 2.0, 2.0, 2.0, 2.0};
+
+    const double below = tinymind::DeBoorEvaluator<double, 2>::evaluateSpline(
+        coefficients, knotVector.knots, 5, -5.0);
+    const double above = tinymind::DeBoorEvaluator<double, 2>::evaluateSpline(
+        coefficients, knotVector.knots, 5, 5.0);
+    BOOST_CHECK_CLOSE(below, 2.0, 1e-6);
+    BOOST_CHECK_CLOSE(above, 2.0, 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(bspline_derivative_zero_width_knot_spans)
+{
+    // Repeated knots produce zero-width intervals; the derivative must take the
+    // zero-denominator guard rather than divide by zero. Covers both the
+    // general degree-k coefficient loop and the degree-1 specialization.
+
+    // Degree 2: knots[i+3] == knots[i+1] at i==0 -> zero denominator.
+    {
+        double knots[7] = {0.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0};
+        double coeffs[5] = {0.0, 1.0, 2.0, 3.0, 4.0};
+        const double d = tinymind::DeBoorEvaluator<double, 2>::evaluateSplineDerivative(
+            coeffs, knots, 5, 1.5);
+        BOOST_TEST(std::isfinite(d));
+    }
+
+    // Degree 1: the clamped span [knots[1], knots[2]] has zero width, so the
+    // piecewise-constant derivative returns 0.
+    {
+        double knots[5] = {0.0, 1.0, 1.0, 2.0, 3.0};
+        double coeffs[4] = {0.0, 1.0, 2.0, 3.0};
+        const double d = tinymind::DeBoorEvaluator<double, 1>::evaluateSplineDerivative(
+            coeffs, knots, 4, 0.5);
+        BOOST_CHECK_CLOSE(d, 0.0, 1e-6);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(quadratic_spline_evaluation)
 {
     // k=2 (quadratic), GridSize=3
