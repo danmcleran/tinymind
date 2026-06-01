@@ -4101,6 +4101,17 @@ BOOST_AUTO_TEST_CASE(test_case_elu_activation_fixed_point)
     // Derivative for positive: f'(x) = 1
     ValueType deriv = EluPolicy::activationFunctionDerivative(pos);
     BOOST_TEST(deriv.getValue() == tinymind::Constants<ValueType>::one().getValue());
+
+    // Negative values exercise the exp-table branch: f(x) = exp(x) - 1 < 0,
+    // and the derivative path f'(x) = x + 1, which is in (0, 1) for x in (-1, 0).
+    ValueType neg(-1, 128); // -0.5
+    ValueType negResult = EluPolicy::activationFunction(neg);
+    BOOST_TEST(negResult < tinymind::Constants<ValueType>::zero());
+    BOOST_TEST(negResult > ValueType(-1, 0));
+
+    ValueType negDeriv = EluPolicy::activationFunctionDerivative(neg);
+    BOOST_TEST(negDeriv > tinymind::Constants<ValueType>::zero());
+    BOOST_TEST(negDeriv < tinymind::Constants<ValueType>::one());
 }
 
 BOOST_AUTO_TEST_CASE(test_case_gelu_activation_fixed_point)
@@ -5682,6 +5693,13 @@ BOOST_AUTO_TEST_CASE(test_case_ternary_dense_forward_basic)
     BOOST_TEST(layer.getTernaryWeight(1, 2) == tinymind::detail::TERNARY_ZERO);
     BOOST_TEST(layer.getTernaryWeight(1, 3) == tinymind::detail::TERNARY_NEG);
 
+    // getTernaryWeightValue maps the packed code to +1 / 0 / -1; the
+    // dead-zone weights exercise the zero() return.
+    BOOST_TEST(layer.getTernaryWeightValue(0, 0) ==  1.0);
+    BOOST_TEST(layer.getTernaryWeightValue(0, 1) ==  0.0);
+    BOOST_TEST(layer.getTernaryWeightValue(0, 2) == -1.0);
+    BOOST_TEST(layer.getTernaryWeightValue(0, 3) ==  0.0);
+
     // Input: [2.0, 3.0, 4.0, 5.0]
     double input[4] = {2.0, 3.0, 4.0, 5.0};
     double output[2];
@@ -6186,6 +6204,29 @@ BOOST_AUTO_TEST_CASE(test_case_selfattention1d_conv1d_pipeline)
         }
     }
     BOOST_TEST(anyNonZero);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_self_attention_gradients_relu_derivative)
+{
+    // A freshly-constructed layer has zero weights, so the ReLU-kernel
+    // projections Q' and K' are all zero. computeGradients runs reluDerivative
+    // over them, exercising the activation <= 0 branch that zeroes the
+    // gradient. The resulting weight gradients must therefore all be zero.
+    tinymind::SelfAttention1D<double, 4, 3, 2> attn;
+
+    double input[12];
+    for (size_t i = 0; i < 12; ++i) input[i] = static_cast<double>(i) - 6.0;
+    double output[8];
+    attn.forward(input, output);
+
+    double outputDeltas[8];
+    for (size_t i = 0; i < 8; ++i) outputDeltas[i] = 1.0;
+    attn.computeGradients(outputDeltas);
+
+    for (size_t i = 0; i < attn.TotalWeights; ++i)
+    {
+        BOOST_TEST(fabs(attn.getGradient(i)) < 1e-12);
+    }
 }
 
 // ============================================================

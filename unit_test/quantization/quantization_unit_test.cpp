@@ -184,6 +184,23 @@ BOOST_AUTO_TEST_CASE(saturating_high_mul_basic)
     BOOST_TEST(saturatingRoundingDoublingHighMul(-1000, half) == -500);
 }
 
+BOOST_AUTO_TEST_CASE(quantize_multiplier_renormalizes_rounded_up_mantissa)
+{
+    using tinymind::quantizeMultiplier;
+
+    // A ratio whose frexp mantissa rounds up to exactly 2^31 trips the
+    // renormalize edge case: the multiplier is halved and the shift bumped.
+    int32_t mult = 0, shift = 0;
+    quantizeMultiplier(1.0 - 1e-10, mult, shift);
+    BOOST_TEST(mult == (static_cast<int32_t>(1) << 30));
+    BOOST_TEST(shift == -1);
+
+    // Sanity: the zero-ratio fast path is unaffected.
+    quantizeMultiplier(0.0, mult, shift);
+    BOOST_TEST(mult == 0);
+    BOOST_TEST(shift == 0);
+}
+
 BOOST_AUTO_TEST_CASE(saturating_high_mul_int_min_squared_saturates)
 {
     // The one overflow case in gemmlowp: INT32_MIN * INT32_MIN would yield
