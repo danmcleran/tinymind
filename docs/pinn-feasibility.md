@@ -124,24 +124,41 @@ result.
 Stage 1 — HOST:  train PINN (autograd over inputs for the PDE residual), export weights
 
 Stage 2 — inference only, plain forward pass u(x, t).  Two precision options:
-    (a) double  -> double      FPU targets; exact, no quantization error
-    (b) double  -> Q-format    MCU/no-FPU; small quantization error
+    (a) double  -> double      exact, no quantization error
+    (b) double  -> Q-format    small quantization error
 ```
 
 Deploying a trained PINN needs **no autodiff at inference** — it is just
 evaluating `u(x, t)`. Two supported precision paths, both verified in
 `examples/pinn_heat1d/`:
 
-- **(a) double → double (recommended where an FPU exists).** Train in `double`,
-  infer in `double`. Zero quantization error — inference reproduces the trained
-  field bit-faithfully (the exemplar's double inference matches the analytic
-  field to 0.0). Still header-only, no OS, no GPU. TinyMind's `NeuralNet<double>`
-  already trains *and* infers in double (see the floating-point NN unit tests),
-  so this path needs nothing new. **This is the simplest and most accurate
-  option, and the primary one for FPU-class targets.**
-- **(b) double → Q-format (for no-FPU MCUs).** Same field in Q16.16 fixed point
-  agrees with the double reference to ~1.7e-3 on the exemplar grid. Use when the
-  target has no FPU and the accuracy budget allows it.
+- **(a) double → double.** Train in `double`, infer in `double`. Zero
+  quantization error — inference reproduces the trained field bit-faithfully
+  (the exemplar's double inference matches the analytic field to 0.0). Still
+  header-only, no OS, no GPU. TinyMind's `NeuralNet<double>` already trains
+  *and* infers in double (see the floating-point NN unit tests), so this path
+  needs nothing new. **The simplest and most accurate option.**
+- **(b) double → Q-format.** Same field in Q16.16 fixed point agrees with the
+  double reference to ~1.7e-3 on the exemplar grid. Use when the accuracy budget
+  allows trading precision for fixed-point arithmetic.
+
+### What gates this — and what does *not*
+
+The double path is gated only by the capability macros
+`-DTINYMIND_ENABLE_FLOAT=1` (use `float`/`double` as the value type) and
+`-DTINYMIND_ENABLE_STD=1` (for the `std::tanh`/`std::exp` activation
+evaluation). **There is no FPU build switch.** `TINYMIND_ENABLE_FLOAT` is a
+capability gate, not a hardware assertion: it compiles and runs on a target
+*without* an FPU too — the compiler simply emits soft-float (correct, just
+slower). Whether hardware float is used is a toolchain matter (`-mfpu=`,
+`-mfloat-abi=`), orthogonal to TinyMind's macros.
+
+So the practical guidance is about **performance, not buildability**: prefer
+path (a) on targets with an FPU (where `double` is cheap) and path (b) on
+no-FPU MCUs (where soft-float `double` would be slow and fixed-point is the
+better trade). Both compile from the same headers; only the value type and the
+two capability macros differ. The fixed-point `Dual` arithmetic in `cpp/dual.hpp`
+itself needs neither macro and runs in the fully freestanding build.
 - **Now possible:** the residual *itself* (input derivatives) can be computed
   on-device, in float or fixed-point, via `Dual` — so residual monitoring and
   adaptive collocation sampling no longer require host autograd. Full on-device
