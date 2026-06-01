@@ -21,5 +21,9 @@ release :
 run :
 	cd ./output && ./kws_cortex_m_int8 && cd ../
 
+coverage :
+	$(MKDIR)
+	$(CC) --coverage -O0 -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+
 clean :
 	rm -f ./output/*

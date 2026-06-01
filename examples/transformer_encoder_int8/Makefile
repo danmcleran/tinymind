@@ -20,6 +20,10 @@ release :
 run :
 	cd ./output && ./transformer_encoder_int8 && cd ../
 
+coverage :
+	$(MKDIR)
+	$(CC) --coverage -O0 -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+
 golden :
 	cd ./output && ./transformer_encoder_int8 --golden > transformer_encoder_int8.golden && cd ../
 

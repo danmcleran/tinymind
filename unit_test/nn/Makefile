@@ -14,5 +14,9 @@ nn_unit_test:
 run :
 	./output/nn_unit_test
 
+coverage:
+	$(MKDIR)
+	$(CC) --coverage -O0 -g $(WARN) -o $(OUT) $(SOURCES) $(DEFINES) $(INCLUDES)
+
 clean:
 	rm -f ./output/*

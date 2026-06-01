@@ -20,6 +20,10 @@ release :
 run :
 	cd ./output && ./resnet18_block_int8 && cd ../
 
+coverage :
+	$(MKDIR)
+	$(CC) --coverage -O0 -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+
 bench :
 	cd ./output && ./resnet18_block_int8 --bench > resnet18_block_int8.csv && cd ../
 

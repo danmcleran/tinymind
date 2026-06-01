@@ -21,6 +21,10 @@ release :
 run :
 	cd ./output && ./mobilenetv2_int8 && cd ../
 
+coverage :
+	$(MKDIR)
+	$(CC) --coverage -O0 -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+
 bench :
 	cd ./output && ./mobilenetv2_int8 --bench > mobilenetv2_int8.csv && cd ../
 

@@ -23,6 +23,10 @@ release :
 run :
 	cd ./output && ./mixed_precision_mlp_int8_qformat && cd ../
 
+coverage :
+	$(MKDIR)
+	$(CC) --coverage -O0 -g $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
+
 bench :
 	cd ./output && ./mixed_precision_mlp_int8_qformat --bench > mixed_precision_mlp_int8_qformat.csv && cd ../
 

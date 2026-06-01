@@ -1,5 +1,11 @@
 .vscode/
 .claude/
+
+# Code coverage artifacts (make coverage)
+coverage/
+*.gcno
+*.gcda
+*.gcov
 apps/activation/output/
 examples/import_demo/output/
 examples/perf_matrix/output/
@@ -28,3 +34,4 @@ unit_test/integration/output/
 examples/resnet18_block_int8/output/
 examples/mobilenetv2_int8/output/
 examples/mixed_precision_kws/output/
+examples/mixed_precision_mlp_int8_qformat/output/

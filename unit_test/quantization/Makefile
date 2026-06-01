@@ -17,5 +17,9 @@ quantization_unit_test:
 run:
 	cd ./output && ./quantization_unit_test && cd ../
 
+coverage:
+	$(MKDIR)
+	$(CC) --coverage -O0 -g $(WARN) -o $(OUT) $(SOURCES) $(DEFINES) $(INCLUDES)
+
 clean:
 	rm -f ./output/*

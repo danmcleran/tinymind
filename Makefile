@@ -26,3 +26,47 @@ check :
 	cd examples/import_demo && make clean && make && make release && make run && cd -
 	cd examples/perf_matrix && make clean && make && make report && cd -
 	cd apps/activation && make clean && make && make release && cd -
+
+# Code coverage (gcov + lcov). Requires lcov: sudo apt install lcov
+# Instruments the runtime Boost suites plus the int8 example inference path,
+# runs them, then aggregates line coverage of the cpp/ library into HTML.
+# Compile-time-only suites (qformat, embedded) are excluded on purpose:
+# gcov records executed arcs, and those suites verify via static_assert /
+# compile-success, so they contribute no runtime coverage signal.
+COV_SUITES = unit_test/nn unit_test/qlearn unit_test/quantization \
+             unit_test/kan unit_test/lookuptable
+COV_EXAMPLES = examples/resnet_block_int8 examples/resnet18_block_int8 \
+               examples/mobilenetv2_int8 examples/transformer_encoder_int8 \
+               examples/kws_cortex_m_int8 examples/mixed_precision_mlp_int8_qformat
+
+LCOV_IGNORE = --ignore-errors mismatch,negative,source,unused,empty,gcov,inconsistent
+# genhtml rejects the lcov-only 'gcov' error class; keep its own list.
+GENHTML_IGNORE = --ignore-errors mismatch,negative,source,unused,empty,inconsistent
+
+coverage : coverage-clean
+	@command -v lcov >/dev/null 2>&1 || { echo "ERROR: lcov not found. Install with: sudo apt install lcov"; exit 1; }
+	mkdir -p coverage
+	for d in $(COV_SUITES) $(COV_EXAMPLES); do \
+		echo "=== coverage: $$d ==="; \
+		( cd $$d && make clean && make coverage && make run ) || exit 1; \
+	done
+	# Capture per suite: source paths are recorded relative to each suite's
+	# compile dir, so --base-directory must point at that suite (gcov data
+	# lives one level deeper in output/). Merge the per-suite .info files.
+	: > coverage/merge_args
+	for d in $(COV_SUITES) $(COV_EXAMPLES); do \
+		out=coverage/$$(echo $$d | tr / _).info; \
+		lcov --capture --directory $$d --base-directory $$d \
+		     --output-file $$out --rc geninfo_unexecuted_blocks=1 $(LCOV_IGNORE) || true; \
+		[ -s $$out ] && echo "-a $$out" >> coverage/merge_args; \
+	done
+	lcov $$(cat coverage/merge_args) --output-file coverage/all.info $(LCOV_IGNORE)
+	lcov --extract coverage/all.info '*/cpp/*' \
+	     --output-file coverage/tinymind.info $(LCOV_IGNORE)
+	genhtml coverage/tinymind.info --output-directory coverage/html $(GENHTML_IGNORE)
+	@echo "HTML report: coverage/html/index.html"
+
+coverage-clean :
+	find unit_test examples cpp -name '*.gcno' -delete 2>/dev/null || true
+	find unit_test examples cpp -name '*.gcda' -delete 2>/dev/null || true
+	rm -rf coverage

@@ -16,5 +16,9 @@ qlearn_unit_test:
 run:
 	cd ./output && ./qlearn_unit_test && cd ../
 
+coverage:
+	$(MKDIR)
+	$(CC) --coverage -O0 -g $(WARN) -o $(OUT) $(SOURCES) $(DEFINES) $(INCLUDES)
+
 clean:
 	rm -f ./output/*
