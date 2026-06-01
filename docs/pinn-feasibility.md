@@ -129,9 +129,12 @@ Stage 2 — MCU, Q-format:
     TinyMind forward pass  u(x, t)  =  inference only
 ```
 
-- **Works today:** Stage 2 is a plain forward pass, matching TinyMind's
-  documented "float training on host, post-training Q-format conversion,
-  inference-only on MCU" workflow.
+- **Works today (verified):** Stage 2 is a plain forward pass, matching
+  TinyMind's documented "float training on host, post-training Q-format
+  conversion, inference-only on MCU" workflow. `examples/pinn_heat1d/` evaluates
+  the same field in float and in Q16.16 fixed point and confirms the inference
+  values agree to ~1.7e-3 — no autodiff needed at inference, since deploying a
+  trained PINN is just evaluating `u(x, t)`. **This is the primary use case.**
 - **Now possible:** the residual *itself* (input derivatives) can be computed
   on-device, in float or fixed-point, via `Dual` — so residual monitoring and
   adaptive collocation sampling no longer require host autograd. Full on-device

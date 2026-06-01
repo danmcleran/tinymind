@@ -44,22 +44,29 @@
 #include <cstdio>
 #include <cstring>
 
+#include "qformat.hpp"
+#include "nnproperties.hpp"   // ValueConverter
 #include "dual.hpp"
 #include "dualActivations.hpp"
 
 using tinymind::Dual;
-// Unqualified tanh() below resolves by ADL: tinymind::tanh for Dual arguments,
-// std::tanh for plain double. Lets the field template serve both.
-using std::tanh;
 
 typedef Dual<double>  D1;  // first-order: value + d/ds
 typedef Dual<D1>      D2;  // second-order: nest once more
+typedef tinymind::QValue<16, 16, true> Q;  // fixed-point inference type
 
 static const double NU = 0.3; // thermal diffusivity
 
-// ---- generic constant lifting: a double literal into any (nested) dual -----
-template<typename S> struct Lit;
-template<> struct Lit<double> { static double make(double d) { return d; } };
+// ---- generic constant lifting: a double literal into any scalar type -------
+// Primary template covers double (identity) and QValue (real conversion) via
+// ValueConverter; the Dual specialization recurses for autodiff types.
+template<typename S> struct Lit
+{
+    static S make(double d)
+    {
+        return tinymind::ValueConverter<double, S>::convertToDestinationType(d);
+    }
+};
 template<typename V> struct Lit<Dual<V> >
 {
     static Dual<V> make(double d) { return Dual<V>(Lit<V>::make(d)); }
@@ -100,7 +107,9 @@ S fieldMLP(const S& x, const S& t)
         const S z = Lit<S>::make(w0[j]) * x
                   + Lit<S>::make(w1[j]) * t
                   + Lit<S>::make(bh[j]);
-        acc = acc + Lit<S>::make(wout[j]) * tanh(z);
+        // Scalar activation dispatched by type: std::tanh for double, the LUT
+        // policy for QValue, recursive forward-mode tanh for Dual<...>.
+        acc = acc + Lit<S>::make(wout[j]) * tinymind::DualScalarActivation<S>::tanhValue(z);
     }
     return acc;
 }
@@ -185,7 +194,37 @@ int main(int argc, char** argv)
     std::printf("\n  untrained-field heat residual max |r| = %.3e"
                 "  (nonzero: this is the PINN training signal)\n", maxAbsResMLP);
 
-    std::printf("\n%s\n", failures == 0 ? "PINN RESIDUAL MACHINERY VERIFIED"
+    // --- Check 3: PRIMARY use case -- offline-trained field, inference only --
+    // Once a PINN is trained on a host (float), deployment is a plain forward
+    // pass of u(x,t): no derivatives needed at inference. Here the same field
+    // is evaluated in float (the trained reference) and in Q16.16 fixed point
+    // (the on-device path) and the field values are compared. This is the
+    // path that actually ships; the dual machinery above is for training/
+    // residual evaluation, not inference.
+    double maxInferErr = 0.0;
+    for (int i = 0; i < GX; ++i)
+    {
+        for (int k = 0; k < GT; ++k)
+        {
+            const double x = -1.0 + 2.0 * i / (GX - 1);
+            const double t = 0.05 + 0.9 * k / (GT - 1);
+
+            const double uf = fieldMLP<double>(x, t);              // float inference
+            const Q uq = fieldMLP<Q>(Lit<Q>::make(x), Lit<Q>::make(t)); // fixed-point
+            const double uqd =
+                tinymind::ValueConverter<Q, double>::convertToDestinationType(uq);
+
+            maxInferErr = std::fmax(maxInferErr, std::fabs(uf - uqd));
+        }
+    }
+    std::printf("\n[primary use case: offline-trained field, inference only]\n");
+    std::printf("  max |u_float - u_Q16.16| over %dx%d grid = %.3e\n",
+                GX, GT, maxInferErr);
+    // Q16.16 step is ~1.5e-5; the tanh LUT adds a little. Comfortably tight.
+    if (maxInferErr > 5e-3) { ++failures; std::printf("  FAIL\n"); }
+    else                    { std::printf("  OK (fixed-point inference matches float)\n"); }
+
+    std::printf("\n%s\n", failures == 0 ? "PINN RESIDUAL + INFERENCE VERIFIED"
                                         : "FAILURES DETECTED");
     return failures == 0 ? 0 : 1;
 }
