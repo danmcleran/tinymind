@@ -184,4 +184,23 @@ BOOST_AUTO_TEST_CASE(higher_input_derivative_via_nesting)
     BOOST_TEST(f.deriv.deriv == 12.0, boost::test_tools::tolerance(1e-12)); // 6x
 }
 
+BOOST_AUTO_TEST_CASE(second_derivative_of_tanh_via_nesting)
+{
+    // tanh through nested duals: g=tanh(x), g'=1-g^2, g''=-2g(1-g^2). The
+    // recursive DualScalarActivation<Dual<W>> specialization makes the
+    // activation differentiable at both levels.
+    typedef Dual<double> D1;
+    typedef Dual<D1> D2;
+
+    const double x0 = 0.6;
+    D2 x(D1(x0, 1.0), D1(1.0, 0.0));
+    D2 f = tinymind::tanh(x);
+
+    const double g = std::tanh(x0);
+    BOOST_TEST(f.value.value == g, boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(f.value.deriv == (1.0 - g * g), boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(f.deriv.deriv == (-2.0 * g * (1.0 - g * g)),
+               boost::test_tools::tolerance(1e-12));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

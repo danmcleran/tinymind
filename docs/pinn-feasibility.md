@@ -13,11 +13,22 @@ with a survey of the relevant literature.
 
 ## Verdict
 
-**Today, TinyMind is a viable _inference_ target for a trained PINN, but it
-cannot _train_ one.** A single capability gap is responsible: TinyMind has no
-automatic differentiation of a network's output with respect to its **input
-coordinates**. Everything else a PINN needs — smooth activations, small model
-sizes, fixed-point inference — TinyMind already provides.
+**TinyMind now ships the load-bearing PINN primitive — forward-mode automatic
+differentiation of a field with respect to its input coordinates — for every
+value type, fixed-point included.** This was originally the one capability gap
+(backpropagation computes `∂Loss/∂weights`, the wrong derivative for a PDE
+residual). It is closed by `cpp/dual.hpp` and `cpp/dualActivations.hpp`, and
+demonstrated end-to-end by `examples/pinn_heat1d/`.
+
+What remains for fully on-device *training* is composing those input
+derivatives with derivatives of the residual w.r.t. the **weights**; inference
+of a host-trained PINN already works through the existing Q-format pipeline.
+
+> **Status (update):** Sections 1–2 below describe the original gap and its
+> resolution. The dual-number machinery they call for is now in the tree and
+> tested (`unit_test/dual/`, plus a freestanding `Dual<QValue>` check in
+> `unit_test/embedded/`). The "Concrete next steps" section marks what is done
+> versus what is left.
 
 ## 1. What a PINN requires, and where TinyMind stands
 
@@ -30,15 +41,16 @@ respect to its inputs.
 
 | PINN requirement | TinyMind status | Notes |
 |---|---|---|
-| Differentiate output w.r.t. **inputs** | **Missing** | Backpropagation computes `∂Loss/∂weights` only — the wrong derivative for a PDE residual. |
-| 2nd- and higher-order input derivatives | **Missing** | Required for diffusion, Poisson, wave equations, etc. |
-| Smooth activation (C² or better) | **Present** | `tanh`, `sigmoid`, `ELU`, `GELU`, all with analytic derivatives. `tanh` is the de-facto PINN default; `ReLU` is unsuitable because its second derivative is identically zero. |
+| Differentiate output w.r.t. **inputs** | **Present** (`cpp/dual.hpp`) | Forward-mode `Dual<ValueType>`; `∂u/∂x` in one pass. Was the original gap. |
+| 2nd- and higher-order input derivatives | **Present** (nested `Dual`) | `Dual<Dual<…>>` gives `∂²u/∂x²` etc.; verified for polynomials and `tanh`. |
+| Smooth activation (C² or better) | **Present** | `tanh`, `sigmoid`, `ELU`, `GELU` with analytic derivatives; `tanh(Dual)`/`sigmoid(Dual)` overloads in `cpp/dualActivations.hpp`. `ReLU` unsuitable (2nd derivative ≡ 0). |
 | Small network sizes | **Present** | PINNs are typically small MLPs; TinyMind targets embedded-scale models. |
 | Fixed-point / int8 inference | **Present** | Q-format and int8 pipelines run a plain forward pass of `u(x, t)`. |
+| Residual-loss training (∂residual/∂weights) | **Not yet** | Composing input-derivative AD with weight gradients; see next steps. |
 
-The takeaway: TinyMind already ships the correct **activation family** and the
-correct **size class**. The only missing piece is one specific operator —
-differentiation in input space.
+The takeaway: TinyMind now ships the correct **activation family**, the correct
+**size class**, *and* the input-space differentiation operator. The remaining
+work is the training loop, not the derivatives.
 
 ## 2. The missing piece: forward-mode / Taylor-mode autodiff
 
@@ -72,8 +84,16 @@ header-only C++ template library.
 A `Dual<ValueType>` type, templated the same way as `QValue`, slots directly
 into TinyMind's policy-based design. Because the activation policies already
 expose analytic derivatives, propagating a dual number through the network by
-the chain rule is straightforward. This is the natural extension path to PINN
-support.
+the chain rule is straightforward.
+
+**This is now implemented.** `cpp/dual.hpp` provides `Dual<ValueType>` (value +
+derivative, sum/product/quotient rules, a `chainRule` hook) built purely from
+the value type's arithmetic, so it works identically for `float`/`double` and
+`QValue` — and is freestanding-clean (no `<cmath>`/STD/FLOAT required, so
+fixed-point input derivatives run on an MCU). `cpp/dualActivations.hpp` adds
+`tanh(Dual)` / `sigmoid(Dual)`, with a `DualScalarActivation<V>` policy that
+isolates the one type-specific step (LUT for `QValue`, `std::tanh` for
+`double`) and recurses through nested duals for higher-order derivatives.
 
 ## 3. Precision: the real risk
 
@@ -112,9 +132,10 @@ Stage 2 — MCU, Q-format:
 - **Works today:** Stage 2 is a plain forward pass, matching TinyMind's
   documented "float training on host, post-training Q-format conversion,
   inference-only on MCU" workflow.
-- **Breaks:** anything that needs the residual on-device — on-device
-  fine-tuning, residual monitoring, adaptive collocation sampling — because
-  those require the input-derivative AD TinyMind lacks.
+- **Now possible:** the residual *itself* (input derivatives) can be computed
+  on-device, in float or fixed-point, via `Dual` — so residual monitoring and
+  adaptive collocation sampling no longer require host autograd. Full on-device
+  *training* still needs the residual's gradient w.r.t. the weights.
 
 ## 5. The KAN angle (promising, under-explored)
 
@@ -128,17 +149,29 @@ unverified.
 
 ## Concrete next steps for TinyMind
 
-1. Add a `Dual<ValueType>` forward-mode type — header-only, templated on the
-   value type. Validate against `float`/`double` first.
-2. Wire the activation policies' analytic derivatives into dual propagation to
-   obtain `∂u/∂x` directly.
-3. Add Taylor-mode (order-N dual) for second-order PDEs.
-4. **Measure the unknown:** does fixed-point error in the dual/Taylor
-   coefficients degrade higher-order input derivatives enough to break
-   residual-based on-device fine-tuning?
-5. Ship a 1-D exemplar (e.g. the heat equation `u_t = ν·u_xx`, or Burgers'):
-   train on host → run Q-format inference on device → report residual error vs.
-   the float reference.
+Done:
+
+1. ✅ `Dual<ValueType>` forward-mode type — header-only, value-type-generic,
+   freestanding-clean (`cpp/dual.hpp`), validated for `double` and `QValue`.
+2. ✅ `tanh(Dual)` / `sigmoid(Dual)` activation overloads (`cpp/dualActivations.hpp`),
+   giving `∂u/∂x` directly through a smooth field.
+3. ✅ Higher-order derivatives via nested `Dual<Dual<…>>` (`∂²u/∂x²`), verified
+   against the analytic `tanh''`.
+5. ✅ 1-D exemplar (`examples/pinn_heat1d/`): the heat residual `u_t − ν·u_xx`
+   by forward-mode AD — residual ≈ 0 on an exact solution, and autodiff
+   derivatives match finite differences on a nonlinear `tanh` field.
+
+Remaining:
+
+4. **Measure the precision unknown:** does fixed-point error in the dual
+   coefficients degrade higher-order input derivatives enough to matter? The
+   `Dual<QValue>` path is mechanically correct (`unit_test/dual/`); its
+   accuracy on a real residual is not yet benchmarked.
+6. **On-device training:** compose the input-derivative AD with the residual's
+   gradient w.r.t. the weights (reverse-over-forward), then a host-train →
+   Q-format-infer comparison for a trained field.
+7. **Ergonomic Taylor-mode:** nested `Dual` works but scales awkwardly past 2nd
+   order; a dedicated order-N Taylor type would be cleaner for high-order PDEs.
 
 ## Caveats and sources
 

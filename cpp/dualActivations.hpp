@@ -32,16 +32,21 @@
 
 namespace tinymind {
 
+    // Forward declarations: the nested-Dual scalar policy below calls these.
+    template<typename ValueType> Dual<ValueType> tanh(const Dual<ValueType>& a);
+    template<typename ValueType> Dual<ValueType> sigmoid(const Dual<ValueType>& a);
+
     /**
      * Scalar-activation provider for the Dual<> activation overloads -- the one
      * type-specific hook in forward-mode AD. The primary template targets
      * TinyMind's fixed-point QValue: it sources tanh/sigmoid from the existing
      * lookup-table activation policies and the unit "one" from Constants.
      *
-     * IEEE float/double get explicit specializations (below, host-only) that
-     * use std::tanh / std::exp, since the LUT policies and Constants are
-     * QValue-typed. The dual activation overloads close over this policy, so
-     * the same tanh(Dual<V>) call site works for every value type.
+     * IEEE float/double get explicit specializations (host-only) that use
+     * std::tanh / std::exp. A Dual<W> specialization recurses, so a nested
+     * Dual<Dual<...>> (used for 2nd- and higher-order input derivatives)
+     * differentiates the activation at every level. The dual activation
+     * overloads close over this policy, so tanh(Dual<V>) works for every V.
      */
     template<typename ValueType>
     struct DualScalarActivation
@@ -74,6 +79,17 @@ namespace tinymind {
         static double one()                  { return 1.0; }
     };
 #endif
+
+    // Nested dual: differentiating an activation of a Dual recurses one level,
+    // enabling higher-order input derivatives (e.g. d^2u/dx^2 via
+    // Dual<Dual<...>>). The "scalar" tanh of a Dual is just tanh on that Dual.
+    template<typename W>
+    struct DualScalarActivation<Dual<W> >
+    {
+        static Dual<W> tanhValue(const Dual<W>& x)    { return tinymind::tanh(x); }
+        static Dual<W> sigmoidValue(const Dual<W>& x) { return tinymind::sigmoid(x); }
+        static Dual<W> one() { return Dual<W>(DualScalarActivation<W>::one()); }
+    };
 
     /**
      * tanh on a dual: value = tanh(x), derivative coefficient = 1 - tanh(x)^2,
