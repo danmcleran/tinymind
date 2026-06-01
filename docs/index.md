@@ -64,6 +64,7 @@ TinyMind networks are small enough to deploy on the most constrained microcontro
 | Elman RNN | [`ElmanNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | Simple recurrent feedback |
 | LSTM | [`LstmNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | 4-gate architecture |
 | GRU | [`GruNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | 3-gate architecture (~25% less memory) |
+| Forward-mode Autodiff (PINN) | [`Dual`, `tanh(Dual)` / `sigmoid(Dual)`]({{ site.baseurl }}/pinn-feasibility) | Input-coordinate derivatives (`du/dx`, `d²u/dx²`) for PDE residuals; float or fixed-point, freestanding-clean |
 
 ## Quick Start
 

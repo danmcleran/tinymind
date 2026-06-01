@@ -53,6 +53,14 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - Supports both training and inference-only modes via `IsTrainable` template parameter
 - Same user-facing API as `MultilayerPerceptron`: `feedForward`, `trainNetwork`, `calculateError`, `getLearnedValues`
 
+### Forward-Mode Autodiff (Physics-Informed Neural Networks)
+
+- `Dual<ValueType>` (`cpp/dual.hpp`) -- forward-mode automatic-differentiation dual number, carrying a value and its derivative with respect to one seeded input direction
+- Built purely from the value type's `+`, `-`, `*`, `/`, so it works identically for `float`/`double` and fixed-point `QValue`; freestanding-clean (no `<cmath>`, STD, or FLOAT required -- runs in the deployable MCU build)
+- `tanh(Dual)` / `sigmoid(Dual)` overloads (`cpp/dualActivations.hpp`) with analytic derivatives; nested `Dual<Dual<...>>` yields 2nd- and higher-order input derivatives
+- Provides the input-coordinate derivatives (`du/dx`, `d^2u/dx^2`) a PDE residual needs -- the basis for [Physics-Informed Neural Networks](https://en.wikipedia.org/wiki/Physics-informed_neural_networks). Primary deployment is train-offline / inference-only (a plain forward pass of `u(x, t)`) in `double` (exact) or Q-format (quantized)
+- See [`docs/pinn-feasibility.md`](docs/pinn-feasibility.md) and [`examples/pinn_heat1d/`](examples/pinn_heat1d/) (1-D heat-equation residual `u_t - nu*u_xx`)
+
 ### Fixed-Point Arithmetic
 
 - `QValue<IntegerBits, FractionalBits, IsSigned>` template supporting Q8.8, Q16.16, Q24.8, Q32.32, and other formats up to 128-bit
@@ -628,6 +636,37 @@ MazeEnvironment env;
 // Run episodes, update Q-values...
 ```
 
+### PINN Residual via Forward-Mode Autodiff
+
+```cpp
+#include "dual.hpp"
+#include "dualActivations.hpp"
+
+using tinymind::Dual;
+typedef Dual<double> D1;        // first order:  value + d/dx
+typedef Dual<D1>     D2;        // second order: nest once more
+
+// A field u(x, t) -- here a trained PINN's forward pass would go.
+template<typename S> S u(const S& x, const S& t) {
+    return tinymind::tanh(S(1.5) * x + S(0.3) * t);  // toy single neuron
+}
+
+const double x0 = 0.7, t0 = 0.2, nu = 0.3;
+
+// du/dt: seed t, hold x constant.
+double u_t = u(D1(x0), D1(t0, 1.0)).deriv;
+
+// d^2u/dx^2: nested dual seeded on x at both levels.
+D2 x(D1(x0, 1.0), D1(1.0, 0.0));
+D2 t(D1(t0), D1(0.0));
+double u_xx = u(x, t).deriv.deriv;
+
+double residual = u_t - nu * u_xx;   // heat-equation PDE residual
+
+// Inference (no autodiff): just evaluate u in double or fixed point.
+double u_value = u<double>(x0, t0);
+```
+
 ## Network Types
 
 | Type | Class | Description |
@@ -716,6 +755,7 @@ make check
 cd unit_test/nn && make clean && make && make run
 cd unit_test/qformat && make clean && make && make run
 cd unit_test/qlearn && make clean && make && make run
+cd unit_test/dual && make clean && make && make run     # forward-mode autodiff
 ```
 
 ### Build Examples
@@ -739,6 +779,7 @@ cd examples/mixed_precision_kws && make clean && make
 cd examples/mixed_precision_mlp_int8_qformat && make clean && make
 cd examples/import_demo && make clean && make
 cd examples/perf_matrix && make clean && make
+cd examples/pinn_heat1d && make clean && make          # PINN residual via autodiff
 ```
 
 ### Compiler Flags
