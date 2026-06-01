@@ -33,6 +33,7 @@
 #include "qformat.hpp"
 #include "nnproperties.hpp"   // ValueConverter
 #include "dual.hpp"
+#include "dualActivations.hpp"
 #include "compiler.h"
 
 #define BOOST_TEST_MODULE dual_unit_test
@@ -96,6 +97,26 @@ void checkChainRule(const V& one, const V& x0, double tol)
     BOOST_TEST(toDouble(act.deriv) == tp, boost::test_tools::tolerance(tol));
 }
 
+// Activation overloads: tanh(Dual)/sigmoid(Dual) must produce the activation
+// value and its analytic derivative coefficient (chain-ruled by x.deriv == 1).
+template<typename V>
+void checkActivations(const V& one, const V& x0, double tol)
+{
+    const double x0d = toDouble(x0);
+    const double t = std::tanh(x0d);
+    const double s = 1.0 / (1.0 + std::exp(-x0d));
+
+    Dual<V> x(x0, one);
+
+    Dual<V> th = tinymind::tanh(x);
+    BOOST_TEST(toDouble(th.value) == t, boost::test_tools::tolerance(tol));
+    BOOST_TEST(toDouble(th.deriv) == (1.0 - t * t), boost::test_tools::tolerance(tol));
+
+    Dual<V> sg = tinymind::sigmoid(x);
+    BOOST_TEST(toDouble(sg.value) == s, boost::test_tools::tolerance(tol));
+    BOOST_TEST(toDouble(sg.deriv) == (s * (1.0 - s)), boost::test_tools::tolerance(tol));
+}
+
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(dual_tests)
@@ -118,6 +139,32 @@ BOOST_AUTO_TEST_CASE(chain_rule_double)
 BOOST_AUTO_TEST_CASE(chain_rule_qformat)
 {
     checkChainRule<Q16>(Q16(1, 0), Q16(2, 0), 1e-3);
+}
+
+BOOST_AUTO_TEST_CASE(activations_double)
+{
+    checkActivations<double>(1.0, 0.5, 1e-12);
+}
+
+BOOST_AUTO_TEST_CASE(activations_qformat)
+{
+    // QValue routes tanh/sigmoid through the int LUTs, so tolerance reflects
+    // LUT resolution, not a mechanics error.
+    checkActivations<Q16>(Q16(1, 0), Q16(0, 32768) /* 0.5 */, 2e-2);
+}
+
+BOOST_AUTO_TEST_CASE(pinn_style_first_derivative)
+{
+    // u(x) = tanh(w*x + b); du/dx = w * (1 - tanh(w*x+b)^2). This is the shape
+    // of a single-neuron PINN field; forward-mode gives du/dx in one pass.
+    const double w = 1.5, b = -0.25, x0 = 0.7;
+    Dual<double> x(x0, 1.0);
+    Dual<double> wD(w), bD(b);                 // constants (deriv 0)
+    Dual<double> u = tinymind::tanh((wD * x) + bD);
+
+    const double pre = w * x0 + b;
+    const double expect = w * (1.0 - std::tanh(pre) * std::tanh(pre));
+    BOOST_TEST(u.deriv == expect, boost::test_tools::tolerance(1e-12));
 }
 
 BOOST_AUTO_TEST_CASE(higher_input_derivative_via_nesting)
