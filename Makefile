@@ -64,7 +64,14 @@ coverage : coverage-clean
 	lcov --extract coverage/all.info '*/cpp/*' \
 	     --output-file coverage/tinymind.info $(LCOV_IGNORE)
 	genhtml coverage/tinymind.info --output-directory coverage/html $(GENHTML_IGNORE)
+	python3 tools/coverage_dashboard.py coverage/tinymind.info coverage/dashboard.html
+	@echo "Dashboard:   coverage/dashboard.html"
 	@echo "HTML report: coverage/html/index.html"
+
+# Regenerate just the dashboard from an existing capture (no rebuild/re-run).
+coverage-dashboard :
+	python3 tools/coverage_dashboard.py coverage/tinymind.info coverage/dashboard.html
+	@echo "Dashboard:   coverage/dashboard.html"
 
 coverage-clean :
 	find unit_test examples cpp -name '*.gcno' -delete 2>/dev/null || true
