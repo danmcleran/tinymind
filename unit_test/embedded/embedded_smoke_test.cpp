@@ -55,6 +55,7 @@
 #include "tinymind_platform.hpp"
 
 #include "qformat.hpp"
+#include "dual.hpp"
 #include "conv1d.hpp"
 #include "pool1d.hpp"
 #include "conv2d.hpp"
@@ -696,6 +697,17 @@ void clearFloat(float* p, size_t n)
 }
 #endif // TINYMIND_ENABLE_FLOAT
 
+// Forward-mode autodiff over a fixed-point input. Dual<QValue> needs only the
+// value type's arithmetic, so it must build and run in the freestanding corner
+// (no FLOAT, no STD, no <cmath>). f(x)=x*x+x at x=2 -> value 6, deriv 2x+1 = 5,
+// both exact in Q8.8.
+bool exerciseDual()
+{
+    tinymind::Dual<Q88> x(Q88(2, 0), Q88(1, 0));
+    tinymind::Dual<Q88> y = (x * x) + x;
+    return (y.value == Q88(6, 0)) && (y.deriv == Q88(5, 0));
+}
+
 } // namespace
 
 int main()
@@ -727,6 +739,8 @@ int main()
     // ValueConverter<Q88,Q88> on Q88(1,0) must round-trip to a non-zero raw value.
     // gapOut[0] must equal itself (rules out ValueType being something exotic).
     bool ok = (v.getValue() != 0) && (gapOut[0] == gapOut[0]);
+
+    ok = ok && exerciseDual();
 
 #if TINYMIND_ENABLE_QUANTIZATION
     ok = ok && exerciseQuantPipeline();

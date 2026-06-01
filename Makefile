@@ -8,6 +8,7 @@ check :
 	cd unit_test/lookuptable && make clean && make && make run && cd -
 	cd unit_test/embedded && make clean && make && make run && make simd_prereq_regressions && cd -
 	cd unit_test/quantization && make clean && make && make run && cd -
+	cd unit_test/dual && make clean && make && make run && cd -
 	cd examples/xor && make clean && make && make release && cd -
 	cd examples/maze && make clean && make && make release && cd -
 	cd examples/dqn_maze && make clean && make && make release && cd -
@@ -34,7 +35,7 @@ check :
 # gcov records executed arcs, and those suites verify via static_assert /
 # compile-success, so they contribute no runtime coverage signal.
 COV_SUITES = unit_test/nn unit_test/qlearn unit_test/quantization \
-             unit_test/kan unit_test/lookuptable
+             unit_test/kan unit_test/lookuptable unit_test/dual
 COV_EXAMPLES = examples/resnet_block_int8 examples/resnet18_block_int8 \
                examples/mobilenetv2_int8 examples/transformer_encoder_int8 \
                examples/kws_cortex_m_int8 examples/mixed_precision_mlp_int8_qformat
