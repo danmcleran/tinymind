@@ -63,6 +63,13 @@ namespace tinymind {
         return Dual<ValueType>(a.value - b.value, a.deriv - b.deriv);
     }
 
+    // Unary negation. ValueType() is the type's zero (QValue and float/double).
+    template<typename ValueType>
+    inline Dual<ValueType> operator-(const Dual<ValueType>& a)
+    {
+        return Dual<ValueType>(ValueType() - a.value, ValueType() - a.deriv);
+    }
+
     // Product rule: (a*b)' = a'b + ab'.
     template<typename ValueType>
     inline Dual<ValueType> operator*(const Dual<ValueType>& a, const Dual<ValueType>& b)

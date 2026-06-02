@@ -101,6 +101,10 @@ fixed-point input derivatives run on an MCU). `cpp/dualActivations.hpp` adds
 `tanh(Dual)` / `sigmoid(Dual)`, with a `DualScalarActivation<V>` policy that
 isolates the one type-specific step (LUT for `QValue`, `std::tanh` for
 `double`) and recurses through nested duals for higher-order derivatives.
+`cpp/dualmath.hpp` adds `exp` / `sin` / `cos` / `sqrt` on the same pattern
+(`sin`/`cos`/`exp` for `float`/`double`, unblocking SIREN-style fields and
+trig/exp source terms; `sqrt` for every type including `QValue`). Mixed partials
+(`d²u/dx dy`) come from seeding different directions at each nesting level.
 
 ## 3. Precision: the real risk
 
@@ -199,8 +203,17 @@ Done:
    to the heat equation with the exact-autodiff residual and finite-difference
    weight gradients; drives the PINN loss down ~370x and the solution L2 error
    to ~1% — all host-side, no device.
+9. ✅ Elementary `Dual` math (`cpp/dualmath.hpp`): `exp`/`sin`/`cos`/`sqrt` with
+   analytic derivatives + nested-recursion (SIREN fields, trig/exp source terms),
+   and mixed partials (`d²u/dx dy`) via per-level seed directions.
 
 Remaining:
+
+10. **QValue `exp`/`sin`/`cos` duals.** The fixed-point trig/exp lookup tables
+    exist (`sin.hpp` / `cos.hpp` / `exp.hpp`) but have no standalone scalar
+    accessor, so those `Dual<QValue>` overloads are not yet wired (`sqrt<QValue>`
+    is). Only matters for fixed-point on-device residual computation; the
+    primary double regime is complete.
 
 4. **Measure the precision unknown:** does fixed-point error in the dual
    coefficients degrade higher-order input derivatives enough to matter? The

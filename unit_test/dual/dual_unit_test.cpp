@@ -34,6 +34,7 @@
 #include "nnproperties.hpp"   // ValueConverter
 #include "dual.hpp"
 #include "dualActivations.hpp"
+#include "dualmath.hpp"
 #include "compiler.h"
 
 #define BOOST_TEST_MODULE dual_unit_test
@@ -201,6 +202,70 @@ BOOST_AUTO_TEST_CASE(second_derivative_of_tanh_via_nesting)
     BOOST_TEST(f.value.deriv == (1.0 - g * g), boost::test_tools::tolerance(1e-12));
     BOOST_TEST(f.deriv.deriv == (-2.0 * g * (1.0 - g * g)),
                boost::test_tools::tolerance(1e-12));
+}
+
+BOOST_AUTO_TEST_CASE(math_overloads_double)
+{
+    const double x0 = 0.7;
+    Dual<double> x(x0, 1.0);
+
+    Dual<double> e = tinymind::exp(x);
+    BOOST_TEST(e.value == std::exp(x0), boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(e.deriv == std::exp(x0), boost::test_tools::tolerance(1e-12));
+
+    Dual<double> s = tinymind::sin(x);
+    BOOST_TEST(s.value == std::sin(x0), boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(s.deriv == std::cos(x0), boost::test_tools::tolerance(1e-12));
+
+    Dual<double> c = tinymind::cos(x);
+    BOOST_TEST(c.value == std::cos(x0), boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(c.deriv == -std::sin(x0), boost::test_tools::tolerance(1e-12));
+
+    Dual<double> r = tinymind::sqrt(Dual<double>(2.0, 1.0));
+    BOOST_TEST(r.value == std::sqrt(2.0), boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(r.deriv == 1.0 / (2.0 * std::sqrt(2.0)), boost::test_tools::tolerance(1e-12));
+}
+
+BOOST_AUTO_TEST_CASE(sin_second_derivative_nested)
+{
+    // sin''(x) = -sin(x), via nested duals (recursive DualScalarMath).
+    typedef Dual<double> D1;
+    typedef Dual<D1> D2;
+    const double x0 = 0.9;
+    D2 x(D1(x0, 1.0), D1(1.0, 0.0));
+    D2 f = tinymind::sin(x);
+
+    BOOST_TEST(f.value.value == std::sin(x0), boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(f.value.deriv == std::cos(x0), boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(f.deriv.deriv == -std::sin(x0), boost::test_tools::tolerance(1e-12));
+}
+
+BOOST_AUTO_TEST_CASE(sqrt_qformat)
+{
+    // sqrt works for fixed-point too (SquareRootApproximation); rounding only.
+    Dual<Q16> r = tinymind::sqrt(Dual<Q16>(Q16(2, 0), Q16(1, 0)));
+    BOOST_TEST(toDouble(r.value) == std::sqrt(2.0), boost::test_tools::tolerance(1e-3));
+    BOOST_TEST(toDouble(r.deriv) == 1.0 / (2.0 * std::sqrt(2.0)),
+               boost::test_tools::tolerance(1e-2));
+}
+
+BOOST_AUTO_TEST_CASE(mixed_partial_derivative)
+{
+    // f(x,y) = sin(x) * y^2 ;  d^2f/dx dy = cos(x) * 2y.
+    // Nested dual with DIFFERENT seed directions per level: inner = d/dx,
+    // outer = d/dy. f.deriv.deriv is the mixed partial.
+    typedef Dual<double> D1;
+    typedef Dual<D1> D2;
+    const double x0 = 0.6, y0 = 1.3;
+
+    D2 x(D1(x0, 1.0), D1(0.0, 0.0));   // seed x at inner (d/dx); x does not vary with y
+    D2 y(D1(y0, 0.0), D1(1.0, 0.0));   // seed y at outer (d/dy)
+
+    D2 f = tinymind::sin(x) * (y * y);
+
+    const double expect = std::cos(x0) * 2.0 * y0;
+    BOOST_TEST(f.value.value == std::sin(x0) * y0 * y0, boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(f.deriv.deriv == expect, boost::test_tools::tolerance(1e-12));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
