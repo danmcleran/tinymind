@@ -35,6 +35,7 @@
 #include "dual.hpp"
 #include "dualActivations.hpp"
 #include "dualmath.hpp"
+#include "multidual.hpp"
 #include "compiler.h"
 
 #define BOOST_TEST_MODULE dual_unit_test
@@ -285,6 +286,39 @@ BOOST_AUTO_TEST_CASE(mixed_partial_derivative)
     const double expect = std::cos(x0) * 2.0 * y0;
     BOOST_TEST(f.value.value == std::sin(x0) * y0 * y0, boost::test_tools::tolerance(1e-12));
     BOOST_TEST(f.deriv.deriv == expect, boost::test_tools::tolerance(1e-12));
+}
+
+BOOST_AUTO_TEST_CASE(multidual_gradient_one_pass)
+{
+    // f(w0,w1) = w0^2 * w1.  grad = (2 w0 w1, w0^2).  One forward pass gives
+    // value and the full gradient.
+    typedef tinymind::MultiDual<double, 2> M;
+    M w0 = M::seed(3.0, 0, 1.0);
+    M w1 = M::seed(2.0, 1, 1.0);
+
+    M f = (w0 * w0) * w1;
+    BOOST_TEST(f.value == 18.0, boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(f.grad[0] == 12.0, boost::test_tools::tolerance(1e-12)); // 2 w0 w1
+    BOOST_TEST(f.grad[1] == 9.0,  boost::test_tools::tolerance(1e-12)); // w0^2
+}
+
+BOOST_AUTO_TEST_CASE(multidual_under_dual_weight_grad_of_derivative)
+{
+    // g(x;w) = w * x^2.  dg/dx = 2 w x ;  d/dw (dg/dx) = 2 x.
+    // MultiDual carries the weight gradient; Dual carries d/dx -- so a single
+    // evaluation in Dual<MultiDual> yields the weight gradient of a derivative,
+    // which is exactly what residual-loss PINN training needs.
+    typedef tinymind::MultiDual<double, 1> M;
+    typedef Dual<M> DM;
+
+    const double w0 = 2.0, x0 = 3.0;
+    DM w(M::seed(w0, 0, 1.0));                 // weight: seeded in M, constant in x
+    DM x(M(x0), M(1.0));                        // input:  d/dx seed at the Dual level
+
+    DM g = (w * x) * x;
+
+    BOOST_TEST(g.deriv.value == 2.0 * w0 * x0, boost::test_tools::tolerance(1e-12)); // dg/dx
+    BOOST_TEST(g.deriv.grad[0] == 2.0 * x0,    boost::test_tools::tolerance(1e-12)); // d/dw (dg/dx)
 }
 
 BOOST_AUTO_TEST_SUITE_END()

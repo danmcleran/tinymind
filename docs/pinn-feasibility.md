@@ -206,22 +206,28 @@ Done:
 9. ✅ Elementary `Dual` math (`cpp/dualmath.hpp`): `exp`/`sin`/`cos`/`sqrt` with
    analytic derivatives + nested-recursion (SIREN fields, trig/exp source terms),
    and mixed partials (`d²u/dx dy`) via per-level seed directions.
+10. ✅ QValue `exp`/`sin`/`cos` duals wired to the fixed-point lookup tables
+    (`DualScalarMath<QValue>`); `exp`/`sin`/`cos`/`sqrt` duals now work for
+    `float`, `double`, and fixed-point alike.
+11. ✅ Exact one-pass weight gradients via vector forward-mode
+    (`cpp/multidual.hpp`, `MultiDual<V,N>`): seeds all weights as tangents and
+    returns the full loss gradient in a single forward pass — no finite-difference
+    step error. `cpp/pinn.hpp` adds a reusable Dual-differentiable `PinnMlp` and a
+    PDE-agnostic `sgdStep` trainer core built on it. `examples/pinn_heat1d/ --train`
+    now trains with these (loss ~50x down, solution L2 ~2.5%).
+12. ✅ Fixed-point residual benchmark (`--train` tail): with the trained weights
+    quantized to Q16.16, the residual computed in fixed point (tanh + dual
+    derivatives via the LUTs) matches the `double` residual to ~6e-3 — so
+    `Dual<QValue>` is accurate on a real residual, not just mechanically correct.
 
-Remaining:
+Remaining (optimizations / ergonomics, none blocking):
 
-10. **QValue `exp`/`sin`/`cos` duals.** The fixed-point trig/exp lookup tables
-    exist (`sin.hpp` / `cos.hpp` / `exp.hpp`) but have no standalone scalar
-    accessor, so those `Dual<QValue>` overloads are not yet wired (`sqrt<QValue>`
-    is). Only matters for fixed-point on-device residual computation; the
-    primary double regime is complete.
-
-4. **Measure the precision unknown:** does fixed-point error in the dual
-   coefficients degrade higher-order input derivatives enough to matter? The
-   `Dual<QValue>` path is mechanically correct (`unit_test/dual/`); its
-   accuracy on a real residual is not yet benchmarked.
-8. **Efficient weight gradients:** the `--train` PoC uses finite differences
-   (O(weights) loss evals). Reverse-over-forward would give all weight gradients
-   in one pass — an optimization for larger models, also host-side.
+13. **True reverse-mode** weight gradients. `MultiDual` is one pass but O(N) work
+    per op (N = weight count); reverse-over-forward would be asymptotically
+    cheaper for large nets. Adjoint/tape AD is a larger build.
+14. **Stock `NeuralNet<>` differentiability.** `PinnMlp` is differentiable by
+    construction; retrofitting the main `NeuralNet<>` (its activation policies are
+    QValue-LUT-typed) would be a separate refactor.
 7. **Ergonomic Taylor-mode:** nested `Dual` works but scales awkwardly past 2nd
    order; a dedicated order-N Taylor type would be cleaner for high-order PDEs.
 
