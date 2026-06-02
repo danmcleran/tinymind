@@ -231,16 +231,24 @@ Done:
     unqualified transcendental calls *inside* `namespace tinymind` now resolve to
     them; qualify such calls `std::` — one occurrence in the test suite was fixed.)
 
-Remaining (optimizations / ergonomics, none blocking):
+13. ✅ True reverse-mode weight gradients (`cpp/revdual.hpp`, `RevVar`): a
+    tape-based adjoint scalar whose one backward pass yields the gradient w.r.t.
+    all leaves regardless of count. Composes under `Dual<>` for
+    reverse-over-forward (residual input-derivatives forward-mode, weight
+    gradient reverse-mode in one backward pass); `pinn::sgdStepReverse` is the
+    reusable reverse-mode trainer step. Host-only (heap tape, gated `FLOAT && STD`)
+    — the large-net option; `MultiDual` stays the freestanding-friendly default.
+15. ✅ `forwardAs` extended to any number of uniform-width hidden layers
+    (e.g. `MultilayerPerceptron`); validated against native forward on a
+    2→4→4→1 net.
+7. ✅ Ergonomic Taylor-mode (`cpp/taylor.hpp`, `Jet<V,Order>`): arbitrary-order
+   single-variable derivatives in one sweep (no nesting blow-up), validated to
+   4th order for `sin`/`exp`/polynomials and 3rd order for `tanh`/`sqrt`.
 
-13. **True reverse-mode** weight gradients. `MultiDual` is one pass but O(N) work
-    per op (N = weight count); reverse-over-forward would be asymptotically
-    cheaper for large nets. Adjoint/tape AD is a larger build.
-15. **`forwardAs` beyond one hidden layer.** It currently `static_assert`s a
-    single hidden layer (the common PINN shape); multi-layer / recurrent / output
-    activations other than the supplied bridges are not yet handled.
-7. **Ergonomic Taylor-mode:** nested `Dual` works but scales awkwardly past 2nd
-   order; a dedicated order-N Taylor type would be cleaner for high-order PDEs.
+Remaining (minor, none blocking): variable-width `HiddenLayers<...>` in
+`forwardAs` (needs per-layer widths the public API doesn't expose);
+multi-variable high-order Taylor (the `Jet` is single-variable). Both are
+niche extensions, not gaps in PINN support.
 
 ## Caveats and sources
 

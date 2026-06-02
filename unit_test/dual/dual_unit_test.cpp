@@ -37,6 +37,7 @@
 #include "dualmath.hpp"
 #include "multidual.hpp"
 #include "taylor.hpp"
+#include "revdual.hpp"
 #include "compiler.h"
 
 #define BOOST_TEST_MODULE dual_unit_test
@@ -322,6 +323,31 @@ BOOST_AUTO_TEST_CASE(multidual_under_dual_weight_grad_of_derivative)
     BOOST_TEST(g.deriv.grad[0] == 2.0 * x0,    boost::test_tools::tolerance(1e-12)); // d/dw (dg/dx)
 }
 
+namespace {
+struct QuadLoss
+{
+    // (p0 - 1)^2 + (p1 + 2)^2 ; grad = (2(p0-1), 2(p1+2)).
+    tinymind::RevVar operator()(const tinymind::RevVar* p) const
+    {
+        const tinymind::RevVar a = p[0] - tinymind::RevVar::constant(1.0);
+        const tinymind::RevVar b = p[1] + tinymind::RevVar::constant(2.0);
+        return a * a + b * b;
+    }
+};
+} // namespace
+
+BOOST_AUTO_TEST_CASE(revvar_sgd_step_reverse)
+{
+    // One reverse-mode SGD step: gradient at (0,0) is (-2, 4); with lr=0.1,
+    // momentum=0, params move to (0.2, -0.4).
+    double p[2] = { 0.0, 0.0 };
+    double vel[2] = { 0.0, 0.0 };
+    const double L = tinymind::pinn::sgdStepReverse<2>(p, vel, 0.1, 0.0, QuadLoss{});
+    BOOST_TEST(L == 5.0, boost::test_tools::tolerance(1e-12));   // 1 + 4
+    BOOST_TEST(p[0] == 0.2,  boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(p[1] == -0.4, boost::test_tools::tolerance(1e-12));
+}
+
 BOOST_AUTO_TEST_CASE(taylor_jet_polynomial_high_order)
 {
     // f(x) = x^3 : f'=3x^2, f''=6x, f'''=6, f''''=0.  One sweep, all orders.
@@ -354,6 +380,41 @@ BOOST_AUTO_TEST_CASE(taylor_jet_sin_exp_sqrt)
     J r = tinymind::sqrt(J::variable(2.0));
     BOOST_TEST(r.derivative(1) ==  1.0 / (2.0 * std::sqrt(2.0)), boost::test_tools::tolerance(1e-12));
     BOOST_TEST(r.derivative(2) == -1.0 / (4.0 * std::pow(2.0, 1.5)), boost::test_tools::tolerance(1e-12));
+}
+
+BOOST_AUTO_TEST_CASE(revvar_reverse_mode_gradient)
+{
+    // f(w0,w1) = w0^2 * w1 : grad = (2 w0 w1, w0^2). One backward pass over the
+    // tape yields both adjoints, independent of the number of inputs.
+    using tinymind::RevVar;
+    tinymind::revReset();
+    RevVar w0 = RevVar::leaf(3.0);
+    RevVar w1 = RevVar::leaf(2.0);
+    RevVar f = (w0 * w0) * w1;
+    tinymind::revBackward(f);
+    BOOST_TEST(f.value() == 18.0, boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(w0.adjoint() == 12.0, boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(w1.adjoint() == 9.0,  boost::test_tools::tolerance(1e-12));
+}
+
+BOOST_AUTO_TEST_CASE(revvar_over_forward_weight_grad_of_derivative)
+{
+    // Reverse-over-forward: g(x;w) = w * x^2. Forward-mode (Dual) gives
+    // dg/dx = 2 w x; reverse-mode (RevVar) gives its gradient w.r.t. w in one
+    // backward pass: d/dw(dg/dx) = 2x. Matches the MultiDual result.
+    using tinymind::RevVar;
+    typedef Dual<RevVar> DR;
+    tinymind::revReset();
+
+    const double w0 = 2.0, x0 = 3.0;
+    RevVar w = RevVar::leaf(w0);
+    DR wD(w);                                                  // constant in x
+    DR x(RevVar::constant(x0), RevVar::constant(1.0));         // seed d/dx
+    DR g = (wD * x) * x;
+
+    tinymind::revBackward(g.deriv);                            // backprop dg/dx
+    BOOST_TEST(g.deriv.value() == 2.0 * w0 * x0, boost::test_tools::tolerance(1e-12)); // dg/dx
+    BOOST_TEST(w.adjoint() == 2.0 * x0, boost::test_tools::tolerance(1e-12));          // d/dw(dg/dx)
 }
 
 BOOST_AUTO_TEST_CASE(taylor_jet_tanh_third_order)
