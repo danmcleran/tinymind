@@ -36,6 +36,7 @@
 #include "dualActivations.hpp"
 #include "dualmath.hpp"
 #include "multidual.hpp"
+#include "taylor.hpp"
 #include "compiler.h"
 
 #define BOOST_TEST_MODULE dual_unit_test
@@ -319,6 +320,53 @@ BOOST_AUTO_TEST_CASE(multidual_under_dual_weight_grad_of_derivative)
 
     BOOST_TEST(g.deriv.value == 2.0 * w0 * x0, boost::test_tools::tolerance(1e-12)); // dg/dx
     BOOST_TEST(g.deriv.grad[0] == 2.0 * x0,    boost::test_tools::tolerance(1e-12)); // d/dw (dg/dx)
+}
+
+BOOST_AUTO_TEST_CASE(taylor_jet_polynomial_high_order)
+{
+    // f(x) = x^3 : f'=3x^2, f''=6x, f'''=6, f''''=0.  One sweep, all orders.
+    typedef tinymind::Jet<double, 4> J;
+    const double x0 = 1.7;
+    J x = J::variable(x0);
+    J f = (x * x) * x;
+    BOOST_TEST(f.derivative(0) == x0 * x0 * x0, boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(f.derivative(1) == 3.0 * x0 * x0, boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(f.derivative(2) == 6.0 * x0,      boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(f.derivative(3) == 6.0,           boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(f.derivative(4) == 0.0,           boost::test_tools::tolerance(1e-12));
+}
+
+BOOST_AUTO_TEST_CASE(taylor_jet_sin_exp_sqrt)
+{
+    typedef tinymind::Jet<double, 4> J;
+    const double x0 = 0.6;
+
+    J s = tinymind::sin(J::variable(x0));
+    BOOST_TEST(s.derivative(1) ==  std::cos(x0), boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(s.derivative(2) == -std::sin(x0), boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(s.derivative(3) == -std::cos(x0), boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(s.derivative(4) ==  std::sin(x0), boost::test_tools::tolerance(1e-12));
+
+    J e = tinymind::exp(J::variable(x0));
+    for (int k = 0; k <= 4; ++k)
+        BOOST_TEST(e.derivative(k) == std::exp(x0), boost::test_tools::tolerance(1e-12));
+
+    J r = tinymind::sqrt(J::variable(2.0));
+    BOOST_TEST(r.derivative(1) ==  1.0 / (2.0 * std::sqrt(2.0)), boost::test_tools::tolerance(1e-12));
+    BOOST_TEST(r.derivative(2) == -1.0 / (4.0 * std::pow(2.0, 1.5)), boost::test_tools::tolerance(1e-12));
+}
+
+BOOST_AUTO_TEST_CASE(taylor_jet_tanh_third_order)
+{
+    // tanh': 1-t^2 ; tanh'': -2t(1-t^2) ; tanh''': 2(1-t^2)(3t^2-1).
+    typedef tinymind::Jet<double, 3> J;
+    const double x0 = 0.4;
+    const double t = std::tanh(x0);
+    J th = tinymind::tanh(J::variable(x0));
+    BOOST_TEST(th.derivative(1) == (1.0 - t * t), boost::test_tools::tolerance(1e-10));
+    BOOST_TEST(th.derivative(2) == (-2.0 * t * (1.0 - t * t)), boost::test_tools::tolerance(1e-10));
+    BOOST_TEST(th.derivative(3) == (2.0 * (1.0 - t * t) * (3.0 * t * t - 1.0)),
+               boost::test_tools::tolerance(1e-10));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
