@@ -43,6 +43,8 @@ TINYMIND_DISABLE_WARNING_POP
 #include "adam.hpp"
 #include "earlyStopping.hpp"
 #include "teacherForcing.hpp"
+#include "dual.hpp"
+#include "pinn.hpp"
 #include "truncatedBPTT.hpp"
 #include "conv1d.hpp"
 #include "pool1d.hpp"
@@ -79,7 +81,7 @@ namespace tinymind {
     {
         static double activationFunction(const double& value)
         {
-            return tanh(value);
+            return std::tanh(value);
         }
 
         static double activationFunctionDerivative(const double& value)
@@ -96,7 +98,7 @@ namespace tinymind {
     {
         static double activationFunction(const double& value)
         {
-            return (1.0 / (1.0 + exp(-value)));
+            return (1.0 / (1.0 + std::exp(-value)));
         }
 
         static double activationFunctionDerivative(const double& value)
@@ -4181,6 +4183,47 @@ BOOST_AUTO_TEST_CASE(test_case_hidden_layer_accessor_out_of_range)
     nn.setHiddenLayerBiasNeuronWeightForConnection(outOfRange, 0, ValueType(1, 0));
     nn.setHiddenLayerWeightForNeuronAndConnection(outOfRange, 0, 0, ValueType(1, 0));
     BOOST_TEST(nn.getHiddenLayerWeightForNeuronAndConnection(0, 0, 0) == before);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_forward_as_dual_differentiable)
+{
+    // tinymind::pinn::forwardAs re-evaluates the STOCK NeuralNetwork in an
+    // arbitrary scalar type without touching its own forward path: with double
+    // it must reproduce getLearnedValues exactly, and with Dual<double> it
+    // yields the network's input derivative (du/dx), matching finite difference.
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                ValueType, UniformRealRandomNumberGenerator,
+                tinymind::TanhActivationPolicy, tinymind::TanhActivationPolicy> TF;
+    typedef tinymind::MultilayerPerceptron<ValueType, 2, 1, 4, 1, TF> NN;
+
+    srand(RANDOM_SEED);
+    NN nn;
+
+    double inputs[2] = { 0.3, -0.7 };
+
+    nn.feedForward(inputs);
+    double nativeOut[1];
+    nn.getLearnedValues(nativeOut);
+
+    double myOut[1];
+    tinymind::pinn::forwardAs<double, tinymind::pinn::TanhActivation,
+                              tinymind::pinn::TanhActivation>(nn, inputs, myOut);
+    BOOST_TEST(myOut[0] == nativeOut[0], boost::test_tools::tolerance(1e-12));
+
+    typedef tinymind::Dual<double> D1;
+    D1 din[2] = { D1(0.3, 1.0), D1(-0.7, 0.0) };  // seed d/dx0
+    D1 dout[1];
+    tinymind::pinn::forwardAs<D1, tinymind::pinn::TanhActivation,
+                              tinymind::pinn::TanhActivation>(nn, din, dout);
+
+    const double h = 1e-6;
+    double a[2] = { 0.3 + h, -0.7 }, b[2] = { 0.3 - h, -0.7 };
+    double fa[1], fb[1];
+    nn.feedForward(a); nn.getLearnedValues(fa);
+    nn.feedForward(b); nn.getLearnedValues(fb);
+    const double fd = (fa[0] - fb[0]) / (2.0 * h);
+    BOOST_TEST(dout[0].deriv == fd, boost::test_tools::tolerance(1e-5));
 }
 
 BOOST_AUTO_TEST_CASE(test_case_teacher_forcing)

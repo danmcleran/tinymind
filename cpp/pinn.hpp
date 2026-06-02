@@ -43,11 +43,88 @@
 #include "dual.hpp"
 #include "dualActivations.hpp"
 #include "multidual.hpp"
+#include "include/nnproperties.hpp"   // ValueConverter
 
 #include <cstddef>
 
 namespace tinymind {
 namespace pinn {
+
+    // Lift a double constant into any scalar type S used by the dual machinery.
+    template<typename S> struct Constant
+    {
+        static S of(double d) { return ValueConverter<double, S>::convertToDestinationType(d); }
+    };
+    template<typename V> struct Constant<Dual<V> >
+    {
+        static Dual<V> of(double d) { return Dual<V>(Constant<V>::of(d)); }
+    };
+    template<typename V, std::size_t N> struct Constant<MultiDual<V, N> >
+    {
+        static MultiDual<V, N> of(double d) { return MultiDual<V, N>(Constant<V>::of(d)); }
+    };
+
+    // Activation bridges: apply an activation in scalar type S. tanhValue /
+    // sigmoidValue dispatch correctly for double (std), QValue (LUT), and dual
+    // types (derivative-aware), so forwardAs differentiates as well as infers.
+    struct TanhActivation
+    {
+        template<typename S> static S apply(const S& z) { return DualScalarActivation<S>::tanhValue(z); }
+    };
+    struct SigmoidActivation
+    {
+        template<typename S> static S apply(const S& z) { return DualScalarActivation<S>::sigmoidValue(z); }
+    };
+    struct LinearActivation
+    {
+        template<typename S> static S apply(const S& z) { return z; }
+    };
+
+    // Network-value -> double, for lifting weights into S via Constant<S>.
+    template<typename NV>
+    inline double toDouble(const NV& v) { return ValueConverter<NV, double>::convertToDestinationType(v); }
+    inline double toDouble(double v) { return v; }
+
+    /**
+     * Re-evaluate a stock single-hidden-layer feed-forward NeuralNetwork in an
+     * arbitrary scalar type S, reading its trained weights through the public
+     * getters. This is ADDITIVE -- it does not touch the network's own
+     * feedForward / trainNetwork / storage, so existing uses and the byte-exact
+     * golden/embedded regressions are unaffected. With S = double it reproduces
+     * getLearnedValues; with S = Dual<double> (or nested) it yields the network's
+     * input derivatives (du/dx, d2u/dx2) for a PDE residual.
+     *
+     * HiddenAct / OutputAct must match the network's transfer-function policy
+     * (e.g. TanhActivation hidden + LinearActivation output for a PINN field).
+     * The net is taken by non-const reference because the hidden-layer getters
+     * are non-const in the current library.
+     */
+    template<typename S, typename HiddenAct, typename OutputAct, typename NetT>
+    void forwardAs(NetT& net, const S* inputs, S* outputs)
+    {
+        static_assert(NetT::NeuralNetworkNumberOfHiddenLayers == 1,
+                      "forwardAs currently supports single-hidden-layer feed-forward networks");
+
+        const std::size_t NI = NetT::NumberOfInputLayerNeurons;
+        const std::size_t NO = NetT::NumberOfOutputLayerNeurons;
+
+        S hidden[NetT::NumberOfHiddenLayerNeurons];
+        for (std::size_t j = 0; j < NetT::NumberOfHiddenLayerNeurons; ++j)
+        {
+            S z = Constant<S>::of(toDouble(net.getInputLayerBiasNeuronWeightForConnection(j)));
+            for (std::size_t i = 0; i < NI; ++i)
+                z = z + Constant<S>::of(toDouble(net.getInputLayerWeightForNeuronAndConnection(i, j))) * inputs[i];
+            hidden[j] = HiddenAct::template apply<S>(z);
+        }
+
+        for (std::size_t k = 0; k < NO; ++k)
+        {
+            S z = Constant<S>::of(toDouble(net.getHiddenLayerBiasNeuronWeightForConnection(0, k)));
+            for (std::size_t j = 0; j < NetT::NumberOfHiddenLayerNeurons; ++j)
+                z = z + Constant<S>::of(toDouble(net.getHiddenLayerWeightForNeuronAndConnection(0, j, k))) * hidden[j];
+            outputs[k] = OutputAct::template apply<S>(z);
+        }
+    }
 
     /**
      * Fully-connected MLP: NumInputs -> NumHidden (tanh) -> NumOutputs (linear).

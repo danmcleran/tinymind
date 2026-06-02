@@ -220,14 +220,25 @@ Done:
     derivatives via the LUTs) matches the `double` residual to ~6e-3 — so
     `Dual<QValue>` is accurate on a real residual, not just mechanically correct.
 
+14. ✅ Stock `NeuralNet<>` input-differentiability via `tinymind::pinn::forwardAs`
+    (`cpp/pinn.hpp`): an ADDITIVE free function that re-evaluates a trained
+    single-hidden-layer feed-forward network in any scalar type by reading its
+    weights through the public getters — no change to the network's own forward /
+    train / storage, so the byte-exact golden and embedded regressions are
+    untouched. With `double` it reproduces `getLearnedValues`; with `Dual<double>`
+    it yields the network's `du/dx`, verified against finite difference
+    (`unit_test/nn`). (Note: introducing `tinymind::sin`/`tanh`/etc. means
+    unqualified transcendental calls *inside* `namespace tinymind` now resolve to
+    them; qualify such calls `std::` — one occurrence in the test suite was fixed.)
+
 Remaining (optimizations / ergonomics, none blocking):
 
 13. **True reverse-mode** weight gradients. `MultiDual` is one pass but O(N) work
     per op (N = weight count); reverse-over-forward would be asymptotically
     cheaper for large nets. Adjoint/tape AD is a larger build.
-14. **Stock `NeuralNet<>` differentiability.** `PinnMlp` is differentiable by
-    construction; retrofitting the main `NeuralNet<>` (its activation policies are
-    QValue-LUT-typed) would be a separate refactor.
+15. **`forwardAs` beyond one hidden layer.** It currently `static_assert`s a
+    single hidden layer (the common PINN shape); multi-layer / recurrent / output
+    activations other than the supplied bridges are not yet handled.
 7. **Ergonomic Taylor-mode:** nested `Dual` works but scales awkwardly past 2nd
    order; a dedicated order-N Taylor type would be cleaner for high-order PDEs.
 
