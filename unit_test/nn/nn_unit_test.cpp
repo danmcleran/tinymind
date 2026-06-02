@@ -4226,6 +4226,29 @@ BOOST_AUTO_TEST_CASE(test_case_forward_as_dual_differentiable)
     BOOST_TEST(dout[0].deriv == fd, boost::test_tools::tolerance(1e-5));
 }
 
+BOOST_AUTO_TEST_CASE(test_case_forward_as_multi_hidden_layer)
+{
+    // forwardAs handles multiple uniform-width hidden layers: a 2->4->4->1 MLP.
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                ValueType, UniformRealRandomNumberGenerator,
+                tinymind::TanhActivationPolicy, tinymind::TanhActivationPolicy> TF;
+    typedef tinymind::MultilayerPerceptron<ValueType, 2, 2, 4, 1, TF> NN;
+
+    srand(RANDOM_SEED);
+    NN nn;
+
+    double inputs[2] = { 0.4, -0.2 };
+    nn.feedForward(inputs);
+    double nativeOut[1];
+    nn.getLearnedValues(nativeOut);
+
+    double myOut[1];
+    tinymind::pinn::forwardAs<double, tinymind::pinn::TanhActivation,
+                              tinymind::pinn::TanhActivation>(nn, inputs, myOut);
+    BOOST_TEST(myOut[0] == nativeOut[0], boost::test_tools::tolerance(1e-12));
+}
+
 BOOST_AUTO_TEST_CASE(test_case_teacher_forcing)
 {
     tinymind::ScheduledSampling<double> sampler(100);

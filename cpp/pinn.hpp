@@ -102,28 +102,51 @@ namespace pinn {
     template<typename S, typename HiddenAct, typename OutputAct, typename NetT>
     void forwardAs(NetT& net, const S* inputs, S* outputs)
     {
-        static_assert(NetT::NeuralNetworkNumberOfHiddenLayers == 1,
-                      "forwardAs currently supports single-hidden-layer feed-forward networks");
-
+        // Supports any number of hidden layers of UNIFORM width (e.g.
+        // MultilayerPerceptron). Variable-width HiddenLayers<a,b,...> nets do
+        // not expose per-layer widths publicly and are not supported -- validate
+        // forwardAs<double> against getLearnedValues for your topology.
         const std::size_t NI = NetT::NumberOfInputLayerNeurons;
+        const std::size_t NH = NetT::NumberOfHiddenLayerNeurons; // uniform width
+        const std::size_t NL = NetT::NeuralNetworkNumberOfHiddenLayers;
         const std::size_t NO = NetT::NumberOfOutputLayerNeurons;
 
-        S hidden[NetT::NumberOfHiddenLayerNeurons];
-        for (std::size_t j = 0; j < NetT::NumberOfHiddenLayerNeurons; ++j)
+        S bufA[NetT::NumberOfHiddenLayerNeurons];
+        S bufB[NetT::NumberOfHiddenLayerNeurons];
+        S* cur  = bufA;
+        S* prev = bufB;
+
+        // First hidden layer from the inputs.
+        for (std::size_t j = 0; j < NH; ++j)
         {
             S z = Constant<S>::of(toDouble(net.getInputLayerBiasNeuronWeightForConnection(j)));
             for (std::size_t i = 0; i < NI; ++i)
                 z = z + Constant<S>::of(toDouble(net.getInputLayerWeightForNeuronAndConnection(i, j))) * inputs[i];
-            hidden[j] = HiddenAct::template apply<S>(z);
+            cur[j] = HiddenAct::template apply<S>(z);
         }
 
+        // Subsequent hidden layers: weights from layer L-1 carry index L-1.
+        for (std::size_t L = 1; L < NL; ++L)
+        {
+            S* tmp = prev; prev = cur; cur = tmp;
+            for (std::size_t m = 0; m < NH; ++m)
+            {
+                S z = Constant<S>::of(toDouble(net.getHiddenLayerBiasNeuronWeightForConnection(L - 1, m)));
+                for (std::size_t n = 0; n < NH; ++n)
+                    z = z + Constant<S>::of(toDouble(net.getHiddenLayerWeightForNeuronAndConnection(L - 1, n, m))) * prev[n];
+                cur[m] = HiddenAct::template apply<S>(z);
+            }
+        }
+
+        // Output from the last hidden layer (index NL-1).
         for (std::size_t k = 0; k < NO; ++k)
         {
-            S z = Constant<S>::of(toDouble(net.getHiddenLayerBiasNeuronWeightForConnection(0, k)));
-            for (std::size_t j = 0; j < NetT::NumberOfHiddenLayerNeurons; ++j)
-                z = z + Constant<S>::of(toDouble(net.getHiddenLayerWeightForNeuronAndConnection(0, j, k))) * hidden[j];
+            S z = Constant<S>::of(toDouble(net.getHiddenLayerBiasNeuronWeightForConnection(NL - 1, k)));
+            for (std::size_t j = 0; j < NH; ++j)
+                z = z + Constant<S>::of(toDouble(net.getHiddenLayerWeightForNeuronAndConnection(NL - 1, j, k))) * cur[j];
             outputs[k] = OutputAct::template apply<S>(z);
         }
+        (void)prev;
     }
 
     /**
