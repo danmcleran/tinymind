@@ -10,7 +10,8 @@ WARN=-Wall -Wextra -Werror -Wpedantic
 # activation overloads (tanh(Dual)/sigmoid(Dual)); the double path uses std::.
 SOURCES=dual_unit_test.cpp ../../cpp/lookupTables.cpp
 DEFINES=-DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_STD=1 \
-        -DTINYMIND_USE_TANH_16_16=1 -DTINYMIND_USE_SIGMOID_16_16=1
+        -DTINYMIND_USE_TANH_16_16=1 -DTINYMIND_USE_SIGMOID_16_16=1 \
+        -DTINYMIND_USE_SIN_16_16=1 -DTINYMIND_USE_COS_16_16=1 -DTINYMIND_USE_EXP_16_16=1
 INCLUDES=-I../../include -I../../cpp -I../../cpp/include -I${BOOST_HOME}
 OUT=./output/dual_unit_test
 

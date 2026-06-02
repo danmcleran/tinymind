@@ -249,6 +249,25 @@ BOOST_AUTO_TEST_CASE(sqrt_qformat)
                boost::test_tools::tolerance(1e-2));
 }
 
+BOOST_AUTO_TEST_CASE(trig_exp_duals_qformat)
+{
+    // QValue exp/sin/cos duals via the lookup tables (LUT tolerance, not a
+    // mechanics error). sin/cos LUTs are accurate to ~2e-3 over [-5.5, 5.5].
+    const double x0 = 0.5;
+
+    Dual<Q16> s = tinymind::sin(Dual<Q16>(Q16(0, 32768) /*0.5*/, Q16(1, 0)));
+    BOOST_TEST(toDouble(s.value) == std::sin(x0), boost::test_tools::tolerance(1e-2));
+    BOOST_TEST(toDouble(s.deriv) == std::cos(x0), boost::test_tools::tolerance(1e-2));
+
+    Dual<Q16> c = tinymind::cos(Dual<Q16>(Q16(0, 32768), Q16(1, 0)));
+    BOOST_TEST(toDouble(c.value) == std::cos(x0), boost::test_tools::tolerance(1e-2));
+    BOOST_TEST(toDouble(c.deriv) == -std::sin(x0), boost::test_tools::tolerance(1e-2));
+
+    Dual<Q16> e = tinymind::exp(Dual<Q16>(Q16(0, 32768), Q16(1, 0)));
+    BOOST_TEST(toDouble(e.value) == std::exp(x0), boost::test_tools::tolerance(3e-2));
+    BOOST_TEST(toDouble(e.deriv) == std::exp(x0), boost::test_tools::tolerance(3e-2));
+}
+
 BOOST_AUTO_TEST_CASE(mixed_partial_derivative)
 {
     // f(x,y) = sin(x) * y^2 ;  d^2f/dx dy = cos(x) * 2y.

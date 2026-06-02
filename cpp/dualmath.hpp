@@ -33,18 +33,25 @@
 //   cos:  f = cos x,    f' = -sin x
 //   sqrt: f = sqrt x,   f' = 1 / (2 sqrt x)
 //
-// SCOPE: exp/sin/cos are provided for float/double (the primary PINN regime) and
-// recurse through nested duals for higher-order derivatives. sqrt is provided
-// for every value type, including fixed-point QValue (via SquareRootApproximation).
-// QValue exp/sin/cos duals are NOT yet wired -- they need scalar lookup-table
-// policies (the tables exist in exp.hpp / sin.hpp / cos.hpp but there is no
-// standalone scalar accessor); add a DualScalarMath<QValue> specialization to
-// enable them. Using exp/sin/cos on a Dual<QValue> is a compile error until then.
+// SCOPE: exp/sin/cos are provided for float/double (the primary PINN regime),
+// for fixed-point QValue (via the lookup-table family in exp.hpp / sin.hpp /
+// cos.hpp), and recurse through nested duals for higher-order derivatives.
+// sqrt is provided for every value type (SquareRootApproximation). The QValue
+// trig/exp path requires the matching lookup tables to be linked, i.e.
+// lookupTables.cpp built with the relevant TINYMIND_USE_SIN_* / _COS_* / _EXP_*
+// macros (same as any other QValue tanh/sigmoid use), and the LUT input domain
+// is bounded (~[-pi,pi] for sin/cos) -- inputs outside it saturate.
 
 #include "include/tinymind_platform.hpp"
 #include "dual.hpp"
 #include "constants.hpp"
-#include "adam.hpp"   // SquareRootApproximation<ValueType>
+#include "adam.hpp"      // SquareRootApproximation<ValueType>
+#include "qformat.hpp"   // QValue (for the fixed-point specialization)
+#include "lookupTable.hpp"
+#include "activation.hpp" // NUMBER_OF_ACTIVATION_TABLE_VALUES
+#include "sin.hpp"
+#include "cos.hpp"
+#include "exp.hpp"
 
 #if TINYMIND_ENABLE_STD
 #include <cmath>
@@ -99,6 +106,37 @@ namespace tinymind {
         static double two() { return 2.0; }
     };
 #endif
+
+    // Fixed-point QValue: exp/sin/cos via the precomputed lookup tables (the
+    // tables must be linked, gated by the matching TINYMIND_USE_* macros);
+    // sqrt via the integer Newton iteration. Mirrors the verified getValue call
+    // in unit_test/lookuptable (MAX index = NUMBER_OF_ACTIVATION_TABLE_VALUES-1).
+    template<unsigned F, unsigned Fr, bool Sgn,
+             template<typename, unsigned> class R, template<typename> class O>
+    struct DualScalarMath<QValue<F, Fr, Sgn, R, O> >
+    {
+        typedef QValue<F, Fr, Sgn, R, O> V;
+        static const ptrdiff_t kMaxIdx = NUMBER_OF_ACTIVATION_TABLE_VALUES - 1;
+
+        static V expVal(const V& x)
+        {
+            static const typename ExpValuesTableSelector<F, Fr, Sgn>::ExpTableType t;
+            return LookupTable<V>::getValue(x, &t.values[0], kMaxIdx);
+        }
+        static V sinVal(const V& x)
+        {
+            static const typename SinValuesTableSelector<F, Fr, Sgn>::SinTableType t;
+            return LookupTable<V>::getValue(x, &t.values[0], kMaxIdx);
+        }
+        static V cosVal(const V& x)
+        {
+            static const typename CosValuesTableSelector<F, Fr, Sgn>::CosTableType t;
+            return LookupTable<V>::getValue(x, &t.values[0], kMaxIdx);
+        }
+        static V sqrtVal(const V& x) { return SquareRootApproximation<V>::sqrt(x); }
+        static V one() { return Constants<V>::one(); }
+        static V two() { return Constants<V>::one() + Constants<V>::one(); }
+    };
 
     // Nested dual: the "scalar" math of a Dual is the same op on that Dual,
     // enabling higher-order derivatives (e.g. d^2/dx^2 of a sin-activated field).
