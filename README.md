@@ -1,6 +1,6 @@
 # TinyMind
 
-A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, linear self-attention, FFT-based signal processing, 1D and 2D convolutions (including MobileNet-style depthwise-separable blocks), binary and ternary neural networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
+A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, liquid neural networks (LTC and CfC continuous-time cells), linear self-attention, FFT-based signal processing, 1D and 2D convolutions (including MobileNet-style depthwise-separable blocks), binary and ternary neural networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
 
 Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design), TinyMind uses template metaprogramming to produce zero-overhead abstractions where network topology, value type, activation functions, and training policies are all compile-time parameters.
 
@@ -66,6 +66,15 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - Host PINN training is ordinary host code (no device needed): [`examples/pinn_heat1d/`](examples/pinn_heat1d/) `make train` fits the 1-D heat equation `u_t - nu*u_xx`, driving the PINN loss down ~50x to ~2.5% solution error, then benchmarks the residual in Q16.16 fixed point against the `double` residual (~6e-3)
 - See [`docs/pinn-feasibility.md`](docs/pinn-feasibility.md) for the full feasibility analysis and deployment paths
 
+### Liquid Neural Networks (Continuous-Time)
+
+Continuous-time recurrent cells from the MIT liquid-network line of work. Both are standalone single-step cells (`step<S>` / `forward`); the caller owns the state buffer and the time loop, matching the `QLSTMCell` / `QGRUCell` convention. The float cells are written scalar-templated in the PINN style, so they **train through the existing autodiff machinery** (`MultiDual` / `RevVar` + `pinn::sgdStep` / `sgdStepReverse`) with no hand-written backprop.
+
+- **Liquid Time-Constant (LTC)** -- `LtcCell<NumInputs, NumState, Act>` (`cpp/ltc.hpp`), the fused (semi-implicit Euler) ODE solver from Hasani et al., *Liquid Time-constant Networks* (AAAI 2021). Per-neuron `dx/dt = -[1/tau + f]*x + f*A`; the fused step `x(t+dt) = (x + dt*f*A) / (1 + dt*(1/tau + f))` is unconditionally stable (denominator > 1) with no inner iteration. `step<S>` infers in `double`/`float`/`QValue` and differentiates through `Dual`/`MultiDual`/`RevVar` (reverse-mode training behind `-DTINYMIND_LTC_REVERSE_TRAINING=1`). The float / fixed-point liquid tier
+- **Closed-form Continuous-time (CfC)** -- `CfCCell<NumInputs, NumState, BackboneDim, ...>` (`cpp/cfc.hpp`), the solver-free sibling from Hasani et al., *Closed-form continuous-time neural networks* (Nature MI 2022). Backbone trunk over `[input ++ h_prev]`, two tanh heads, a time-gate `t = sigmoid(tA*ts + tB)`, and the interpolation `h' = (1-t)*ff1 + t*ff2`. The per-step elapsed time `ts` is a runtime scalar, so **irregular sampling** is supported directly. Same scalar-templated autodiff story as LTC (training behind `-DTINYMIND_CFC_REVERSE_TRAINING=1`)
+- **int8 deployable CfC** -- `QCfCCell<...>` (`cpp/qcfc.hpp`), the pure-integer counterpart (regular-sampling form: `ts` folded into the time-A requantizer at calibration). Each MAC carries its own `Requantizer` into the shared sigmoid/tanh LUT input scale; freestanding-safe under `FLOAT=0 STD=0`. Host calibration via `QCfCScales` / `buildQCfCParams` / `quantizeQCfCBias` / `quantizeQCfCTimeBias`. (LTC's continuous `1/tau` dynamics deliberately stay float / fixed-point; CfC is the int8 tier)
+- Demos: [`examples/ltc_sequence/`](examples/ltc_sequence/) (LTC trained to a leaky-integrator step response, ~100x loss reduction) and [`examples/cfc_sequence/`](examples/cfc_sequence/) (CfC trained on an irregularly-sampled target, varying `ts` into the time-gate), both through `pinn::sgdStepReverse`
+
 ### Fixed-Point Arithmetic
 
 - `QValue<IntegerBits, FractionalBits, IsSigned>` template supporting Q8.8, Q16.16, Q24.8, Q32.32, and other formats up to 128-bit
@@ -81,10 +90,10 @@ A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside*
 - **Convolution / dense family** -- `QConv2D`, `QConv2DPerChannel`, `QDepthwiseConv2D` (per-channel weight scale, TFLite mandate), `QPointwiseConv2D`, `QPointwiseConv2DPerChannel`, `QMaxPool2D`, `QAvgPool2D`, `QGlobalAvgPool2D`, `QDense` -- int8 weights/activations, int32 accumulators, integer requantization between layers via gemmlowp-style `Requantizer<int32, int8>` (Q0.31 multiplier + shift)
 - **Composition ops** -- `QAdd` (TFLite ADD semantics, left_shift + 3 multiplier/shift triples), `QMul` (single-Requantizer elementwise multiply), `QConcat2_2D` (channel-axis concat with per-input rescaler), `QPad2D` (constant pad using input zero_point so padded cells decode to true zero)
 - **Normalization** -- `QBatchNorm1D` / `QBatchNorm2D` (per-channel (multiplier, shift, bias) triple), `QLayerNorm1D` (integer mean/variance per row, `qInvSqrtQ30` Newton iteration), `QSoftmax1D` (two-pass int8->int8 softmax via 256-entry int32 exp LUT, output 1/256, zp -128)
-- **Recurrent cells** -- `QLSTMCell` (4 gates, TFLite ordering, int8 or int16 cell state via `TINYMIND_ENABLE_INT16_ACCUM=1`) and `QGRUCell` (3 gates, reset-before-multiply). Standalone single-step; caller owns time loop and hidden/cell buffers
+- **Recurrent cells** -- `QLSTMCell` (4 gates, TFLite ordering, int8 or int16 cell state via `TINYMIND_ENABLE_INT16_ACCUM=1`), `QGRUCell` (3 gates, reset-before-multiply), and `QCfCCell` (closed-form continuous-time: backbone trunk + tanh heads + folded-`ts` time-gate + interpolation). Standalone single-step; caller owns time loop and hidden/cell buffers
 - **Attention + FFT** -- `QFFT1D` (radix-2 DIT on int16 buffers, Q1.15 twiddles, scaled butterflies), `QAttention1D` (int8 linear-attention with ReLU kernel), `QAttentionSoftmax1D` (standard softmax attention with `1/sqrt(d_k)` folded into score Requantizer), `QMultiHeadLinearAttention1D` (stacks N heads)
 - **Activations** -- `qrelu` / `qrelu6` plus `clampForRelu` / `clampForRelu6` helpers that fold the activation into the upstream Requantizer's saturation pass; 256-entry int8 sigmoid / tanh LUTs via `buildQSigmoidLUT` / `buildQTanhLUT` + `qApplyLUT` / `qApplyLUTBuffer` -- no `<cmath>` on the inference path
-- **Host-side calibration** (`cpp/include/qcalibration.hpp`, gated on `FLOAT && STD`) -- `RangeObserver`, `PercentileObserver`, `KLDivergenceObserver` (TensorRT entropy), `crossLayerEqualizeDense` / `crossLayerEqualizeConv2D` (Nagel CLE), `computeAffineParamsAsymmetric` / `Symmetric`, `computePerChannelSymmetricScales`, `quantizeBuffer`, `buildRequantizer`, `buildRescaler`, `buildQAddParams`, `buildQMulRequantizer`, `foldBatchNorm` (Conv2D+BN fusion), `buildQBatchNormChannelParams`, `buildQSoftmaxExpLUT`, `buildQLSTMParams` / `quantizeQLSTMBiases`, `buildQGRUParams` / `quantizeQGRUBiases`, `buildQFFTTwiddles`, `qAttentionInvSqrt`
+- **Host-side calibration** (`cpp/include/qcalibration.hpp`, gated on `FLOAT && STD`) -- `RangeObserver`, `PercentileObserver`, `KLDivergenceObserver` (TensorRT entropy), `crossLayerEqualizeDense` / `crossLayerEqualizeConv2D` (Nagel CLE), `computeAffineParamsAsymmetric` / `Symmetric`, `computePerChannelSymmetricScales`, `quantizeBuffer`, `buildRequantizer`, `buildRescaler`, `buildQAddParams`, `buildQMulRequantizer`, `foldBatchNorm` (Conv2D+BN fusion), `buildQBatchNormChannelParams`, `buildQSoftmaxExpLUT`, `buildQLSTMParams` / `quantizeQLSTMBiases`, `buildQGRUParams` / `quantizeQGRUBiases`, `buildQCfCParams` / `quantizeQCfCBias` / `quantizeQCfCTimeBias`, `buildQFFTTwiddles`, `qAttentionInvSqrt`
 - **Pure integer at runtime**: deployable shape is `TINYMIND_ENABLE_QUANTIZATION=1, FLOAT=0, STD=0`; `unit_test/embedded` exercises this corner as `quant_freestanding`; `unit_test/quantization` Boost.Test suite covers the math (Requantizer round-trip, per-channel depthwise, calibration, Phase 11-15 ops, SIMD bit-exactness)
 - **End-to-end examples**:
   - [`examples/pytorch_quant/xor/`](examples/pytorch_quant/xor/) -- PyTorch float training + per-tensor calibration + `weights.hpp` emission, then a pure-integer C++ forward pass through `QDense` + `qrelu` + `QDense` + int8 sigmoid LUT
@@ -290,6 +299,32 @@ for (int epoch = 0; epoch < 10000; ++epoch) {
         nn.trainNetwork(target);
     }
 }
+```
+
+### Liquid Cell (CfC, Irregular Sampling)
+
+```cpp
+#include "cfc.hpp"
+using tinymind::cfc::CfCCell;
+
+// 1 input, 4 state neurons, backbone width 8. Caller owns the flat parameter
+// array (type double here) and the state buffer; step<S> is scalar-templated.
+typedef CfCCell<1, 4, 8> Cell;
+double params[Cell::NumParams];   // [W_bx][W_bh][b_b][W1 b1][W2 b2][WA bA][WB bB]
+// ... load trained params ...
+
+double state[4] = {0, 0, 0, 0};
+for (size_t t = 0; t < sequenceLength; ++t) {
+    double in = sample[t];
+    double next[4];
+    double ts = elapsed[t];            // per-step elapsed time feeds the time-gate
+    Cell::step<double>(params, &in, state, next, ts);
+    for (size_t i = 0; i < 4; ++i) state[i] = next[i];
+    // `state` is the cell output; add a readout layer downstream
+}
+// Train through the existing autodiff: build the loss in RevVar and call
+// pinn::sgdStepReverse (define TINYMIND_CFC_REVERSE_TRAINING=1). The LTC cell
+// (cpp/ltc.hpp) and int8 QCfCCell (cpp/qcfc.hpp) follow the same pattern.
 ```
 
 ### Training with Gradient Clipping and Weight Decay

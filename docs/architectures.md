@@ -11,7 +11,7 @@ TinyMind provides a range of neural network architectures, all as header-only C+
 
 | Architecture | Memory (Q8.8, trainable) | Key Advantage |
 |---|---|---|
-| [LSTM & GRU]({{ site.baseurl }}/architectures/lstm-gru) | 952 / 808 bytes | Sequential data, temporal patterns |
+| [LSTM, GRU & Liquid (LTC/CfC)]({{ site.baseurl }}/architectures/lstm-gru) | 952 / 808 bytes | Sequential data, temporal patterns; continuous-time cells for irregular sampling |
 | [Kolmogorov-Arnold Networks]({{ site.baseurl }}/architectures/kan) | 1,192 bytes | Learnable activation functions |
 | [Conv & Pooling Layers]({{ site.baseurl }}/architectures/conv-pooling) | 1,825 bytes (1D pipeline) | 1D time-series + 2D spectrogram/image feature extraction, MobileNet-style separable blocks |
 | [Linear Self-Attention]({{ site.baseurl }}/architectures/self-attention) | ~6 KB (mid-range) | Sequence dependency modeling without O(N^2) |

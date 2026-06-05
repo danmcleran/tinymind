@@ -132,8 +132,9 @@ Per-channel scales for `QDepthwiseConv2D` are mandatory in TFLite for accuracy r
 |---|---|---|
 | [`qlstm.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qlstm.hpp) | `QLSTMCell` | Four gates (i, f, g, o) in TFLite ordering. Each gate carries two rescalers into a shared LUT input scale, routes the pre-activation int32 through the sigmoid / tanh LUTs. Cell-state storage `int8_t` (deployable default) or `int16_t` (long unroll horizons, gate `TINYMIND_ENABLE_INT16_ACCUM=1`) |
 | [`qgru.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qgru.hpp) | `QGRUCell` | Three gates (r, z, n) in canonical ordering. Reset-before-multiply formulation. `(1 - z)` computed exactly in the sigmoid grid as `-z` |
+| [`qcfc.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qcfc.hpp) | `QCfCCell` | Closed-form continuous-time (liquid) cell. Backbone trunk + two tanh heads + a sigmoid time-gate + the `(1 - t) * ff1 + t * ff2` interpolation. Regular-sampling deployable form: the elapsed time `ts` is folded into the time-gate-A requantizer and the combined time bias at calibration. Reuses the QGRU `(1 - t) == 128 - t` sigmoid-grid identity |
 
-Standalone single-step cells; the caller owns the time loop and the hidden / cell state buffers. The matching `buildQLSTMParams` / `buildQGRUParams` host helpers turn float scales into the gate-by-gate (multiplier, shift) triples.
+Standalone single-step cells; the caller owns the time loop and the hidden / cell state buffers. The matching `buildQLSTMParams` / `buildQGRUParams` / `buildQCfCParams` host helpers turn float scales into the gate-by-gate (multiplier, shift) triples.
 
 ### Quantized attention + FFT
 
@@ -242,6 +243,7 @@ The LUTs themselves are pure data — drop them into flash on the MCU and the in
 | `buildQSoftmaxExpLUT(in_scale, lut_out)` | 256-entry int32 exp table for `QSoftmax1D` |
 | `QLSTMScales` / `QLSTMParams` / `buildQLSTMParams` / `quantizeQLSTMBiases` | Decompose per-gate float scales into the (multiplier, shift) triples `QLSTMCell` consumes |
 | `QGRUScales` / `QGRUParams` / `buildQGRUParams` / `quantizeQGRUBiases` | Same for `QGRUCell` |
+| `QCfCScales` / `QCfCParams` / `buildQCfCParams` / `quantizeQCfCBias` / `quantizeQCfCTimeBias` | Build the `QCfCCell` requantizer triples (with `ts` folded into time-gate-A) and the int32 backbone / head / combined-time biases |
 | `buildQFFTTwiddles(n, cos_out, sin_out)` | Q1.15 sin/cos table for `QFFT1D` |
 | `QAttention1DScales` / `QAttentionSoftmaxScales` / `qAttentionInvSqrt(P)` | Score-scaling helper for softmax attention |
 
@@ -293,7 +295,7 @@ The int8 path is intentionally minimal:
 
 ### Tests
 
-- [`unit_test/quantization/`](https://github.com/danmcleran/tinymind/tree/master/unit_test/quantization) — Boost.Test suite. Covers `Requantizer` round-trip; per-tensor and per-channel calibration; `QConv2D` / `QConv2DPerChannel` / `QDepthwiseConv2D` / `QPointwiseConv2D` / `QPool2D` / `QDense` float parity; sigmoid / tanh LUT builders; `foldBatchNorm` parity vs unfused conv→BN; `QBatchNorm2D` / `QLayerNorm1D` / `QSoftmax1D` parity; `QLSTMCell` / `QLSTMCell` int16-state drift / `QGRUCell`; Q1.15 twiddle / `QFFT1D` magnitude + round-trip / `QAttention1D` / `QAttentionSoftmax1D` / `QMultiHeadLinearAttention1D`; SIMD dispatch parity, INT8 extreme-value patterns, `activeBackendName()`; `PercentileObserver` + `KLDivergenceObserver` + `crossLayerEqualize*`.
+- [`unit_test/quantization/`](https://github.com/danmcleran/tinymind/tree/master/unit_test/quantization) — Boost.Test suite. Covers `Requantizer` round-trip; per-tensor and per-channel calibration; `QConv2D` / `QConv2DPerChannel` / `QDepthwiseConv2D` / `QPointwiseConv2D` / `QPool2D` / `QDense` float parity; sigmoid / tanh LUT builders; `foldBatchNorm` parity vs unfused conv→BN; `QBatchNorm2D` / `QLayerNorm1D` / `QSoftmax1D` parity; `QLSTMCell` / `QLSTMCell` int16-state drift / `QGRUCell` / `QCfCCell`; Q1.15 twiddle / `QFFT1D` magnitude + round-trip / `QAttention1D` / `QAttentionSoftmax1D` / `QMultiHeadLinearAttention1D`; SIMD dispatch parity, INT8 extreme-value patterns, `activeBackendName()`; `PercentileObserver` + `KLDivergenceObserver` + `crossLayerEqualize*`.
 - [`unit_test/embedded/`](https://github.com/danmcleran/tinymind/tree/master/unit_test/embedded) — Eight-corner cross-build matrix: `freestanding`, `no_stdlib`, `no_fpu`, `hosted`, `quant_freestanding`, `fp16_freestanding`, `int16_accum_freestanding`, `simd_disabled`. Plus a `simd_prereq_regressions` make target locking the static_assert prerequisite chain via compile-failure checks.
 - [`unit_test/integration/`](https://github.com/danmcleran/tinymind/tree/master/unit_test/integration) — Golden-byte suite. One fixture per exemplar shells out to `make golden` and asserts the int8 byte stream matches a baked-in expected string. Catches silent regressions in the inference path regardless of which SIMD backend dispatch resolves to.
 

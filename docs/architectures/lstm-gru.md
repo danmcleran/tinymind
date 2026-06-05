@@ -249,11 +249,51 @@ FileManager::template loadNetworkWeights<ValueType, ValueType>(lstmNet, inFile);
 
 See the [Weight Import Export and PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) page for details on the weight file format and PyTorch export scripts.
 
+# Liquid Neural Networks (Continuous-Time)
+
+Beyond the gated RNNs above, TinyMind ships two **continuous-time** recurrent cells from the MIT liquid-network line of work. Instead of a discrete gate update, a liquid cell models each neuron as an ODE whose effective time constant depends on the input — well suited to **irregularly-sampled** time series (sensors that report at varying intervals, event streams). Both are standalone single-step cells: the caller owns the state buffer and the time loop, exactly like `QLSTMCell` / `QGRUCell`.
+
+The float cells are written **scalar-templated** in the PINN style (`step<S>`), so the one forward pass serves `double` / `float` / fixed-point `QValue` inference *and* differentiates through the existing autodiff types (`Dual`, `MultiDual`, `RevVar`). They therefore **train through the existing reverse-mode trainer** `pinn::sgdStepReverse` with no hand-written backprop.
+
+## LtcCell (Liquid Time-Constant)
+
+`LtcCell<NumInputs, NumState, Act>` (`cpp/ltc.hpp`) — the fused (semi-implicit Euler) ODE solver from Hasani et al., *Liquid Time-constant Networks* (AAAI 2021). Per-neuron dynamics:
+
+```
+dx_i/dt = -[ 1/tau_i + f_i(x, I) ] * x_i + f_i(x, I) * A_i
+f_i      = Act( W_in[i,:] . I + W_rec[i,:] . x + b_i )
+```
+
+The fused step advances in closed form with no inner iteration and is unconditionally stable (denominator > 1) for `dt, tau > 0`:
+
+```
+x_i(t+dt) = ( x_i + dt * f_i * A_i ) / ( 1 + dt * ( 1/tau_i + f_i ) )
+```
+
+Reverse-mode training is enabled with `-DTINYMIND_LTC_REVERSE_TRAINING=1`. LTC's continuous `1/tau` dynamics stay in the float / fixed-point tiers (they resist int8); CfC is the int8-deployable liquid cell.
+
+## CfCCell (Closed-form Continuous-time)
+
+`CfCCell<NumInputs, NumState, BackboneDim, ...>` (`cpp/cfc.hpp`) — the solver-free sibling from Hasani et al., *Closed-form continuous-time neural networks* (Nature MI 2022). A backbone trunk over `[input ++ h_prev]` feeds two tanh heads and a time-gate, interpolated by the gate:
+
+```
+x1   = tanh( W_bx . input + W_bh . h_prev + b_b )
+ff1  = tanh( W1 . x1 + b1 )
+ff2  = tanh( W2 . x1 + b2 )
+t    = sigmoid( (W_A . x1) * ts + (W_B . x1) + b_time )
+h'   = (1 - t) * ff1 + t * ff2
+```
+
+The per-step elapsed time `ts` is a runtime scalar feeding the time-gate, so irregular sampling is handled directly. Reverse-mode training is enabled with `-DTINYMIND_CFC_REVERSE_TRAINING=1`.
+
+The [`examples/ltc_sequence/`](https://github.com/danmcleran/tinymind/tree/master/examples/ltc_sequence) and [`examples/cfc_sequence/`](https://github.com/danmcleran/tinymind/tree/master/examples/cfc_sequence) demos train each cell + a linear readout through `pinn::sgdStepReverse` — the CfC demo feeds a varying `ts` per step.
+
 # Int8 Quantized Counterparts
 
 For inference-only deployment that does not need the trainable Q-format pipeline at all, TinyMind ships pure-integer int8 cells alongside `LstmNeuralNetwork` / `GruNeuralNetwork`:
 
 - `QLSTMCell` — four gates (i, f, g, o) in TFLite ordering. Two rescalers per gate (input-MAC + recurrent-MAC) into a shared sigmoid / tanh LUT input scale; cell update via two `multiplyByQuantizedMultiplier` calls. Cell-state storage `int8_t` (default) or `int16_t` for long unroll horizons (gate `TINYMIND_ENABLE_INT16_ACCUM=1`).
 - `QGRUCell` — three gates (r, z, n) in canonical ordering. Reset-before-multiply formulation, `(1 - z_t)` computed exactly in the sigmoid grid as `-z_t`.
+- `QCfCCell` — int8 closed-form continuous-time (liquid) cell. Backbone trunk + two tanh heads + a sigmoid time-gate + the `(1 - t) * ff1 + t * ff2` interpolation; the elapsed time `ts` is folded into the time-gate-A requantizer at calibration (regular-sampling deployable form). Reuses the QGRU `(1 - t) == 128 - t` sigmoid-grid identity.
 
-Both are single-step cells; the caller owns the time loop and the hidden / cell state buffers. See [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) for the full int8 layer family and `buildQLSTMParams` / `buildQGRUParams` host-side calibration helpers.
+All are single-step cells; the caller owns the time loop and the hidden / cell state buffers. See [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) for the full int8 layer family and `buildQLSTMParams` / `buildQGRUParams` / `buildQCfCParams` host-side calibration helpers.

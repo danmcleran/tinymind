@@ -55,7 +55,7 @@ TinyMind networks are small enough to deploy on the most constrained microcontro
 | Binary Dense | [`BinaryDense`]({{ site.baseurl }}/architectures/quantized-networks) | XNOR+popcount (1-bit, 32x compression) |
 | Ternary Dense | [`TernaryDense`]({{ site.baseurl }}/architectures/quantized-networks) | Multiply-free ({-1,0,+1}, 16x compression) |
 | Int8 Affine | [`QDense`, `QConv2D`, `QDepthwiseConv2D`, ...]({{ site.baseurl }}/architectures/int8-quantization) | TFLite/CMSIS-NN style post-training int8 (per-tensor / per-channel calibration, integer Requantizer). Composition ops: `QConv2DPerChannel`, `QAdd`/`QMul`/`QConcat`/`QPad`, `QBatchNorm`/`QLayerNorm`/`QSoftmax` and `foldBatchNorm` |
-| Int8 Recurrent | [`QLSTMCell`, `QGRUCell`]({{ site.baseurl }}/architectures/int8-quantization) | Single-step int8 cells, TFLite gate ordering. Int16 cell-state variant for long unrolls |
+| Int8 Recurrent | [`QLSTMCell`, `QGRUCell`, `QCfCCell`]({{ site.baseurl }}/architectures/int8-quantization) | Single-step int8 cells, TFLite gate ordering. Int16 cell-state variant for long unrolls; `QCfCCell` is the closed-form continuous-time (liquid) cell |
 | Int8 Attention + FFT | [`QFFT1D`, `QAttention1D`, `QAttentionSoftmax1D`, `QMultiHeadLinearAttention1D`]({{ site.baseurl }}/architectures/int8-quantization) | Q1.15 twiddle FFT, linear and softmax attention, multi-head stack |
 | Mixed Precision | [`qbridge`, `fp16_t`, `bf16_t`]({{ site.baseurl }}/architectures/mixed-precision) | Pointwise converters between int8 affine / Q-format / float / fp16 / bf16 |
 | SIMD Backends | [NEON / SVE / Helium / AVX2 / AVX-512]({{ site.baseurl }}/architectures/simd-backends) | ISA-capability gates, byte-identical to scalar |
@@ -64,6 +64,7 @@ TinyMind networks are small enough to deploy on the most constrained microcontro
 | Elman RNN | [`ElmanNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | Simple recurrent feedback |
 | LSTM | [`LstmNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | 4-gate architecture |
 | GRU | [`GruNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | 3-gate architecture (~25% less memory) |
+| Liquid (LTC / CfC) | [`LtcCell`, `CfCCell`]({{ site.baseurl }}/architectures/lstm-gru#liquid-neural-networks-continuous-time) | Continuous-time cells (fused ODE solver / closed-form). Irregular sampling; train via reverse-mode autodiff; int8 `QCfCCell` for deployment |
 | Forward-mode Autodiff (PINN) | [`Dual`, `tanh(Dual)` / `sigmoid(Dual)`]({{ site.baseurl }}/pinn-feasibility) | Input-coordinate derivatives (`du/dx`, `d²u/dx²`) for PDE residuals; float or fixed-point, freestanding-clean |
 
 ## Quick Start
