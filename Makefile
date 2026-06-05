@@ -81,12 +81,17 @@ coverage-dashboard :
 	python3 tools/coverage_dashboard.py coverage/tinymind.info coverage/dashboard.html
 	@echo "Dashboard:   coverage/dashboard.html"
 
-# Open the coverage dashboard in a browser. Generate it first with `make coverage`.
+# Open the coverage dashboard in the user's default browser. Generate it first
+# with `make coverage`. Honors $BROWSER, then the platform opener (xdg-open on
+# Linux, open on macOS, start on Windows); no specific browser is assumed.
 coverage-open :
 	@[ -f coverage/dashboard.html ] || { echo "No dashboard. Run 'make coverage' first."; exit 1; }
-	@( command -v google-chrome >/dev/null 2>&1 && google-chrome "$(CURDIR)/coverage/dashboard.html" ) \
-	  || ( command -v xdg-open >/dev/null 2>&1 && xdg-open "$(CURDIR)/coverage/dashboard.html" ) \
-	  || { echo "No google-chrome / xdg-open found."; exit 1; }
+	@f="$(CURDIR)/coverage/dashboard.html"; \
+	if [ -n "$$BROWSER" ]; then "$$BROWSER" "$$f"; \
+	elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$$f"; \
+	elif command -v open >/dev/null 2>&1; then open "$$f"; \
+	elif command -v start >/dev/null 2>&1; then start "" "$$f"; \
+	else echo "Could not detect a browser opener. Open it manually: $$f"; fi
 
 coverage-clean :
 	find unit_test examples cpp -name '*.gcno' -delete 2>/dev/null || true
