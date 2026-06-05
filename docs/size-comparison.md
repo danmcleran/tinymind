@@ -66,6 +66,26 @@ GRU uses 3 gates (update, reset, candidate) versus LSTM's 4 gates (input, forget
 
 All architectures remain well under 1.2 KB in Q8.8 fixed-point even in trainable form, making them suitable for embedded deployment.
 
+## Liquid Cells (Continuous-Time): LTC & CfC
+
+The liquid cells (`LtcCell`, `CfCCell`) are measured on a **different basis** from the rows above. The MLP/LSTM/GRU/KAN figures are `sizeof(network object)` — self-contained objects that embed weights *and* training state. The liquid cells are pointer-shaped structs over a **caller-owned flat parameter array**; the trainable footprint is the parameter array itself (`NumParams × sizeof(ValueType)`), and the optimizer state (momentum velocity, the host-only autodiff tape) lives outside the cell. The numbers below are therefore **parameter bytes** — the weights you store and ship — not object `sizeof`, so they are not directly comparable to the LSTM/GRU rows.
+
+Each configuration below includes a small linear readout (`NumState -> 1`, `NumState + 1` params) so the totals match a usable sequence-to-scalar model.
+
+| Cell (config) | Cell params | + readout | Total params | Q8.8 | `double` |
+|---|---|---|---|---|---|
+| LTC `LtcCell<2,3>` | 24 | 4 | 28 | 56 bytes | 224 bytes |
+| CfC `CfCCell<2,3,4>` | 84 | 4 | 88 | 176 bytes | 704 bytes |
+| LTC `LtcCell<4,8>` | 120 | 9 | 129 | 258 bytes | 1,032 bytes |
+| CfC `CfCCell<4,8,16>` | 752 | 9 | 761 | 1,522 bytes | 6,088 bytes |
+
+- **LTC** `NumParams = W_in (NumState·NumInputs) + W_rec (NumState²) + b/tau/A (3·NumState)`. For `<2,3>`: 6 + 9 + 9 = 24.
+- **CfC** `NumParams = W_bx (BackboneDim·NumInputs) + W_bh (BackboneDim·NumState) + b_b (BackboneDim) + 4·(NumState·BackboneDim + NumState)` for the two tanh heads plus the time-gate A/B. For `<2,3,4>`: 8 + 12 + 4 + 4·15 = 84. The backbone trunk and four heads make CfC heavier than a same-width LTC or GRU — it buys the closed-form (solver-free) rollout and the per-step `ts` time-gate.
+
+### int8 deployable CfC (`QCfCCell`)
+
+For the pure-integer deployment path the weights are `int8` (1 byte each) and the biases are `int32`. For `QCfCCell<...,2,3,4>`: 68 weight bytes (8 + 12 + 48) + 52 bias bytes (13 × `int32`) = **120 bytes** of caller-owned parameters, plus the two 256-entry `int8` sigmoid/tanh LUTs (512 bytes) that are **shared** across every cell and layer in the model. No `<cmath>`, no float state on the inference path.
+
 ## Signal Processing Pipeline Sizes
 
 Instance sizes in bytes for Conv1D, Pool1D, and Dropout layers. These are standalone composable layers that sit outside the neural network template.

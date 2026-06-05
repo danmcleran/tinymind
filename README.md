@@ -777,6 +777,19 @@ The heterogeneous layer chain (`LayerChain`/`EmptyLayerChain`) compiles to the e
 | Trainable params | 13 weights | 120 (coefficients + edge weights) |
 | Params per edge | 1 scalar | 8 (6 spline coefficients + w_b + w_s) |
 
+**Liquid cells (LTC / CfC) -- parameter bytes:**
+
+These are pointer-shaped structs over a caller-owned flat parameter array, so the footprint is the parameter array (`NumParams x sizeof(ValueType)`), not object `sizeof` -- not directly comparable to the LSTM/GRU object sizes. Each row includes a `NumState -> 1` linear readout.
+
+| Cell (config) | Total params | Q8.8 | `double` |
+|---|---|---|---|
+| LTC `LtcCell<2,3>` + readout | 28 | 56 bytes | 224 bytes |
+| CfC `CfCCell<2,3,4>` + readout | 88 | 176 bytes | 704 bytes |
+| LTC `LtcCell<4,8>` + readout | 129 | 258 bytes | 1,032 bytes |
+| CfC `CfCCell<4,8,16>` + readout | 761 | 1,522 bytes | 6,088 bytes |
+
+The int8 `QCfCCell<...,2,3,4>` deployable form is 120 bytes of parameters (68 `int8` weights + 13 `int32` biases) plus the two 256-entry sigmoid/tanh LUTs (512 bytes) shared across the whole model. See [docs/size-comparison.md](docs/size-comparison.md#liquid-cells-continuous-time-ltc--cfc) for the full breakdown and the measurement-basis note.
+
 ## Building
 
 ### Requirements
