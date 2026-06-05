@@ -4249,6 +4249,45 @@ BOOST_AUTO_TEST_CASE(test_case_forward_as_multi_hidden_layer)
     BOOST_TEST(myOut[0] == nativeOut[0], boost::test_tools::tolerance(1e-12));
 }
 
+BOOST_AUTO_TEST_CASE(test_case_forward_as_linear_output)
+{
+    // forwardAs with a LINEAR output activation -- the canonical PINN-field
+    // configuration (tanh hidden + linear readout). The output activation policy
+    // must match the network's own, so forwardAs<...,LinearActivation> reproduces
+    // getLearnedValues and yields the correct input derivative.
+    typedef double ValueType;
+    typedef FloatingPointTransferFunctions<
+                ValueType, UniformRealRandomNumberGenerator,
+                tinymind::TanhActivationPolicy, tinymind::LinearActivationPolicy> TF;
+    typedef tinymind::MultilayerPerceptron<ValueType, 2, 1, 4, 1, TF> NN;
+
+    srand(RANDOM_SEED);
+    NN nn;
+
+    double inputs[2] = { 0.25, -0.6 };
+    nn.feedForward(inputs);
+    double nativeOut[1];
+    nn.getLearnedValues(nativeOut);
+
+    double myOut[1];
+    tinymind::pinn::forwardAs<double, tinymind::pinn::TanhActivation,
+                              tinymind::pinn::LinearActivation>(nn, inputs, myOut);
+    BOOST_TEST(myOut[0] == nativeOut[0], boost::test_tools::tolerance(1e-12));
+
+    typedef tinymind::Dual<double> D1;
+    D1 din[2] = { D1(0.25, 1.0), D1(-0.6, 0.0) };   // seed d/dx0
+    D1 dout[1];
+    tinymind::pinn::forwardAs<D1, tinymind::pinn::TanhActivation,
+                              tinymind::pinn::LinearActivation>(nn, din, dout);
+
+    const double h = 1e-6;
+    double a[2] = { 0.25 + h, -0.6 }, b[2] = { 0.25 - h, -0.6 }, fa[1], fb[1];
+    nn.feedForward(a); nn.getLearnedValues(fa);
+    nn.feedForward(b); nn.getLearnedValues(fb);
+    const double fd = (fa[0] - fb[0]) / (2.0 * h);
+    BOOST_TEST(dout[0].deriv == fd, boost::test_tools::tolerance(1e-5));
+}
+
 BOOST_AUTO_TEST_CASE(test_case_teacher_forcing)
 {
     tinymind::ScheduledSampling<double> sampler(100);

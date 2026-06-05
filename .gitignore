@@ -31,6 +31,7 @@ unit_test/lookuptable/output/
 unit_test/embedded/output/
 unit_test/quantization/output/
 unit_test/dual/output/
+unit_test/pinn/output/
 unit_test/ltc/output/
 unit_test/cfc/output/
 unit_test/integration/output/

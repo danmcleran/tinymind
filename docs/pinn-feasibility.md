@@ -34,8 +34,12 @@ pass. The only thing still open is an *efficient* weight-gradient path
 > **Status (update):** Sections 1–2 below describe the original gap and its
 > resolution. The dual-number machinery they call for is now in the tree and
 > tested (`unit_test/dual/`, plus a freestanding `Dual<QValue>` check in
-> `unit_test/embedded/`). The "Concrete next steps" section marks what is done
-> versus what is left.
+> `unit_test/embedded/`). The end-to-end PINN path is gated too: `unit_test/pinn/`
+> asserts `PinnMlp` forward / input-derivative / weight-gradient parity,
+> `sgdStep` ↔ `sgdStepReverse` agreement, and 1-D heat-equation residual
+> convergence below a fixed threshold — the automated counterpart of the
+> `pinn_heat1d --train` example. The "Concrete next steps" section marks what is
+> done versus what is left.
 
 ## 1. What a PINN requires, and where TinyMind stands
 
