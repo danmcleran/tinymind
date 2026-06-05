@@ -61,6 +61,11 @@ coverage : coverage-clean
 	# Capture per suite: source paths are recorded relative to each suite's
 	# compile dir, so --base-directory must point at that suite (gcov data
 	# lives one level deeper in output/). Merge the per-suite .info files.
+	# Re-assert coverage/ here -- it must survive the build loop, but a
+	# concurrent `make clean`/`coverage-clean` (rm -rf coverage) or an
+	# interrupted prior run can remove it, which would otherwise fail the
+	# redirect below with "Directory nonexistent".
+	mkdir -p coverage
 	: > coverage/merge_args
 	for d in $(COV_SUITES) $(COV_EXAMPLES); do \
 		out=coverage/$$(echo $$d | tr / _).info; \
