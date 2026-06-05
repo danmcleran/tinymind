@@ -81,6 +81,13 @@ coverage-dashboard :
 	python3 tools/coverage_dashboard.py coverage/tinymind.info coverage/dashboard.html
 	@echo "Dashboard:   coverage/dashboard.html"
 
+# Open the coverage dashboard in a browser. Generate it first with `make coverage`.
+coverage-open :
+	@[ -f coverage/dashboard.html ] || { echo "No dashboard. Run 'make coverage' first."; exit 1; }
+	@( command -v google-chrome >/dev/null 2>&1 && google-chrome "$(CURDIR)/coverage/dashboard.html" ) \
+	  || ( command -v xdg-open >/dev/null 2>&1 && xdg-open "$(CURDIR)/coverage/dashboard.html" ) \
+	  || { echo "No google-chrome / xdg-open found."; exit 1; }
+
 coverage-clean :
 	find unit_test examples cpp -name '*.gcno' -delete 2>/dev/null || true
 	find unit_test examples cpp -name '*.gcda' -delete 2>/dev/null || true
