@@ -31,9 +31,11 @@ unit_test/lookuptable/output/
 unit_test/embedded/output/
 unit_test/quantization/output/
 unit_test/dual/output/
+unit_test/ltc/output/
 unit_test/integration/output/
 examples/resnet18_block_int8/output/
 examples/mobilenetv2_int8/output/
 examples/mixed_precision_kws/output/
 examples/mixed_precision_mlp_int8_qformat/output/
 examples/pinn_heat1d/output/
+examples/ltc_sequence/output/
