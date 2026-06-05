@@ -85,3 +85,12 @@ coverage-clean :
 	find unit_test examples cpp -name '*.gcno' -delete 2>/dev/null || true
 	find unit_test examples cpp -name '*.gcda' -delete 2>/dev/null || true
 	rm -rf coverage
+
+# Recursively clean every unit test, example, and app (each subdir Makefile has
+# its own clean target), plus the coverage artifacts.
+clean : coverage-clean
+	@for m in $$(find unit_test examples apps -name Makefile); do \
+		d=$$(dirname $$m); \
+		echo "clean $$d"; \
+		$(MAKE) -C $$d clean >/dev/null 2>&1 || true; \
+	done
