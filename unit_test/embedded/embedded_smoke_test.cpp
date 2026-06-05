@@ -91,6 +91,7 @@
 #include "qsoftmax.hpp"
 #include "qlstm.hpp"
 #include "qgru.hpp"
+#include "qcfc.hpp"
 #include "qfft1d.hpp"
 #include "qattention1d.hpp"
 #include "qattention_softmax.hpp"
@@ -494,6 +495,44 @@ bool exerciseQuantPipeline()
     qgru.output_qmax                    =  127;
     int8_t gru_h[3] = {0, 0, 0};
     qgru.forward(lstm_x, gru_h);
+
+    // QCfC (closed-form continuous-time) cell smoke. 2 inputs, 3 hidden,
+    // 4 backbone units. Verifies qcfc.hpp stays freestanding-clean.
+    typedef tinymind::QCfCCell<Q, Q, A, Q, 2, 3, 4> QCfCI8Cell;
+    static int8_t cfc_w_bin [4 * 2] = {0};
+    static int8_t cfc_w_bh  [4 * 3] = {0};
+    static int8_t cfc_w_ff1 [3 * 4] = {0};
+    static int8_t cfc_w_ff2 [3 * 4] = {0};
+    static int8_t cfc_w_ta  [3 * 4] = {0};
+    static int8_t cfc_w_tb  [3 * 4] = {0};
+    static int32_t cfc_b_bb [4] = {0};
+    static int32_t cfc_b_ff1[3] = {0};
+    static int32_t cfc_b_ff2[3] = {0};
+    static int32_t cfc_b_t  [3] = {0};
+    QCfCI8Cell qcfc;
+    qcfc.w_backbone_input  = cfc_w_bin;
+    qcfc.w_backbone_hidden = cfc_w_bh;
+    qcfc.b_backbone        = cfc_b_bb;
+    qcfc.w_ff1 = cfc_w_ff1; qcfc.w_ff2 = cfc_w_ff2;
+    qcfc.w_time_a = cfc_w_ta; qcfc.w_time_b = cfc_w_tb;
+    qcfc.b_ff1 = cfc_b_ff1; qcfc.b_ff2 = cfc_b_ff2; qcfc.b_time = cfc_b_t;
+    qcfc.input_zero_point = 0; qcfc.hidden_zero_point = 0;
+    qcfc.backbone_input_multiplier  = static_cast<int32_t>(1) << 30;
+    qcfc.backbone_input_shift       = 0;
+    qcfc.backbone_hidden_multiplier = static_cast<int32_t>(1) << 30;
+    qcfc.backbone_hidden_shift      = 0;
+    qcfc.ff1_multiplier = static_cast<int32_t>(1) << 30; qcfc.ff1_shift = 0;
+    qcfc.ff2_multiplier = static_cast<int32_t>(1) << 30; qcfc.ff2_shift = 0;
+    qcfc.time_a_multiplier = static_cast<int32_t>(1) << 30; qcfc.time_a_shift = 0;
+    qcfc.time_b_multiplier = static_cast<int32_t>(1) << 30; qcfc.time_b_shift = 0;
+    qcfc.sigmoid_lut = lstm_sigmoid_lut; qcfc.tanh_lut = lstm_tanh_lut;
+    qcfc.one_minus_t_times_ff1_multiplier = static_cast<int32_t>(1) << 30;
+    qcfc.one_minus_t_times_ff1_shift      = 0;
+    qcfc.t_times_ff2_multiplier = static_cast<int32_t>(1) << 30;
+    qcfc.t_times_ff2_shift      = 0;
+    qcfc.output_qmin = -128; qcfc.output_qmax = 127;
+    int8_t cfc_h[3] = {0, 0, 0};
+    qcfc.forward(lstm_x, cfc_h);
 
     // Phase 13 attention + FFT smoke. Tiny shapes; nothing depends on the
     // output. Verifies the new headers stay freestanding-clean.

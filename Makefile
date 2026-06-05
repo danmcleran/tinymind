@@ -10,8 +10,10 @@ check :
 	cd unit_test/quantization && make clean && make && make run && cd -
 	cd unit_test/dual && make clean && make && make run && cd -
 	cd unit_test/ltc && make clean && make && make run && cd -
+	cd unit_test/cfc && make clean && make && make run && cd -
 	cd examples/pinn_heat1d && make clean && make && make release && make run && make train && cd -
 	cd examples/ltc_sequence && make clean && make && make release && make run && cd -
+	cd examples/cfc_sequence && make clean && make && make release && make run && cd -
 	cd examples/xor && make clean && make && make release && cd -
 	cd examples/maze && make clean && make && make release && cd -
 	cd examples/dqn_maze && make clean && make && make release && cd -
@@ -38,7 +40,8 @@ check :
 # gcov records executed arcs, and those suites verify via static_assert /
 # compile-success, so they contribute no runtime coverage signal.
 COV_SUITES = unit_test/nn unit_test/qlearn unit_test/quantization \
-             unit_test/kan unit_test/lookuptable unit_test/dual unit_test/ltc
+             unit_test/kan unit_test/lookuptable unit_test/dual unit_test/ltc \
+             unit_test/cfc
 COV_EXAMPLES = examples/resnet_block_int8 examples/resnet18_block_int8 \
                examples/mobilenetv2_int8 examples/transformer_encoder_int8 \
                examples/kws_cortex_m_int8 examples/mixed_precision_mlp_int8_qformat

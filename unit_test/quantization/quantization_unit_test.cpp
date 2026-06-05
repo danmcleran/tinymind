@@ -55,6 +55,7 @@
 #include "qsoftmax.hpp"
 #include "qlstm.hpp"
 #include "qgru.hpp"
+#include "qcfc.hpp"
 #include "qfft1d.hpp"
 #include "qattention1d.hpp"
 #include "qattention_softmax.hpp"
@@ -136,6 +137,11 @@ using tinymind::QGRUScales;
 using tinymind::QGRUParams;
 using tinymind::buildQGRUParams;
 using tinymind::quantizeQGRUBiases;
+using tinymind::QCfCScales;
+using tinymind::QCfCParams;
+using tinymind::buildQCfCParams;
+using tinymind::quantizeQCfCBias;
+using tinymind::quantizeQCfCTimeBias;
 using tinymind::buildQFFTTwiddles;
 using tinymind::qAttentionInvSqrt;
 using tinymind::PercentileObserver;
@@ -3657,6 +3663,163 @@ BOOST_AUTO_TEST_CASE(qgru_single_step_parity_with_float_reference)
         if (e > max_h_err) max_h_err = e;
     }
     BOOST_TEST(max_h_err < 0.05f);
+}
+
+// ----------------------------------------------------------------------------
+// QCfC (closed-form continuous-time) single-step parity vs a float reference.
+// ----------------------------------------------------------------------------
+namespace {
+
+constexpr std::size_t kCfcInputs   = 2;
+constexpr std::size_t kCfcHidden   = 3;
+constexpr std::size_t kCfcBackbone = 4;
+
+void fillCfcWeights(float* w_bin, float* w_bh,
+                    float* w_ff1, float* w_ff2, float* w_ta, float* w_tb,
+                    float* b_bb, float* b_ff1, float* b_ff2,
+                    float* b_a, float* b_b)
+{
+    // Deterministic small weights so tanh stays in its near-linear range and
+    // the int8 grid resolves the activations cleanly.
+    unsigned s = 24601u;
+    auto nxt = [&s]() {
+        s = s * 1103515245u + 12345u;
+        return 0.30f * ((static_cast<float>((s >> 16) & 0x7fff) / 32767.0f) - 0.5f);
+    };
+    for (std::size_t i = 0; i < kCfcBackbone * kCfcInputs; ++i) w_bin[i] = nxt();
+    for (std::size_t i = 0; i < kCfcBackbone * kCfcHidden; ++i) w_bh[i]  = nxt();
+    for (std::size_t i = 0; i < kCfcHidden * kCfcBackbone; ++i) { w_ff1[i]=nxt(); w_ff2[i]=nxt(); w_ta[i]=nxt(); w_tb[i]=nxt(); }
+    for (std::size_t i = 0; i < kCfcBackbone; ++i) b_bb[i] = nxt();
+    for (std::size_t i = 0; i < kCfcHidden; ++i) { b_ff1[i]=nxt(); b_ff2[i]=nxt(); b_a[i]=nxt(); b_b[i]=nxt(); }
+}
+
+void floatCfcReference(const float* x, float* h_state, float ts,
+                       const float* w_bin, const float* w_bh,
+                       const float* w_ff1, const float* w_ff2,
+                       const float* w_ta, const float* w_tb,
+                       const float* b_bb, const float* b_ff1, const float* b_ff2,
+                       const float* b_a, const float* b_b)
+{
+    const std::size_t I = kCfcInputs, H = kCfcHidden, BB = kCfcBackbone;
+    auto sig = [](float v){ return 1.0f / (1.0f + std::exp(-v)); };
+
+    float x1[BB];
+    for (std::size_t u = 0; u < BB; ++u)
+    {
+        float z = b_bb[u];
+        for (std::size_t j = 0; j < I; ++j) z += w_bin[u * I + j] * x[j];
+        for (std::size_t k = 0; k < H; ++k) z += w_bh[u * H + k] * h_state[k];
+        x1[u] = std::tanh(z);
+    }
+    float out[H];
+    for (std::size_t i = 0; i < H; ++i)
+    {
+        float a1 = b_ff1[i], a2 = b_ff2[i], aA = b_a[i], aB = b_b[i];
+        for (std::size_t u = 0; u < BB; ++u)
+        {
+            a1 += w_ff1[i * BB + u] * x1[u];
+            a2 += w_ff2[i * BB + u] * x1[u];
+            aA += w_ta [i * BB + u] * x1[u];
+            aB += w_tb [i * BB + u] * x1[u];
+        }
+        const float ff1 = std::tanh(a1);
+        const float ff2 = std::tanh(a2);
+        const float t   = sig(aA * ts + aB);
+        out[i] = (1.0f - t) * ff1 + t * ff2;
+    }
+    for (std::size_t i = 0; i < H; ++i) h_state[i] = out[i];
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(qcfc_single_step_parity_with_float_reference)
+{
+    constexpr std::size_t I = kCfcInputs, H = kCfcHidden, BB = kCfcBackbone;
+    const float ts = 1.5f;
+
+    float w_bin[BB * I], w_bh[BB * H];
+    float w_ff1[H * BB], w_ff2[H * BB], w_ta[H * BB], w_tb[H * BB];
+    float b_bb[BB], b_ff1[H], b_ff2[H], b_a[H], b_b[H];
+    fillCfcWeights(w_bin, w_bh, w_ff1, w_ff2, w_ta, w_tb, b_bb, b_ff1, b_ff2, b_a, b_b);
+
+    float x_ref[I] = { 0.5f, -0.3f };
+    float h_ref[H] = { 0.0f, 0.0f, 0.0f };
+    floatCfcReference(x_ref, h_ref, ts, w_bin, w_bh, w_ff1, w_ff2, w_ta, w_tb,
+                      b_bb, b_ff1, b_ff2, b_a, b_b);
+
+    const float x_scale = 1.0f / 127.0f, h_scale = 1.0f / 127.0f;
+    const float lut_scale = 8.0f / 127.0f;
+
+    QCfCScales sc;
+    sc.input_scale  = x_scale;
+    sc.hidden_scale = h_scale;
+    sc.lut_input_scale = lut_scale;
+    sc.w_backbone_input_scale  = absmax(w_bin, BB * I) / 127.0f;
+    sc.w_backbone_hidden_scale = absmax(w_bh,  BB * H) / 127.0f;
+    sc.w_ff1_scale    = absmax(w_ff1, H * BB) / 127.0f;
+    sc.w_ff2_scale    = absmax(w_ff2, H * BB) / 127.0f;
+    sc.w_time_a_scale = absmax(w_ta,  H * BB) / 127.0f;
+    sc.w_time_b_scale = absmax(w_tb,  H * BB) / 127.0f;
+    sc.ts = static_cast<double>(ts);
+
+    QCfCParams p;
+    buildQCfCParams(sc, p);
+
+    int32_t b_bb_q[BB], b_ff1_q[H], b_ff2_q[H], b_time_q[H];
+    quantizeQCfCBias(b_bb,  BB, lut_scale, b_bb_q);
+    quantizeQCfCBias(b_ff1, H,  lut_scale, b_ff1_q);
+    quantizeQCfCBias(b_ff2, H,  lut_scale, b_ff2_q);
+    quantizeQCfCTimeBias(b_a, b_b, H, sc.ts, lut_scale, b_time_q);
+
+    int8_t w_bin_q[BB * I], w_bh_q[BB * H];
+    int8_t w_ff1_q[H * BB], w_ff2_q[H * BB], w_ta_q[H * BB], w_tb_q[H * BB];
+    quantizeSymmetricWeights(w_bin, w_bin_q, BB * I, sc.w_backbone_input_scale);
+    quantizeSymmetricWeights(w_bh,  w_bh_q,  BB * H, sc.w_backbone_hidden_scale);
+    quantizeSymmetricWeights(w_ff1, w_ff1_q, H * BB, sc.w_ff1_scale);
+    quantizeSymmetricWeights(w_ff2, w_ff2_q, H * BB, sc.w_ff2_scale);
+    quantizeSymmetricWeights(w_ta,  w_ta_q,  H * BB, sc.w_time_a_scale);
+    quantizeSymmetricWeights(w_tb,  w_tb_q,  H * BB, sc.w_time_b_scale);
+
+    int8_t sigmoid_lut[256], tanh_lut[256];
+    buildQSigmoidLUT(lut_scale, 0, 1.0f / 256.0f, -128, sigmoid_lut);
+    buildQTanhLUT   (lut_scale, 0, 1.0f / 128.0f,    0, tanh_lut);
+
+    tinymind::QCfCCell<int8_t, int8_t, int32_t, int8_t, I, H, BB> cell;
+    cell.w_backbone_input  = w_bin_q;
+    cell.w_backbone_hidden = w_bh_q;
+    cell.b_backbone        = b_bb_q;
+    cell.w_ff1 = w_ff1_q; cell.w_ff2 = w_ff2_q;
+    cell.w_time_a = w_ta_q; cell.w_time_b = w_tb_q;
+    cell.b_ff1 = b_ff1_q; cell.b_ff2 = b_ff2_q; cell.b_time = b_time_q;
+    cell.input_zero_point = 0; cell.hidden_zero_point = 0;
+    cell.backbone_input_multiplier  = p.backbone_input_multiplier;
+    cell.backbone_input_shift       = p.backbone_input_shift;
+    cell.backbone_hidden_multiplier = p.backbone_hidden_multiplier;
+    cell.backbone_hidden_shift      = p.backbone_hidden_shift;
+    cell.ff1_multiplier = p.ff1_multiplier; cell.ff1_shift = p.ff1_shift;
+    cell.ff2_multiplier = p.ff2_multiplier; cell.ff2_shift = p.ff2_shift;
+    cell.time_a_multiplier = p.time_a_multiplier; cell.time_a_shift = p.time_a_shift;
+    cell.time_b_multiplier = p.time_b_multiplier; cell.time_b_shift = p.time_b_shift;
+    cell.sigmoid_lut = sigmoid_lut; cell.tanh_lut = tanh_lut;
+    cell.one_minus_t_times_ff1_multiplier = p.one_minus_t_times_ff1_multiplier;
+    cell.one_minus_t_times_ff1_shift      = p.one_minus_t_times_ff1_shift;
+    cell.t_times_ff2_multiplier = p.t_times_ff2_multiplier;
+    cell.t_times_ff2_shift      = p.t_times_ff2_shift;
+    cell.output_qmin = -127; cell.output_qmax = 127;
+
+    int8_t x_q[I];
+    quantizeBuffer<int8_t>(x_ref, x_q, I, x_scale, 0, -128, 127);
+    int8_t h_q[H] = {0, 0, 0};
+    cell.forward(x_q, h_q);
+
+    float max_h_err = 0.0f;
+    for (std::size_t hi = 0; hi < H; ++hi)
+    {
+        const float h_back = dequantize<int8_t>(h_q[hi], h_scale, 0);
+        const float e = std::fabs(h_back - h_ref[hi]);
+        if (e > max_h_err) max_h_err = e;
+    }
+    BOOST_TEST(max_h_err < 0.06f);
 }
 
 // ============================================================================

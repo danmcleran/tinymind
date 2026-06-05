@@ -709,6 +709,104 @@ namespace tinymind {
         }
     }
 
+    /*
+     * Phase 18 -- Quantized CfC (Closed-form Continuous-time) cell.
+     *
+     * The backbone trunk x1 emerges in the tanh LUT output scale (1/128), so the
+     * ff1/ff2/time-A/time-B MACs that consume x1 all rescale from that fixed
+     * scale rather than a calibrated activation scale. The elapsed time `ts` is
+     * a regular-sampling constant: it folds into the time-A requantizer and into
+     * the combined time bias (see buildQCfCTimeBias). Sigmoid/tanh LUT output
+     * conventions are the TFLite-fixed ones shared with QLSTM / QGRU.
+     */
+    struct QCfCScales
+    {
+        float input_scale;            // x tensor
+        float hidden_scale;           // h tensor
+        float lut_input_scale;        // shared sigmoid/tanh LUT input scale
+        float w_backbone_input_scale;
+        float w_backbone_hidden_scale;
+        float w_ff1_scale;
+        float w_ff2_scale;
+        float w_time_a_scale;
+        float w_time_b_scale;
+        double ts;                    // elapsed time, folded into time-A
+    };
+
+    struct QCfCParams
+    {
+        int32_t backbone_input_multiplier;   int32_t backbone_input_shift;
+        int32_t backbone_hidden_multiplier;  int32_t backbone_hidden_shift;
+        int32_t ff1_multiplier;              int32_t ff1_shift;
+        int32_t ff2_multiplier;              int32_t ff2_shift;
+        int32_t time_a_multiplier;           int32_t time_a_shift;
+        int32_t time_b_multiplier;           int32_t time_b_shift;
+        int32_t one_minus_t_times_ff1_multiplier;
+        int32_t one_minus_t_times_ff1_shift;
+        int32_t t_times_ff2_multiplier;
+        int32_t t_times_ff2_shift;
+    };
+
+    inline void buildQCfCParams(const QCfCScales& s, QCfCParams& out)
+    {
+        const double lut = static_cast<double>(s.lut_input_scale);
+        const double sig = static_cast<double>(kQLstmSigmoidOutputScale);
+        const double tnh = static_cast<double>(kQLstmTanhOutputScale);
+        const double h   = static_cast<double>(s.hidden_scale);
+
+        // Backbone: input-MAC (input scale) + hidden-MAC (hidden scale).
+        quantizeMultiplier(static_cast<double>(s.input_scale) *
+                           static_cast<double>(s.w_backbone_input_scale) / lut,
+                           out.backbone_input_multiplier, out.backbone_input_shift);
+        quantizeMultiplier(static_cast<double>(s.hidden_scale) *
+                           static_cast<double>(s.w_backbone_hidden_scale) / lut,
+                           out.backbone_hidden_multiplier, out.backbone_hidden_shift);
+
+        // Heads + time-gate consume x1 in the tanh output scale (1/128). ts
+        // folds into the time-A requantizer.
+        quantizeMultiplier(tnh * static_cast<double>(s.w_ff1_scale) / lut,
+                           out.ff1_multiplier, out.ff1_shift);
+        quantizeMultiplier(tnh * static_cast<double>(s.w_ff2_scale) / lut,
+                           out.ff2_multiplier, out.ff2_shift);
+        quantizeMultiplier(tnh * static_cast<double>(s.w_time_a_scale) * s.ts / lut,
+                           out.time_a_multiplier, out.time_a_shift);
+        quantizeMultiplier(tnh * static_cast<double>(s.w_time_b_scale) / lut,
+                           out.time_b_multiplier, out.time_b_shift);
+
+        // Interpolation back to hidden scale: (1-t)*ff1 and t*ff2 are each a
+        // sigmoid-grid value times a tanh-grid value.
+        quantizeMultiplier(sig * tnh / h, out.one_minus_t_times_ff1_multiplier,
+                                          out.one_minus_t_times_ff1_shift);
+        quantizeMultiplier(sig * tnh / h, out.t_times_ff2_multiplier,
+                                          out.t_times_ff2_shift);
+    }
+
+    // Quantize a real-valued bias vector (backbone, ff1, or ff2) into the LUT
+    // input scale.
+    inline void quantizeQCfCBias(const float* bias_real, std::size_t count,
+                                 float lut_input_scale, int32_t* bias_int_out)
+    {
+        for (std::size_t i = 0; i < count; ++i)
+            bias_int_out[i] = static_cast<int32_t>(std::lround(
+                static_cast<double>(bias_real[i]) /
+                static_cast<double>(lut_input_scale)));
+    }
+
+    // Combined time-gate bias: q( b_A * ts + b_B ) in the LUT input scale. ts is
+    // the regular-sampling constant (matches the time-A requantizer fold).
+    inline void quantizeQCfCTimeBias(const float* b_a_real, const float* b_b_real,
+                                     std::size_t num_hidden, double ts,
+                                     float lut_input_scale, int32_t* bias_int_out)
+    {
+        for (std::size_t i = 0; i < num_hidden; ++i)
+        {
+            const double real = static_cast<double>(b_a_real[i]) * ts +
+                                static_cast<double>(b_b_real[i]);
+            bias_int_out[i] = static_cast<int32_t>(std::lround(
+                real / static_cast<double>(lut_input_scale)));
+        }
+    }
+
     /**
      * Phase 13 -- QFFT1D twiddle table builder.
      *
