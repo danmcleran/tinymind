@@ -37,7 +37,7 @@ def main():
     cols, _ = tp.read_csv(CSV)
     fig, ax = tp.new_fig(
         "XOR network learning curve",
-        "Q8.8 fixed-point MLP (2->3->1), tanh activations")
+        "Q8.8 fixed-point MLP (2->3->1), tanh hidden + sigmoid output")
     tp.line(ax, cols["iteration"], {"average error": cols["avg_error"]},
             xlabel="training iteration", ylabel="average |error|")
     tp.finish(fig, tp.png_for(CSV))

@@ -46,6 +46,32 @@ static void generateXorTrainingValue(ValueType& x, ValueType& y, ValueType& z)
 
 extern NeuralNetworkType testNeuralNet;
 
+// Deterministic validation error over the four canonical XOR cases (real units).
+// Far cleaner than averaging the noisy random training samples -- it measures
+// "how well does the network solve XOR right now". Pure forward passes; does not
+// alter training.
+static double evaluateXorError()
+{
+    static const int cases[4][3] = { {0,0,0}, {0,1,1}, {1,0,1}, {1,1,0} };
+    const double fracScale = static_cast<double>(1 << ValueType::NumberOfFractionalBits);
+    double sum = 0.0;
+    ValueType in[2];
+    ValueType out[NeuralNetworkType::NumberOfOutputLayerNeurons];
+    for (int c = 0; c < 4; ++c)
+    {
+        in[0] = ValueType(cases[c][0], 0);
+        in[1] = ValueType(cases[c][1], 0);
+        testNeuralNet.feedForward(&in[0]);
+        testNeuralNet.getLearnedValues(&out[0]);
+        const double pred = static_cast<double>(out[0].getValue()) / fracScale;
+        const double e = pred - static_cast<double>(cases[c][2]);
+        sum += (e < 0.0) ? -e : e;
+    }
+    return sum / 4.0;
+}
+
+extern NeuralNetworkType testNeuralNet;
+
 int main(const int argc, char *argv[])
 {
     (void)argc; // suppress unused parameter warning
@@ -90,7 +116,8 @@ int main(const int argc, char *argv[])
         {
             avgError = avgError / ValueType(NUM_SAMPLES_AVG_ERROR, 0);
             cout << "Iteration: " << (i + 1) << " Average Error: " << avgError << endl;
-            curve << (i + 1) << "," << avgError << std::endl;
+            // Log the deterministic 4-case XOR error (clean convergence signal).
+            curve << (i + 1) << "," << evaluateXorError() << std::endl;
             lastAvgError = avgError;
             avgError = ValueType(0U);
         }

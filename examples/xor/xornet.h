@@ -49,21 +49,23 @@ struct RandomNumberGenerator
 {
     static ValueType generateRandomWeight()
     {
-        // Generate a random number between -1..1 in the Q Format full width type
-        const FullWidthValueType weight = (rand() % 
-                                                    (tinymind::Constants<ValueType>::one().getValue() +
-                                                     tinymind::Constants<ValueType>::one().getValue() -
-                                                     tinymind::Constants<ValueType>::negativeOne().getValue())) +
-                                                     tinymind::Constants<ValueType>::negativeOne().getValue();
-
-        return weight;
+        // Symmetric small init in [-0.5, 0.5] (raw Q-format units). The old
+        // formula produced an asymmetric [-1, 2) range that biased the start
+        // and made training oscillate before converging.
+        const FullWidthValueType half =
+            tinymind::Constants<ValueType>::one().getValue() / 2;
+        const FullWidthValueType weight =
+            (static_cast<FullWidthValueType>(rand()) % (2 * half + 1)) - half;
+        return ValueType(weight);
     }
 };
 
 // Typedef of transfer functions for the fixed-point neural network
+// tanh hidden + sigmoid output: the canonical, stable XOR MLP. (ReLU hidden on
+// a 3-neuron XOR in Q8.8 oscillated and failed to converge.)
 typedef tinymind::FixedPointTransferFunctions<  ValueType,
                                                 RandomNumberGenerator,
-                                                tinymind::ReluActivationPolicy<ValueType>,
+                                                tinymind::TanhActivationPolicy<ValueType>,
                                                 tinymind::SigmoidActivationPolicy<ValueType>> TransferFunctionsType;
 
 // typedef the neural network itself
