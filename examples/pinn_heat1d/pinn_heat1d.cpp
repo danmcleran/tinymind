@@ -289,13 +289,35 @@ int run()
     std::printf("  PinnMlp 2->%zu->1, %zu params, %d epochs\n", H, NP, epochs);
     std::printf("  epoch %5d   loss %.4e   solL2 %.4e\n", 0, loss0, err0);
 
+    // Learning-curve CSV (PINN loss + solution L2 error) for plot.py.
+    std::FILE* lossCsv = std::fopen("pinn_loss.csv", "w");
+    std::fprintf(lossCsv, "epoch,loss,sol_l2\n");
+    std::fprintf(lossCsv, "0,%.8e,%.8e\n", loss0, err0);
+
     double lossVal = loss0;
     for (int e = 1; e <= epochs; ++e)
     {
         lossVal = tinymind::pinn::sgdStep<NP>(p, vel, lr, momentum, loss);
+        if (e % 20 == 0)
+            std::fprintf(lossCsv, "%d,%.8e,%.8e\n", e, loss(p), solutionError(p));
         if (e % 300 == 0)
             std::printf("  epoch %5d   loss %.4e   solL2 %.4e\n", e, loss(p), solutionError(p));
     }
+    std::fclose(lossCsv);
+
+    // Solution-field CSV: learned u(x,t) vs the analytic reference at two time
+    // slices across the spatial domain.
+    std::FILE* solCsv = std::fopen("pinn_solution.csv", "w");
+    std::fprintf(solCsv, "x,u_pred_mid,u_analytic_mid,u_pred_end,u_analytic_end\n");
+    for (int i = 0; i <= 20; ++i)
+    {
+        const double x = i / 20.0;
+        const double tm = T_MAX * 0.5, te = T_MAX;
+        std::fprintf(solCsv, "%.4f,%.6f,%.6f,%.6f,%.6f\n", x,
+                     uValue<double>(p, x, tm), analytic(x, tm),
+                     uValue<double>(p, x, te), analytic(x, te));
+    }
+    std::fclose(solCsv);
 
     const double lossF = loss(p);
     const double errF = solutionError(p);

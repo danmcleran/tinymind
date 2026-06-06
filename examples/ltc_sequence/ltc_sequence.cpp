@@ -152,6 +152,11 @@ int main()
                 Task::NP, Task::Cell::NumParams, Task::NReadout, Task::L);
     std::printf("epoch %4d   loss %.6e\n", 0, loss0);
 
+    // Learning-curve CSV (header + one row per epoch) for plot.py.
+    std::FILE* lossCsv = std::fopen("ltc_loss.csv", "w");
+    std::fprintf(lossCsv, "epoch,loss\n");
+    std::fprintf(lossCsv, "0,%.8e\n", loss0);
+
     for (int e = 1; e <= epochs; ++e)
     {
         tinymind::pinn::sgdStepReverse<Task::NP>(params, velocity, lr, momentum, lossFn);
@@ -159,12 +164,23 @@ int main()
         for (std::size_t i = 0; i < Task::NST; ++i)
             if (params[tauBase + i] < 0.1) params[tauBase + i] = 0.1;
 
+        const double le = task.loss<double>(params);
+        std::fprintf(lossCsv, "%d,%.8e\n", e, le);
         if (e % 100 == 0)
-            std::printf("epoch %4d   loss %.6e\n", e, task.loss<double>(params));
+            std::printf("epoch %4d   loss %.6e\n", e, le);
     }
+    std::fclose(lossCsv);
 
     double pred[Task::L];
     task.predict(params, pred);
+
+    // Fit CSV: target vs predicted across the whole sequence.
+    std::FILE* fitCsv = std::fopen("ltc_fit.csv", "w");
+    std::fprintf(fitCsv, "t,target,predicted\n");
+    for (std::size_t t = 0; t < Task::L; ++t)
+        std::fprintf(fitCsv, "%zu,%.6f,%.6f\n", t, task.tgt[t], pred[t]);
+    std::fclose(fitCsv);
+
     std::printf("\n  t      target     predicted\n");
     for (std::size_t t = 0; t < Task::L; t += 3)
         std::printf("%3zu    %8.5f    %8.5f\n", t, task.tgt[t], pred[t]);

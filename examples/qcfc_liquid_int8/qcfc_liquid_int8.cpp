@@ -206,17 +206,29 @@ int runParity()
     float  hf[H] = {0};
     int8_t hq[H] = {0};
     float  maxErr = 0.0f;
+
+    // Parity-trajectory CSV: float vs int8 hidden unit 0, plus per-step worst
+    // error across all units -- for plot.py.
+    std::FILE* csv = std::fopen("qcfc_parity.csv", "w");
+    std::fprintf(csv, "step,h0_float,h0_int8,max_abs_err\n");
+
     for (std::size_t t = 0; t < L; ++t)
     {
         floatCfcStep(seqIn[t], hf);
         int8_t xq[I]; quantizeInput(seqIn[t], xq);
         gCell.forward(xq, hq);
+        float stepErr = 0.0f;
         for (std::size_t i = 0; i < H; ++i)
         {
             const float back = tinymind::dequantize<int8_t>(hq[i], h_scale, 0);
-            maxErr = std::fmax(maxErr, std::fabs(back - hf[i]));
+            const float e = std::fabs(back - hf[i]);
+            stepErr = std::fmax(stepErr, e);
+            maxErr = std::fmax(maxErr, e);
         }
+        std::fprintf(csv, "%zu,%.6f,%.6f,%.6f\n", t, hf[0],
+                     tinymind::dequantize<int8_t>(hq[0], h_scale, 0), stepErr);
     }
+    std::fclose(csv);
     std::printf("qcfc_liquid_int8: CfC %zu->%zu (backbone %zu), %zu steps, ts=%.2f\n",
                 I, H, BB, L, TS);
     std::printf("  weight bytes        : %zu (+ %zu LUT, shared)\n",

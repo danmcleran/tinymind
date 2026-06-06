@@ -138,16 +138,31 @@ int main()
                 Task::NP, Task::Cell::NumParams, Task::NReadout, Task::L);
     std::printf("epoch %4d   loss %.6e\n", 0, loss0);
 
+    std::FILE* lossCsv = std::fopen("cfc_loss.csv", "w");
+    std::fprintf(lossCsv, "epoch,loss\n");
+    std::fprintf(lossCsv, "0,%.8e\n", loss0);
+
     const int epochs = 4000;
     for (int e = 1; e <= epochs; ++e)
     {
         tinymind::pinn::sgdStepReverse<Task::NP>(params, velocity, 0.08, 0.9, lossFn);
+        const double le = task.loss<double>(params);
+        std::fprintf(lossCsv, "%d,%.8e\n", e, le);
         if (e % 800 == 0)
-            std::printf("epoch %4d   loss %.6e\n", e, task.loss<double>(params));
+            std::printf("epoch %4d   loss %.6e\n", e, le);
     }
+    std::fclose(lossCsv);
 
     double pred[Task::L];
     task.predict(params, pred);
+
+    // Fit CSV: per-step elapsed time, target, predicted (irregular sampling).
+    std::FILE* fitCsv = std::fopen("cfc_fit.csv", "w");
+    std::fprintf(fitCsv, "t,ts,target,predicted\n");
+    for (std::size_t t = 0; t < Task::L; ++t)
+        std::fprintf(fitCsv, "%zu,%.4f,%.6f,%.6f\n", t, task.ts[t], task.tgt[t], pred[t]);
+    std::fclose(fitCsv);
+
     std::printf("\n  t      ts       target     predicted\n");
     for (std::size_t t = 0; t < Task::L; t += 2)
         std::printf("%3zu  %5.3f    %8.5f    %8.5f\n", t, task.ts[t], task.tgt[t], pred[t]);
