@@ -600,6 +600,14 @@ int main(int argc, char** argv)
         dequantizeBuffer<int8_t>(q_out, deq_out, XE_SIZE, p_out.scale, p_out.zero_point);
         const float err = maxAbsDiff(deq_out, float_outputs[s].data(), XE_SIZE);
         if (err > worst_err) worst_err = err;
+        if (s == 0)
+        {
+            std::FILE* csv = std::fopen("transformer_encoder_int8.csv", "w");
+            std::fprintf(csv, "index,float,int8\n");
+            for (std::size_t i = 0; i < XE_SIZE; ++i)
+                std::fprintf(csv, "%zu,%.6f,%.6f\n", i, float_outputs[0][i], deq_out[i]);
+            std::fclose(csv);
+        }
     }
 
     if (golden_mode)

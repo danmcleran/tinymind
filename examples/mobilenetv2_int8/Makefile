@@ -33,3 +33,6 @@ golden :
 
 clean :
 	rm -f ./output/*
+
+plot :
+	python3 plot.py

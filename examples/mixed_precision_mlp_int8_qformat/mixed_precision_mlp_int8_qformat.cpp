@@ -331,6 +331,14 @@ int main(int argc, char** argv)
                                  p_out.scale, p_out.zero_point);
         const float err = maxAbsDiff(deq_logits, float_logits[s].data(), E_OUT);
         if (err > worst_err) worst_err = err;
+        if (s == 0)
+        {
+            std::FILE* csv = std::fopen("mixed_precision_mlp_int8_qformat.csv", "w");
+            std::fprintf(csv, "index,float,int8\n");
+            for (std::size_t i = 0; i < E_OUT; ++i)
+                std::fprintf(csv, "%zu,%.6f,%.6f\n", i, float_logits[0][i], deq_logits[i]);
+            std::fclose(csv);
+        }
     }
 
     if (golden_mode)

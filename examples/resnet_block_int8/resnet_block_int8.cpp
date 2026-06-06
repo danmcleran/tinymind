@@ -361,6 +361,16 @@ int main()
         const float err = maxAbsDiff(deq_out, float_outputs[s].data(), IO_SIZE);
         if (err > worst_block_err) worst_block_err = err;
 
+        // Parity CSV (float reference vs dequantized int8) for sample 0, plot.py.
+        if (s == 0)
+        {
+            std::FILE* csv = std::fopen("resnet_block_int8.csv", "w");
+            std::fprintf(csv, "index,float,int8\n");
+            for (std::size_t i = 0; i < IO_SIZE; ++i)
+                std::fprintf(csv, "%zu,%.6f,%.6f\n", i, float_outputs[0][i], deq_out[i]);
+            std::fclose(csv);
+        }
+
         // Per-layer parity at the first sample for visibility.
         if (s == 0)
         {
