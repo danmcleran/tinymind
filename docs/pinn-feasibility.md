@@ -1,7 +1,7 @@
 ---
 title: PINNs (Physics-Informed Neural Networks)
 layout: default
-nav_order: 9
+nav_order: 10
 ---
 
 # TinyMind for Physics-Informed Neural Networks

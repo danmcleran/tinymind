@@ -1,7 +1,7 @@
 ---
 title: Activation Function Lookup Tables
 layout: default
-nav_order: 8
+nav_order: 9
 ---
 
 # Activation Function Lookup Tables

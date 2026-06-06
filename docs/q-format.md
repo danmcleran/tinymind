@@ -1,7 +1,7 @@
 ---
 title: Q-Format (Fixed-Point)
 layout: default
-nav_order: 3
+nav_order: 4
 ---
 
 # Q-Format (Fixed-Point Arithmetic)
