@@ -151,6 +151,64 @@ BOOST_AUTO_TEST_CASE(fused_solver_fixed_point)
     BOOST_CHECK_CLOSE(st2[1], xs1, 1e-3);
 }
 
+// 1b. unfolds > 1 (multiple fused steps per input sample) reaches the SAME
+//     analytic fixed point -- exercises the inner unfold loop.
+BOOST_AUTO_TEST_CASE(unfolds_reaches_same_fixed_point)
+{
+    typedef tinymind::ltc::LtcCell<1, 2> Cell;
+    double p[Cell::NumParams];
+    for (std::size_t i = 0; i < Cell::NumParams; ++i) p[i] = 0.0;
+    const double tau0 = 2.0, tau1 = 4.0, A0 = 3.0, A1 = -1.0;
+    p[Cell::OffTau + 0] = tau0;  p[Cell::OffTau + 1] = tau1;
+    p[Cell::OffA   + 0] = A0;    p[Cell::OffA   + 1] = A1;
+
+    const double f = 0.5;
+    const double xs0 = f * A0 / (1.0 / tau0 + f);
+    const double xs1 = f * A1 / (1.0 / tau1 + f);
+
+    double in = 1.0, st[2] = {0.0, 0.0}, out[2];
+    for (int n = 0; n < 200; ++n)        // 200 calls x 4 unfolds = 800 fused steps
+    {
+        Cell::step<double>(p, &in, st, out, 0.5, /*unfolds=*/4);
+        st[0] = out[0]; st[1] = out[1];
+    }
+    BOOST_CHECK_CLOSE(st[0], xs0, 1e-3);
+    BOOST_CHECK_CLOSE(st[1], xs1, 1e-3);
+}
+
+// 1c. Fixed-point (Q16.16) inference matches the double reference -- backs the
+//     "step<S> infers in QValue" claim (sigmoid LUT + Q-format divide).
+BOOST_AUTO_TEST_CASE(qformat_inference_parity)
+{
+    typedef tinymind::ltc::LtcCell<2, 3> Cell;
+    typedef tinymind::QValue<16, 16, true> Q;
+
+    double p[Cell::NumParams];
+    initParams(p, Cell::NumParams, Cell::OffTau, 3);   // tau slice = 1.0, small weights
+
+    Q pq[Cell::NumParams];
+    for (std::size_t i = 0; i < Cell::NumParams; ++i)
+        pq[i] = tinymind::ValueConverter<double, Q>::convertToDestinationType(p[i]);
+
+    double in_d[2] = { 0.6, -0.4 };
+    Q in_q[2] = { tinymind::ValueConverter<double, Q>::convertToDestinationType(in_d[0]),
+                  tinymind::ValueConverter<double, Q>::convertToDestinationType(in_d[1]) };
+
+    double sd[3] = {0, 0, 0}, od[3];
+    Q sq[3] = { Q(0), Q(0), Q(0) }, oq[3];
+    for (int t = 0; t < 12; ++t)
+    {
+        Cell::step<double>(p, in_d, sd, od, 1.0, 1);
+        Cell::step<Q>(pq, in_q, sq, oq, 1.0, 1);
+        for (std::size_t i = 0; i < 3; ++i) { sd[i] = od[i]; sq[i] = oq[i]; }
+    }
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        const double q_back = tinymind::ValueConverter<Q, double>::convertToDestinationType(sq[i]);
+        BOOST_CHECK_SMALL(q_back - sd[i], 0.02);   // Q16.16 + sigmoid LUT error
+    }
+}
+
 // 2. Reverse-mode adjoint through the LTC cell matches central finite differences.
 BOOST_AUTO_TEST_CASE(reverse_gradient_matches_finite_difference)
 {

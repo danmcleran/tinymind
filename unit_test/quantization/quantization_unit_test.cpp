@@ -3822,6 +3822,143 @@ BOOST_AUTO_TEST_CASE(qcfc_single_step_parity_with_float_reference)
     BOOST_TEST(max_h_err < 0.06f);
 }
 
+namespace {
+
+// Fully-wired QCfCCell over caller-owned buffers, built from float weights.
+// Shared by the clamp-saturation and multi-step tests.
+struct QCfCHarness
+{
+    static const std::size_t I = kCfcInputs, H = kCfcHidden, BB = kCfcBackbone;
+    float w_bin[BB * I], w_bh[BB * H];
+    float w_ff1[H * BB], w_ff2[H * BB], w_ta[H * BB], w_tb[H * BB];
+    float b_bb[BB], b_ff1[H], b_ff2[H], b_a[H], b_b[H];
+    int8_t w_bin_q[BB * I], w_bh_q[BB * H];
+    int8_t w_ff1_q[H * BB], w_ff2_q[H * BB], w_ta_q[H * BB], w_tb_q[H * BB];
+    int32_t b_bb_q[BB], b_ff1_q[H], b_ff2_q[H], b_time_q[H];
+    int8_t sigmoid_lut[256], tanh_lut[256];
+    float x_scale, h_scale;
+    tinymind::QCfCCell<int8_t, int8_t, int32_t, int8_t, kCfcInputs, kCfcHidden, kCfcBackbone> cell;
+
+    void build(double ts)
+    {
+        fillCfcWeights(w_bin, w_bh, w_ff1, w_ff2, w_ta, w_tb, b_bb, b_ff1, b_ff2, b_a, b_b);
+        x_scale = 1.0f / 127.0f; h_scale = 1.0f / 127.0f;
+        const float lut_scale = 8.0f / 127.0f;
+
+        QCfCScales sc;
+        sc.input_scale = x_scale; sc.hidden_scale = h_scale; sc.lut_input_scale = lut_scale;
+        sc.w_backbone_input_scale  = absmax(w_bin, BB * I) / 127.0f;
+        sc.w_backbone_hidden_scale = absmax(w_bh,  BB * H) / 127.0f;
+        sc.w_ff1_scale = absmax(w_ff1, H * BB) / 127.0f;
+        sc.w_ff2_scale = absmax(w_ff2, H * BB) / 127.0f;
+        sc.w_time_a_scale = absmax(w_ta, H * BB) / 127.0f;
+        sc.w_time_b_scale = absmax(w_tb, H * BB) / 127.0f;
+        sc.ts = ts;
+
+        QCfCParams pp; buildQCfCParams(sc, pp);
+        quantizeQCfCBias(b_bb,  BB, lut_scale, b_bb_q);
+        quantizeQCfCBias(b_ff1, H,  lut_scale, b_ff1_q);
+        quantizeQCfCBias(b_ff2, H,  lut_scale, b_ff2_q);
+        quantizeQCfCTimeBias(b_a, b_b, H, sc.ts, lut_scale, b_time_q);
+        quantizeSymmetricWeights(w_bin, w_bin_q, BB * I, sc.w_backbone_input_scale);
+        quantizeSymmetricWeights(w_bh,  w_bh_q,  BB * H, sc.w_backbone_hidden_scale);
+        quantizeSymmetricWeights(w_ff1, w_ff1_q, H * BB, sc.w_ff1_scale);
+        quantizeSymmetricWeights(w_ff2, w_ff2_q, H * BB, sc.w_ff2_scale);
+        quantizeSymmetricWeights(w_ta,  w_ta_q,  H * BB, sc.w_time_a_scale);
+        quantizeSymmetricWeights(w_tb,  w_tb_q,  H * BB, sc.w_time_b_scale);
+        buildQSigmoidLUT(lut_scale, 0, 1.0f / 256.0f, -128, sigmoid_lut);
+        buildQTanhLUT   (lut_scale, 0, 1.0f / 128.0f,    0, tanh_lut);
+
+        cell.w_backbone_input = w_bin_q; cell.w_backbone_hidden = w_bh_q; cell.b_backbone = b_bb_q;
+        cell.w_ff1 = w_ff1_q; cell.w_ff2 = w_ff2_q; cell.w_time_a = w_ta_q; cell.w_time_b = w_tb_q;
+        cell.b_ff1 = b_ff1_q; cell.b_ff2 = b_ff2_q; cell.b_time = b_time_q;
+        cell.input_zero_point = 0; cell.hidden_zero_point = 0;
+        cell.backbone_input_multiplier = pp.backbone_input_multiplier;
+        cell.backbone_input_shift      = pp.backbone_input_shift;
+        cell.backbone_hidden_multiplier = pp.backbone_hidden_multiplier;
+        cell.backbone_hidden_shift      = pp.backbone_hidden_shift;
+        cell.ff1_multiplier = pp.ff1_multiplier; cell.ff1_shift = pp.ff1_shift;
+        cell.ff2_multiplier = pp.ff2_multiplier; cell.ff2_shift = pp.ff2_shift;
+        cell.time_a_multiplier = pp.time_a_multiplier; cell.time_a_shift = pp.time_a_shift;
+        cell.time_b_multiplier = pp.time_b_multiplier; cell.time_b_shift = pp.time_b_shift;
+        cell.sigmoid_lut = sigmoid_lut; cell.tanh_lut = tanh_lut;
+        cell.one_minus_t_times_ff1_multiplier = pp.one_minus_t_times_ff1_multiplier;
+        cell.one_minus_t_times_ff1_shift      = pp.one_minus_t_times_ff1_shift;
+        cell.t_times_ff2_multiplier = pp.t_times_ff2_multiplier;
+        cell.t_times_ff2_shift      = pp.t_times_ff2_shift;
+        cell.output_qmin = -127; cell.output_qmax = 127;
+    }
+};
+
+} // namespace
+
+// Output clamp: a narrow [qmin, qmax] window saturates the interpolation
+// result -- exercises the QCfCCell h_new clamp branches.
+BOOST_AUTO_TEST_CASE(qcfc_output_clamp_saturates)
+{
+    QCfCHarness hz; hz.build(1.5);
+
+    float x_ref[QCfCHarness::I] = { 0.9f, -0.9f };
+    int8_t x_q[QCfCHarness::I];
+    quantizeBuffer<int8_t>(x_ref, x_q, QCfCHarness::I, hz.x_scale, 0, -128, 127);
+
+    // Unclamped reference.
+    hz.cell.output_qmin = -127; hz.cell.output_qmax = 127;
+    int8_t wide[QCfCHarness::H] = {0, 0, 0};
+    hz.cell.forward(x_q, wide);
+
+    int wmin = wide[0], wmax = wide[0];
+    for (std::size_t i = 1; i < QCfCHarness::H; ++i)
+    { if (wide[i] < wmin) wmin = wide[i]; if (wide[i] > wmax) wmax = wide[i]; }
+    BOOST_TEST(wmax > wmin);   // spread required so a narrow window actually clamps
+
+    const int8_t lo = static_cast<int8_t>(wmin + 1);
+    const int8_t hi = static_cast<int8_t>(wmax - 1);
+    hz.cell.output_qmin = lo; hz.cell.output_qmax = hi;
+    int8_t narrow[QCfCHarness::H] = {0, 0, 0};
+    hz.cell.forward(x_q, narrow);
+
+    int changed = 0;
+    for (std::size_t i = 0; i < QCfCHarness::H; ++i)
+    {
+        int expect = wide[i];
+        if (expect < lo) expect = lo;
+        if (expect > hi) expect = hi;
+        BOOST_TEST(static_cast<int>(narrow[i]) == expect);
+        if (narrow[i] != wide[i]) ++changed;
+    }
+    BOOST_TEST(changed >= 1);   // the clamp actually fired
+}
+
+// Multi-step stability: 64 recurrent steps stay int8-bounded and track a float
+// CfC reference (drift bound), the QCfC analogue of the QLSTM long-sequence test.
+BOOST_AUTO_TEST_CASE(qcfc_multistep_tracks_float_reference)
+{
+    QCfCHarness hz; hz.build(1.5);
+
+    float x_ref[QCfCHarness::I] = { 0.5f, -0.3f };
+    int8_t x_q[QCfCHarness::I];
+    quantizeBuffer<int8_t>(x_ref, x_q, QCfCHarness::I, hz.x_scale, 0, -128, 127);
+
+    float  h_f[QCfCHarness::H] = {0, 0, 0};
+    int8_t h_q[QCfCHarness::H] = {0, 0, 0};
+    float max_err = 0.0f;
+    for (int t = 0; t < 64; ++t)
+    {
+        floatCfcReference(x_ref, h_f, 1.5f, hz.w_bin, hz.w_bh, hz.w_ff1, hz.w_ff2,
+                          hz.w_ta, hz.w_tb, hz.b_bb, hz.b_ff1, hz.b_ff2, hz.b_a, hz.b_b);
+        hz.cell.forward(x_q, h_q);
+        for (std::size_t i = 0; i < QCfCHarness::H; ++i)
+        {
+            BOOST_TEST(h_q[i] >= -127);     // bounded, no int8 overflow
+            BOOST_TEST(h_q[i] <= 127);
+            const float hb = dequantize<int8_t>(h_q[i], hz.h_scale, 0);
+            max_err = std::fmax(max_err, std::fabs(hb - h_f[i]));
+        }
+    }
+    BOOST_TEST(max_err < 0.1f);    // int8 recurrent drift over 64 steps
+}
+
 // ============================================================================
 // Phase 13 -- QFFT1D, QAttention1D (linear), QAttentionSoftmax1D, QMHA.
 // ============================================================================

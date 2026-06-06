@@ -134,6 +134,44 @@ BOOST_AUTO_TEST_CASE(interpolation_within_head_range)
     }
 }
 
+// 1b. Fixed-point (Q16.16) inference matches the double reference over a short
+//     sequence -- backs the "step<S> infers in QValue" claim (tanh / sigmoid
+//     LUTs in the backbone, heads, and time-gate). ts != 1 exercises the gate.
+BOOST_AUTO_TEST_CASE(qformat_inference_parity)
+{
+    typedef tinymind::cfc::CfCCell<2, 3, 4> Cell;
+    typedef tinymind::QValue<16, 16, true> Q;
+
+    double p[Cell::NumParams];
+    unsigned s = 13579u;
+    for (std::size_t i = 0; i < Cell::NumParams; ++i)
+    {
+        s = s * 1103515245u + 12345u;
+        p[i] = 0.30 * ((static_cast<double>((s >> 16) & 0x7fff) / 32767.0) - 0.5);
+    }
+    Q pq[Cell::NumParams];
+    for (std::size_t i = 0; i < Cell::NumParams; ++i)
+        pq[i] = tinymind::ValueConverter<double, Q>::convertToDestinationType(p[i]);
+
+    double in_d[2] = { 0.5, -0.3 };
+    Q in_q[2] = { tinymind::ValueConverter<double, Q>::convertToDestinationType(in_d[0]),
+                  tinymind::ValueConverter<double, Q>::convertToDestinationType(in_d[1]) };
+
+    double sd[3] = {0, 0, 0}, od[3];
+    Q sq[3] = { Q(0), Q(0), Q(0) }, oq[3];
+    for (int t = 0; t < 10; ++t)
+    {
+        Cell::step<double>(p, in_d, sd, od, 1.5);
+        Cell::step<Q>(pq, in_q, sq, oq, 1.5);
+        for (std::size_t i = 0; i < 3; ++i) { sd[i] = od[i]; sq[i] = oq[i]; }
+    }
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        const double q_back = tinymind::ValueConverter<Q, double>::convertToDestinationType(sq[i]);
+        BOOST_CHECK_SMALL(q_back - sd[i], 0.02);
+    }
+}
+
 // 2. Reverse-mode adjoint through the CfC cell matches central finite diff.
 BOOST_AUTO_TEST_CASE(reverse_gradient_matches_finite_difference)
 {
