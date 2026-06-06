@@ -68,3 +68,6 @@ run: report
 
 clean:
 	rm -f ./output/*
+
+plot: report
+	python3 plot.py

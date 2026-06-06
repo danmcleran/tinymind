@@ -27,3 +27,9 @@ coverage :
 
 clean :
 	rm -f ./output/*
+
+csv :
+	cd ./output && ./kws_cortex_m_int8 | awk '/^name,/{f=1} f&&NF==0{f=0} f{print}' > kws_cortex_m_int8.csv && cd ../
+
+plot : csv
+	python3 plot.py
