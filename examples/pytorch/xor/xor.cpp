@@ -120,5 +120,28 @@ int main(const int argc, char *argv[])
 
     results.close();
 
+    // Decision-surface CSV: sweep the imported network over the [0,1]^2 input
+    // grid so plot.py can render the learned XOR boundary as a heatmap.
+    {
+        std::ofstream surf("xor_decision_surface.csv");
+        surf << "x0,x1,prob" << std::endl;
+        const int G = 41;
+        for (int a = 0; a < G; ++a)
+        {
+            for (int b = 0; b < G; ++b)
+            {
+                const double x0 = static_cast<double>(a) / (G - 1);
+                const double x1 = static_cast<double>(b) / (G - 1);
+                const double scale = static_cast<double>(1 << ValueType::NumberOfFractionalBits);
+                values[0] = ValueType(static_cast<typename ValueType::FullWidthValueType>(x0 * scale));
+                values[1] = ValueType(static_cast<typename ValueType::FullWidthValueType>(x1 * scale));
+                testNeuralNet.feedForward(&values[0]);
+                testNeuralNet.getLearnedValues(&learnedValues[0]);
+                const double prob = static_cast<double>(learnedValues[0].getValue()) / scale;
+                surf << x0 << "," << x1 << "," << prob << std::endl;
+            }
+        }
+    }
+
     return 0;
 }

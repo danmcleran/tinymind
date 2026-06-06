@@ -42,6 +42,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <fstream>
 #include <iomanip>
 
 #include "qaffine.hpp"
@@ -149,5 +150,35 @@ int main()
     }
 
     std::cout << "\nint8 XOR accuracy: " << correct << "/4\n";
+
+    // Decision-surface CSV: sweep the int8 model over the [0,1]^2 input grid so
+    // plot.py can render the learned XOR boundary as a heatmap.
+    {
+        std::ofstream surf("xor_decision_surface.csv");
+        surf << "x0,x1,prob" << std::endl;
+        const int G = 41;
+        for (int a = 0; a < G; ++a)
+        {
+            for (int b = 0; b < G; ++b)
+            {
+                const float x0 = static_cast<float>(a) / (G - 1);
+                const float x1 = static_cast<float>(b) / (G - 1);
+                int8_t in_q[pq::NumInputs];
+                in_q[0] = tinymind::quantize<int8_t>(x0, pq::kInputScale, pq::kInputZeroPoint, -128, 127);
+                in_q[1] = tinymind::quantize<int8_t>(x1, pq::kInputScale, pq::kInputZeroPoint, -128, 127);
+                int8_t hid_q[pq::HiddenSize];
+                fc1.forward(in_q, hid_q);
+                tinymind::qreluBuffer(hid_q, pq::HiddenSize,
+                                      static_cast<int8_t>(pq::kHiddenZeroPoint));
+                int8_t lg_q[pq::NumOutputs];
+                fc2.forward(hid_q, lg_q);
+                const int8_t o = tinymind::qApplyLUT(lg_q[0], sigmoidLUT);
+                const float prob = tinymind::dequantize<int8_t>(
+                    o, pq::kSigmoidOutScale, pq::kSigmoidOutZeroPoint);
+                surf << x0 << "," << x1 << "," << prob << std::endl;
+            }
+        }
+    }
+
     return (correct == 4) ? 0 : 1;
 }
