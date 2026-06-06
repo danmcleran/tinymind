@@ -53,6 +53,7 @@
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <fstream>
 #include <random>
 #include <vector>
 
@@ -324,6 +325,11 @@ int main()
         }
     }
 
+    // Parity CSV (float reference vs dequantized int8) for plot.py.
+    std::ofstream pcsv("import_demo_parity.csv");
+    pcsv << "index,float,int8" << std::endl;
+    std::size_t parityIdx = 0;
+
     float max_abs_err = 0.0f;
     for (const auto& row : tests)
     {
@@ -355,8 +361,10 @@ int main()
                 qy[i], sigmoid_scale, sigmoid_zp);
             const float err = std::abs(yq - yf[i]);
             if (err > max_abs_err) max_abs_err = err;
+            pcsv << parityIdx++ << "," << yf[i] << "," << yq << std::endl;
         }
     }
+    pcsv.close();
 
     std::cout << "\nimport_demo parity test (16 samples)\n"
               << "  max |y_int8 - y_float| = " << max_abs_err << "\n";

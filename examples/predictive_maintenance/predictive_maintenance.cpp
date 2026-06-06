@@ -345,6 +345,10 @@ int main(int argc, char* argv[])
     std::uniform_int_distribution<size_t> negPick(0, neg.size() - 1);
     std::bernoulli_distribution coin(0.5);
 
+    // Training-loss CSV (one row per report window) for plot.py.
+    std::ofstream lossCsv("predictive_maintenance_loss.csv");
+    lossCsv << "iter,avg_err" << std::endl;
+
     for (unsigned it = 0; it < iterations; ++it)
     {
         const Sample& s = coin(rng) ? train[pos[posPick(rng)]] : train[neg[negPick(rng)]];
@@ -365,9 +369,11 @@ int main(int argc, char* argv[])
                       << "   avg|err| = "
                       << std::fixed << std::setprecision(4)
                       << (errSum / reportEvery) << std::endl;
+            lossCsv << (it + 1) << "," << (errSum / reportEvery) << std::endl;
             errSum = 0.0;
         }
     }
+    lossCsv.close();
 
     // Evaluate on held-out test set.
     size_t tp = 0, fp = 0, tn = 0, fn = 0;
@@ -388,6 +394,14 @@ int main(int argc, char* argv[])
     const double prec  = (tp + fp) ? static_cast<double>(tp) / static_cast<double>(tp + fp) : 0.0;
     const double rec   = (tp + fn) ? static_cast<double>(tp) / static_cast<double>(tp + fn) : 0.0;
     const double f1    = (prec + rec) > 0.0 ? (2.0 * prec * rec) / (prec + rec) : 0.0;
+
+    // Confusion-matrix CSV for plot.py (2x2 heatmap).
+    {
+        std::ofstream cm("predictive_maintenance_confusion.csv");
+        cm << "actual,pred_no_fail,pred_fail" << std::endl;
+        cm << "no_fail," << tn << "," << fp << std::endl;
+        cm << "fail," << fn << "," << tp << std::endl;
+    }
 
     std::cout << "\nConfusion matrix (rows=actual, cols=predicted):" << std::endl;
     std::cout << "               pred no-fail   pred fail" << std::endl;
