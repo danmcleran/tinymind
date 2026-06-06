@@ -17,6 +17,10 @@ This is a different kind of "quantization" than [BinaryDense / TernaryDense]({{ 
 | `TernaryDense` | 2-bit packed | conditional add/sub | Threshold percentile | Sparse layers, multiply-free |
 | **Int8 affine** (this page) | int8 weights + int8 activations | int8*int8 -> int32 MAC | Per-tensor / per-channel scale + zero_point | Drop-in TFLite-shape deployment, MobileNet-style CNN |
 
+![Transformer int8 parity]({{ site.baseurl }}/assets/plots/transformer_int8_parity.png)
+
+*`examples/transformer_encoder_int8`: the pure-integer int8 block tracks the float reference closely; per-element quantization error stays small. More in the [Example Gallery]({{ site.baseurl }}/gallery).*
+
 ## Q-format vs. Affine Quantization
 
 Both are "fixed-point", but they live in different layers of the abstraction stack:

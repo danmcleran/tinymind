@@ -9,6 +9,10 @@ nav_order: 7
 
 TinyMind ships ISA-capability-gated SIMD specializations in the inner reduction loop of the int8 affine layer family (`QDense`, `QConv2D`, `QConv2DPerChannel`). The library never sniffs the CPU. Every backend lives behind a `TINYMIND_ENABLE_SIMD_*` preprocessor gate, every gate defaults to `0`, and with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the scalar reference.
 
+![SIMD backend comparison]({{ site.baseurl }}/assets/plots/simd_backends.png)
+
+*`examples/perf_matrix` (`make report && make plot`): per-call throughput across backends. The `output_checksum` is identical across all of them — the speedup is free of any numerical change.*
+
 ## Design rules
 
 1. **Gates name ISA extensions, never CPU models.** A Cortex-A55 configured without NEON simply does not set `SIMD_NEON=1`; the library has no Cortex-A55 special case.

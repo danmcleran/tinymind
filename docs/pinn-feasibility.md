@@ -11,6 +11,10 @@ This page assesses how TinyMind could be used to build or deploy
 (PINNs). It combines an audit of the current library against PINN requirements
 with a survey of the relevant literature.
 
+![PINN heat equation]({{ site.baseurl }}/assets/plots/pinn_heat1d.png)
+
+*`examples/pinn_heat1d` (`make train`): exact-autodiff residual training drives the loss / solution-L2 error down (left) until the learned field matches the analytic solution (right).*
+
 ## Verdict
 
 **TinyMind now ships the load-bearing PINN primitive — forward-mode automatic

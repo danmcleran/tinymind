@@ -43,3 +43,7 @@ examples/pinn_heat1d/output/
 examples/ltc_sequence/output/
 examples/cfc_sequence/output/
 examples/qcfc_liquid_int8/output/
+
+# Python bytecode from example plot scripts
+__pycache__/
+*.pyc

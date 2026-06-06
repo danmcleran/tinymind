@@ -90,6 +90,10 @@ For the pure-integer deployment path the weights are `int8` (1 byte each) and th
 
 Instance sizes in bytes for Conv1D, Pool1D, and Dropout layers. These are standalone composable layers that sit outside the neural network template.
 
+![KWS per-layer cost]({{ site.baseurl }}/assets/plots/kws_layer_cost.png)
+
+*`examples/kws_cortex_m` (`make csv && make plot`): per-layer compute cost and stacked weight/activation footprint for a keyword-spotting pipeline.*
+
 ### Conv1D
 
 | Configuration | `double` | Q8.8 |

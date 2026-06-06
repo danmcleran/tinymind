@@ -288,6 +288,12 @@ The per-step elapsed time `ts` is a runtime scalar feeding the time-gate, so irr
 
 The [`examples/ltc_sequence/`](https://github.com/danmcleran/tinymind/tree/master/examples/ltc_sequence) and [`examples/cfc_sequence/`](https://github.com/danmcleran/tinymind/tree/master/examples/cfc_sequence) demos train each cell + a linear readout through `pinn::sgdStepReverse` — the CfC demo feeds a varying `ts` per step.
 
+![LTC behavior]({{ site.baseurl }}/assets/plots/ltc_behavior.png)
+
+![int8 QCfC parity]({{ site.baseurl }}/assets/plots/qcfc_int8_parity.png)
+
+The int8 [`examples/qcfc_liquid_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/qcfc_liquid_int8) deployment exemplar tracks the float reference within ~0.04. See the [Example Gallery]({{ site.baseurl }}/gallery) for more.
+
 # Int8 Quantized Counterparts
 
 For inference-only deployment that does not need the trainable Q-format pipeline at all, TinyMind ships pure-integer int8 cells alongside `LstmNeuralNetwork` / `GruNeuralNetwork`:

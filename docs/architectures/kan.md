@@ -11,6 +11,10 @@ Tinymind implements [Kolmogorov-Arnold Networks](https://en.wikipedia.org/wiki/K
 
 KAN can be more parameter-efficient than MLP for certain smooth, low-dimensional functions, learning the activation shape rather than relying on fixed activations with learned weights.
 
+![KAN XOR learning curve]({{ site.baseurl }}/assets/plots/kan_xor_learning_curve.png)
+
+*`examples/kan_xor` (`make run && make plot`): the KAN learns XOR by fitting its B-spline edge activations.*
+
 ## KAN on Embedded: Trading Memory for Accuracy
 
 KAN uses more memory per connection than MLP (8 parameters per edge vs 1 weight), so it is 3-4x larger for the same topology. However, KAN can sometimes approximate smooth functions with fewer neurons than an equivalent MLP, potentially offsetting the per-edge cost.

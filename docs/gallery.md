@@ -1,0 +1,71 @@
+---
+title: Example Gallery
+layout: default
+nav_order: 3
+---
+
+# Example Gallery
+
+Every runnable example in [`examples/`](https://github.com/danmcleran/tinymind/tree/master/examples)
+writes a header-row CSV to its `output/` directory and ships a `plot.py` that
+renders the network's behavior. Reproduce any graph below with:
+
+```bash
+cd examples/<name> && make run && make plot   # writes output/*.csv and a PNG
+```
+
+The plot scripts share one style module,
+[`examples/plotting/tinymind_plot.py`](https://github.com/danmcleran/tinymind/blob/master/examples/plotting/tinymind_plot.py)
+(matplotlib only, headless-safe). The CSV-first contract means you can also drop
+the data into pandas / a spreadsheet and build your own visualizations.
+
+## Training dynamics
+
+**XOR learning curve** — Q8.8 fixed-point MLP (2→3→1).
+![XOR learning curve]({{ site.baseurl }}/assets/plots/xor_learning_curve.png)
+
+**KAN XOR learning curve** — Kolmogorov-Arnold network with learnable B-spline edges.
+![KAN XOR learning curve]({{ site.baseurl }}/assets/plots/kan_xor_learning_curve.png)
+
+## Liquid neural networks (continuous-time)
+
+**LTC** — fused ODE-solver cell trained to a leaky-integrator step response via reverse-mode autodiff.
+![LTC behavior]({{ site.baseurl }}/assets/plots/ltc_behavior.png)
+
+**CfC** — closed-form continuous-time cell on an irregularly-sampled target (per-step `ts` into the time-gate).
+![CfC behavior]({{ site.baseurl }}/assets/plots/cfc_behavior.png)
+
+**int8 QCfC** — pure-integer CfC cell tracking the float reference, with per-step quantization error.
+![int8 QCfC parity]({{ site.baseurl }}/assets/plots/qcfc_int8_parity.png)
+
+## Physics-Informed NN
+
+**1-D heat equation** — exact-autodiff residual training + learned field vs the analytic solution.
+![PINN heat equation]({{ site.baseurl }}/assets/plots/pinn_heat1d.png)
+
+## int8 quantization parity
+
+**Transformer encoder block (int8)** — int8 vs float output overlay + per-element quantization error.
+![Transformer int8 parity]({{ site.baseurl }}/assets/plots/transformer_int8_parity.png)
+
+**MobileNetV2-shaped pipeline (int8)** — logit parity vs the float reference.
+![MobileNetV2 int8 parity]({{ site.baseurl }}/assets/plots/mobilenetv2_int8_parity.png)
+
+## Cost & performance
+
+**KWS pipeline per-layer cost** — compute cost + stacked weight/activation footprint per layer.
+![KWS per-layer cost]({{ site.baseurl }}/assets/plots/kws_layer_cost.png)
+
+**SIMD backends** — int8 QConv2D / QDense throughput across backends (output checksum identical — bit-exact).
+![SIMD backend comparison]({{ site.baseurl }}/assets/plots/simd_backends.png)
+
+## Applications
+
+**XOR decision surface** — PyTorch-trained weights, pure-integer TinyMind inference; learned boundary as a heatmap.
+![int8 XOR decision surface]({{ site.baseurl }}/assets/plots/xor_decision_surface.png)
+
+**Predictive maintenance** — training loss + test confusion matrix (machine-failure classifier).
+![Predictive maintenance]({{ site.baseurl }}/assets/plots/predictive_maintenance.png)
+
+**Q-learning maze** — per-start-state navigation trajectories.
+![Maze trajectories]({{ site.baseurl }}/assets/plots/maze_trajectories.png)
