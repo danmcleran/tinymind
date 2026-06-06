@@ -3959,6 +3959,43 @@ BOOST_AUTO_TEST_CASE(qcfc_multistep_tracks_float_reference)
     BOOST_TEST(max_err < 0.1f);    // int8 recurrent drift over 64 steps
 }
 
+// QAvgPool/QGlobalAvgPool round helper: the divide-by-zero guard returns 0
+// (degenerate empty window) rather than dividing.
+BOOST_AUTO_TEST_CASE(qpool_rounded_divide_zero_denominator)
+{
+    BOOST_TEST(tinymind::detail::roundedDivide(7, 0) == 0);
+    BOOST_TEST(tinymind::detail::roundedDivide(-7, 0) == 0);
+    BOOST_TEST(tinymind::detail::roundedDivide(5, 2) == 3);    // half away from zero
+    BOOST_TEST(tinymind::detail::roundedDivide(-5, 2) == -3);
+}
+
+// QLayerNorm1D variance saturation: with wide (int32) input storage the per-row
+// sum of squared deviations / N can exceed INT32_MAX, exercising the int64->
+// int32 clamp on var_q (unreachable with the int8 deployable config).
+BOOST_AUTO_TEST_CASE(qlayernorm_variance_saturates_int32)
+{
+    typedef tinymind::QLayerNorm1D<int32_t, int8_t, 1, 4> LN;
+    int16_t gamma[4] = { 16384, 16384, 16384, 16384 };   // Q1.14 == 1.0
+    int32_t beta[4]  = { 0, 0, 0, 0 };
+
+    LN ln;
+    ln.gamma = gamma; ln.beta = beta;
+    ln.epsilon_q = 1;
+    ln.output_multiplier = static_cast<int32_t>(1) << 30;
+    ln.output_shift = 0;
+    ln.output_zero_point = 0; ln.qmin = -128; ln.qmax = 127;
+
+    // Mean 0, huge deviations: ssum/N = 1e12 > INT32_MAX -> var_q clamps.
+    int32_t in[4]  = { 1000000, -1000000, 1000000, -1000000 };
+    int8_t  out[4] = { 0, 0, 0, 0 };
+    ln.forward(in, out);
+    for (int i = 0; i < 4; ++i)
+    {
+        BOOST_TEST(out[i] >= -128);
+        BOOST_TEST(out[i] <= 127);
+    }
+}
+
 // ============================================================================
 // Phase 13 -- QFFT1D, QAttention1D (linear), QAttentionSoftmax1D, QMHA.
 // ============================================================================

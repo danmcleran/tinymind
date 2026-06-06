@@ -180,6 +180,27 @@ BOOST_AUTO_TEST_CASE(bspline_findspan_out_of_range_clamps)
     BOOST_CHECK_CLOSE(above, 2.0, 1e-6);
 }
 
+BOOST_AUTO_TEST_CASE(bspline_findspan_nan_falls_through_to_last_span)
+{
+    // A NaN query makes every ordered comparison false, so neither boundary
+    // guard nor the search loop returns -- findKnotSpan reaches its defensive
+    // post-loop fallthrough (last-span clamp). Covers the general degree>=2
+    // path and the degree-1 specialization.
+    const double nan_x = std::nan("");
+
+    tinymind::UniformKnotVector<double, 3, 2> kv2;  kv2.initialize(-1.0, 1.0);
+    const std::size_t nbf2 = 5;   // G=3, k=2 -> numberOfBasisFunctions
+    const std::size_t span2 =
+        tinymind::DeBoorEvaluator<double, 2>::findKnotSpan(kv2.knots, nbf2, nan_x);
+    BOOST_TEST(span2 == nbf2 - 1);
+
+    tinymind::UniformKnotVector<double, 4, 1> kv1;  kv1.initialize(-1.0, 1.0);
+    const std::size_t nbf1 = 5;   // G=4, k=1 -> numberOfBasisFunctions
+    const std::size_t span1 =
+        tinymind::DeBoorEvaluator<double, 1>::findKnotSpan(kv1.knots, nbf1, nan_x);
+    BOOST_TEST(span1 == nbf1 - 1);
+}
+
 BOOST_AUTO_TEST_CASE(bspline_derivative_zero_width_knot_spans)
 {
     // Repeated knots produce zero-width intervals; the derivative must take the
