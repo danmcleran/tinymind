@@ -57,6 +57,10 @@ int main(const int argc, char *argv[])
 
     char const* const path = "nn_fixed_xor.txt";
     ofstream results(path);
+
+    // Learning curve CSV (header + one row per averaging window) for plot.py.
+    ofstream curve("xor_training.csv");
+    curve << "iteration,avg_error" << std::endl;
     ValueType values[NeuralNetworkType::NumberOfInputLayerNeurons];
     ValueType output[NeuralNetworkType::NumberOfOutputLayerNeurons];
     ValueType learnedValues[NeuralNetworkType::NumberOfOutputLayerNeurons];
@@ -86,6 +90,7 @@ int main(const int argc, char *argv[])
         {
             avgError = avgError / ValueType(NUM_SAMPLES_AVG_ERROR, 0);
             cout << "Iteration: " << (i + 1) << " Average Error: " << avgError << endl;
+            curve << (i + 1) << "," << avgError << std::endl;
             lastAvgError = avgError;
             avgError = ValueType(0U);
         }

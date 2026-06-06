@@ -25,6 +25,9 @@ run :
 	cd ./output && ./xor && cd ../
 
 plot :
+	python3 plot.py
+
+plot-trajectory :
 	python3 ../../unit_test/nn/nn_plot.py output/nn_fixed_xor.txt
 
 clean :
