@@ -65,6 +65,10 @@ int main(const int argc, char *argv[])
     ValueType error;
     ValueType avgError(0U);
     ValueType lastAvgError(0U);
+    // Clean floating-point error accumulator for the CSV: the QValue avgError
+    // above sums raw fixed-point integers and can wrap, producing a noisy curve.
+    double errSumD = 0.0;
+    const double fracScale = static_cast<double>(1 << ValueType::NumberOfFractionalBits);
 
     for (unsigned i = 0; i < TRAINING_ITERATIONS; ++i)
     {
@@ -81,11 +85,16 @@ int main(const int argc, char *argv[])
         results << error << std::endl;
 
         avgError += abs(error.getValue());
+        {
+            double e = static_cast<double>(error.getValue()) / fracScale;
+            errSumD += (e < 0.0) ? -e : e;
+        }
         if ((i + 1) % NUM_SAMPLES_AVG_ERROR == 0)
         {
             avgError = avgError / ValueType(NUM_SAMPLES_AVG_ERROR, 0);
             cout << "Iteration: " << (i + 1) << " Average Error: " << avgError << endl;
-            curve << (i + 1) << "," << avgError << std::endl;
+            curve << (i + 1) << "," << (errSumD / NUM_SAMPLES_AVG_ERROR) << std::endl;
+            errSumD = 0.0;
             lastAvgError = avgError;
             avgError = ValueType(0U);
         }

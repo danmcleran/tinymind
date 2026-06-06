@@ -39,7 +39,7 @@ def main():
         "KAN XOR learning curve",
         "Kolmogorov-Arnold Network (2->5->1), learnable B-spline edges")
     tp.line(ax, cols["iteration"], {"average error": cols["avg_error"]},
-            xlabel="training iteration", ylabel="average |error|")
+            xlabel="training iteration", ylabel="average |error|", logy=True)
     tp.finish(fig, tp.png_for(CSV))
 
 

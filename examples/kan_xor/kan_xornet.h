@@ -30,9 +30,12 @@
 #include "qformat.hpp"
 #include "kan.hpp"
 
-// Q-Format value type
-static const size_t NUMBER_OF_FIXED_BITS = 8;
-static const size_t NUMBER_OF_FRACTIONAL_BITS = 8;
+// Q-Format value type. Q16.16: KAN B-spline training needs more range and
+// precision than Q8.8 provides (Q8.8 saturates and fails to converge). The
+// learning-rate constants below are defined relative to NumberOfFractionalBits,
+// so the effective rates are unchanged -- only the numeric headroom grows.
+static const size_t NUMBER_OF_FIXED_BITS = 16;
+static const size_t NUMBER_OF_FRACTIONAL_BITS = 16;
 typedef tinymind::QValue<NUMBER_OF_FIXED_BITS, NUMBER_OF_FRACTIONAL_BITS, true> ValueType;
 typedef typename ValueType::FullWidthValueType FullWidthValueType;
 
@@ -49,14 +52,14 @@ struct RandomNumberGenerator
 {
     static ValueType generateRandomWeight()
     {
-        // Generate a random number between -1..1 in the Q Format full width type
-        const FullWidthValueType weight = (rand() %
-                                                    (tinymind::Constants<ValueType>::one().getValue() +
-                                                     tinymind::Constants<ValueType>::one().getValue() -
-                                                     tinymind::Constants<ValueType>::negativeOne().getValue())) +
-                                                     tinymind::Constants<ValueType>::negativeOne().getValue();
-
-        return weight;
+        // Symmetric small init in [-0.5, 0.5] (raw Q-format units). Small,
+        // symmetric weights keep the KAN B-spline training stable -- the old
+        // formula produced an asymmetric [-1, 2) range that diverged.
+        const FullWidthValueType half =
+            tinymind::Constants<ValueType>::one().getValue() / 2;
+        const FullWidthValueType weight =
+            (static_cast<FullWidthValueType>(rand()) % (2 * half + 1)) - half;
+        return ValueType(weight);
     }
 };
 
@@ -88,15 +91,15 @@ struct KanNetworkInitializer
 
     static ValueType initialLearningRate()
     {
-        // Lower learning rate for KAN: ~0.0625 in Q8.8
-        static const ValueType rate(0, (1 << (ValueType::NumberOfFractionalBits - 4)));
+        // ~0.03125 (lower than the old 0.0625 for stable convergence).
+        static const ValueType rate(0, (1 << (ValueType::NumberOfFractionalBits - 5)));
         return rate;
     }
 
     static ValueType initialMomentumRate()
     {
-        // Moderate momentum
-        static const ValueType rate(0, (1 << (ValueType::NumberOfFractionalBits - 2)));
+        // ~0.0625 momentum (the old 0.25 was too high and drove divergence).
+        static const ValueType rate(0, (1 << (ValueType::NumberOfFractionalBits - 4)));
         return rate;
     }
 
