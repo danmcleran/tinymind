@@ -44,8 +44,8 @@ struct Task
 {
     static const std::size_t L   = 20;
     static const std::size_t NIN = 1;
-    static const std::size_t NST = 6;
-    static const std::size_t BB  = 8;
+    static const std::size_t NST = 8;
+    static const std::size_t BB  = 16;
 
     typedef tinymind::cfc::CfCCell<NIN, NST, BB> Cell;
     static const std::size_t NReadout = NST + 1;
@@ -57,15 +57,17 @@ struct Task
 
     Task()
     {
-        // Irregular sampling: cumulative time t_cum advances by a varying dt,
-        // target is a continuous decaying sinusoid sampled at those instants.
+        // Irregular sampling: cumulative time t_cum advances by a varying dt.
+        // The cell sees the (normalized) absolute time as input and the per-step
+        // delta dt as the time-gate `ts`; the target is a continuous decaying
+        // sinusoid sampled at those irregular instants.
         double t_cum = 0.0;
         for (std::size_t k = 0; k < L; ++k)
         {
             const double dt = 0.5 + 0.5 * ((k * 7) % 5) / 4.0; // 0.5 .. 1.0, varying
             ts[k]  = dt;
             t_cum += dt;
-            in[k]  = 1.0;
+            in[k]  = 0.2 * t_cum;   // normalized absolute time (~0..3)
             tgt[k] = std::exp(-0.20 * t_cum) * std::sin(0.8 * t_cum);
         }
     }
@@ -142,7 +144,7 @@ int main()
     std::fprintf(lossCsv, "epoch,loss\n");
     std::fprintf(lossCsv, "0,%.8e\n", loss0);
 
-    const int epochs = 4000;
+    const int epochs = 8000;
     for (int e = 1; e <= epochs; ++e)
     {
         tinymind::pinn::sgdStepReverse<Task::NP>(params, velocity, 0.08, 0.9, lossFn);
