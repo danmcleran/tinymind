@@ -19,6 +19,10 @@ The plot scripts share one style module,
 (matplotlib only, headless-safe). The CSV-first contract means you can also drop
 the data into pandas / a spreadsheet and build your own visualizations.
 
+The graphs below use the dark theme to match this site; `make plot` defaults to a
+light theme (readable on any viewer). Set `TINYMIND_PLOT_THEME=dark` to reproduce
+these exactly.
+
 ## Training dynamics
 
 **XOR learning curve** — Q8.8 fixed-point MLP (2→3→1).
