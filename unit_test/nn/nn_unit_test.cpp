@@ -67,6 +67,7 @@ TINYMIND_DISABLE_WARNING_POP
 #include "xavier.hpp"
 
 #include <iostream>
+#include <sstream>
 #include <cstdlib>
 #include <fstream>
 #include <random>
@@ -7598,6 +7599,62 @@ BOOST_AUTO_TEST_CASE(test_case_bench_cycle_counter_monotonic)
     // Cast to signed to tolerate legitimate wrap.
     BOOST_TEST(static_cast<int32_t>(b - a) >= 0);
     BOOST_TEST(acc > 0u); // keep the loop live
+}
+
+// Exercise the EmptyLayerChain terminal accessors (recursion base case of the
+// heterogeneous layer chain) across every value type / policy combination, the
+// inverted-Dropout training-mode path, and two QValue operators that the
+// runtime suites had not otherwise reached -- closing the per-instantiation
+// function-coverage gaps that line coverage cannot reflect.
+BOOST_AUTO_TEST_CASE(test_case_function_coverage_terminal_accessors_and_ops)
+{
+    typedef tinymind::ChainHiddenLayerAccessor<tinymind::EmptyLayerChain> A;
+    tinymind::EmptyLayerChain ec;
+
+    // No-op terminal accessors: instantiate + call all four for each type.
+    auto hit = [&](auto sample) {
+        typedef decltype(sample) V;
+        (void)A::template getBiasNeuronWeightForConnection<V>(ec, 0, 0);
+        (void)A::template getWeightForNeuronAndConnection<V>(ec, 0, 0, 0);
+        A::template setBiasNeuronWeightForConnection<V>(ec, 0, 0, V());
+        A::template setWeightForNeuronAndConnection<V>(ec, 0, 0, 0, V());
+    };
+    hit(double());
+    hit(tinymind::QValue<8, 8, true, tinymind::TruncatePolicy, tinymind::WrapPolicy>());
+    hit(tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy, tinymind::WrapPolicy>());
+    hit(tinymind::QValue<16, 16, true, tinymind::TruncatePolicy, tinymind::WrapPolicy>());
+    hit(tinymind::QValue<8, 24, true, tinymind::RoundUpPolicy, tinymind::WrapPolicy>());
+    hit(tinymind::QValue<8, 24, true, tinymind::TruncatePolicy, tinymind::WrapPolicy>());
+    BOOST_TEST(true);   // accessors are no-ops; reaching here means they ran
+
+    // Inverted dropout training path: forward() in training mode runs
+    // generateMask() + scale() + fromInteger() for each instantiation.
+    {
+        tinymind::Dropout<double, 4, 50> dd;          // ctor leaves training=true
+        double din[4]  = { 1.0, 1.0, 1.0, 1.0 };
+        double dout[4] = { 0.0, 0.0, 0.0, 0.0 };
+        dd.forward(din, dout);
+
+        typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy, tinymind::WrapPolicy> Qv;
+        tinymind::Dropout<Qv, 4, 50> dq;
+        Qv qin[4]  = { Qv(1, 0), Qv(1, 0), Qv(1, 0), Qv(1, 0) };
+        Qv qout[4] = { Qv(0, 0), Qv(0, 0), Qv(0, 0), Qv(0, 0) };
+        dq.forward(qin, qout);
+        BOOST_TEST(true);
+    }
+
+    // QValue<8.8 MinMaxSaturate> assignment-from-short and QValue<16.16> ostream.
+    {
+        tinymind::QValue<8, 8, true, tinymind::TruncatePolicy,
+                         tinymind::MinMaxSaturatePolicy> qsat;
+        qsat = static_cast<short>(3);
+        BOOST_TEST(qsat.getValue() != 0);
+
+        std::ostringstream oss;
+        oss << tinymind::QValue<16, 16, true, tinymind::TruncatePolicy,
+                                tinymind::WrapPolicy>(2, 0);
+        BOOST_TEST(!oss.str().empty());
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

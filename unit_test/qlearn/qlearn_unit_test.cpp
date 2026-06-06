@@ -916,5 +916,17 @@ BOOST_AUTO_TEST_CASE(test_qlearn_future_value_with_no_valid_actions)
     BOOST_TEST(deadEnd == ql.getState());
 }
 
+// Directly exercise QLearningEnvironment::chooseRandomActionFromValidActions on
+// the NullLearningPolicy environment instantiation (otherwise reached only via
+// the epsilon-greedy training path), closing its function-coverage gap.
+BOOST_AUTO_TEST_CASE(test_choose_random_action_from_valid_actions_untrained)
+{
+    action_t validActions[3] = { 1, 3, 5 };
+    const action_t chosen =
+        untrainedQLearner.getEnvironment().chooseRandomActionFromValidActions(validActions, 3);
+    const bool isValid = (chosen == 1) || (chosen == 3) || (chosen == 5);
+    BOOST_TEST(isValid);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
