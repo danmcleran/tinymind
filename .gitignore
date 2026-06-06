@@ -42,3 +42,4 @@ examples/mixed_precision_mlp_int8_qformat/output/
 examples/pinn_heat1d/output/
 examples/ltc_sequence/output/
 examples/cfc_sequence/output/
+examples/qcfc_liquid_int8/output/
