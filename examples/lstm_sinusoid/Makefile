@@ -14,5 +14,11 @@ release :
 	$(MKDIR)
 	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
 
+run :
+	cd ./output && ./lstm_sinusoid && cd ../
+
 clean :
 	rm -f ./output/*
+
+plot :
+	python3 plot.py

@@ -73,8 +73,8 @@ int main()
 
     tinymind::EarlyStopping<ValueType, 5000> stopper;
 
-    std::ofstream results("gru_xor_results.txt");
-    results << "Iteration,Target,Learned,Error" << std::endl;
+    std::ofstream results("gru_xor_results.csv");
+    results << "iteration,target,learned,error" << std::endl;
 
     for (unsigned i = 0; i < TRAINING_ITERATIONS; ++i)
     {

@@ -55,6 +55,10 @@ int main(const int argc, char *argv[])
 
     char const* const path = "kan_fixed_xor.txt";
     ofstream results(path);
+
+    // Learning curve CSV (iteration, avg_error) for plot.py.
+    ofstream curve("kan_xor_training.csv");
+    curve << "iteration,avg_error" << std::endl;
     ValueType values[KanNetworkType::NumberOfInputLayerNeurons];
     ValueType output[KanNetworkType::NumberOfOutputLayerNeurons];
     ValueType learnedValues[KanNetworkType::NumberOfOutputLayerNeurons];
@@ -81,6 +85,7 @@ int main(const int argc, char *argv[])
         {
             avgError = avgError / ValueType(NUM_SAMPLES_AVG_ERROR, 0);
             cout << "Iteration: " << (i + 1) << " Average Error: " << avgError << endl;
+            curve << (i + 1) << "," << avgError << std::endl;
             lastAvgError = avgError;
             avgError = ValueType(0U);
         }

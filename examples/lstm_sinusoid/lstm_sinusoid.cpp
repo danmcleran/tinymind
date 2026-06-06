@@ -101,8 +101,8 @@ int main()
     std::cout << "Training complete. Final error: " << error << std::endl;
 
     // Auto-regressive prediction
-    std::ofstream results("lstm_sinusoid_prediction.txt");
-    results << "Step,True,Predicted" << std::endl;
+    std::ofstream results("lstm_sinusoid.csv");
+    results << "step,true,predicted" << std::endl;
 
     // Seed with first sample
     ValueType curr = sinSamples[0];
@@ -117,7 +117,12 @@ int main()
         const size_t trueIdx = (p + 1) % NUM_SAMPLES;
         const double trueValue = sinSamplesDouble[trueIdx];
 
-        results << p << "," << trueValue << "," << learnedValues[0] << std::endl;
+        // Emit the prediction as a real value on the same [0, 1] scale as the
+        // ground truth (learnedValues[0] is raw Q8.8; divide out the fraction).
+        const double predValue =
+            static_cast<double>(learnedValues[0].getValue()) /
+            static_cast<double>(1 << ValueType::NumberOfFractionalBits);
+        results << p << "," << trueValue << "," << predValue << std::endl;
 
         // Feed prediction as next input (auto-regressive)
         curr = learnedValues[0];
