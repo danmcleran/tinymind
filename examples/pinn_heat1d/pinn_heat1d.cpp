@@ -144,7 +144,7 @@ namespace train {
 static const double PI = 3.14159265358979323846;
 static const double T_MAX = 0.30;
 
-static const std::size_t H  = 8;                          // hidden units
+static const std::size_t H  = 12;                         // hidden units
 typedef tinymind::pinn::PinnMlp<2, H, 1> Net;             // reusable PINN net
 static const std::size_t NP = Net::NumParams;             // 4H + 1
 
@@ -280,7 +280,7 @@ int run()
     }
 
     const double lr = 0.004, momentum = 0.85;
-    const int epochs = 3000;
+    const int epochs = 8000;
 
     const double loss0 = loss(p);
     const double err0 = solutionError(p);
