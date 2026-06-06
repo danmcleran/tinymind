@@ -211,6 +211,9 @@ typedef NeuralNet<XorNNProperties> XorNN;
 
 ### Examples (`examples/`)
 
+Every runnable example writes a header-row CSV to its `output/` directory and ships a `plot.py` that renders the network behavior via the shared style module `examples/plotting/tinymind_plot.py` (matplotlib only, headless-safe Agg fallback, PNG save). `make plot` in each example dir. The CSV-first contract keeps the numbers owned by the C++ side so users can build their own visualizations. `unit_test/nn/nn_plot.py` is the generic per-column network-trajectory viewer (Dan McLeran copyright; rewritten from the original Intel/unstyled version). matplotlib should be installed into an isolated env (venv/pyenv), never the system Python.
+
+
 - **`xor/`** — XOR gate learned by a small neural network; includes a Python plotting script
 - **`maze/`** and **`dqn_maze/`** — Maze solving via Q-learning and deep Q-networks
 - **`pytorch/`** — Exports weights from a PyTorch model and imports them into a TinyMind C++ network for inference (Q-format pipeline)

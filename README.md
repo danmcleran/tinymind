@@ -791,6 +791,18 @@ These are pointer-shaped structs over a caller-owned flat parameter array, so th
 
 The int8 `QCfCCell<...,2,3,4>` deployable form is 120 bytes of parameters (68 `int8` weights + 13 `int32` biases) plus the two 256-entry sigmoid/tanh LUTs (512 bytes) shared across the whole model. See [docs/size-comparison.md](docs/size-comparison.md#liquid-cells-continuous-time-ltc--cfc) for the full breakdown and the measurement-basis note.
 
+## Visualizing the examples
+
+Every runnable example writes a **header-row CSV** to its `output/` directory and ships a small `plot.py` that renders an appealing graph of the network's behavior (learning curves, fit overlays, int8-vs-float parity, decision surfaces, per-layer cost/footprint bars, RL trajectories, confusion matrices, PDE fields). The C++ side owns the numbers; the Python side only visualizes — so you can drop the CSV into pandas / a spreadsheet / your own tooling and ignore the scripts.
+
+```bash
+cd examples/ltc_sequence && make run && make plot   # writes output/*.csv and a PNG
+```
+
+The plot scripts share one style module, [`examples/plotting/tinymind_plot.py`](examples/plotting/tinymind_plot.py) (matplotlib only; headless-safe — it falls back to the Agg backend and just writes the PNG when there is no display). `unit_test/nn/nn_plot.py` is the generic per-column network-trajectory viewer (`make plot-trajectory` in `examples/xor`).
+
+matplotlib is the only extra dependency; install it into an isolated environment (e.g. `python3 -m venv` or pyenv) rather than the system Python.
+
 ## Building
 
 ### Requirements
