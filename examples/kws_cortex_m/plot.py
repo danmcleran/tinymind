@@ -48,7 +48,7 @@ def main():
                  fontsize=14, fontweight="bold")
 
     tp.bars(ax1, names, cycles, ylabel="cycles / call (host: ns)")
-    ax1.set_title("compute cost per layer", fontsize=10, color="#555")
+    ax1.set_title("compute cost per layer", fontsize=10, color=tp.MUTED)
 
     xs = list(range(len(names)))
     ax2.bar(xs, wbytes, width=0.66, label="weight bytes",
@@ -58,7 +58,7 @@ def main():
     ax2.set_xticks(xs)
     ax2.set_xticklabels(names, rotation=20, ha="right")
     ax2.set_ylabel("bytes")
-    ax2.set_title("memory footprint per layer", fontsize=10, color="#555")
+    ax2.set_title("memory footprint per layer", fontsize=10, color=tp.MUTED)
     ax2.legend()
     ax2.margins(y=0.15)
 

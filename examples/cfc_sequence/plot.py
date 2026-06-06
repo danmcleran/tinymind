@@ -44,12 +44,12 @@ def main():
 
     tp.line(ax1, loss["epoch"], {"training loss": loss["loss"]},
             xlabel="epoch", ylabel="MSE loss", logy=True)
-    ax1.set_title("reverse-mode autodiff training", fontsize=10, color="#555")
+    ax1.set_title("reverse-mode autodiff training", fontsize=10, color=tp.MUTED)
 
     tp.line(ax2, fit["t"],
             {"target": fit["target"], "predicted": fit["predicted"]},
             xlabel="time step", ylabel="output", markers=True)
-    ax2.set_title("irregularly-sampled target fit (ts varies per step)", fontsize=10, color="#555")
+    ax2.set_title("irregularly-sampled target fit (ts varies per step)", fontsize=10, color=tp.MUTED)
 
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     out = tp.png_for(FIT, "_behavior")

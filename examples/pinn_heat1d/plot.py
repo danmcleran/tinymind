@@ -48,7 +48,7 @@ def main():
     tp.line(ax1, loss["epoch"],
             {"PINN residual loss": loss["loss"], "solution L2 error": loss["sol_l2"]},
             xlabel="epoch", ylabel="value", logy=True)
-    ax1.set_title("training (exact-autodiff residual)", fontsize=10, color="#555")
+    ax1.set_title("training (exact-autodiff residual)", fontsize=10, color=tp.MUTED)
 
     tp.line(ax2, sol["x"], {
         "learned u(x, T/2)": sol["u_pred_mid"],
@@ -56,7 +56,7 @@ def main():
         "learned u(x, T)": sol["u_pred_end"],
         "analytic u(x, T)": sol["u_analytic_end"],
     }, xlabel="x", ylabel="u(x, t)")
-    ax2.set_title("learned field vs analytic solution", fontsize=10, color="#555")
+    ax2.set_title("learned field vs analytic solution", fontsize=10, color=tp.MUTED)
 
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     out = tp.png_for(SOL, "_behavior")

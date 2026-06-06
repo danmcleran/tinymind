@@ -47,7 +47,7 @@ def main():
                    cmap="RdBu_r", vmin=0.0, vmax=1.0, aspect="auto")
     ax.contour(
         [i / (g - 1) for i in range(g)], [i / (g - 1) for i in range(g)],
-        grid, levels=[0.5], colors="#222", linewidths=1.5)
+        grid, levels=[0.5], colors=tp.FG, linewidths=1.5)
     # XOR ground-truth corners.
     for (cx, cy, lbl) in [(0, 0, 0), (0, 1, 1), (1, 0, 1), (1, 1, 0)]:
         ax.scatter([cx], [cy], s=160, edgecolor="white", linewidth=1.5,

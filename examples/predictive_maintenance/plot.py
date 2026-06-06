@@ -54,7 +54,7 @@ def main():
 
     tp.line(ax1, loss["iter"], {"avg |error|": loss["avg_err"]},
             xlabel="training iteration", ylabel="average |error|")
-    ax1.set_title("training loss", fontsize=10, color="#555")
+    ax1.set_title("training loss", fontsize=10, color=tp.MUTED)
 
     im = ax2.imshow(mat, cmap="Blues")
     ax2.set_xticks([0, 1]); ax2.set_xticklabels(["pred no-fail", "pred fail"])
@@ -66,7 +66,7 @@ def main():
                      color="white" if mat[r][c] > vmax / 2 else "#222",
                      fontsize=12, fontweight="bold")
     ax2.set_title("test confusion  (acc=%.3f  P=%.3f  R=%.3f  F1=%.3f)"
-                  % (acc, prec, rec, f1), fontsize=9, color="#555")
+                  % (acc, prec, rec, f1), fontsize=9, color=tp.MUTED)
     ax2.grid(False)
     fig.colorbar(im, ax=ax2, fraction=0.046, pad=0.04)
 

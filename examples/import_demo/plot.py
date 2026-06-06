@@ -45,12 +45,12 @@ def main():
 
     tp.line(ax1, idx, {"float reference": fl, "int8 dequantized": q},
             xlabel="output element", ylabel="value", markers=len(idx) <= 32)
-    ax1.set_title("output overlay", fontsize=10, color="#555")
+    ax1.set_title("output overlay", fontsize=10, color=tp.MUTED)
 
     ax2.bar(idx, err, color=tp.PALETTE[3], width=0.9)
     ax2.set_xlabel("output element")
     ax2.set_ylabel("|int8 - float|")
-    ax2.set_title("per-element quantization error", fontsize=10, color="#555")
+    ax2.set_title("per-element quantization error", fontsize=10, color=tp.MUTED)
 
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     out = tp.png_for(CSV)

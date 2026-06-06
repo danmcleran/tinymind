@@ -69,31 +69,56 @@ PALETTE = [
     "#64B5CD",  # cyan
 ]
 
-_FG = "#222222"
-_GRID = "#D9D9D9"
+# Theme: "light" (default, readable on any viewer) or "dark" (matches the
+# dark just-the-docs GitHub Pages site). Select with TINYMIND_PLOT_THEME=dark.
+# FG / MUTED / BG / GRID are exposed so scripts can pick theme-aware element
+# colors (e.g. contour lines, subtitle text).
+FG = "#222222"
+MUTED = "#555555"
+BG = "white"
+GRID = "#D9D9D9"
+
+
+def _set_theme(theme):
+    global FG, MUTED, BG, GRID
+    if theme == "dark":
+        FG, MUTED, BG, GRID = "#e8e8e8", "#a8a8a8", "#1b1b1d", "#3a3a3a"
+    else:
+        FG, MUTED, BG, GRID = "#222222", "#555555", "white", "#D9D9D9"
+
+
+_set_theme(os.environ.get("TINYMIND_PLOT_THEME", "light").lower())
 
 
 def apply_style():
-    """Apply the shared TinyMind matplotlib style. Idempotent."""
+    """Apply the shared TinyMind matplotlib style. Idempotent.
+
+    Honors TINYMIND_PLOT_THEME (re-read each call so it can be set before the
+    first plot). The saved PNG carries the theme background so it looks right
+    standalone and embedded.
+    """
+    _set_theme(os.environ.get("TINYMIND_PLOT_THEME", "light").lower())
     plt.rcParams.update({
-        "figure.facecolor": "white",
-        "axes.facecolor": "white",
-        "axes.edgecolor": _FG,
-        "axes.labelcolor": _FG,
+        "figure.facecolor": BG,
+        "axes.facecolor": BG,
+        "savefig.facecolor": BG,
+        "axes.edgecolor": FG,
+        "axes.labelcolor": FG,
+        "axes.titlecolor": FG,
         "axes.titlesize": 12,
         "axes.titleweight": "bold",
         "axes.labelsize": 10,
         "axes.grid": True,
         "axes.axisbelow": True,
         "axes.prop_cycle": plt.cycler(color=PALETTE),
-        "grid.color": _GRID,
+        "grid.color": GRID,
         "grid.linewidth": 0.8,
         "grid.alpha": 0.9,
-        "xtick.color": _FG,
-        "ytick.color": _FG,
+        "xtick.color": FG,
+        "ytick.color": FG,
         "xtick.labelsize": 9,
         "ytick.labelsize": 9,
-        "text.color": _FG,
+        "text.color": FG,
         "legend.frameon": False,
         "legend.fontsize": 9,
         "lines.linewidth": 2.0,
@@ -143,7 +168,7 @@ def new_fig(title, subtitle=None, figsize=(9, 5.2)):
     fig, ax = plt.subplots(figsize=figsize)
     if subtitle:
         fig.suptitle(title, fontsize=14, fontweight="bold", y=0.98)
-        ax.set_title(subtitle, fontsize=10, fontweight="normal", color="#555555")
+        ax.set_title(subtitle, fontsize=10, fontweight="normal", color=MUTED)
     else:
         ax.set_title(title, fontsize=14)
     return fig, ax

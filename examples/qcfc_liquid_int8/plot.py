@@ -42,11 +42,11 @@ def main():
     tp.line(ax1, cols["step"],
             {"float h[0]": cols["h0_float"], "int8 h[0]": cols["h0_int8"]},
             xlabel="time step", ylabel="hidden state", markers=True)
-    ax1.set_title("recurrent state tracking", fontsize=10, color="#555")
+    ax1.set_title("recurrent state tracking", fontsize=10, color=tp.MUTED)
 
     tp.line(ax2, cols["step"], {"max |int8 - float|": cols["max_abs_err"]},
             xlabel="time step", ylabel="abs error", markers=True)
-    ax2.set_title("per-step quantization error", fontsize=10, color="#555")
+    ax2.set_title("per-step quantization error", fontsize=10, color=tp.MUTED)
 
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     out = tp.png_for(CSV, "_behavior")
