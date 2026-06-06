@@ -146,7 +146,7 @@ int main()
 
     // Reverse-mode training: gradient w.r.t. all NP params in one backward pass.
     const double lr = 0.05, momentum = 0.9;
-    const int epochs = 600;
+    const int epochs = 3000;
     double loss0 = task.loss<double>(params);
     std::printf("LTC cell: NumParams=%zu (cell=%zu + readout=%zu), seq=%zu\n",
                 Task::NP, Task::Cell::NumParams, Task::NReadout, Task::L);
