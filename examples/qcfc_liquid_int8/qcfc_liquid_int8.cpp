@@ -116,9 +116,59 @@ int32_t b_bb_q[BB], b_ff1_q[H], b_ff2_q[H], b_time_q[H];
 int8_t  sigmoid_lut[256], tanh_lut[256];
 Cell    gCell;
 
-const float x_scale = 1.0f / 127.0f;
-const float h_scale = 1.0f / 127.0f;
-const float lut_scale = 8.0f / 127.0f;
+float x_scale   = 1.0f / 127.0f;   // set by calibrateScales()
+float h_scale   = 1.0f / 127.0f;   // set by calibrateScales()
+float lut_scale = 8.0f / 127.0f;   // set by calibrateScales()
+
+// Calibrate the input, hidden-state, and shared LUT-input scales from the float
+// reference so the int8 grid actually resolves every signal. The hand-crafted
+// weights here are small, so the activations and pre-activations are small
+// (~0.03 hidden, ~0.2 pre-activation); the naive 1/127 and 8/127 scales would
+// quantize them to a few LSB and collapse all dynamics. Observing the real
+// ranges (a RangeObserver pass) is exactly what a deployment does.
+void calibrateScales()
+{
+    float x_absmax = 1e-6f, h_absmax = 1e-6f, p_absmax = 1e-6f;
+    float h[H] = {0};
+    for (std::size_t t = 0; t < L; ++t)
+    {
+        const float* x = seqIn[t];
+        for (std::size_t i = 0; i < I; ++i)
+            x_absmax = std::fmax(x_absmax, std::fabs(x[i]));
+
+        // Backbone trunk + its pre-activations.
+        float x1[BB];
+        for (std::size_t u = 0; u < BB; ++u)
+        {
+            float z = b_bb[u];
+            for (std::size_t j = 0; j < I; ++j) z += w_bin[u * I + j] * x[j];
+            for (std::size_t k = 0; k < H; ++k) z += w_bh[u * H + k] * h[k];
+            p_absmax = std::fmax(p_absmax, std::fabs(z));
+            x1[u] = std::tanh(z);
+        }
+        // Head + time-gate pre-activations.
+        for (std::size_t i = 0; i < H; ++i)
+        {
+            float a1 = b_ff1[i], a2 = b_ff2[i], aA = b_a[i], aB = b_b[i];
+            for (std::size_t u = 0; u < BB; ++u)
+            {
+                a1 += w_ff1[i * BB + u] * x1[u];
+                a2 += w_ff2[i * BB + u] * x1[u];
+                aA += w_ta [i * BB + u] * x1[u];
+                aB += w_tb [i * BB + u] * x1[u];
+            }
+            p_absmax = std::fmax(p_absmax, std::fmax(std::fabs(a1), std::fabs(a2)));
+            p_absmax = std::fmax(p_absmax, std::fabs(aA * static_cast<float>(TS) + aB));
+        }
+
+        floatCfcStep(x, h);   // advances the float reference state
+        for (std::size_t i = 0; i < H; ++i)
+            h_absmax = std::fmax(h_absmax, std::fabs(h[i]));
+    }
+    x_scale   = x_absmax / 127.0f;
+    h_scale   = h_absmax / 127.0f;
+    lut_scale = p_absmax / 127.0f;
+}
 
 float absmax(const float* p, std::size_t n)
 {
@@ -233,8 +283,12 @@ int runParity()
                 I, H, BB, L, TS);
     std::printf("  weight bytes        : %zu (+ %zu LUT, shared)\n",
                 weightBytes(), sizeof(sigmoid_lut) + sizeof(tanh_lut));
-    std::printf("  worst max-abs error vs float (hidden range ~2.0) = %.6f\n", maxErr);
-    const bool pass = (maxErr < 0.06f);
+    const float h_range = h_scale * 255.0f;   // int8 hidden dynamic range
+    std::printf("  calibrated scales: x=%.5f  h=%.5f  lut_in=%.5f\n",
+                x_scale, h_scale, lut_scale);
+    std::printf("  worst max-abs error vs float = %.6f  (%.1f%% of the %.4f hidden range)\n",
+                maxErr, 100.0f * maxErr / h_range, h_range);
+    const bool pass = (maxErr < 0.10f * h_range);   // within 10% of the hidden range
     std::printf("%s\n", pass ? "PASS" : "FAIL");
     return pass ? 0 : 1;
 }
@@ -276,6 +330,7 @@ int runGolden()
 int main(int argc, char** argv)
 {
     initData();
+    calibrateScales();
     calibrate();
     if (argc > 1 && std::strcmp(argv[1], "--bench") == 0)  return runBench();
     if (argc > 1 && std::strcmp(argv[1], "--golden") == 0) return runGolden();
