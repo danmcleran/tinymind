@@ -20,8 +20,8 @@ run :
 	cd ./output && ./maze && cd ../
 
 plot :
-	python3 ./mazeplot.py output/maze_training.txt &
-	python3 ./mazeplot.py output/maze_test.txt &
+	python3 ./mazeplot.py output/maze_training.csv
+	python3 ./mazeplot.py output/maze_test.csv
 
 clean:
 	rm -f ./output/*

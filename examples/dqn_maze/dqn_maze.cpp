@@ -77,7 +77,7 @@ int main(const int argc, char *argv[])
     ofstream logFile;
     size_t randomActionDecisionPoint;
 
-    logFile.open("dqn_maze_training.txt");
+    logFile.open("dqn_maze_training.csv");
     if(!logFile.is_open())
     {
         cerr << "Failed to open output file." << endl;
@@ -166,7 +166,7 @@ int main(const int argc, char *argv[])
     }
 
     logFile.close();
-    logFile.open("dqn_maze_test.txt");
+    logFile.open("dqn_maze_test.csv");
     if(!logFile.is_open())
     {
         cerr << "Failed to open output file." << endl;

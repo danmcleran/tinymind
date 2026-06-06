@@ -22,8 +22,8 @@ run :
 	cd ./output && ./dqn_maze && cd ../
 
 plot :
-	python3 ./dqn_mazeplot.py output/dqn_maze_training.txt &
-	python3 ./dqn_mazeplot.py output/dqn_maze_test.txt &
+	python3 ./dqn_mazeplot.py output/dqn_maze_training.csv
+	python3 ./dqn_mazeplot.py output/dqn_maze_test.csv
 
 clean:
 	rm -f ./output/*
