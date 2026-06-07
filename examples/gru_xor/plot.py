@@ -20,10 +20,10 @@
 # SOFTWARE.
 #
 
-"""GRU XOR learning curve from output/gru_xor_results.csv (per-iteration error).
+"""GRU XOR learning curve from output/gru_xor_results.csv.
 
-The raw per-iteration error is noisy (4 XOR patterns cycle); a moving average
-makes the convergence trend legible alongside the raw signal.
+Plots the deterministic 4-case XOR error (state reset before each case) sampled
+through training -- a clean convergence signal, not the noisy per-sample error.
 """
 
 import os
@@ -36,27 +36,12 @@ import tinymind_plot as tp  # noqa: E402
 CSV = os.path.join(HERE, "output", "gru_xor_results.csv")
 
 
-def moving_avg(xs, w):
-    out, acc = [], 0.0
-    from collections import deque
-    win = deque()
-    for x in xs:
-        win.append(abs(x)); acc += abs(x)
-        if len(win) > w:
-            acc -= win.popleft()
-        out.append(acc / len(win))
-    return out
-
-
 def main():
     cols, _ = tp.read_csv(CSV)
-    it, err = cols["iteration"], cols["error"]
     fig, ax = tp.new_fig("GRU XOR learning curve",
-                         "GRU recurrent net (2->3->1), Q-format")
-    tp.line(ax, it, {"|error| (raw)": [abs(e) for e in err],
-                     "moving avg (200)": moving_avg(err, 200)},
-            xlabel="training iteration", ylabel="|error|")
-    ax.lines[0].set_alpha(0.35)
+                         "GRU recurrent net (2->8->1), Q16.16, state reset per sample")
+    tp.line(ax, cols["iteration"], {"4-case XOR error": cols["xor_error"]},
+            xlabel="training iteration", ylabel="average |error|")
     tp.finish(fig, tp.png_for(CSV))
 
 
