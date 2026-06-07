@@ -57,10 +57,14 @@ namespace tinymind {
         static ValueType activationFunctionDerivative(const ValueType& value)
         {
             (void)value; // suppress unused parameter warning
-            return 1;
+            // Must be a real 1.0, not the raw field value 1: the single-arg
+            // QValue ctor treats its argument as the raw fixed-point field, so
+            // a bare `return 1` yields 2^-frac (~0.0000153 in Q16.16), which
+            // starves every weight update flowing through a linear output layer.
+            return Constants<ValueType>::one();
         }
     };
-    
+
     template<typename ValueType>
     struct ReluActivationPolicy
     {

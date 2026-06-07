@@ -32,6 +32,12 @@ check :
 	cd unit_test/integration && make clean && make && make run && cd -
 	cd examples/pytorch_quant/xor && make clean && make && make release && make run && cd -
 	cd examples/import_demo && make clean && make && make release && make run && cd -
+	cd examples/iris && make clean && make release && make run && cd -
+	cd examples/energy_efficiency && make clean && make release && make run && cd -
+	cd examples/optical_digits && make clean && make release && make run && cd -
+	cd examples/har_activity && make clean && make release && make run && cd -
+	cd examples/gas_sensor_drift && make clean && make release && make run && cd -
+	cd examples/air_quality && make clean && make release && make run && cd -
 	cd examples/perf_matrix && make clean && make && make report && cd -
 	cd apps/activation && make clean && make && make release && cd -
 

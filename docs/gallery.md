@@ -55,6 +55,30 @@ these exactly.
 **MobileNetV2-shaped pipeline (int8)** — logit parity vs the float reference.
 ![MobileNetV2 int8 parity]({{ site.baseurl }}/assets/plots/mobilenetv2_int8_parity.png)
 
+## UCI dataset solutions
+
+End-to-end examples on real (or documented-synthetic) UCI datasets — see the
+[UCI Dataset Capability Report]({{ site.baseurl }}/uci_dataset_capability_report)
+for the full dataset → capability survey.
+
+**Iris** — Q16.16 MLP (4→8→3) species classifier; training loss, test confusion, petal-space predictions.
+![Iris classifier]({{ site.baseurl }}/assets/plots/iris_classifier.png)
+
+**Energy Efficiency** — Q16.16 MLP (8→16→2) regression of building heating/cooling load; predicted vs actual.
+![Energy efficiency regression]({{ site.baseurl }}/assets/plots/energy_efficiency.png)
+
+**Optical digits** — Q16.16 MLP (64→32→10) on 8×8 handwritten-digit bitmaps; loss + 10×10 confusion.
+![Optical digit classifier]({{ site.baseurl }}/assets/plots/optical_digits.png)
+
+**Human activity recognition** — recurrent `LstmNeuralNetwork` (3→16→4) over tri-axial accelerometer windows.
+![HAR activity classifier]({{ site.baseurl }}/assets/plots/har_activity.png)
+
+**Gas sensor array drift** — MLP (128→32→6) trained on batch 1; accuracy decays across later batches as sensors drift.
+![Gas sensor drift]({{ site.baseurl }}/assets/plots/gas_sensor_drift.png)
+
+**Air quality forecasting** — recurrent LSTM (1→16→1) one-step-ahead hourly pollutant forecast.
+![Air quality forecast]({{ site.baseurl }}/assets/plots/air_quality_forecast.png)
+
 ## Cost & performance
 
 **KWS pipeline per-layer cost** — compute cost + stacked weight/activation footprint per layer.

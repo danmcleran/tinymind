@@ -43,7 +43,16 @@ examples/pinn_heat1d/output/
 examples/ltc_sequence/output/
 examples/cfc_sequence/output/
 examples/qcfc_liquid_int8/output/
+examples/iris/output/
+examples/energy_efficiency/output/
+examples/optical_digits/output/
+examples/har_activity/output/
+examples/gas_sensor_drift/output/
+examples/air_quality/output/
 
 # Python bytecode from example plot scripts
 __pycache__/
 *.pyc
+
+# Local matplotlib venv for rendering example plots (not part of the repo)
+.venv-plot/
