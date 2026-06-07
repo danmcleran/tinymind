@@ -30,5 +30,4 @@ plots on these pages use the dark theme to match this site; `make plot` defaults
 to a light theme — set `TINYMIND_PLOT_THEME=dark` to reproduce them exactly.
 
 See the [Example Gallery]({{ site.baseurl }}/gallery) for every plot at a glance,
-or pick an example from the navigation. Dataset-driven examples are surveyed in
-the [UCI Dataset Capability Report]({{ site.baseurl }}/uci_dataset_capability_report).
+or pick an example from the navigation.
