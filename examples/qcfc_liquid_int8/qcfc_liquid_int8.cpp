@@ -52,8 +52,9 @@ namespace {
 constexpr std::size_t I  = 3;    // inputs
 constexpr std::size_t H  = 6;    // hidden / state width
 constexpr std::size_t BB = 8;    // backbone width
-constexpr std::size_t L  = 16;   // sequence length
+constexpr std::size_t L  = 24;   // sequence length (3 cycles of the input wave)
 constexpr double      TS = 1.0;  // elapsed time per step (regular sampling)
+constexpr double      PERIOD = 8.0;  // input-wave period in steps
 
 typedef tinymind::QCfCCell<int8_t, int8_t, int32_t, int8_t, I, H, BB> Cell;
 
@@ -76,8 +77,19 @@ void initData()
     for (std::size_t i = 0; i < H * BB; ++i) { w_ff1[i]=nxt(); w_ff2[i]=nxt(); w_ta[i]=nxt(); w_tb[i]=nxt(); }
     for (std::size_t i = 0; i < BB; ++i) b_bb[i] = nxt();
     for (std::size_t i = 0; i < H; ++i) { b_ff1[i]=nxt(); b_ff2[i]=nxt(); b_a[i]=nxt(); b_b[i]=nxt(); }
+
+    // Structured input: three phase-shifted sinusoids (120 deg apart). A real
+    // driving signal gives the recurrent state a meaningful two-sided dynamic
+    // range, so the int8 grid is exercised across its span and the parity plot
+    // shows the int8 trajectory riding a true curve rather than dithering around
+    // a tiny structureless band. The wave amplitude (0.8) is large enough that
+    // the backbone tanh is genuinely exercised, not pinned near its linear knee.
+    const double pi = 3.14159265358979323846;
     for (std::size_t t = 0; t < L; ++t)
-        for (std::size_t i = 0; i < I; ++i) seqIn[t][i] = nxt();
+        for (std::size_t i = 0; i < I; ++i)
+            seqIn[t][i] = 0.8f * static_cast<float>(
+                std::sin(2.0 * pi * static_cast<double>(t) / PERIOD
+                         + static_cast<double>(i) * 2.0 * pi / static_cast<double>(I)));
 }
 
 // Float CfC reference matching the int8 cell's exact computation graph.
@@ -121,11 +133,11 @@ float h_scale   = 1.0f / 127.0f;   // set by calibrateScales()
 float lut_scale = 8.0f / 127.0f;   // set by calibrateScales()
 
 // Calibrate the input, hidden-state, and shared LUT-input scales from the float
-// reference so the int8 grid actually resolves every signal. The hand-crafted
-// weights here are small, so the activations and pre-activations are small
-// (~0.03 hidden, ~0.2 pre-activation); the naive 1/127 and 8/127 scales would
-// quantize them to a few LSB and collapse all dynamics. Observing the real
-// ranges (a RangeObserver pass) is exactly what a deployment does.
+// reference so the int8 grid actually resolves every signal. A single absmax
+// pass over the driven sequence (input, hidden state, and every pre-activation)
+// sets each scale to the true observed range -- exactly the RangeObserver pass a
+// deployment runs. Calibrating to the real range rather than a naive 1/127 is
+// what keeps the int8 grid spanning the signal instead of wasting most codes.
 void calibrateScales()
 {
     float x_absmax = 1e-6f, h_absmax = 1e-6f, p_absmax = 1e-6f;

@@ -292,7 +292,7 @@ The [`examples/ltc_sequence/`](https://github.com/danmcleran/tinymind/tree/maste
 
 ![int8 QCfC parity]({{ site.baseurl }}/assets/plots/qcfc_int8_parity.png)
 
-The int8 [`examples/qcfc_liquid_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/qcfc_liquid_int8) deployment exemplar tracks the float reference within ~0.04. See the [Example Gallery]({{ site.baseurl }}/gallery) for more.
+The int8 [`examples/qcfc_liquid_int8/`](https://github.com/danmcleran/tinymind/tree/master/examples/qcfc_liquid_int8) deployment exemplar tracks the float reference within ~2% of the hidden state's dynamic range — a few int8 LSBs. See the [Example Gallery]({{ site.baseurl }}/gallery) for more.
 
 # Int8 Quantized Counterparts
 
