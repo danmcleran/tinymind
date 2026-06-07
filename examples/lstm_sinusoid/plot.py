@@ -20,7 +20,7 @@
 # SOFTWARE.
 #
 
-"""LSTM auto-regressive sinusoid prediction vs ground truth."""
+"""LSTM sinusoid prediction vs ground truth: one-step-ahead and free-run."""
 
 import os
 import sys
@@ -34,10 +34,13 @@ CSV = os.path.join(HERE, "output", "lstm_sinusoid.csv")
 
 def main():
     cols, _ = tp.read_csv(CSV)
-    fig, ax = tp.new_fig("LSTM auto-regressive sinusoid prediction",
-                         "fed its own output back as the next input")
+    fig, ax = tp.new_fig(
+        "LSTM sinusoid prediction (Q16.16)",
+        "one-step-ahead tracks tightly; auto-regressive free-run drifts")
     tp.line(ax, cols["step"],
-            {"ground truth": cols["true"], "LSTM prediction": cols["predicted"]},
+            {"ground truth": cols["true"],
+             "one-step-ahead": cols["one_step"],
+             "free-run (auto-regressive)": cols["free_run"]},
             xlabel="prediction step", ylabel="value", markers=False)
     tp.finish(fig, tp.png_for(CSV))
 
