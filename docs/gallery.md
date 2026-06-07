@@ -26,7 +26,7 @@ these exactly.
 
 ## Training dynamics
 
-**XOR learning curve** — Q8.8 fixed-point MLP (2→3→1).
+**XOR learning curve** — Q16.16 fixed-point MLP (2→4→1).
 ![XOR learning curve]({{ site.baseurl }}/assets/plots/xor_learning_curve.png)
 
 **KAN XOR learning curve** — Kolmogorov-Arnold network with learnable B-spline edges.

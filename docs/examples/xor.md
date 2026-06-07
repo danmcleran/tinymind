@@ -11,8 +11,8 @@ Trains a small multilayer perceptron to learn the classic non-linearly-separable
 
 ## How it works
 
-- Q8.8 signed fixed-point MLP with a 2 -> 3 -> 1 topology (`tinymind::MultilayerPerceptron`), tanh hidden activation and sigmoid output.
-- Demonstrates that backpropagation converges in pure Q8.8 fixed-point with no FPU: weights, activations, and gradients are all `QValue<8, 8>`.
+- Q16.16 signed fixed-point MLP with a 2 -> 4 -> 1 topology (`tinymind::MultilayerPerceptron`), tanh hidden activation and sigmoid output.
+- Demonstrates that backpropagation converges in pure fixed-point with no FPU: weights, activations, and gradients are all `QValue<16, 16>`. (The original Q8.8 / 3-neuron build worked but lurched through the XOR saddle-point plateau before snapping to a solution; Q16.16 with a 4-neuron hidden layer descends smoothly.)
 - A deterministic validation pass over the four canonical XOR cases (0/0, 0/1, 1/0, 1/1) is logged every 100 iterations, giving a clean convergence signal instead of the noisy random-sample error.
 
 ## Build and run
@@ -30,6 +30,6 @@ make plot      # needs matplotlib in an isolated env (venv/pyenv)
 
 ![XOR fixed-point MLP learning curve]({{ site.baseurl }}/assets/plots/xor_learning_curve.png)
 
-The curve plots the mean absolute error over the four XOR cases against training iteration. It sits near the symmetric-guess plateau early on, breaks through the 0.25 partial-solution level, and snaps to essentially zero error once the Q8.8 network has fully separated the XOR pattern, confirming convergence in fixed point.
+The curve plots the mean absolute error over the four XOR cases against training iteration. It descends smoothly from the symmetric-guess level (~0.5) and settles within ~1000 iterations. All four patterns are then classified correctly with clear margins (predictions ≈ 0.09 / 0.91); the residual ~0.09 is just the sigmoid output not fully saturating to 0/1 under the MSE objective.
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/xor)
