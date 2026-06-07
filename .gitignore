@@ -56,3 +56,9 @@ __pycache__/
 
 # Local matplotlib venv for rendering example plots (not part of the repo)
 .venv-plot/
+
+# graphify: machine-specific paths + regenerable caches (keep the graph artifacts)
+graphify-out/.graphify_python
+graphify-out/.graphify_root
+graphify-out/cost.json
+graphify-out/cache/
