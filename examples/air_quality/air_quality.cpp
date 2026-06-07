@@ -50,6 +50,7 @@
 #include <cmath>
 
 #include "qformat.hpp"
+#include "constants.hpp"
 #include "neuralnet.hpp"
 #include "activationFunctions.hpp"
 #include "fixedPointTransferFunctions.hpp"
@@ -57,11 +58,11 @@
 #include "teacherForcing.hpp"
 #include "truncatedBPTT.hpp"
 
-#define TRAINING_EPOCHS 8000U
+#define TRAINING_EPOCHS 15000U
 #define NUM_SAMPLES 2400U     // 100 days of hourly samples
 #define HOURS_PER_DAY 24U
 #define HOLDOUT_HOURS 200U    // last 200 hours held out for one-step eval
-#define LEARNING_RATE 0.3     // lower than the Q16.16 default (0.25 too coarse here)
+#define LEARNING_RATE 0.5     // tuned with the [-0.5,0.5] init for a tight fit
 #define TRAIN_WINDOW 24U      // reset recurrent state every day during training
 #define RANDOM_SEED 7U
 
@@ -73,8 +74,15 @@ struct RandomGen
 {
     static VT generateRandomWeight()
     {
-        const int r = (rand() % 512) - 256;
-        return VT(static_cast<typename VT::FullWidthValueType>(r));
+        // Symmetric small init in [-0.5, 0.5] (real units). A raw-value init
+        // tuned for Q8.8 ((rand()%512)-256) is ~256x too small in Q16.16, which
+        // starves training: the loss never converges and the forecast collapses
+        // to a low-amplitude average of the daily cycle.
+        const typename VT::FullWidthValueType half =
+            tinymind::Constants<VT>::one().getValue() / 2;
+        const typename VT::FullWidthValueType raw =
+            (static_cast<typename VT::FullWidthValueType>(rand()) % (2 * half + 1)) - half;
+        return VT(raw);
     }
 };
 
@@ -251,11 +259,18 @@ int main(int argc, char** argv)
     }
     const double range = (dataMax > dataMin) ? (dataMax - dataMin) : 1.0;
 
+    // Normalize into [0.1, 0.9], NOT [0, 1]. A sigmoid output only approaches 0
+    // and 1 asymptotically, so targets pinned at the rails (the daily peaks and
+    // troughs) get systematically under-shot. Padding the range keeps every
+    // target inside the sigmoid's responsive band, so the forecast tracks the
+    // peak amplitude instead of flattening it.
+    const double NORM_LO = 0.1;
+    const double NORM_SPAN = 0.8;
     std::vector<double> normDouble(numSamples);
     std::vector<ValueType> series(numSamples);
     for (size_t t = 0; t < numSamples; ++t)
     {
-        const double n = (raw[t] - dataMin) / range;
+        const double n = NORM_LO + NORM_SPAN * (raw[t] - dataMin) / range;
         normDouble[t] = n;
         series[t] = toQ(n);
     }
@@ -344,9 +359,10 @@ int main(int argc, char** argv)
         const double predNorm = fromQ(learnedValues[0]);
         const double trueNorm = normDouble[t + 1];
 
-        // De-normalize back to real-ish units for a friendlier plot.
-        const double predReal = dataMin + predNorm * range;
-        const double trueReal = dataMin + trueNorm * range;
+        // De-normalize back to real-ish units for a friendlier plot (invert the
+        // [0.1, 0.9] padded normalization).
+        const double predReal = dataMin + ((predNorm - NORM_LO) / NORM_SPAN) * range;
+        const double trueReal = dataMin + ((trueNorm - NORM_LO) / NORM_SPAN) * range;
 
         fc << (t + 1) << "," << trueReal << "," << predReal << std::endl;
 
