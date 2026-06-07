@@ -6,13 +6,19 @@ using a Q16.16 fixed-point MLP from TinyMind.
 
 ## Network
 
-- 7 inputs — 5 process features (air temp, process temp, rpm, torque, tool wear)
-  z-score normalized + 1/3 scaled, plus a 2-dim one-hot for product variant
-  (L, M; H = `[0, 0]`)
-- 1 hidden layer of 8 ReLU neurons
+- 10 inputs — 5 process features (air temp, process temp, rpm, torque, tool
+  wear), 3 physics-derived product features (power ≈ rpm·torque, overstrain ≈
+  toolwear·torque, temperature gap), and a 2-dim one-hot for product variant
+  (L, M; H = `[0, 0]`); all numeric inputs z-score normalized + 1/3 scaled
+- 1 hidden layer of 24 ReLU neurons
 - 1 sigmoid output (threshold 0.5 for failure prediction)
-- ~40k iterations of 50/50 balanced sampling (failures are ~3.4% of the
+- 80k iterations of 50/50 balanced sampling (failures are ~3.4% of the
   real dataset, so uniform sampling learns the trivial majority classifier)
+
+The AI4I failure modes are *products* of inputs (mechanical power for PWF,
+tool-wear × torque for OSF). A small ReLU MLP cannot synthesize those products
+from raw features, so feeding them in directly is what lifts precision from
+~0.55 to ~0.80 (F1 0.68 → 0.84) while keeping recall ~0.89.
 
 ## Build and run
 
@@ -41,6 +47,6 @@ Expected output on the synthetic path (seed = 7):
 
 ```
 Train: 8000 (pos=~1300, neg=~6700)  Test: 2000
-iter  40000   avg|err| ~ 0.08
-accuracy ~ 0.87   recall ~ 0.89   F1 ~ 0.68
+iter  80000   avg|err| ~ 0.05
+accuracy ~ 0.95   precision ~ 0.80   recall ~ 0.89   F1 ~ 0.84
 ```
