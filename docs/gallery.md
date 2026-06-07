@@ -58,7 +58,9 @@ these exactly.
 
 ## UCI dataset solutions
 
-End-to-end examples on real (or documented-synthetic) UCI datasets.
+End-to-end examples on real (or documented-synthetic) UCI datasets — see the
+[UCI Dataset Capability Report]({{ site.baseurl }}/uci_dataset_capability_report)
+for which example uses which dataset.
 
 **Iris** — Q16.16 MLP (4→8→3) species classifier; training loss, test confusion, petal-space predictions.
 ![Iris classifier]({{ site.baseurl }}/assets/plots/iris_classifier.png)
