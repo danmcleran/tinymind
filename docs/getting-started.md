@@ -11,7 +11,7 @@ These tutorials walk through complete, working examples that demonstrate TinyMin
 
 | Tutorial | What You'll Learn | Final Size |
 |---|---|---|
-| [Neural Network in Under 4KB]({{ site.baseurl }}/getting-started/xor-under-4kb) | Feed-forward NN with fixed-point, XOR prediction | 3,892 bytes |
+| [Neural Network in Under 4KB]({{ site.baseurl }}/getting-started/xor-under-4kb) | Feed-forward NN with fixed-point, XOR prediction | ~2.3 KB trainable (~1.7 KB inference-only) |
 | [Q-Learning in Under 1KB]({{ site.baseurl }}/getting-started/q-learning-under-1kb) | Tabular Q-learning, maze solving | 869 bytes |
 | [DQN Maze Solver]({{ site.baseurl }}/getting-started/dqn-maze-solver) | Deep Q-Network with neural network function approximation | ~16 KB |
 | [Keyword Spotting CNN on a Cortex-M]({{ site.baseurl }}/getting-started/keyword-spotting-cnn) | Depthwise-separable 2D CNN, bench harness, MCU porting | ~19 KB static |
