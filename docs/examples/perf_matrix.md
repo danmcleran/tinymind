@@ -30,6 +30,6 @@ make plot      # needs matplotlib in an isolated env (venv/pyenv)
 
 ![SIMD backend per-call timing for the int8 conv + dense block]({{ site.baseurl }}/assets/plots/simd_backends.png)
 
-The bars show microseconds per call for the `QConv2D` stage across the four x86 backends, with the QDense stage too small to see. On this host AVX2 and AVX-512F are the fastest, beating scalar by roughly 20%; the headline of the chart is not the cycle delta but the invariant behind it — the `output_checksum` is identical across all four backends, so the speedups are bit-exact.
+Two panels (the `QConv2D` and `QDense` stages differ by ~4 orders of magnitude in cost, so each gets its own y-scale). On this host AVX2 and AVX-512F are the fastest, beating scalar by roughly 20% on both stages; AVX-512-VNNI is slower here, a known AVX-512 frequency-throttling effect on this CPU. The headline is not the cycle delta but the invariant behind it — the `output_checksum` is identical across all four backends, so every speedup is bit-exact.
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/perf_matrix)

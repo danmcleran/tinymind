@@ -30,6 +30,6 @@ make plot      # needs matplotlib in an isolated env (venv/pyenv)
 
 ![DQN maze trajectories]({{ site.baseurl }}/assets/plots/dqn_maze.png)
 
-Each panel groups episodes by starting room and shows the visited state at every step. Far more episodes are needed than in the tabular case because the network must learn the value function from scratch; once trained, the greedy test rollouts in `dqn_maze_test.csv` drive to the exit state efficiently from any start room.
+Each panel is one starting room and plots the greedy post-training rollouts (`dqn_maze_test.csv`). Once the value network is trained, every run drives straight to the exit (state 5) from any start room. Far more training episodes are needed than in the tabular case because the network learns the value function from scratch (the exploratory `dqn_maze_training.csv` paths are also produced by `make plot`).
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/dqn_maze)

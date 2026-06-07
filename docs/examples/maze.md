@@ -30,6 +30,6 @@ make plot      # needs matplotlib in an isolated env (venv/pyenv)
 
 ![Q-learning maze trajectories]({{ site.baseurl }}/assets/plots/maze_trajectories.png)
 
-Each panel groups the training trajectories by starting room, plotting the visited state at each step. The paths are long and erratic while the agent is still exploring; after the Q-table converges the greedy test episodes (in `maze_test.csv`) reach the exit state in just a few steps from any start room.
+Each panel is one starting room and plots the greedy post-training trajectories (`maze_test.csv`). After the Q-table converges every run drives straight to the exit (state 5) in just a few steps from any start room — the paths overlap because the greedy policy is deterministic. (The exploratory `maze_training.csv` paths, also produced by `make plot`, are long and erratic by contrast.)
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/maze)

@@ -38,24 +38,25 @@ def main():
     conv = cols["conv_us_per_call"]
     dense = cols["dense_us_per_call"]
 
+    # QConv2D (~100s of us) and QDense (~0.05 us) differ by ~4 orders of
+    # magnitude, so they get separate panels with their own y-scales instead of
+    # one shared axis where the QDense bars vanish.
     tp.apply_style()
-    fig, ax = tp.new_fig(
-        "SIMD backend performance (int8 QConv2D + QDense)",
-        "lower is faster; output_checksum is identical across backends (bit-exact)")
+    fig, (ax1, ax2) = tp.plt.subplots(1, 2, figsize=(13, 5.0))
+    fig.suptitle("SIMD backend performance (int8, bit-exact across backends)",
+                 fontsize=14, fontweight="bold")
 
-    xs = list(range(len(backends)))
-    w = 0.38
-    ax.bar([x - w / 2 for x in xs], conv, width=w, label="QConv2D us/call",
-           color=tp.PALETTE[0], edgecolor="white", linewidth=0.6)
-    ax.bar([x + w / 2 for x in xs], dense, width=w, label="QDense us/call",
-           color=tp.PALETTE[2], edgecolor="white", linewidth=0.6)
-    ax.set_xticks(xs)
-    ax.set_xticklabels(backends, rotation=15, ha="right")
-    ax.set_ylabel("microseconds / call")
-    ax.legend()
-    ax.margins(y=0.15)
+    tp.bars(ax1, backends, conv, ylabel="microseconds / call",
+            value_fmt="{:.0f}")
+    ax1.set_title("QConv2D 3x3  (us/call, lower is faster)",
+                  fontsize=10, color=tp.MUTED)
 
-    fig.tight_layout()
+    tp.bars(ax2, backends, dense, ylabel="microseconds / call",
+            value_fmt="{:.3f}")
+    ax2.set_title("QDense  (us/call, lower is faster)",
+                  fontsize=10, color=tp.MUTED)
+
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
     out = tp.png_for(CSV)
     fig.savefig(out)
     print("wrote %s" % out)
