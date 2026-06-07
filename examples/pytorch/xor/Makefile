@@ -1,6 +1,5 @@
-# Simple Makefile for the XOR neural network example
-# Enable C++ iostreams
-# Tell the code to compile the Q8.8 tanh activation function LUT
+# Simple Makefile for the PyTorch -> TinyMind XOR inference example
+# Enable C++ iostreams and compile the Q16.16 sigmoid activation LUT
 MKDIR=mkdir -p ./output
 CC=g++
 WARN=-Wall -Wextra -Werror -Wpedantic

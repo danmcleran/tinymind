@@ -1,6 +1,5 @@
 # Simple Makefile for the XOR neural network example
-# Enable C++ iostreams
-# Tell the code to compile the Q8.8 tanh activation function LUT
+# Enable C++ iostreams and compile the Q16.16 tanh + sigmoid activation LUTs
 MKDIR=mkdir -p ./output
 CC=g++
 WARN=-Wall -Wextra -Werror -Wpedantic

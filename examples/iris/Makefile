@@ -1,4 +1,4 @@
-# Iris species classifier (Q8.8 MLP) example Makefile.
+# Iris species classifier (Q16.16 MLP) example Makefile.
 MKDIR=mkdir -p ./output
 CC=g++
 WARN=-Wall -Wextra -Werror -Wpedantic
