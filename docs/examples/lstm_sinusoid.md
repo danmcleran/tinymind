@@ -22,7 +22,7 @@ Trains an LSTM to predict the next value in a sinusoidal sequence, then evaluate
 cd examples/lstm_sinusoid
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` writes `output/lstm_sinusoid.csv` with columns `step,true,one_step,free_run` over a two-period horizon (the sinusoid is scaled to the [0, 1] range to match the sigmoid output).

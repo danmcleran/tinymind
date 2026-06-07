@@ -21,7 +21,7 @@ Trains a Gated Recurrent Unit (GRU) network to learn XOR, exercising TinyMind's 
 cd examples/gru_xor
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` writes `output/gru_xor_results.csv` (`iteration, xor_error`) and prints a per-pattern report. You can override the optimizer with `./output/gru_xor <learningRate> <momentum>`.

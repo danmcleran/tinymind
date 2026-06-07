@@ -21,7 +21,7 @@ A int8 ResNet-18-shaped stem plus one basic-block stage, exercised end-to-end on
 cd examples/resnet18_block_int8
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 Built with `-DTINYMIND_ENABLE_QUANTIZATION=1`. Extra targets:

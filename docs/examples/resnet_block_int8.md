@@ -21,7 +21,7 @@ A single int8 ResNet-style residual block stitched together from the Phase 10 co
 cd examples/resnet_block_int8
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 Built with `-DTINYMIND_ENABLE_QUANTIZATION=1` (plus `FLOAT=1 STD=1` for the host-side calibration). `make run` prints the per-tensor affine params and the worst max-abs error versus the float reference; `make plot` renders the parity overlay from `output/resnet_block_int8.csv`.

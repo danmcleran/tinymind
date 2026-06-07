@@ -21,7 +21,7 @@ A hybrid MLP that runs an int8 affine frontend and classifier around a Q8.8 fixe
 cd examples/mixed_precision_mlp_int8_qformat
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 The Makefile builds hosted (`FLOAT=1 STD=1 QUANTIZATION=1`) for the parity report, but the inference path itself is freestanding-clean for the deployable `FLOAT=0 STD=0` shape. `make bench` writes a CSV cycle/byte report and `make golden` emits the int8 byte stream wired into the integration suite. `apps/import_pytorch/tinymind_import.py` carries `QFormatDense` / `HybridBoundary` descriptors that emit the same `weights.hpp` layout for importing real PyTorch / TensorFlow models.

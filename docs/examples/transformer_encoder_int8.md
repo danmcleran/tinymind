@@ -21,7 +21,7 @@ A single int8 transformer encoder block built from the Phase 11 normalization, P
 cd examples/transformer_encoder_int8
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 Built with `-DTINYMIND_ENABLE_QUANTIZATION=1` (plus `FLOAT=1 STD=1` for host calibration). Extra target:

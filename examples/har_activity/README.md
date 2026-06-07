@@ -79,7 +79,7 @@ normalize by your g-scale, and emit the long format above.
 ```bash
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 ## Output

@@ -21,7 +21,7 @@ Trains a small multilayer perceptron to learn the classic non-linearly-separable
 cd examples/xor
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` writes the learning-curve CSV `output/xor_training.csv` and a per-iteration property dump `output/nn_fixed_xor.txt`. A `make plot-trajectory` target renders the generic per-column network-trajectory view from the property dump.

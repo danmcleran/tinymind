@@ -21,7 +21,7 @@ A three-way iris species classifier trained on the classic [UCI Iris dataset](ht
 cd examples/iris
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 The full 150-row dataset (~4&nbsp;KB) ships with the example as `iris.data`; the Makefile copies it into `./output/` before the run, so there is nothing to download.

@@ -21,7 +21,7 @@ A two-output building energy-load regressor trained on the [UCI Energy Efficienc
 cd examples/energy_efficiency
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 The full 768-row dataset (~35&nbsp;KB) ships with the example as `ENB2012_data.csv`; the Makefile copies it into `./output/` before the run, so there is nothing to download.

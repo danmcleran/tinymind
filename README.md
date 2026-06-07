@@ -801,7 +801,7 @@ cd examples/ltc_sequence && make run && make plot   # writes output/*.csv and a 
 
 The plot scripts share one style module, [`examples/plotting/tinymind_plot.py`](examples/plotting/tinymind_plot.py) (matplotlib only; headless-safe — it falls back to the Agg backend and just writes the PNG when there is no display). `unit_test/nn/nn_plot.py` is the generic per-column network-trajectory viewer (`make plot-trajectory` in `examples/xor`).
 
-matplotlib is the only extra dependency; install it into an isolated environment (e.g. `python3 -m venv` or pyenv) rather than the system Python.
+matplotlib is the only extra dependency. If your Python already has it, the plot scripts run as-is; otherwise install it — a venv or pyenv is the clean way to add it without touching the system Python.
 
 ## Building
 

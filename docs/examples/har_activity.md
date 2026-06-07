@@ -21,7 +21,7 @@ A recurrent human-activity classifier over tri-axial accelerometer sequences, in
 cd examples/har_activity
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 By default the example synthesizes physically-motivated tri-axial accelerometer windows (deterministic, seed 7): sinusoids + harmonics + noise for the dynamic activities and near-flat gravity vectors for the static ones, normalized into Q16.16's stable range (200 windows/class train, 50/class test). To use real data, drop a long-format `har.csv` (`window,t,ax,ay,az,label`, contiguous rows per window) into `./output/` and it is loaded instead, with an 80/20 deterministic split.

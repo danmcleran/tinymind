@@ -21,7 +21,7 @@ Trains a Closed-form Continuous-time (CfC) cell plus a linear readout to track a
 cd examples/cfc_sequence
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` writes `cfc_loss.csv` (per-epoch training loss) and `cfc_fit.csv` (per-step `ts`, target, and predicted), which `plot.py` reads. The example exits non-zero unless the loss at least halves. Reverse-mode training is gated by the example's `-DTINYMIND_CFC_REVERSE_TRAINING=1`.

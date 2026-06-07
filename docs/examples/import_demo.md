@@ -21,7 +21,7 @@ An end-to-end demonstration of the Phase 15 PyTorch → TinyMind int8 importer p
 cd examples/import_demo
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` prints the calibration ranges, the CLE drift, and the parity verdict (exit 0 on PASS). The C++ side needs no torch install. The production importer flow lives in `demo.py` — run it via `make regenerate-pytorch` (i.e. `python demo.py`), which trains the same-shape MLP in PyTorch, pulls numpy weights from `torch.state_dict`, and drives `apps/import_pytorch/tinymind_import.import_pytorch_model` to emit a `weights.hpp` (requires torch + numpy in an isolated env).

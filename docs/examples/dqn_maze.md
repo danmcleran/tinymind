@@ -21,7 +21,7 @@ Solves the same six-room maze as the tabular Q-learning example, but replaces th
 cd examples/dqn_maze
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` writes `output/dqn_maze_training.csv` (10,000 training episodes) and `output/dqn_maze_test.csv` (100 greedy test episodes); `make plot` renders both via `dqn_mazeplot.py`, one trajectory per episode grouped by starting room.

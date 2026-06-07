@@ -49,7 +49,7 @@ physically-motivated dataset with documented rules (see `synthesizeDataset()`):
 ```bash
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 The dataset is synthetic, so there is no file to copy — `make run` cd's into

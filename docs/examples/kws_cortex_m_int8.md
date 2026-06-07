@@ -21,7 +21,7 @@ The same keyword-spotting pipeline as the float runner, with every layer replace
 cd examples/kws_cortex_m_int8
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 Built with `-DTINYMIND_ENABLE_QUANTIZATION=1`. `make csv` extracts the per-layer CSV block to `output/kws_cortex_m_int8.csv`; `make plot` renders it. Compare the totals at the bottom of this runner's summary against the float runner — int8 weights occupy one byte versus four, so the convolutional weight footprint is roughly 4x smaller.

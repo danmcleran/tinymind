@@ -21,7 +21,7 @@ A pure-integer int8 deployment of a Closed-form Continuous-time (CfC) liquid cel
 cd examples/qcfc_liquid_int8
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` reports the max-abs int8-vs-float hidden-state error (PASS if under 10% of the hidden range; ~0.0045, about 1.9% of the range, on the bundled seed) and writes `qcfc_parity.csv` for `plot.py`. Two extra modes: `make bench` emits a CSV cycle/byte report, and `make golden` emits a deterministic int8 hidden-state byte stream suitable for an integration-suite fixture. The build is hosted for the parity report; the deployable shape is `QUANT=1 FLOAT=0 STD=0`.

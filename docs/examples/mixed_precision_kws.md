@@ -21,7 +21,7 @@ A keyword-spotting-shaped pipeline that brackets an fp16 attention head between 
 cd examples/mixed_precision_kws
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `TINYMIND_ENABLE_FP16=1` is required (already set in the bundled Makefile, alongside `TINYMIND_ENABLE_FLOAT=1`, `STD=1`, and `QUANTIZATION=1`); with the FP16 gate off the build fails at the bridge call sites. `make bench` writes a CSV cycle/byte report and `make golden` emits the int8 logit byte stream for the test set.

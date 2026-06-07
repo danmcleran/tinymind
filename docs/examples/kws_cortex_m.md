@@ -21,7 +21,7 @@ A keyword-spotting-style depthwise-separable CNN built from the standalone 2D la
 cd examples/kws_cortex_m
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make csv` runs the binary and extracts the per-layer CSV block to `output/kws_cortex_m.csv`; `make plot` regenerates the chart from that CSV. The runner also ships `port_stub.hpp` and a porting guide: compile with `-DTINYMIND_BENCH_CORTEX_M` to read `DWT->CYCCNT` instead of the host nanosecond fallback, and swap `std::cout` for a UART sink.

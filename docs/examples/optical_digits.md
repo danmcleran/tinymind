@@ -21,7 +21,7 @@ A ten-way handwritten-digit classifier trained on the [UCI Optical Recognition o
 cd examples/optical_digits
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 Both data files ship with the example — `optdigits.tra` (3823 train rows) and `optdigits.tes` (1797 test rows) — and the Makefile copies them into `./output/` before the run, so there is nothing to download.

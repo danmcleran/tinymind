@@ -22,7 +22,7 @@ produced by downsampling a 32×32 scan of a handwritten digit.
 ```bash
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` cd's into `./output`, so the Makefile copies the bundled

@@ -21,7 +21,7 @@ A physics-informed neural network that learns the 1-D heat equation `u_t = nu * 
 cd examples/pinn_heat1d
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` runs the verification checks (exact-solution residual, autodiff vs central finite differences, fixed-point residual benchmark). To produce the data `plot.py` reads, run the host-side training loop first with `make train` (built `-O3`, ~thousands of epochs but under a second), which writes `pinn_loss.csv` (residual loss and solution L2 error per epoch) and `pinn_solution.csv` (learned vs analytic field at two times). The fixed-point inference path pulls in `lookupTables.cpp` for the Q16.16 tanh table.

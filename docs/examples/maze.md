@@ -21,7 +21,7 @@ Learns the shortest path out of a small six-room maze using tabular Q-learning. 
 cd examples/maze
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` writes two CSVs: `output/maze_training.csv` (500 training episodes) and `output/maze_test.csv` (100 greedy test episodes). The `make plot` target renders both via `mazeplot.py`; each CSV row is one episode's state-by-step path.

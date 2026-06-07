@@ -22,7 +22,7 @@ A binary machine-failure classifier trained on the [AI4I 2020 Predictive Mainten
 cd examples/predictive_maintenance
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 If `ai4i2020.csv` is present in the run directory (`make run` `cd`s into `./output/`) it is loaded directly; otherwise the program synthesizes 10,000 rows following the documented AI4I 2020 generative and failure-labelling rules (HDF, PWF, OSF, TWF, RNF), so the example trains end to end with no download. To use the real data, download `ai4i2020.csv` from the UCI page above and `cp` it into `./output/` before `make run`.

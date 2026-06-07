@@ -21,7 +21,7 @@ Solves the same XOR task as the classic MLP example, but with a Kolmogorov-Arnol
 cd examples/kan_xor
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` writes the learning-curve CSV `output/kan_xor_training.csv` (and a per-iteration error log `output/kan_fixed_xor.txt`); the plotted error is accumulated in floating point so the curve stays clean despite the fixed-point internals.

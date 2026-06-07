@@ -21,7 +21,7 @@ A six-way gas classifier that demonstrates **sensor drift** — the slow accurac
 cd examples/gas_sensor_drift
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 The dataset is synthetic (deterministic, seed 7; 6 gas classes with distinct 128-dim mean response vectors, 150 samples/class/batch over 10 batches), so there is no file to copy — `make run` `cd`s into `./output/` and runs the binary directly.

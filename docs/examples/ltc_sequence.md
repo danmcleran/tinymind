@@ -21,7 +21,7 @@ Trains a Liquid Time-Constant (LTC) cell plus a linear readout to reproduce the 
 cd examples/ltc_sequence
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` writes `ltc_loss.csv` (per-epoch training loss) and `ltc_fit.csv` (target vs predicted across the sequence), which `plot.py` reads. The example exits non-zero unless the loss drops at least 10x. Reverse-mode training is gated by the example's `-DTINYMIND_LTC_REVERSE_TRAINING=1`.

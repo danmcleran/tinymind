@@ -21,7 +21,7 @@ A SIMD-gate benchmark that builds the same int8 `QConv2D 3x3` + `QDense` block u
 cd examples/perf_matrix
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make` (default) builds the scalar / avx2 / avx512f / avx512_vnni binaries; `make release` is the same `-O3` build. The key target is `make report`, which runs every binary and writes the combined CSV to `output/perf_report.csv` (one row per backend); `make run` aliases `make report`. `make plot` renders the chart from that CSV. To bench an Arm gate, add a target with the matching cross-compiler and `-march=...+dotprod` plus the matching `TINYMIND_ENABLE_SIMD_NEON*` defines.

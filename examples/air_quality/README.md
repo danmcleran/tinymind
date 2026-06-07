@@ -48,7 +48,7 @@ continuous-time (CfC) cell fed a varying per-step elapsed time — lives in
 ```bash
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` trains for 8000 epochs (~40 s in release mode). You can override the

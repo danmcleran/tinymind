@@ -22,7 +22,7 @@ A recurrent next-hour forecaster for an hourly air-quality pollutant series, ins
 cd examples/air_quality
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 By default the example runs fully offline on a synthetic hourly series (deterministic, seed 7): a strong 24-hour daily cycle with rush-hour peaks, a gentle multi-day trend, and mild noise (~100 days of a CO-like concentration). To use the real UCI data, drop `AirQualityUCI.csv` into `./output/` — the loader auto-detects it, reads the `CO(GT)` column, handles the `;` separator and decimal comma, and skips the `-200` missing markers, falling back to the synthetic series if too few valid samples are found.

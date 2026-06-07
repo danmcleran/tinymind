@@ -21,7 +21,7 @@ An end-to-end post-training int8 quantization demo: a PyTorch XOR MLP is trained
 cd examples/pytorch_quant/xor
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 Building with `TINYMIND_ENABLE_QUANTIZATION=1` (plus `FLOAT=1 STD=1` so the demo can rebuild the Requantizer and sigmoid LUT from the calibration scales). To regenerate `weights.hpp` from a fresh PyTorch training + 9×9-grid calibration run, use `make regenerate-weights` (i.e. `python3 xor_quant.py`, requires torch). The deployable MCU shape is `FLOAT=0 STD=0` with the integer `(multiplier, shift, zero_point)` triples baked in.

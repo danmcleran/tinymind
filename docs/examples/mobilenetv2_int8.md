@@ -21,7 +21,7 @@ A int8 MobileNetV2-shaped pipeline: two inverted-residual blocks (one stride-1 w
 cd examples/mobilenetv2_int8
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 Built with `-DTINYMIND_ENABLE_QUANTIZATION=1`. Extra targets:

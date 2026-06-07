@@ -21,7 +21,7 @@ Trains an XOR MLP in PyTorch, exports its weights as Q16.16 fixed-point integers
 cd examples/pytorch/xor
 make release
 make run
-make plot      # needs matplotlib in an isolated env (venv/pyenv)
+make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
 `make run` reads `input/xor_weights_q16_16.txt` and writes both the per-iteration trajectory (`output/nn_fixed_xor.txt`) and the decision-surface CSV. The weights file is produced by the PyTorch trainer/exporter: run `python3 xor.py` (requires torch + numpy + matplotlib in an isolated env), which trains the network and calls `save_to_tinymind_format` to emit the Q16.16 weight list. The Makefile compiles the Q16.16 sigmoid LUT (`TINYMIND_USE_SIGMOID_16_16=1`) and enables hosted IO for the file-based weight loader.
