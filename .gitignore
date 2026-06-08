@@ -71,9 +71,22 @@ __pycache__/
 # Local matplotlib venv for rendering example plots (not part of the repo)
 .venv-plot/
 
-# graphify: machine-specific paths + regenerable caches (keep the graph artifacts)
+# graphify: machine-specific paths + regenerable caches.
 graphify-out/.graphify_python
 graphify-out/.graphify_root
 graphify-out/cost.json
 graphify-out/cache/
 graphify-out/FINDINGS_*.md
+# Derived graph artifacts: regenerated from code by the Pages CI build and
+# published to GitHub Pages, so they are no longer tracked (kept the repo from
+# churning a new graph on every commit). Only the curated community labels
+# (.graphify_labels.json) stay versioned -- the rebuild reads them to name
+# clusters. Rebuild locally with `/graphify .` or the headless rebuild.
+graphify-out/graph.json
+graphify-out/graph.html
+graphify-out/GRAPH_REPORT.md
+graphify-out/manifest.json
+graphify-out/2026-*/
+
+# CI-published graph data copy (regenerated during Pages build)
+docs/assets/knowledge-graph/graph.json

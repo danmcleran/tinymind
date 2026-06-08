@@ -11,7 +11,7 @@ An automatically-extracted map of how TinyMind's code, docs, and tests connect â
 {: .fs-6 .fw-300 }
 
 [Open the interactive graph]({{ site.baseurl }}/assets/knowledge-graph/graph.html){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
-[Raw graph.json](https://github.com/danmcleran/tinymind/blob/master/graphify-out/graph.json){: .btn .fs-5 .mb-4 .mb-md-0 }
+[Raw graph.json]({{ site.baseurl }}/assets/knowledge-graph/graph.json){: .btn .fs-5 .mb-4 .mb-md-0 }
 
 ---
 
@@ -57,10 +57,20 @@ Tracing the graph surfaced one finding worth keeping:
 
 ## Regenerating
 
-The graph is checked in under [`graphify-out/`](https://github.com/danmcleran/tinymind/tree/master/graphify-out). To rebuild it after code changes:
+The graph is **regenerated from the source on every Pages deploy** â€” the
+published graph above always matches `master`, so it can't drift from the code.
+Only the curated community labels (`graphify-out/.graphify_labels.json`) are
+versioned; the structural graph (`graph.json`/`graph.html`) is a build artifact
+and is not committed.
+
+To rebuild and explore it locally:
 
 ```bash
 /graphify .            # full rebuild
 /graphify . --update   # re-extract only changed files (uses the cached pass)
 /graphify query "How does the int8 attention path work?"
 ```
+
+After adding code that forms new clusters, re-run `/graphify .` to label them
+and commit the updated `.graphify_labels.json` so the published graph names the
+new communities.
