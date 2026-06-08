@@ -39,6 +39,10 @@
 
 namespace tinymind {
 
+    // The rounding/saturation policies below are bounded-model-checked for
+    // overflow/UB freedom and range-correctness by formal/cbmc_qformat.cpp
+    // (CBMC cannot type-check the templated form, so that harness proves a
+    // concrete transcription of this exact arithmetic).
     typedef enum
     {
         AdditionOp,

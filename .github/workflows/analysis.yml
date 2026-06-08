@@ -56,6 +56,16 @@ jobs:
       - name: Fuzz (time-boxed, ASan+UBSan)
         run: make -C fuzz fuzz-ci FUZZ_CXX=clang++ MAX_TIME=90
 
+  cbmc:
+    name: CBMC proofs (qformat kernels)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CBMC
+        run: sudo apt-get update && sudo apt-get install -y cbmc
+      - name: Prove fixed-point kernels
+        run: make -C formal prove
+
   tidy:
     name: clang-tidy (advisory)
     runs-on: ubuntu-latest
