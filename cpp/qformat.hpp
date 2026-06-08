@@ -86,7 +86,7 @@ namespace tinymind {
             (void)minValue; // Suppress unused parameter warnings
             (void)maxValue;
 
-            T result;
+            T result{};
 
             switch (opType) {
                 case AdditionOp:
