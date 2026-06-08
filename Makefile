@@ -166,6 +166,10 @@ ANALYZE_INC = -I cpp -I cpp/include -I include
 ANALYZE_DEF = -DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_STD=1 \
               -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_HOSTED_IO=1 \
               -DTINYMIND_ENABLE_OSTREAMS=1 -DTINYMIND_ENABLE_FP16=1
+# cpp/ is header-only (one .cpp), so a directory scan only analyzes
+# lookupTables.cpp and reaches the templates as mere includes. List the headers
+# explicitly so cppcheck analyzes each as a translation unit.
+ANALYZE_SRCS = $(shell find cpp -name '*.hpp') cpp/lookupTables.cpp
 
 sanitize :
 	@for d in $(COV_SUITES) $(COV_EXAMPLES); do \
@@ -181,9 +185,10 @@ cppcheck :
 	@command -v cppcheck >/dev/null 2>&1 || { echo "ERROR: cppcheck not found. sudo apt install cppcheck"; exit 1; }
 	cppcheck --enable=warning,portability --std=c++17 --language=c++ \
 	         --inline-suppr --error-exitcode=2 --quiet \
+	         --suppressions-list=.cppcheck-suppressions \
 	         --suppress=missingIncludeSystem --suppress=missingInclude \
-	         $(ANALYZE_INC) $(ANALYZE_DEF) cpp
-	@echo "cppcheck: clean"
+	         $(ANALYZE_INC) $(ANALYZE_DEF) $(ANALYZE_SRCS)
+	@echo "cppcheck: clean (all headers analyzed)"
 
 # MISRA C:2012 addon (advisory). Pass MISRA_RULE_TEXTS=<file> to expand rule IDs
 # into full descriptions using the licensed MISRA rule text; without it cppcheck
@@ -191,16 +196,12 @@ cppcheck :
 # C++ source, so findings are expected and for review, not a pass/fail gate.
 MISRA_RULE_TEXTS ?=
 MISRA_TEXTS_ARG = $(if $(MISRA_RULE_TEXTS),--rule-texts=$(MISRA_RULE_TEXTS),)
-# Scan the headers explicitly: cpp/ is header-only (one .cpp), so a directory
-# scan would only analyze lookupTables.cpp and reach the templates as mere
-# includes. Listing the headers forces each to be analyzed as a translation unit.
-MISRA_SRCS = $(shell find cpp -name '*.hpp') cpp/lookupTables.cpp
 misra :
 	@command -v cppcheck >/dev/null 2>&1 || { echo "ERROR: cppcheck not found. sudo apt install cppcheck"; exit 1; }
 	-cppcheck --addon=misra $(MISRA_TEXTS_ARG) --enable=style --std=c++17 --language=c++ \
 	          --inline-suppr --quiet \
 	          --suppress=missingIncludeSystem --suppress=missingInclude \
-	          $(ANALYZE_INC) $(ANALYZE_DEF) $(MISRA_SRCS) 2>misra-report.txt
+	          $(ANALYZE_INC) $(ANALYZE_DEF) $(ANALYZE_SRCS) 2>misra-report.txt
 	@echo "=== MISRA C:2012 findings by rule (top 25) ==="
 	@grep -oE "misra-c2012-[0-9.]+" misra-report.txt 2>/dev/null | sort | uniq -c | sort -rn | head -25 || true
 	@echo "total MISRA findings: $$(grep -c 'misra-c2012-' misra-report.txt 2>/dev/null || echo 0)  (full list in misra-report.txt)"

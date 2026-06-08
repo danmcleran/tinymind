@@ -1,0 +1,18 @@
+# cppcheck suppressions for the `make cppcheck` hard gate (scans all headers).
+# Each entry is a deliberate, justified design pattern -- not a defect. Revisit
+# if the design changes. Format: <id>[:<file-glob>[:<line>]].
+
+# Policy-based design (Modern C++ Design style): trainable / quantized layer and
+# connection variants intentionally re-declare same-named compile-time members
+# and methods from their base policy -- e.g. IsTrainable=true overriding the
+# base IsTrainable=false. The shadowing is the mechanism, not a mistake.
+duplInheritedMember
+
+# Byte-pool storage members are raw unsigned-char buffers populated by
+# placement-new, and the layer pointers into them are assigned in the
+# constructor body; none are read before being set. cppcheck's
+# member-initializer-list check cannot see the body initialization. Scoped to
+# the two files that use the byte-pool pattern so genuine uninitialized members
+# elsewhere still fail the gate.
+uninitMemberVar:*/kan.hpp
+uninitMemberVar:*/qlearn.hpp
