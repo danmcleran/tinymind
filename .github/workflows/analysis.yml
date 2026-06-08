@@ -31,3 +31,39 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y cppcheck
       - name: cppcheck (warning + portability)
         run: make cppcheck
+
+  coverage:
+    name: Coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Boost + lcov
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev libboost-test-dev lcov
+      - name: Capture coverage and enforce floor
+        env:
+          BOOST_HOME: /usr
+        run: |
+          make coverage
+          make coverage-check
+
+  tidy:
+    name: clang-tidy (advisory)
+    runs-on: ubuntu-latest
+    # Advisory: surfaces clang-tidy findings (incl. clang static analyzer) but
+    # never blocks the merge. The hard gates are sanitize + cppcheck.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev libboost-test-dev clang-tidy bear
+      - name: clang-tidy
+        env:
+          BOOST_HOME: /usr
+        run: make tidy
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tidy-report
+          path: tidy-report.txt
+          if-no-files-found: ignore

@@ -821,8 +821,8 @@ namespace tinymind {
         }
 
     private:
-        BackPropagationParent(const BackPropagationParent&) {} // hide copy constructor
-        BackPropagationParent& operator=(const BackPropagationParent&) {} // hide assignment operator
+        BackPropagationParent(const BackPropagationParent&) = delete; // non-copyable
+        BackPropagationParent& operator=(const BackPropagationParent&) = delete; // non-assignable
         static_assert(BatchSize > 0, "Invalid batch size.");
     };
 
@@ -4208,8 +4208,8 @@ namespace tinymind {
     private:
         alignas(ValueType) unsigned char mLearnedValuesBuffer[NumberOfOutputLayerNeurons * sizeof(ValueType)];
 
-        NeuralNetwork(const NeuralNetwork&) {} // hide copy constructor
-        NeuralNetwork& operator=(const NeuralNetwork&) {} // hide assignment operator
+        NeuralNetwork(const NeuralNetwork&) = delete; // non-copyable
+        NeuralNetwork& operator=(const NeuralNetwork&) = delete; // non-assignable
 
         static_assert(NumberOfInputs > 0, "Invalid number of inputs.");
         static_assert(HiddenLayersDescriptor::Count > 0, "Must have at least one hidden layer.");

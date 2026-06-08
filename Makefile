@@ -77,16 +77,40 @@ coverage : coverage-clean
 	for d in $(COV_SUITES) $(COV_EXAMPLES); do \
 		out=coverage/$$(echo $$d | tr / _).info; \
 		lcov --capture --directory $$d --base-directory $$d \
-		     --output-file $$out --rc geninfo_unexecuted_blocks=1 $(LCOV_IGNORE) || true; \
+		     --output-file $$out --rc geninfo_unexecuted_blocks=1 \
+		     --rc branch_coverage=1 $(LCOV_IGNORE) || true; \
 		[ -s $$out ] && echo "-a $$out" >> coverage/merge_args; \
 	done
-	lcov $$(cat coverage/merge_args) --output-file coverage/all.info $(LCOV_IGNORE)
-	lcov --extract coverage/all.info '*/cpp/*' \
+	lcov $$(cat coverage/merge_args) --output-file coverage/all.info --rc branch_coverage=1 $(LCOV_IGNORE)
+	lcov --extract coverage/all.info '*/cpp/*' --rc branch_coverage=1 \
 	     --output-file coverage/tinymind.info $(LCOV_IGNORE)
 	genhtml coverage/tinymind.info --output-directory coverage/html $(GENHTML_IGNORE)
 	python3 tools/coverage_dashboard.py coverage/tinymind.info coverage/dashboard.html
 	@echo "Dashboard:   coverage/dashboard.html"
 	@echo "HTML report: coverage/html/index.html"
+
+# Coverage regression gate. Fails if cpp/ line coverage drops below
+# COVERAGE_MIN_LINES or function coverage below COVERAGE_MIN_FUNCS. Functions
+# sit at 100% (every template entry point is instantiated and run); lines sit
+# at ~99.9% -- a handful of defensive edge guards (e.g. sqrt-of-non-positive,
+# activation-table saturation) are not hit by the current fixed-input tests.
+# Branch coverage is captured and reported but not gated -- gcov branch counts
+# are noisy across template instantiations and compiler versions.
+# Override on the command line to tighten, e.g. `make coverage-check COVERAGE_MIN_LINES=100`.
+COVERAGE_MIN_LINES ?= 99.0
+COVERAGE_MIN_FUNCS ?= 100.0
+coverage-check :
+	@[ -f coverage/tinymind.info ] || { echo "ERROR: no capture. Run 'make coverage' first."; exit 1; }
+	@lcov --summary coverage/tinymind.info --rc branch_coverage=1 $(LCOV_IGNORE) 2>/dev/null \
+	     | tee coverage/summary.txt
+	@awk -v lmin=$(COVERAGE_MIN_LINES) -v fmin=$(COVERAGE_MIN_FUNCS) ' \
+	    /lines[.]+:/     { l=$$2+0 } \
+	    /functions[.]+:/ { f=$$2+0 } \
+	    END { \
+	      printf "coverage-check: lines=%.1f%% (floor %.1f%%)  functions=%.1f%% (floor %.1f%%)\n", l, lmin, f, fmin; \
+	      if (l < lmin || f < fmin) { print "COVERAGE GATE: FAIL"; exit 1 } \
+	      print "COVERAGE GATE: PASS" \
+	    }' coverage/summary.txt
 
 # Regenerate just the dashboard from an existing capture (no rebuild/re-run).
 coverage-dashboard :
@@ -168,7 +192,7 @@ tidy : compile_commands.json
 
 analyze : cppcheck tidy
 
-.PHONY : sanitize cppcheck tidy analyze
+.PHONY : sanitize cppcheck tidy analyze coverage-check
 
 # Recursively clean every unit test, example, and app (each subdir Makefile has
 # its own clean target), plus the coverage artifacts.
