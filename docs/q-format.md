@@ -81,7 +81,7 @@ BOOST_TEST(static_cast<SignedQ8_24Type::FullWidthValueType>(0x0) == Q8.getValue(
 
 QValue uses several classes within qformat.hpp to accomplish its goals. The relationship between the classes is presented here.
 
-![qformat_class](https://user-images.githubusercontent.com/1591721/200388319-51eaa4c9-273d-499a-9ab4-b6ef32fd5b6c.png)
+![qformat_class]({{ site.baseurl }}/assets/diagrams/200388319-51eaa4c9-273d-499a-9ab4-b6ef32fd5b6c.png)
 
 # Compile-Time Type Selection
 

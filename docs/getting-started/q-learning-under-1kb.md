@@ -9,7 +9,7 @@ nav_order: 2
 
 Q-learning is an algorithm in which an agent interacts with its environment and collects rewards for taking desirable actions.
 
-![qlearn](https://user-images.githubusercontent.com/1591721/200389242-7fb3238d-9539-49c6-9b17-7cd0c767b521.png)
+![qlearn]({{ site.baseurl }}/assets/diagrams/200389242-7fb3238d-9539-49c6-9b17-7cd0c767b521.png)
 
 The simplest implementation of Q-learning is referred to as tabular or table-based Q-learning. In this article, I will describe how tinymind implements Q-learning using C++ templates and fixed-point ([Q-Format]({{ site.baseurl }}/q-format)) numbers as well as go through the [maze](https://github.com/danmcleran/tinymind/blob/master/examples/maze/maze.cpp) example in the [tinymind](https://github.com/danmcleran/tinymind) repo.
 
@@ -19,7 +19,7 @@ At 869 bytes total, this Q-learner fits comfortably on even the smallest microco
 
 A common table-based Q-learning problem is to train a virtual mouse to find its way out of a maze to get the cheese (reward). Tinymind contains an [example](https://github.com/danmcleran/tinymind/blob/master/examples/maze/maze.cpp) program which demonstrates how the Q-learning template library works.
 
-![maze](https://user-images.githubusercontent.com/1591721/200389435-ee70c325-9031-41cf-982c-f4ebfbef6831.png)
+![maze]({{ site.baseurl }}/assets/diagrams/200389435-ee70c325-9031-41cf-982c-f4ebfbef6831.png)
 
 In the example program, we define the maze:
 
@@ -87,19 +87,19 @@ make plot
 
 Training data for start state == 2 (random exploration):
 
-![maze_training_2](https://user-images.githubusercontent.com/1591721/200390434-22bbc626-4efc-4e8a-831d-641ffa8da8b7.png)
+![maze_training_2]({{ site.baseurl }}/assets/diagrams/200390434-22bbc626-4efc-4e8a-831d-641ffa8da8b7.png)
 
 After training, the Q-learner has learned an optimal path: 2->3->4->5:
 
-![maze_test_2](https://user-images.githubusercontent.com/1591721/200390470-27a5cd7f-3172-4314-a300-90cac7c9cd2d.png)
+![maze_test_2]({{ site.baseurl }}/assets/diagrams/200390470-27a5cd7f-3172-4314-a300-90cac7c9cd2d.png)
 
 What happens when we drop the virtual mouse outside of the maze where the cheese is? During training:
 
-![maze_training_5](https://user-images.githubusercontent.com/1591721/200390506-57b33669-b7b4-4f7c-9602-70840a917287.png)
+![maze_training_5]({{ site.baseurl }}/assets/diagrams/200390506-57b33669-b7b4-4f7c-9602-70840a917287.png)
 
 After training, the mouse has learned to stay put and get the reward:
 
-![maze_test_5](https://user-images.githubusercontent.com/1591721/200390529-805d50a5-8935-49ee-bf04-ebebe5a7de27.png)
+![maze_test_5]({{ site.baseurl }}/assets/diagrams/200390529-805d50a5-8935-49ee-bf04-ebebe5a7de27.png)
 
 # Determining The Size Of The Q-Learner
 

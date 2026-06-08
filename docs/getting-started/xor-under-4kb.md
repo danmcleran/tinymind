@@ -46,7 +46,7 @@ static const size_t NUMBER_OF_OUTPUTS = 1;
 
 We'll define a neural network with 2 input neurons, 1 hidden layer with 4 neurons in it, and 1 output neuron. The 2 input neurons will receive the streams of 1s and 0s from the training data. The output neuron outputs the predicted result of the operation. The hidden layer is the transfer function which learns to predict the result, given the input values and the known result.
 
-![image](https://user-images.githubusercontent.com/1591721/215128190-f54e5c6a-121e-46f7-91f3-21c66a79098a.png)
+![image]({{ site.baseurl }}/assets/diagrams/215128190-f54e5c6a-121e-46f7-91f3-21c66a79098a.png)
 
 We typedef the neural network transfer functions policy as well as the neural network itself:
 
@@ -144,7 +144,7 @@ After running the example, you will see a text file output, nn_fixed_xor.txt. To
 make plot
 ```
 
-![fixed_8_8](https://user-images.githubusercontent.com/1591721/200387686-75043947-8bbe-4162-b889-e9bcf368408a.png)
+![fixed_8_8]({{ site.baseurl }}/assets/diagrams/200387686-75043947-8bbe-4162-b889-e9bcf368408a.png)
 
 You can see the weights training through time, as well as the error reducing through time, as the predicted value approximates the expected value. The training targets map 0 and 1 onto our Q-Format type -- the representation of 1.0 in a signed Q16.16 format is 0x10000 (65536), and 0.0 is 0.
 
