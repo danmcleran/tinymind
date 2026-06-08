@@ -181,13 +181,18 @@ double benchPwOrConv(Layer& layer, const int8_t* in, int8_t* out, int iters)
 
 int64_t outputChecksum(const int8_t* p, std::size_t n)
 {
-    int64_t sum = 0;
-    int64_t mix = 1469598103934665603LL;
+    // Mix arithmetic runs in unsigned: signed overflow and left-shift of a
+    // large signed value are undefined behavior. Unsigned wrap is well-defined
+    // and bit-identical to the prior two's-complement result, so the checksum
+    // value is unchanged.
+    uint64_t sum = 0;
+    uint64_t mix = 1469598103934665603ULL;
     for (std::size_t i = 0; i < n; ++i) {
-        sum += static_cast<int64_t>(p[i]);
-        mix ^= static_cast<int64_t>(p[i]) + (mix << 5) + (mix >> 2);
+        const uint64_t v = static_cast<uint64_t>(static_cast<int64_t>(p[i]));
+        sum += v;
+        mix ^= v + (mix << 5) + (mix >> 2);
     }
-    return sum ^ mix;
+    return static_cast<int64_t>(sum ^ mix);
 }
 
 } // namespace
