@@ -1,0 +1,48 @@
+name: CodeQL
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze C++
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Boost
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev libboost-test-dev
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: cpp
+          queries: security-extended
+
+      # Compile (do not run) the unit-test suites: they instantiate the bulk of
+      # the header-only templates, which is what CodeQL needs to see. Skipping
+      # the example training runs keeps the build fast.
+      - name: Build
+        env:
+          BOOST_HOME: /usr
+        run: |
+          for d in unit_test/nn unit_test/qformat unit_test/qlearn \
+                   unit_test/quantization unit_test/kan unit_test/dual \
+                   unit_test/ltc unit_test/cfc unit_test/pinn \
+                   unit_test/lookuptable; do
+            make -C "$d"
+          done
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:cpp"

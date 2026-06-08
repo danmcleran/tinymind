@@ -1,0 +1,33 @@
+name: Static & Dynamic Analysis
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sanitize:
+    name: ASan + UBSan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Boost
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev libboost-test-dev
+      - name: Build and run all runtime suites + int8 examples under ASan/UBSan
+        env:
+          BOOST_HOME: /usr
+        run: make sanitize
+
+  cppcheck:
+    name: cppcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - name: cppcheck (warning + portability)
+        run: make cppcheck

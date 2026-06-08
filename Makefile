@@ -110,9 +110,70 @@ coverage-clean :
 	find unit_test examples cpp -name '*.gcda' -delete 2>/dev/null || true
 	rm -rf coverage
 
+# =============================================================================
+# Static & dynamic analysis
+#
+#   make sanitize   HARD GATE  -- rebuild every runtime suite + int8 example
+#                               with ASan+UBSan and run; any UB aborts nonzero.
+#   make cppcheck   HARD GATE  -- cppcheck over cpp/ (warning + portability).
+#   make tidy       ADVISORY   -- clang-tidy via a bear-captured compile DB;
+#                               reports to tidy-report.txt, never fails. Its
+#                               clang-analyzer-* checks cover the clang static
+#                               analyzer; CodeQL runs the same engine in CI.
+#   make analyze               -- cppcheck + tidy together.
+#
+# The sub-Makefiles all build on a single `$(CC) ... $(WARN) ...` line, so the
+# sanitizer is injected purely by overriding CC/WARN -- no per-suite edits.
+# =============================================================================
+SAN_CC   ?= g++ -fsanitize=address,undefined -fno-sanitize-recover=all -O1
+SAN_WARN ?= -Wall -Wextra -Wpedantic -g
+SAN_ENV  ?= UBSAN_OPTIONS=print_stacktrace=1 ASAN_OPTIONS=detect_leaks=0
+
+# A representative hosted+quant corner for the standalone analyzers. Templates
+# only diagnose what a translation unit instantiates, so enable the broad gates.
+ANALYZE_INC = -I cpp -I cpp/include -I include
+ANALYZE_DEF = -DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_STD=1 \
+              -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_HOSTED_IO=1 \
+              -DTINYMIND_ENABLE_OSTREAMS=1 -DTINYMIND_ENABLE_FP16=1
+
+sanitize :
+	@for d in $(COV_SUITES) $(COV_EXAMPLES); do \
+		echo "=== sanitize: $$d ==="; \
+		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
+		  $(MAKE) CC="$(SAN_CC)" WARN="$(SAN_WARN)" >/dev/null && \
+		  $(SAN_ENV) $(MAKE) CC="$(SAN_CC)" WARN="$(SAN_WARN)" run ) \
+		  || { echo "SANITIZE FAIL: $$d"; exit 1; }; \
+	done
+	@echo "sanitize: ASan+UBSan clean across all runtime suites and int8 examples"
+
+cppcheck :
+	@command -v cppcheck >/dev/null 2>&1 || { echo "ERROR: cppcheck not found. sudo apt install cppcheck"; exit 1; }
+	cppcheck --enable=warning,portability --std=c++17 --language=c++ \
+	         --inline-suppr --error-exitcode=2 --quiet \
+	         --suppress=missingIncludeSystem --suppress=missingInclude \
+	         $(ANALYZE_INC) $(ANALYZE_DEF) cpp
+	@echo "cppcheck: clean"
+
+# Bear captures the exact per-TU flags (each suite uses different -D corners),
+# which clang-tidy needs to instantiate the templates it diagnoses. `make check`
+# is the build that touches every translation unit.
+compile_commands.json :
+	@command -v bear >/dev/null 2>&1 || { echo "ERROR: bear not found. sudo apt install bear"; exit 1; }
+	bear --output compile_commands.json -- $(MAKE) check
+
+tidy : compile_commands.json
+	@command -v run-clang-tidy >/dev/null 2>&1 || { echo "ERROR: run-clang-tidy not found. sudo apt install clang-tidy"; exit 1; }
+	-run-clang-tidy -p . -quiet -header-filter='.*/cpp/.*\.hpp$$' '$(CURDIR)/(cpp|unit_test)/.*' 2>/dev/null | tee tidy-report.txt
+	@echo "tidy: advisory report written to tidy-report.txt (not a gate)"
+
+analyze : cppcheck tidy
+
+.PHONY : sanitize cppcheck tidy analyze
+
 # Recursively clean every unit test, example, and app (each subdir Makefile has
 # its own clean target), plus the coverage artifacts.
 clean : coverage-clean
+	rm -rf compile_commands.json tidy-report.txt
 	@for m in $$(find unit_test examples apps -name Makefile); do \
 		d=$$(dirname $$m); \
 		echo "clean $$d"; \

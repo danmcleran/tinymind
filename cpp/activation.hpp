@@ -44,7 +44,7 @@
 #pragma once
 
 #define NUMBER_OF_ACTIVATION_TABLE_VALUES 96
-#define MIN_X_TABLE_VALUE -6
-#define MAX_X_TABLE_VALUE 6
+#define MIN_X_TABLE_VALUE (-6)
+#define MAX_X_TABLE_VALUE (6)
 #define ACTIVATION_DELTA_SHIFT 3
 
