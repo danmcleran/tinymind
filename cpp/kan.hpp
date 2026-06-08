@@ -1419,8 +1419,8 @@ namespace tinymind {
     private:
         alignas(ValueType) unsigned char mLearnedValuesBuffer[NumberOfOutputLayerNeurons * sizeof(ValueType)];
 
-        KolmogorovArnoldNetwork(const KolmogorovArnoldNetwork&) {}
-        KolmogorovArnoldNetwork& operator=(const KolmogorovArnoldNetwork&) { return *this; }
+        KolmogorovArnoldNetwork(const KolmogorovArnoldNetwork&) = delete; // non-copyable
+        KolmogorovArnoldNetwork& operator=(const KolmogorovArnoldNetwork&) = delete; // non-assignable
 
         static_assert(NumberOfInputs > 0, "Invalid number of inputs.");
         static_assert(NumberOfHiddenLayers > 0, "Invalid number of hidden layers.");
