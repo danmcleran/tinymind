@@ -28,9 +28,11 @@ jobs:
       # Regenerate the knowledge graph from the current source and stage it into
       # the docs assets so the published graph always matches master. No commit
       # back to the repo, and no LLM/API key: the headless rebuild reads the
-      # versioned .graphify_labels.json to name communities. PYTHONHASHSEED is
-      # pinned so community detection is deterministic; the viz node limit is
-      # raised so the (community-aggregated) HTML renders for the full graph.
+      # versioned .graphify_labels.json to name communities, and PYTHONHASHSEED
+      # is pinned so community detection is deterministic. _rebuild_code only
+      # ever emits the full node-link graph (an unreadable hairball at ~10k
+      # nodes, and skipped above the viz limit), so render_graph_html.py builds
+      # the readable community-aggregated view the docs describe.
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -39,10 +41,10 @@ jobs:
       - name: Regenerate knowledge graph
         env:
           PYTHONHASHSEED: '0'
-          GRAPHIFY_VIZ_NODE_LIMIT: '50000'
         run: |
           pip install "graphifyy==0.8.35"
           python -c "from pathlib import Path; from graphify.watch import _rebuild_code; _rebuild_code(Path('.'), force=True)"
+          python tools/render_graph_html.py
           mkdir -p docs/assets/knowledge-graph
           cp graphify-out/graph.html docs/assets/knowledge-graph/graph.html
           cp graphify-out/graph.json docs/assets/knowledge-graph/graph.json
