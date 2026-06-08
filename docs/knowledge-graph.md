@@ -2,6 +2,7 @@
 title: Knowledge Graph
 layout: default
 nav_order: 12
+has_children: true
 ---
 
 # Repository Knowledge Graph
@@ -74,3 +75,6 @@ To rebuild and explore it locally:
 After adding code that forms new clusters, re-run `/graphify .` to label them
 and commit the updated `.graphify_labels.json` so the published graph names the
 new communities.
+
+For the full picture — what's versioned vs regenerated, the CI pipeline, and the
+"hairball trap" — see [Maintenance]({{ site.baseurl }}/knowledge-graph-maintenance).
