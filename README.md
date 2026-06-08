@@ -1,5 +1,8 @@
 # TinyMind
 
+[![Static & Dynamic Analysis](https://github.com/danmcleran/tinymind/actions/workflows/analysis.yml/badge.svg)](https://github.com/danmcleran/tinymind/actions/workflows/analysis.yml)
+[![CodeQL](https://github.com/danmcleran/tinymind/actions/workflows/codeql.yml/badge.svg)](https://github.com/danmcleran/tinymind/actions/workflows/codeql.yml)
+
 A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, liquid neural networks (LTC and CfC continuous-time cells), linear self-attention, FFT-based signal processing, 1D and 2D convolutions (including MobileNet-style depthwise-separable blocks), binary and ternary neural networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
 
 Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design), TinyMind uses template metaprogramming to produce zero-overhead abstractions where network topology, value type, activation functions, and training policies are all compile-time parameters.
@@ -879,6 +882,23 @@ TinyMind compiles cleanly on freestanding embedded targets that lack an FPU, a h
 | `TINYMIND_ENABLE_OPENMP` | OpenMP parallelization of the output-filter loop in `QConv2D` / `QConv2DPerChannel`. Orthogonal to every SIMD gate; caller passes `-fopenmp` separately |
 
 With all gates at 0, no header in `cpp/` includes anything beyond `<cstddef>`, `<cstdint>`, and placement `<new>` — all required by freestanding C++. With `FLOAT=1, STD=0` you get an FPU-but-no-stdlib build for float forward-pass inference. With `QUANT=1, FLOAT=0, STD=0` you get the deployable int8 inference shape (no float, no calibration helpers). The `unit_test/embedded` matrix builds and runs **eight corners** (`freestanding`, `no_stdlib`, `no_fpu`, `hosted`, `quant_freestanding`, `fp16_freestanding`, `int16_accum_freestanding`, `simd_disabled`) as part of `make check`. A separate `simd_prereq_regressions` target locks the static_assert prerequisite chain via compile-failure checks (e.g. `AVX_VNNI=1, AVX2=0` must fail to compile).
+
+## Quality Gates
+
+Every push and pull request runs the [Static & Dynamic Analysis](.github/workflows/analysis.yml) workflow plus a separate [CodeQL](.github/workflows/codeql.yml) scan. The bar is split into **blocking** gates (a failure fails the merge) and **advisory** gates (`continue-on-error: true` — findings are surfaced as uploaded report artifacts but never block).
+
+| Gate | Tool | Status | Reproduce locally |
+|---|---|---|---|
+| Memory / UB sanitizers | Clang ASan + UBSan over all runtime suites + int8 examples | **Blocking** | `make sanitize` |
+| Static analysis | cppcheck (warning + portability), all headers | **Blocking** | `make cppcheck` |
+| Coverage floor | gcov + lcov, `cpp/` line/function floors | **Blocking** | `make coverage && make coverage-check` |
+| Formal proofs | CBMC over the fixed-point `qformat` kernels | **Blocking** | `make -C formal prove` |
+| Fuzzing | libFuzzer over int8 kernels, time-boxed, ASan+UBSan | **Blocking** | `make -C fuzz fuzz-ci` |
+| Semantic code scan | GitHub CodeQL (C/C++) | **Blocking** | — (cloud) |
+| MISRA C:2012 | cppcheck MISRA addon (advisory against C++17 template code) | Advisory | `make misra` |
+| Lint + clang static analyzer | clang-tidy (`bugprone-*`, `cert-*`, `clang-analyzer-*`, narrowing/init) | Advisory | `make tidy` |
+
+The clang-tidy gate runs the **Clang Static Analyzer** engine in-process via its `clang-analyzer-*` checks — there is no separate `scan-build` pass. The full enforced matrix (build flags, the eight-corner embedded regression set) runs under `make check`.
 
 ## Project Structure
 
