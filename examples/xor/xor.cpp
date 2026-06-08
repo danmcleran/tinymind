@@ -158,5 +158,30 @@ int main(const int argc, char *argv[])
 
     results.close();
 
+    // Decision-surface CSV: sweep the trained network over the [0,1]^2 input
+    // grid so plot.py renders the learned XOR boundary as a heatmap -- the same
+    // predicted-vs-actual presentation as the PyTorch xor examples.
+    {
+        std::ofstream surf("xor_decision_surface.csv");
+        surf << "x0,x1,prob" << std::endl;
+        const int G = 41;
+        for (int a = 0; a < G; ++a)
+        {
+            for (int b = 0; b < G; ++b)
+            {
+                const double x0 = static_cast<double>(a) / (G - 1);
+                const double x1 = static_cast<double>(b) / (G - 1);
+                ValueType in[2];
+                in[0].setValue(static_cast<FullWidthValueType>(x0 * fracScale));
+                in[1].setValue(static_cast<FullWidthValueType>(x1 * fracScale));
+                ValueType out[NeuralNetworkType::NumberOfOutputLayerNeurons];
+                testNeuralNet.feedForward(&in[0]);
+                testNeuralNet.getLearnedValues(&out[0]);
+                const double prob = static_cast<double>(out[0].getValue()) / fracScale;
+                surf << x0 << "," << x1 << "," << prob << std::endl;
+            }
+        }
+    }
+
     return 0;
 }

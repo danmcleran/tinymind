@@ -24,12 +24,16 @@ make run
 make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
-`make run` writes the learning-curve CSV `output/xor_training.csv` and a per-iteration property dump `output/nn_fixed_xor.txt`. A `make plot-trajectory` target renders the generic per-column network-trajectory view from the property dump.
+`make run` writes the learning-curve CSV `output/xor_training.csv`, the decision-surface CSV `output/xor_decision_surface.csv` (a 41×41 sweep of the trained network over the input grid), and a per-iteration property dump `output/nn_fixed_xor.txt`. A `make plot-trajectory` target renders the generic per-column network-trajectory view from the property dump.
 
 ## Output
 
 ![XOR fixed-point MLP learning curve]({{ site.baseurl }}/assets/plots/xor_learning_curve.png)
 
 The curve plots the mean absolute error over the four XOR cases against training iteration. It descends smoothly from the symmetric-guess level (~0.5) and settles within ~1000 iterations. All four patterns are then classified correctly with clear margins (predictions ≈ 0.09 / 0.91); the residual ~0.09 is just the sigmoid output not fully saturating to 0/1 under the MSE objective.
+
+![XOR decision surface, Q16.16 fixed-point TinyMind inference]({{ site.baseurl }}/assets/plots/xor_q16_decision_surface.png)
+
+Sweeping the trained network over the `[0,1]²` input grid shows predicted vs. actual directly: the heatmap is the network's `P(XOR=1)`, the black line is the 0.5 decision boundary, and the four corner markers are the ground-truth XOR targets (red = 1, blue = 0). Each corner sits firmly inside the matching colored region — the same predicted-vs-actual view as the [PyTorch Q-format]({{ site.baseurl }}/examples/pytorch_xor.html) and [PyTorch int8]({{ site.baseurl }}/examples/pytorch_quant_xor.html) XOR examples.
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/xor)
