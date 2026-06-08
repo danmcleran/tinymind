@@ -201,12 +201,21 @@ namespace tinymind {
                     const int32_t normalized_q14 =
                         static_cast<int32_t>(prod_norm >> 16);
 
-                    // Multiply by per-feature gamma (Q1.14). Both factors
-                    // fit comfortably inside int32: normalized_q14 is
-                    // bounded by ~2^15 for typical input variance, and
-                    // gamma_int <= 32767.
-                    const int32_t weighted_q28 = normalized_q14 *
-                        static_cast<int32_t>(gamma[i]);
+                    // Multiply by per-feature gamma (Q1.14). normalized_q14 is
+                    // NOT bounded by ~2^15 in general: a near-zero row variance
+                    // inflates inv_stddev, so the Q?.28 product can exceed
+                    // int32. Compute it in int64 and saturate to int32 so the
+                    // requantize contract (int32 accumulator) stays well-defined
+                    // instead of overflowing.
+                    const int64_t weighted_q28_64 =
+                        static_cast<int64_t>(normalized_q14) *
+                        static_cast<int64_t>(gamma[i]);
+                    const int64_t weighted_hi = static_cast<int64_t>(0x7FFFFFFF);
+                    const int64_t weighted_lo = -weighted_hi - 1;
+                    const int32_t weighted_q28 =
+                        weighted_q28_64 > weighted_hi ? static_cast<int32_t>(weighted_hi)
+                        : weighted_q28_64 < weighted_lo ? static_cast<int32_t>(weighted_lo)
+                        : static_cast<int32_t>(weighted_q28_64);
 
                     // Requantize the Q?.28 weighted accumulator to the
                     // output grid using the host-side multiplier/shift,
