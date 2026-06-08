@@ -16,7 +16,7 @@ release :
 	$(CC) -g -O3 $(WARN) -o $(OUT) $(SOURCES) $(INCLUDES) $(DEFINES)
 
 run :
-	cd ./output && ./kan_xor && cd ../
+	cd ./output && ./kan_xor && ./kan_xor --dense && cd ../
 
 clean :
 	rm -f ./output/*

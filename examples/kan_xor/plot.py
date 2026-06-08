@@ -31,6 +31,7 @@ import tinymind_plot as tp  # noqa: E402
 
 CURVE_CSV = os.path.join(HERE, "output", "kan_xor_training.csv")
 SURF_CSV = os.path.join(HERE, "output", "kan_xor_decision_surface.csv")
+DENSE_SURF_CSV = os.path.join(HERE, "output", "kan_xor_dense_decision_surface.csv")
 
 
 def plot_learning_curve():
@@ -43,16 +44,15 @@ def plot_learning_curve():
     tp.finish(fig, tp.png_for(CURVE_CSV))
 
 
-def plot_decision_surface():
-    cols, _ = tp.read_csv(SURF_CSV)
+def plot_decision_surface(csv, title, subtitle):
+    cols, _ = tp.read_csv(csv)
     x0, prob = cols["x0"], cols["prob"]
     g = int(round(len(x0) ** 0.5))
     grid = [[0.0] * g for _ in range(g)]
     for k in range(len(prob)):
         grid[k // g][k % g] = prob[k]
 
-    fig, ax = tp.new_fig("KAN XOR decision surface (Q16.16)",
-                         "Kolmogorov-Arnold Network (2->5->1) trained in TinyMind")
+    fig, ax = tp.new_fig(title, subtitle)
     im = ax.imshow(grid, origin="lower", extent=(0, 1, 0, 1),
                    cmap="RdBu_r", vmin=0.0, vmax=1.0, aspect="auto")
     ax.contour(
@@ -63,13 +63,19 @@ def plot_decision_surface():
                    color=("#C44E52" if lbl else "#4C72B0"), zorder=5)
     ax.set_xlabel("x0"); ax.set_ylabel("x1")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="P(XOR=1)")
-    tp.finish(fig, tp.png_for(SURF_CSV))
+    tp.finish(fig, tp.png_for(csv))
 
 
 def main():
     plot_learning_curve()
     if os.path.exists(SURF_CSV):
-        plot_decision_surface()
+        plot_decision_surface(
+            SURF_CSV, "KAN XOR decision surface (Q16.16)",
+            "Trained on the 4 XOR corners (2->5->1)")
+    if os.path.exists(DENSE_SURF_CSV):
+        plot_decision_surface(
+            DENSE_SURF_CSV, "KAN XOR decision surface -- dense training (Q16.16)",
+            "Trained on dense [0,1]^2 samples (2->5->1)")
 
 
 if __name__ == "__main__":

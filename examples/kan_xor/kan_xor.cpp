@@ -23,6 +23,8 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <cstring>
+#include <cstdlib>
 
 #include "constants.hpp"
 #include "kan_xornet.h"
@@ -42,14 +44,30 @@ static void generateXorTrainingValue(ValueType& x, ValueType& y, ValueType& z)
     z = ValueType(result, 0);
 }
 
+// Dense-training generator: sample the whole [0,1]^2 input region (not just the
+// four corners), label by the XOR of the two halves. Constraining the splines
+// everywhere -- rather than at four points -- yields a smooth decision surface,
+// the way a KAN classifier is trained in practice.
+static void generateDenseTrainingValue(ValueType& x, ValueType& y, ValueType& z)
+{
+    const double fx = static_cast<double>(rand()) / static_cast<double>(RAND_MAX);
+    const double fy = static_cast<double>(rand()) / static_cast<double>(RAND_MAX);
+    const int result = ((fx > 0.5) != (fy > 0.5)) ? 1 : 0;
+    const double scale = static_cast<double>(1 << ValueType::NumberOfFractionalBits);
+    x.setValue(static_cast<FullWidthValueType>(fx * scale));
+    y.setValue(static_cast<FullWidthValueType>(fy * scale));
+    z = ValueType(result, 0);
+}
+
 extern KanNetworkType testKanNet;
 
 int main(const int argc, char *argv[])
 {
-    (void)argc;
-    (void)argv;
-
     using namespace std;
+
+    // --dense: train over the whole input region for a smooth surface; default
+    // trains on the four crisp XOR corners (the apples-to-apples comparison).
+    const bool dense = (argc > 1 && std::strcmp(argv[1], "--dense") == 0);
 
     srand(RANDOM_SEED);
 
@@ -57,7 +75,7 @@ int main(const int argc, char *argv[])
     ofstream results(path);
 
     // Learning curve CSV (iteration, avg_error) for plot.py.
-    ofstream curve("kan_xor_training.csv");
+    ofstream curve(dense ? "kan_xor_dense_training.csv" : "kan_xor_training.csv");
     curve << "iteration,avg_error" << std::endl;
     ValueType values[KanNetworkType::NumberOfInputLayerNeurons];
     ValueType output[KanNetworkType::NumberOfOutputLayerNeurons];
@@ -72,7 +90,10 @@ int main(const int argc, char *argv[])
 
     for (unsigned i = 0; i < TRAINING_ITERATIONS; ++i)
     {
-        generateXorTrainingValue(values[0], values[1], output[0]);
+        if (dense)
+            generateDenseTrainingValue(values[0], values[1], output[0]);
+        else
+            generateXorTrainingValue(values[0], values[1], output[0]);
 
         testKanNet.feedForward(&values[0]);
         error = testKanNet.calculateError(&output[0]);
@@ -115,7 +136,7 @@ int main(const int argc, char *argv[])
     // so plot.py renders predicted vs actual the same way as the other XOR
     // examples.
     {
-        ofstream surf("kan_xor_decision_surface.csv");
+        ofstream surf(dense ? "kan_xor_dense_decision_surface.csv" : "kan_xor_decision_surface.csv");
         surf << "x0,x1,prob" << std::endl;
         const int G = 41;
         for (int a = 0; a < G; ++a)
