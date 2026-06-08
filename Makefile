@@ -140,11 +140,18 @@ coverage-clean :
 #   make sanitize   HARD GATE  -- rebuild every runtime suite + int8 example
 #                               with ASan+UBSan and run; any UB aborts nonzero.
 #   make cppcheck   HARD GATE  -- cppcheck over cpp/ (warning + portability).
+#   make misra      ADVISORY   -- cppcheck MISRA C:2012 addon over cpp/. This is
+#                               the MISRA *C* ruleset run against C++17 template
+#                               code, so most findings are expected/informational
+#                               (MISRA C++ needs a commercial qualified tool).
+#                               Reports to misra-report.txt; pass
+#                               MISRA_RULE_TEXTS=<file> for full rule descriptions
+#                               instead of rule IDs.
 #   make tidy       ADVISORY   -- clang-tidy via a bear-captured compile DB;
 #                               reports to tidy-report.txt, never fails. Its
 #                               clang-analyzer-* checks cover the clang static
 #                               analyzer; CodeQL runs the same engine in CI.
-#   make analyze               -- cppcheck + tidy together.
+#   make analyze               -- cppcheck (gate) + misra + tidy (advisory).
 #
 # The sub-Makefiles all build on a single `$(CC) ... $(WARN) ...` line, so the
 # sanitizer is injected purely by overriding CC/WARN -- no per-suite edits.
@@ -178,6 +185,27 @@ cppcheck :
 	         $(ANALYZE_INC) $(ANALYZE_DEF) cpp
 	@echo "cppcheck: clean"
 
+# MISRA C:2012 addon (advisory). Pass MISRA_RULE_TEXTS=<file> to expand rule IDs
+# into full descriptions using the licensed MISRA rule text; without it cppcheck
+# reports rule IDs only. Never fails the build -- this is the MISRA C ruleset on
+# C++ source, so findings are expected and for review, not a pass/fail gate.
+MISRA_RULE_TEXTS ?=
+MISRA_TEXTS_ARG = $(if $(MISRA_RULE_TEXTS),--rule-texts=$(MISRA_RULE_TEXTS),)
+# Scan the headers explicitly: cpp/ is header-only (one .cpp), so a directory
+# scan would only analyze lookupTables.cpp and reach the templates as mere
+# includes. Listing the headers forces each to be analyzed as a translation unit.
+MISRA_SRCS = $(shell find cpp -name '*.hpp') cpp/lookupTables.cpp
+misra :
+	@command -v cppcheck >/dev/null 2>&1 || { echo "ERROR: cppcheck not found. sudo apt install cppcheck"; exit 1; }
+	-cppcheck --addon=misra $(MISRA_TEXTS_ARG) --enable=style --std=c++17 --language=c++ \
+	          --inline-suppr --quiet \
+	          --suppress=missingIncludeSystem --suppress=missingInclude \
+	          $(ANALYZE_INC) $(ANALYZE_DEF) $(MISRA_SRCS) 2>misra-report.txt
+	@echo "=== MISRA C:2012 findings by rule (top 25) ==="
+	@grep -oE "misra-c2012-[0-9.]+" misra-report.txt 2>/dev/null | sort | uniq -c | sort -rn | head -25 || true
+	@echo "total MISRA findings: $$(grep -c 'misra-c2012-' misra-report.txt 2>/dev/null || echo 0)  (full list in misra-report.txt)"
+	@echo "misra: advisory MISRA C:2012 report (not a gate; MISRA C++ needs a qualified commercial tool)"
+
 # Bear captures the exact per-TU flags (each suite uses different -D corners),
 # which clang-tidy needs to instantiate the templates it diagnoses. `make check`
 # is the build that touches every translation unit.
@@ -190,9 +218,9 @@ tidy : compile_commands.json
 	-run-clang-tidy -p . -quiet -header-filter='.*/cpp/.*\.hpp$$' '$(CURDIR)/(cpp|unit_test)/.*' 2>/dev/null | tee tidy-report.txt
 	@echo "tidy: advisory report written to tidy-report.txt (not a gate)"
 
-analyze : cppcheck tidy
+analyze : misra tidy cppcheck
 
-.PHONY : sanitize cppcheck tidy analyze coverage-check
+.PHONY : sanitize cppcheck misra tidy analyze coverage-check
 
 # Recursively clean every unit test, example, and app (each subdir Makefile has
 # its own clean target), plus the coverage artifacts.

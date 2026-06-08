@@ -66,6 +66,26 @@ jobs:
       - name: Prove fixed-point kernels
         run: make -C formal prove
 
+  misra:
+    name: MISRA C:2012 (advisory)
+    runs-on: ubuntu-latest
+    # Advisory: cppcheck's MISRA C ruleset run against C++17 template code.
+    # Most findings are expected; this surfaces them for review, never blocks.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - name: MISRA C:2012 addon
+        run: make misra
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: misra-report
+          path: misra-report.txt
+          if-no-files-found: ignore
+
   tidy:
     name: clang-tidy (advisory)
     runs-on: ubuntu-latest
