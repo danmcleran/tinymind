@@ -33,16 +33,46 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "plotting"))
 import tinymind_plot as tp  # noqa: E402
 
-CSV = os.path.join(HERE, "output", "gru_xor_results.csv")
+CURVE_CSV = os.path.join(HERE, "output", "gru_xor_results.csv")
+SURF_CSV = os.path.join(HERE, "output", "gru_xor_decision_surface.csv")
 
 
-def main():
-    cols, _ = tp.read_csv(CSV)
+def plot_learning_curve():
+    cols, _ = tp.read_csv(CURVE_CSV)
     fig, ax = tp.new_fig("GRU XOR learning curve",
                          "GRU recurrent net (2->8->1), Q16.16, state reset per sample")
     tp.line(ax, cols["iteration"], {"4-case XOR error": cols["xor_error"]},
             xlabel="training iteration", ylabel="average |error|")
-    tp.finish(fig, tp.png_for(CSV))
+    tp.finish(fig, tp.png_for(CURVE_CSV))
+
+
+def plot_decision_surface():
+    cols, _ = tp.read_csv(SURF_CSV)
+    x0, prob = cols["x0"], cols["prob"]
+    g = int(round(len(x0) ** 0.5))
+    grid = [[0.0] * g for _ in range(g)]
+    for k in range(len(prob)):
+        grid[k // g][k % g] = prob[k]
+
+    fig, ax = tp.new_fig("GRU XOR decision surface (Q16.16)",
+                         "GRU recurrent net (2->8->1), state reset per grid point")
+    im = ax.imshow(grid, origin="lower", extent=(0, 1, 0, 1),
+                   cmap="RdBu_r", vmin=0.0, vmax=1.0, aspect="auto")
+    ax.contour(
+        [i / (g - 1) for i in range(g)], [i / (g - 1) for i in range(g)],
+        grid, levels=[0.5], colors=tp.FG, linewidths=1.5)
+    for (cx, cy, lbl) in [(0, 0, 0), (0, 1, 1), (1, 0, 1), (1, 1, 0)]:
+        ax.scatter([cx], [cy], s=160, edgecolor="white", linewidth=1.5,
+                   color=("#C44E52" if lbl else "#4C72B0"), zorder=5)
+    ax.set_xlabel("x0"); ax.set_ylabel("x1")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="P(XOR=1)")
+    tp.finish(fig, tp.png_for(SURF_CSV))
+
+
+def main():
+    plot_learning_curve()
+    if os.path.exists(SURF_CSV):
+        plot_decision_surface()
 
 
 if __name__ == "__main__":

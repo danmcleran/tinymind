@@ -159,5 +159,28 @@ int main(int argc, char* argv[])
     }
     std::cout << correct << "/4 patterns classified correctly." << std::endl;
 
+    // Decision-surface CSV: sweep the trained GRU over the [0,1]^2 input grid,
+    // resetting recurrent state per point, so plot.py renders predicted vs
+    // actual the same way as the other XOR examples.
+    {
+        std::ofstream surf("gru_xor_decision_surface.csv");
+        surf << "x0,x1,prob" << std::endl;
+        const int G = 41;
+        for (int a = 0; a < G; ++a)
+        {
+            for (int b = 0; b < G; ++b)
+            {
+                const double x0 = static_cast<double>(a) / (G - 1);
+                const double x1 = static_cast<double>(b) / (G - 1);
+                ValueType in[2] = { toQ(x0), toQ(x1) };
+                ValueType out[1];
+                gruNet.resetState();
+                gruNet.feedForward(&in[0]);
+                gruNet.getLearnedValues(&out[0]);
+                surf << x0 << "," << x1 << "," << fromQ(out[0]) << std::endl;
+            }
+        }
+    }
+
     return 0;
 }
