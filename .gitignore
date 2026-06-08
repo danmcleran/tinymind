@@ -55,6 +55,14 @@ compile_commands.json
 tidy-report.txt
 scan-report/
 
+# Fuzzing build artifacts, corpora, and crash reproducers
+fuzz/fuzz_qlayernorm
+fuzz/corpus/
+fuzz/crash-*
+fuzz/leak-*
+fuzz/oom-*
+fuzz/timeout-*
+
 # Python bytecode from example plot scripts
 __pycache__/
 *.pyc

@@ -46,6 +46,16 @@ jobs:
           make coverage
           make coverage-check
 
+  fuzz:
+    name: Fuzz int8 kernels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+      - name: Fuzz (time-boxed, ASan+UBSan)
+        run: make -C fuzz fuzz-ci FUZZ_CXX=clang++ MAX_TIME=90
+
   tidy:
     name: clang-tidy (advisory)
     runs-on: ubuntu-latest

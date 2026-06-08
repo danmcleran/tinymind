@@ -356,7 +356,7 @@ namespace tinymind {
             ValueType qValue0;
             ValueType qValue1;
             ActionType action;
-            ActionType actionIndex;
+            size_t actionIndex; // index/counter over actions[]; matches numberOfValidActions' type
 
             switch(numberOfValidActions)
             {
