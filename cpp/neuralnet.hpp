@@ -229,7 +229,7 @@ namespace tinymind {
 
         size_t mIndex;
         size_t mPass;
-        unsigned char mGradientsBuffer[NumberOfGradients * sizeof(ValueType)];
+        alignas(ValueType) unsigned char mGradientsBuffer[NumberOfGradients * sizeof(ValueType)];
     };
 
     template<typename ValueType, size_t NumberOfGradients>
@@ -1068,7 +1068,7 @@ namespace tinymind {
             this->mIndex = 0;
         }
         
-        unsigned char mOutgoingConnectionsBuffer[NumberOfOutgoingConnections * sizeof(ConnectionType)];
+        alignas(ConnectionType) unsigned char mOutgoingConnectionsBuffer[NumberOfOutgoingConnections * sizeof(ConnectionType)];
         ValueType mOutputValue;
         size_t mIndex;
         
@@ -1859,7 +1859,7 @@ namespace tinymind {
                 new (&this->mNeuronsBuffer[bufferIndex]) NeuronType();
             }
         }
-        unsigned char mNeuronsBuffer[NumberOfNeurons * sizeof(NeuronType)];
+        alignas(NeuronType) unsigned char mNeuronsBuffer[NumberOfNeurons * sizeof(NeuronType)];
         static_assert(NumberOfNeurons > 0, "Number neurons must be > 0");
     };
 
@@ -2755,7 +2755,14 @@ namespace tinymind {
     template<typename CT, typename TF, bool IT, hiddenLayerConfiguration_e HLC, size_t S0, size_t S1, size_t... Rest>
     struct InnerLayerChainBuilder<CT, TF, IT, HLC, HiddenLayers<S0, S1, Rest...> >
     {
-        typedef typename HiddenLayerNeuronTypeSelector<CT, S1, TF, CT::IsTrainable, HLC>::HiddenLayerNeuronType NeuronType;
+        // An inner hidden layer (size S0) feeds the next hidden layer (size S1).
+        // For LSTM/GRU each target neuron needs one connection per gate, so the
+        // per-neuron outgoing-connection count must be gate-multiplied, exactly
+        // as the input layer does (GateConnectionCount<FirstLayerSize, ...>).
+        // Passing the raw next-layer size here under-provisions the connection
+        // buffer by the gate factor and over-reads it at run time.
+        static const size_t OutgoingConnectionsToNextLayer = GateConnectionCount<S1, HLC>::value;
+        typedef typename HiddenLayerNeuronTypeSelector<CT, OutgoingConnectionsToNextLayer, TF, CT::IsTrainable, HLC>::HiddenLayerNeuronType NeuronType;
         typedef typename LastHiddenLayerTypeSelector<NeuronType, S0, HLC>::LastHiddenLayerType CurrentLayerType;
         typedef typename InnerLayerChainBuilder<CT, TF, IT, HLC, HiddenLayers<S1, Rest...> >::ChainType RestChainType;
         typedef LayerChain<CurrentLayerType, RestChainType> ChainType;
@@ -2769,29 +2776,37 @@ namespace tinymind {
 
     template<typename ConnectionType, typename TransferFunctionsPolicy,
              size_t RecurrentConnectionDepth, bool HasRecurrentLayer,
-             typename HiddenLayerSizes>
+             hiddenLayerConfiguration_e HLConfig, typename HiddenLayerSizes>
     struct RecurrentLayerChainBuilder;
 
     // Single hidden layer: no inner recurrent layers needed
-    template<typename CT, typename TF, size_t RCD, bool HRL, size_t S0>
-    struct RecurrentLayerChainBuilder<CT, TF, RCD, HRL, HiddenLayers<S0> >
+    template<typename CT, typename TF, size_t RCD, bool HRL, hiddenLayerConfiguration_e HLC, size_t S0>
+    struct RecurrentLayerChainBuilder<CT, TF, RCD, HRL, HLC, HiddenLayers<S0> >
     {
         typedef EmptyLayerChain ChainType;
     };
 
     // Two or more hidden layers: create recurrent layer for each inner layer
-    template<typename CT, typename TF, size_t RCD, size_t S0, size_t S1, size_t... Rest>
-    struct RecurrentLayerChainBuilder<CT, TF, RCD, true, HiddenLayers<S0, S1, Rest...> >
+    template<typename CT, typename TF, size_t RCD, hiddenLayerConfiguration_e HLC, size_t S0, size_t S1, size_t... Rest>
+    struct RecurrentLayerChainBuilder<CT, TF, RCD, true, HLC, HiddenLayers<S0, S1, Rest...> >
     {
-        typedef typename RecurrentLayerNeuronTypeSelector<CT, S0, TF, CT::IsTrainable>::RecurrentLayerNeuronType RecurrentNeuronType;
+        // The recurrent layer feeds back into its own hidden layer's gates.
+        // For LSTM/GRU each target neuron needs one connection per gate, so the
+        // per-neuron outgoing-connection count must be gate-multiplied, exactly
+        // as the forward and last-recurrent paths do via GateConnectionCount.
+        // Passing the raw layer size here (the prior behavior) under-provisions
+        // the connection buffer by the gate factor and over-reads it at run time.
+        // The recurrent layer itself still has S0 neurons.
+        static const size_t RecurrentOutgoingConnections = GateConnectionCount<S0, HLC>::value;
+        typedef typename RecurrentLayerNeuronTypeSelector<CT, RecurrentOutgoingConnections, TF, CT::IsTrainable>::RecurrentLayerNeuronType RecurrentNeuronType;
         typedef RecurrentLayer<RecurrentNeuronType, S0, RCD> CurrentRecurrentLayerType;
-        typedef typename RecurrentLayerChainBuilder<CT, TF, RCD, true, HiddenLayers<S1, Rest...> >::ChainType RestChainType;
+        typedef typename RecurrentLayerChainBuilder<CT, TF, RCD, true, HLC, HiddenLayers<S1, Rest...> >::ChainType RestChainType;
         typedef LayerChain<CurrentRecurrentLayerType, RestChainType> ChainType;
     };
 
     // No recurrent layer: empty chain
-    template<typename CT, typename TF, size_t RCD, size_t S0, size_t S1, size_t... Rest>
-    struct RecurrentLayerChainBuilder<CT, TF, RCD, false, HiddenLayers<S0, S1, Rest...> >
+    template<typename CT, typename TF, size_t RCD, hiddenLayerConfiguration_e HLC, size_t S0, size_t S1, size_t... Rest>
+    struct RecurrentLayerChainBuilder<CT, TF, RCD, false, HLC, HiddenLayers<S0, S1, Rest...> >
     {
         typedef EmptyLayerChain ChainType;
     };
@@ -3831,7 +3846,7 @@ namespace tinymind {
         typedef typename RecurrentLayerTypeSelectorType::RecurrentLayerType NeuralNetworkRecurrentLayerType;
 
         // Recurrent layer chain for inner hidden layers (multi-layer LSTM)
-        typedef typename RecurrentLayerChainBuilder<ConnectionType, TransferFunctionsPolicy, RecurrentConnectionDepth, HasRecurrentLayer, HiddenLayersDescriptor>::ChainType InnerRecurrentLayerChainType;
+        typedef typename RecurrentLayerChainBuilder<ConnectionType, TransferFunctionsPolicy, RecurrentConnectionDepth, HasRecurrentLayer, HiddenLayerConfig, HiddenLayersDescriptor>::ChainType InnerRecurrentLayerChainType;
 
         // Output layer
         typedef typename OutputLayerNeuronTypeSelector<ConnectionType, TransferFunctionsPolicy, IsTrainable>::OutputLayerNeuronType OutputLayerNeuronType;
@@ -4191,7 +4206,7 @@ namespace tinymind {
         TrainingPolicyType mTrainingPolicy;
         GradientsManagerType mGradientsManager;
     private:
-        unsigned char mLearnedValuesBuffer[NumberOfOutputLayerNeurons * sizeof(ValueType)];
+        alignas(ValueType) unsigned char mLearnedValuesBuffer[NumberOfOutputLayerNeurons * sizeof(ValueType)];
 
         NeuralNetwork(const NeuralNetwork&) {} // hide copy constructor
         NeuralNetwork& operator=(const NeuralNetwork&) {} // hide assignment operator

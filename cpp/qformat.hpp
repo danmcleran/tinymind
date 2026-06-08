@@ -113,7 +113,7 @@ namespace tinymind {
     public:
         static T saturate(const T& origValue, const T& target, const T& minValue, const T& maxValue, const OperatorType_e opType)
         {
-            T result;
+            T result{};
             switch (opType) {
                 case AdditionOp:
                     if (target > 0) {
@@ -511,8 +511,14 @@ namespace tinymind {
             MultiplicationResultFullWidthValueType right;
             MultiplicationResultFullWidthValueType result;
 
-            MultiplicationResultFullWidthValueType min = static_cast<MultiplicationResultFullWidthValueType>(QFormatMinValue()) << NumberOfFractionalBits;
-            MultiplicationResultFullWidthValueType max = static_cast<MultiplicationResultFullWidthValueType>(QFormatMaxValue()) << NumberOfFractionalBits;
+            // Scale the saturation bounds up by 2^frac. Expressed as a multiply
+            // rather than a left shift: QFormatMinValue() is negative for signed
+            // formats, and left-shifting a negative value is undefined behavior
+            // before C++20. The wide result type holds the product without
+            // overflow, so the multiply is well-defined and bit-identical.
+            const MultiplicationResultFullWidthValueType scale = static_cast<MultiplicationResultFullWidthValueType>(1) << NumberOfFractionalBits;
+            MultiplicationResultFullWidthValueType min = static_cast<MultiplicationResultFullWidthValueType>(QFormatMinValue()) * scale;
+            MultiplicationResultFullWidthValueType max = static_cast<MultiplicationResultFullWidthValueType>(QFormatMaxValue()) * scale;
 
             left = static_cast<MultiplicationResultFullWidthValueType>(values_u.mValue);
             right = static_cast<MultiplicationResultFullWidthValueType>(other.values_u.mValue);
@@ -548,7 +554,11 @@ namespace tinymind {
             right = other.values_u.mValue;
 
             SignExtender<DivisionResultFullWidthValueType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
-            left <<= NumberOfFractionalBits;
+            // Scale the dividend up by 2^frac. Multiply, not left shift: `left`
+            // is sign-extended and may be negative, and left-shifting a negative
+            // value is undefined behavior before C++20. The division-width type
+            // holds the product without overflow, so this is bit-identical.
+            left *= (static_cast<DivisionResultFullWidthValueType>(1) << NumberOfFractionalBits);
 
             result = DivisionSaturatePolicy::saturate(left, right, min, max, DivisionOp);
 

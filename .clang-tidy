@@ -1,0 +1,28 @@
+# TinyMind static-analysis profile.
+# Focus: the defect classes that actually bite an embedded, header-only,
+# fixed-point template library — integer narrowing/overflow, out-of-bounds
+# indexing, uninitialized reads, and CERT integer/UB rules. Style/naming
+# checks are intentionally OFF; this file is a safety gate, not a formatter.
+#
+# Usage (needs compile_commands.json; generate with: bear -- make check):
+#   clang-tidy -p . cpp/qformat.hpp
+#   run-clang-tidy -p .            # whole compile DB, parallel
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  cppcoreguidelines-narrowing-conversions,
+  cppcoreguidelines-pro-bounds-constant-array-index,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-init-variables,
+  misc-uninitialized-record-variable,
+  -bugprone-easily-swappable-parameters,
+  -cert-dcl21-cpp
+
+# Treat nothing as a hard error by default at the tool level; the orchestrating
+# make target decides pass/fail. Header filter keeps findings to the library and
+# its instantiating TUs, not Boost / system headers.
+HeaderFilterRegex: '.*/(cpp|include)/.*\.hpp$'
+WarningsAsErrors: ''
+FormatStyle: none

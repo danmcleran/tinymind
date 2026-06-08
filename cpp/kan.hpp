@@ -342,7 +342,7 @@ namespace tinymind {
             this->mIndex = 0;
         }
 
-        unsigned char mOutgoingConnectionsBuffer[NumberOfOutgoingConnections * sizeof(KanConnectionType)];
+        alignas(KanConnectionType) unsigned char mOutgoingConnectionsBuffer[NumberOfOutgoingConnections * sizeof(KanConnectionType)];
         ValueType mOutputValue;
         size_t mIndex;
 
@@ -587,7 +587,7 @@ namespace tinymind {
             }
         }
 
-        unsigned char mNeuronsBuffer[NumberOfNeurons * sizeof(NeuronType)];
+        alignas(NeuronType) unsigned char mNeuronsBuffer[NumberOfNeurons * sizeof(NeuronType)];
         KnotVectorType mKnotVector;
 
         static_assert(NumberOfNeurons > 0, "Number of neurons must be > 0.");
@@ -709,7 +709,7 @@ namespace tinymind {
         }
 
     private:
-        unsigned char mNeuronsBuffer[NumberOfNeurons * sizeof(NeuronType)];
+        alignas(NeuronType) unsigned char mNeuronsBuffer[NumberOfNeurons * sizeof(NeuronType)];
 
         static_assert(NumberOfNeurons > 0, "Number of output neurons must be > 0.");
     };
@@ -763,7 +763,7 @@ namespace tinymind {
         }
 
     private:
-        unsigned char mBuffer[NumberOfInnerHiddenLayers * sizeof(InnerHiddenLayerType)];
+        alignas(InnerHiddenLayerType) unsigned char mBuffer[NumberOfInnerHiddenLayers * sizeof(InnerHiddenLayerType)];
         InnerHiddenLayerType* pLayers;
     };
 
@@ -1417,7 +1417,7 @@ namespace tinymind {
         TrainingPolicyType mTrainingPolicy;
 
     private:
-        unsigned char mLearnedValuesBuffer[NumberOfOutputLayerNeurons * sizeof(ValueType)];
+        alignas(ValueType) unsigned char mLearnedValuesBuffer[NumberOfOutputLayerNeurons * sizeof(ValueType)];
 
         KolmogorovArnoldNetwork(const KolmogorovArnoldNetwork&) {}
         KolmogorovArnoldNetwork& operator=(const KolmogorovArnoldNetwork&) { return *this; }

@@ -448,10 +448,13 @@ static void generateFixedPointXorValues(T* values, T* output)
     const uint32_t y = (rand() & 1);
     const uint32_t z = x ^ y;
 
-    *values = static_cast<T>(x << T::NumberOfFractionalBits);
+    // Scale by 2^frac via multiply, not left shift: x/y/z may be negative and
+    // left-shifting a negative value is undefined behavior before C++20.
+    const int32_t scale = static_cast<int32_t>(1) << T::NumberOfFractionalBits;
+    *values = static_cast<T>(x * scale);
     ++values;
-    *values = static_cast<T>(y << T::NumberOfFractionalBits);
-    *output = (z << T::NumberOfFractionalBits);
+    *values = static_cast<T>(y * scale);
+    *output = (z * scale);
 }
 
 template<typename T>
@@ -474,10 +477,13 @@ static void generateFixedPointAndValues(T* values, T* output)
     const uint32_t y = (rand() & 1);
     const uint32_t z = x & y;
 
-    *values = static_cast<T>(x << T::NumberOfFractionalBits);
+    // Scale by 2^frac via multiply, not left shift: x/y/z may be negative and
+    // left-shifting a negative value is undefined behavior before C++20.
+    const int32_t scale = static_cast<int32_t>(1) << T::NumberOfFractionalBits;
+    *values = static_cast<T>(x * scale);
     ++values;
-    *values = static_cast<T>(y << T::NumberOfFractionalBits);
-    *output = (z << T::NumberOfFractionalBits);
+    *values = static_cast<T>(y * scale);
+    *output = (z * scale);
 }
 
 template<typename T>
@@ -500,10 +506,13 @@ static void generateFixedPointOrValues(T* values, T* output)
     const uint32_t y = (rand() & 1);
     const uint32_t z = x | y;
 
-    *values = static_cast<T>(x << T::NumberOfFractionalBits);
+    // Scale by 2^frac via multiply, not left shift: x/y/z may be negative and
+    // left-shifting a negative value is undefined behavior before C++20.
+    const int32_t scale = static_cast<int32_t>(1) << T::NumberOfFractionalBits;
+    *values = static_cast<T>(x * scale);
     ++values;
-    *values = static_cast<T>(y << T::NumberOfFractionalBits);
-    *output = (z << T::NumberOfFractionalBits);
+    *values = static_cast<T>(y * scale);
+    *output = (z * scale);
 }
 
 template<typename T>
@@ -513,10 +522,13 @@ static void generateFixedPointNorValues(T* values, T* output)
     const uint32_t y = (rand() & 1);
     const uint32_t z = !(x | y);
 
-    *values = static_cast<T>(x << T::NumberOfFractionalBits);
+    // Scale by 2^frac via multiply, not left shift: x/y/z may be negative and
+    // left-shifting a negative value is undefined behavior before C++20.
+    const int32_t scale = static_cast<int32_t>(1) << T::NumberOfFractionalBits;
+    *values = static_cast<T>(x * scale);
     ++values;
-    *values = static_cast<T>(y << T::NumberOfFractionalBits);
-    *output = (z << T::NumberOfFractionalBits);
+    *values = static_cast<T>(y * scale);
+    *output = (z * scale);
 }
 
 template<typename T>
@@ -545,10 +557,13 @@ static void generateFixedPointRecurrentValues(T* values, T* output)
     static int32_t y = 0;
     const int32_t z = x + y;
 
-    *values = static_cast<T>(x << T::NumberOfFractionalBits);
+    // Scale by 2^frac via multiply, not left shift: x/y/z may be negative and
+    // left-shifting a negative value is undefined behavior before C++20.
+    const int32_t scale = static_cast<int32_t>(1) << T::NumberOfFractionalBits;
+    *values = static_cast<T>(x * scale);
     ++values;
-    *values = static_cast<T>(y << T::NumberOfFractionalBits);
-    *output = (z << T::NumberOfFractionalBits);
+    *values = static_cast<T>(y * scale);
+    *output = (z * scale);
 
     if (++x > 1)
         x = -1;

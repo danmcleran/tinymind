@@ -104,7 +104,7 @@ namespace tinymind {
             }
         }
     private:
-        unsigned char mRewardTableBuffer[sizeof(ValueType) * NumberOfStates * NumberOfActions];
+        alignas(ValueType) unsigned char mRewardTableBuffer[sizeof(ValueType) * NumberOfStates * NumberOfActions];
     };
 
     template<typename ValueType>
@@ -337,7 +337,7 @@ namespace tinymind {
         RandomNumberPolicy mRandomNumberPolicy;
         LearningPolicy mLearningPolicy;
     private:
-        unsigned char mActionsBuffer[sizeof(ActionType) * NumberOfActions];
+        alignas(ActionType) unsigned char mActionsBuffer[sizeof(ActionType) * NumberOfActions];
     };
 
     template<typename EnvironmentType, typename QLearnerQValuePolicy>
@@ -466,7 +466,7 @@ namespace tinymind {
             }
         }
     private:
-        unsigned char mQTableBuffer[sizeof(ValueType) * NumberOfStates * NumberOfActions];
+        alignas(ValueType) unsigned char mQTableBuffer[sizeof(ValueType) * NumberOfStates * NumberOfActions];
     };
 
     template<typename EnvironmentType, typename NeuralNetworkType, size_t NumberOfIterationsBeforeTargetNetworkUpdate>
@@ -708,7 +708,7 @@ namespace tinymind {
         EnvironmentType mEnvironment;
         QValuePolicy mQValuePolicy;
         StateType mState;
-        unsigned char mActionsBuffer[sizeof(ActionType) * NumberOfActions];
+        alignas(ActionType) unsigned char mActionsBuffer[sizeof(ActionType) * NumberOfActions];
 
         static_assert(NumberOfStates > 1, "Invalid number of states.");
         static_assert(NumberOfActions > 1, "Invalid number of actions.");
