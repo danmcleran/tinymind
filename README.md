@@ -981,6 +981,7 @@ tinymind/
     gru_xor/                    # GRU XOR gate learning
     lstm_sinusoid/              # LSTM sinusoid prediction
     lstm_sinusoid_float/        # LSTM sinusoid: float (double) vs Q16.16 side by side
+    elman_temporal_xor/         # Elman vs MLP on temporal XOR (recurrent memory demo)
     maze/                       # Tabular Q-learning maze solver
     dqn_maze/                   # Deep Q-Network maze solver
     kws_cortex_m/               # Depthwise-separable CNN pipeline with bench harness
