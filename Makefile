@@ -39,6 +39,7 @@ check :
 	cd examples/gas_sensor_drift && make clean && make release && make run && cd -
 	cd examples/air_quality && make clean && make release && make run && cd -
 	cd examples/lstm_sinusoid_float && make clean && make release && make run && cd -
+	cd examples/elman_temporal_xor && make clean && make release && make run && cd -
 	cd examples/perf_matrix && make clean && make && make report && cd -
 	cd apps/activation && make clean && make && make release && cd -
 

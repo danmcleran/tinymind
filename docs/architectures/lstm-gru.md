@@ -42,6 +42,13 @@ template<
 class ElmanNeuralNetwork
 ```
 
+The [Temporal XOR]({{ site.baseurl }}/examples/elman_temporal_xor) example
+([elman_temporal_xor.cpp](https://github.com/danmcleran/tinymind/blob/master/examples/elman_temporal_xor/elman_temporal_xor.cpp))
+shows what the recurrent connection buys: trained to predict `x[t] XOR x[t-1]`
+from a stream that only ever exposes `x[t]`, the Elman network reaches ~98% while
+a feed-forward MLP of the same shape — having no memory of `x[t-1]` — is stuck at
+chance.
+
 ## LstmNeuralNetwork
 
 LSTM networks use 4 gates (input, forget, output, cell candidate) to control information flow. This allows them to learn long-term dependencies that simple recurrent networks struggle with. LSTM supports multi-layer configurations via `HiddenLayers<N0, N1, ...>`.
