@@ -182,6 +182,10 @@ cd output
 ./lstm_sinusoid
 ```
 
+## Floating-Point vs Q16.16
+
+A companion example, [lstm_sinusoid_float.cpp](https://github.com/danmcleran/tinymind/blob/master/examples/lstm_sinusoid_float/lstm_sinusoid_float.cpp), trains the *same* LSTM twice on this task — once with `ValueType = double`, once with `QValue<16, 16>` — from identical seeds and inits, and overlays both on one chart. It is the only example that runs a recurrent network in floating-point. In free-run the float net holds the oscillation across both periods while the Q16.16 net collapses in the second, making the quantization cost visible directly. See the [LSTM Sinusoid (Float vs Q16.16)]({{ site.baseurl }}/examples/lstm_sinusoid_float) example page.
+
 # GRU Example: XOR
 
 This example trains a GRU to predict the XOR function with early stopping. Source code: [gru_xor.cpp](https://github.com/danmcleran/tinymind/blob/master/examples/gru_xor/gru_xor.cpp).

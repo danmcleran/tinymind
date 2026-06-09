@@ -980,6 +980,7 @@ tinymind/
     kan_xor/                    # KAN XOR gate learning
     gru_xor/                    # GRU XOR gate learning
     lstm_sinusoid/              # LSTM sinusoid prediction
+    lstm_sinusoid_float/        # LSTM sinusoid: float (double) vs Q16.16 side by side
     maze/                       # Tabular Q-learning maze solver
     dqn_maze/                   # Deep Q-Network maze solver
     kws_cortex_m/               # Depthwise-separable CNN pipeline with bench harness
