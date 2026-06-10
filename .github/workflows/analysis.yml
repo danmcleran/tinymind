@@ -47,7 +47,11 @@ jobs:
           make coverage-check
 
   fuzz-replay:
-    name: Fuzz regression replay (int8 kernels)
+    # Name pinned to the branch-protection required-check context
+    # ("Fuzz int8 kernels"). The job is now a deterministic replay gate (see
+    # the step) rather than the old time-boxed exploratory run, which moved to
+    # fuzz-nightly.yml.
+    name: Fuzz int8 kernels
     runs-on: ubuntu-latest
     # Hard gate: deterministic replay of the committed seed + crash corpus
     # (-runs=0, no new mutation). Fast and reproducible -- a regressed kernel
