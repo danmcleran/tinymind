@@ -6,6 +6,18 @@ name: Fuzz (nightly exploratory)
 # so the deterministic fuzz-replay gate (analysis.yml) guards the fix forever.
 #
 # Targets run as a matrix so wall-clock is one harness, not the sum.
+#
+# The working corpus accumulates across nights via actions/cache: each run
+# restores the previous night's corpus (falling back to the committed seeds on
+# a cache miss) and saves the grown corpus afterwards -- including on crash
+# nights, so the input that reached the crash is not lost. Without this, every
+# night re-derives the same shallow coverage from the committed seeds inside
+# its MAX_TIME budget instead of pushing the frontier deeper. The cache is
+# runner-side state only: the PR replay gate replays just the *committed*
+# corpus and never sees it. Periodically fold the accumulated corpus back into
+# fuzz/corpus/ with `./fuzz_<kernel> -merge=1 corpus/<kernel> <accumulated>`
+# and commit, so the replay gate inherits the coverage. Deleting the cache key
+# is always safe -- it regrows from the committed seeds.
 
 on:
   schedule:
@@ -33,15 +45,39 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Clang
         run: sudo apt-get update && sudo apt-get install -y clang
+      - name: Derive kernel name
+        id: kernel
+        run: |
+          k="${{ matrix.target }}"
+          echo "kernel=${k#fuzz_}" >> "$GITHUB_OUTPUT"
+      # Key is unique per run so the post-run save never collides; restore
+      # falls back to the newest previous night via the prefix restore-key.
+      # The restore overlays the checked-out committed seeds, so a cache miss
+      # just means starting from the seeds alone.
+      - name: Restore accumulated corpus
+        uses: actions/cache/restore@v4
+        with:
+          path: fuzz/corpus/${{ steps.kernel.outputs.kernel }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
       - name: Build ${{ matrix.target }}
         run: make -C fuzz ${{ matrix.target }} FUZZ_CXX=clang++
       - name: Fuzz ${{ matrix.target }} (time-boxed, ASan+UBSan)
         run: |
           cd fuzz
-          k="${{ matrix.target }}"; k="${k#fuzz_}"
+          k="${{ steps.kernel.outputs.kernel }}"
           mkdir -p "corpus/$k"
           ./${{ matrix.target }} -max_total_time="${{ github.event.inputs.max_time || 300 }}" \
             -print_final_stats=1 "corpus/$k"
+      # if: always() -- a crash night must still save the grown corpus; the
+      # units leading up to the crash are the most valuable ones.
+      - name: Save accumulated corpus
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: fuzz/corpus/${{ steps.kernel.outputs.kernel }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
       - name: Upload crash reproducers
         if: failure()
         uses: actions/upload-artifact@v4
