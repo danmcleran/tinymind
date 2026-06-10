@@ -183,6 +183,33 @@ sanitize :
 	done
 	@echo "sanitize: ASan+UBSan clean across all runtime suites and int8 examples"
 
+# TSan over the OpenMP conv path. TINYMIND_ENABLE_OPENMP=1 parallelizes the
+# QConv2D / QConv2DPerChannel output-filter loop -- the only concurrent code in
+# the library -- and no other gate can see a data race there: ASan/UBSan don't
+# detect races, the static analyzers can't prove thread-safety of the
+# parallel-for, and a racy test can pass 999 runs out of 1000. The suite list
+# is the quantization tests plus the conv-heavy int8 examples, i.e. everything
+# that instantiates the parallelized loop. Clang + libomp is required: GCC's
+# libgomp is not TSan-annotated and reports false races on its own barriers
+# (sudo apt install clang libomp-dev). OMP_NUM_THREADS is pinned > 1 so the
+# loop actually runs concurrently on small CI runners.
+TSAN_CC     ?= clang++ -fsanitize=thread -fopenmp -DTINYMIND_ENABLE_OPENMP=1 -O1
+TSAN_WARN   ?= -Wall -Wextra -Wpedantic -g
+TSAN_ENV    ?= TSAN_OPTIONS=halt_on_error=1 OMP_NUM_THREADS=4
+TSAN_SUITES = unit_test/quantization examples/resnet_block_int8 \
+              examples/resnet18_block_int8 examples/mobilenetv2_int8 \
+              examples/kws_cortex_m_int8
+
+tsan :
+	@for d in $(TSAN_SUITES); do \
+		echo "=== tsan: $$d ==="; \
+		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
+		  $(MAKE) CC="$(TSAN_CC)" WARN="$(TSAN_WARN)" >/dev/null && \
+		  $(TSAN_ENV) $(MAKE) CC="$(TSAN_CC)" WARN="$(TSAN_WARN)" run ) \
+		  || { echo "TSAN FAIL: $$d"; exit 1; }; \
+	done
+	@echo "tsan: no data races in the OpenMP conv path"
+
 cppcheck :
 	@command -v cppcheck >/dev/null 2>&1 || { echo "ERROR: cppcheck not found. sudo apt install cppcheck"; exit 1; }
 	cppcheck --enable=warning,portability --std=c++17 --language=c++ \
