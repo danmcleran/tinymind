@@ -198,7 +198,16 @@ TSAN_WARN   ?= -Wall -Wextra -Wpedantic -g
 # ignore_noninstrumented_modules + the called_from_lib suppression silence the
 # false races TSan reports inside the (uninstrumented) packaged libomp runtime;
 # races between TinyMind's own instrumented loop iterations still report.
-TSAN_ENV    ?= TSAN_OPTIONS="halt_on_error=1 ignore_noninstrumented_modules=1 suppressions=$(CURDIR)/.tsan-suppressions" OMP_NUM_THREADS=4
+#
+# Archer (libarcher.so, ships with libomp-dev) must be loaded via
+# OMP_TOOL_LIBRARIES: the packaged libomp's internal synchronization is
+# invisible to TSan, so without Archer the implicit barrier at the end of a
+# parallel-for carries no happens-before edge and every post-loop read of the
+# output buffer reports as a false race against the loop's writes. Archer
+# restores those edges through OMPT callbacks.
+TSAN_ARCHER ?= $(firstword $(wildcard /usr/lib/llvm-*/lib/libarcher.so))
+TSAN_ENV    ?= TSAN_OPTIONS="halt_on_error=1 ignore_noninstrumented_modules=1 suppressions=$(CURDIR)/.tsan-suppressions" \
+               OMP_TOOL_LIBRARIES=$(TSAN_ARCHER) OMP_NUM_THREADS=4
 TSAN_SUITES = unit_test/quantization examples/resnet_block_int8 \
               examples/resnet18_block_int8 examples/mobilenetv2_int8 \
               examples/kws_cortex_m_int8
