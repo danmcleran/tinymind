@@ -159,18 +159,26 @@ namespace tinymind {
         }
 
         /**
-         * Per-bin magnitude squared. int32 head room covers int16 * int16
-         * plus the int16 imag squared. The output is in (working_scale)^2 ;
+         * Per-bin magnitude squared. The output is in (working_scale)^2 ;
          * an output Requantizer can rescale it to the int8 output grid.
+         *
+         * Summed in int64: int32 head room covers each square but not the
+         * sum at the INT16_MIN rails -- (-32768)^2 + (-32768)^2 == 2^31 is
+         * one past INT32_MAX (signed-overflow UB found by fuzz_qfft1d).
+         * The sum is non-negative and at most 2^31, so saturating to
+         * INT32_MAX only alters that single both-rails bin.
          */
         static void magnitudeSquared(const int16_t* real, const int16_t* imag,
                                      int32_t* mag_sq)
         {
             for (std::size_t i = 0; i < N; ++i)
             {
-                const int32_t r = static_cast<int32_t>(real[i]);
-                const int32_t m = static_cast<int32_t>(imag[i]);
-                mag_sq[i] = r * r + m * m;
+                const int64_t r = static_cast<int64_t>(real[i]);
+                const int64_t m = static_cast<int64_t>(imag[i]);
+                const int64_t sq = r * r + m * m;
+                mag_sq[i] = (sq > static_cast<int64_t>(INT32_MAX))
+                    ? INT32_MAX
+                    : static_cast<int32_t>(sq);
             }
         }
 

@@ -27,7 +27,11 @@ TARGET   ?= fuzz_qlayernorm
 all : $(TARGETS)
 
 # One pattern rule builds every harness; each is a single self-contained .cpp.
-fuzz_% : fuzz_%.cpp
+# Header-only library: every harness depends on the kernel headers, otherwise
+# a header fix replays against a stale binary and "re-triggers" its own crash.
+HEADERS = $(wildcard ../cpp/*.hpp) $(wildcard ../cpp/include/*.hpp)
+
+fuzz_% : fuzz_%.cpp $(HEADERS)
 	@command -v $(FUZZ_CXX) >/dev/null 2>&1 || { echo "ERROR: $(FUZZ_CXX) not found. Install Clang (sudo apt install clang) or pass FUZZ_CXX=..."; exit 1; }
 	$(FUZZ_CXX) $(FUZZ_FLAGS) $(WARN) $(DEFINES) $(INCLUDES) -o $@ $<
 
