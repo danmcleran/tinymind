@@ -70,9 +70,12 @@ tidy-report.txt
 misra-report.txt
 scan-report/
 
-# Fuzzing build artifacts, corpora, and crash reproducers
-fuzz/fuzz_qlayernorm
-fuzz/corpus/
+# Fuzzing: ignore built harness binaries (no extension) but keep the sources.
+fuzz/fuzz_*
+!fuzz/fuzz_*.cpp
+!fuzz/fuzz_*.h
+# The seed + regression corpus IS committed -- it is the deterministic replay
+# gate's input. Only the live crash reproducers dropped at fuzz/ root are noise.
 fuzz/crash-*
 fuzz/leak-*
 fuzz/oom-*
