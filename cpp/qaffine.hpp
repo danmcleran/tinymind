@@ -88,7 +88,11 @@ namespace tinymind {
             return x;
         }
 
-        const int32_t mask = (static_cast<int32_t>(1) << exponent) - 1;
+        // Build the mask through unsigned so exponent == 31 is well-defined:
+        // the signed `(1 << 31) - 1` overflowed (1 << 31 is INT32_MIN, then
+        // - 1 wraps), yet the doc contract explicitly allows exponent <= 31.
+        const int32_t mask = static_cast<int32_t>(
+            (static_cast<uint32_t>(1) << exponent) - 1u);
         const int32_t remainder = x & mask;
         const int32_t threshold = (mask >> 1) + ((x < 0) ? 1 : 0);
         return (x >> exponent) + ((remainder > threshold) ? 1 : 0);
@@ -111,12 +115,31 @@ namespace tinymind {
     {
         const int32_t left_shift  = (shift < 0) ? -shift : 0;
         const int32_t right_shift = (shift > 0) ?  shift : 0;
-        int32_t shifted = x;
+
+        // Left-shift in 64-bit head room, then saturate back to int32 before
+        // the Q0.31 multiply. The previous `x * (1 << left_shift)` was
+        // signed-overflow UB: `1 << left_shift` itself overflows at
+        // left_shift >= 31, and the int32 product overflows for a large
+        // accumulator at moderate left_shift. In int64 the shift is
+        // well-defined and the saturation clamps to the int32 rails -- so the
+        // result is unchanged for in-contract (small left_shift) inputs and
+        // merely saturates instead of invoking UB for out-of-contract ones.
+        // |x| << 31 fits int64, and a distance past 31 can only saturate a
+        // non-zero x, so cap the distance to keep the shift defined.
+        int64_t shifted = static_cast<int64_t>(x);
         if (left_shift > 0)
         {
-            shifted = shifted * (static_cast<int32_t>(1) << left_shift);
+            // Multiply rather than `<<`: shifting a negative value is itself
+            // UB. (1 << sh) with sh <= 31 is a positive int64; |x| * 2^31
+            // fits int64, so the product is well-defined for any sign.
+            const int32_t sh = (left_shift < 31) ? left_shift : 31;
+            shifted *= (static_cast<int64_t>(1) << sh);
         }
-        const int32_t mul = saturatingRoundingDoublingHighMul(shifted, multiplier);
+        if (shifted > static_cast<int64_t>(INT32_MAX)) { shifted = INT32_MAX; }
+        if (shifted < static_cast<int64_t>(INT32_MIN)) { shifted = INT32_MIN; }
+
+        const int32_t mul = saturatingRoundingDoublingHighMul(
+            static_cast<int32_t>(shifted), multiplier);
         return roundingDivideByPOT(mul, right_shift);
     }
 
