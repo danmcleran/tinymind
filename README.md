@@ -890,6 +890,7 @@ Every push and pull request runs the [Static & Dynamic Analysis](.github/workflo
 | Gate | Tool | Status | Reproduce locally |
 |---|---|---|---|
 | Memory / UB sanitizers | Clang ASan + UBSan over all runtime suites + int8 examples | **Blocking** | `make sanitize` |
+| Data races | Clang TSan over the OpenMP-parallelized conv path | **Blocking** | `make tsan` |
 | Static analysis | cppcheck (warning + portability), all headers | **Blocking** | `make cppcheck` |
 | Coverage floor | gcov + lcov, `cpp/` line/function floors | **Blocking** | `make coverage && make coverage-check` |
 | Formal proofs | CBMC over the fixed-point `qformat` kernels | **Blocking** | `make -C formal prove` |

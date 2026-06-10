@@ -1,0 +1,10 @@
+# ThreadSanitizer suppressions for `make tsan`.
+#
+# Ubuntu's packaged libomp.so is not built with TSan instrumentation, so TSan
+# cannot see the runtime's internal synchronization and reports false races on
+# libomp's own mutex/alloc/thread bookkeeping (every frame inside libomp.so,
+# with the user frame being merely the parallel-region entry). Suppress the
+# interceptors called from inside the runtime; races between TinyMind's own
+# instrumented loop iterations still report with TinyMind frames at the
+# racing accesses and are NOT suppressed by this rule.
+called_from_lib:libomp

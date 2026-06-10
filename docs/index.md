@@ -52,7 +52,7 @@ TinyMind networks are small enough to deploy on the most constrained microcontro
 [![Static & Dynamic Analysis](https://github.com/danmcleran/tinymind/actions/workflows/analysis.yml/badge.svg)](https://github.com/danmcleran/tinymind/actions/workflows/analysis.yml)
 [![CodeQL](https://github.com/danmcleran/tinymind/actions/workflows/codeql.yml/badge.svg)](https://github.com/danmcleran/tinymind/actions/workflows/codeql.yml)
 
-Every push and pull request is gated. **Blocking** gates (must pass to merge): Clang ASan + UBSan sanitizers, cppcheck static analysis, an lcov coverage floor, CBMC formal proofs of the fixed-point kernels, time-boxed libFuzzer fuzzing of the int8 kernels, and a CodeQL semantic scan. **Advisory** gates (surfaced as report artifacts, never blocking): MISRA C:2012 and clang-tidy (which also runs the Clang Static Analyzer via its `clang-analyzer-*` checks). See the [README's Quality Gates](https://github.com/danmcleran/tinymind#quality-gates) section for the full matrix and the `make` target that reproduces each one locally.
+Every push and pull request is gated. **Blocking** gates (must pass to merge): Clang ASan + UBSan sanitizers, Clang TSan over the OpenMP conv path, cppcheck static analysis, an lcov coverage floor, CBMC formal proofs of the fixed-point kernels, time-boxed libFuzzer fuzzing of the int8 kernels, and a CodeQL semantic scan. **Advisory** gates (surfaced as report artifacts, never blocking): MISRA C:2012 and clang-tidy (which also runs the Clang Static Analyzer via its `clang-analyzer-*` checks). See the [README's Quality Gates](https://github.com/danmcleran/tinymind#quality-gates) section for the full matrix and the `make` target that reproduces each one locally.
 
 ## Network Architectures
 

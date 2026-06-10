@@ -22,6 +22,23 @@ jobs:
           BOOST_HOME: /usr
         run: make sanitize
 
+  tsan:
+    # Data races in the TINYMIND_ENABLE_OPENMP=1 conv output-filter loop --
+    # the library's only concurrent code. No other gate covers this class:
+    # ASan/UBSan don't detect races and the OPENMP=1 corner otherwise never
+    # executes in CI. Clang + libomp (TSan-annotated); GCC's libgomp would
+    # report false races on its own barriers.
+    name: TSan (OpenMP conv path)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y clang libomp-dev libboost-dev libboost-test-dev
+      - name: Build and run OpenMP-enabled suites under TSan
+        env:
+          BOOST_HOME: /usr
+        run: make tsan
+
   cppcheck:
     name: cppcheck
     runs-on: ubuntu-latest
