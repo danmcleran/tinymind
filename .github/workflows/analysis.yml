@@ -46,15 +46,20 @@ jobs:
           make coverage
           make coverage-check
 
-  fuzz:
-    name: Fuzz int8 kernels
+  fuzz-replay:
+    name: Fuzz regression replay (int8 kernels)
     runs-on: ubuntu-latest
+    # Hard gate: deterministic replay of the committed seed + crash corpus
+    # (-runs=0, no new mutation). Fast and reproducible -- a regressed kernel
+    # re-triggers its archived crash input. Exploratory fuzzing runs nightly
+    # (fuzz-nightly.yml), not here, so the PR gate never flaps on a path found
+    # at second 89 vs 91.
     steps:
       - uses: actions/checkout@v4
       - name: Install Clang
         run: sudo apt-get update && sudo apt-get install -y clang
-      - name: Fuzz (time-boxed, ASan+UBSan)
-        run: make -C fuzz fuzz-ci FUZZ_CXX=clang++ MAX_TIME=90
+      - name: Replay committed corpus (ASan+UBSan)
+        run: make -C fuzz replay FUZZ_CXX=clang++
 
   cbmc:
     name: CBMC proofs (qformat kernels)

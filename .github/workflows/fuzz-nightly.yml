@@ -1,0 +1,53 @@
+name: Fuzz (nightly exploratory)
+
+# Exploratory libFuzzer run, NOT a PR gate. Each int8 kernel harness mutates
+# for MAX_TIME seconds under ASan+UBSan. A new crash uploads the minimized
+# reproducer as an artifact; triage then archives it into fuzz/corpus/<kernel>/
+# so the deterministic fuzz-replay gate (analysis.yml) guards the fix forever.
+#
+# Targets run as a matrix so wall-clock is one harness, not the sum.
+
+on:
+  schedule:
+    - cron: "0 5 * * *"   # 05:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      max_time:
+        description: "Seconds per target"
+        default: "300"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [fuzz_qlayernorm, fuzz_qsoftmax, fuzz_qfft1d, fuzz_requantize]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+      - name: Build ${{ matrix.target }}
+        run: make -C fuzz ${{ matrix.target }} FUZZ_CXX=clang++
+      - name: Fuzz ${{ matrix.target }} (time-boxed, ASan+UBSan)
+        run: |
+          cd fuzz
+          k="${{ matrix.target }}"; k="${k#fuzz_}"
+          mkdir -p "corpus/$k"
+          ./${{ matrix.target }} -max_total_time="${{ github.event.inputs.max_time || 300 }}" \
+            -print_final_stats=1 "corpus/$k"
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-${{ matrix.target }}
+          path: |
+            fuzz/crash-*
+            fuzz/timeout-*
+            fuzz/leak-*
+            fuzz/oom-*
+          if-no-files-found: ignore
