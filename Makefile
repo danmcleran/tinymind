@@ -183,6 +183,29 @@ sanitize :
 	done
 	@echo "sanitize: ASan+UBSan clean across all runtime suites and int8 examples"
 
+# ASan+UBSan with the AVX2 SIMD backend active. The plain sanitize target runs
+# scalar-only, so the hand-written intrinsics in cpp/include/simd/ otherwise
+# never execute under a sanitizer: vector loads that overread a ragged tail or
+# walk past a buffer edge are invisible to the scalar build. The suite list is
+# the dispatch consumers (QDense / QConv2D / depthwise / pointwise), i.e. the
+# quantization tests plus the conv-heavy int8 examples whose golden-output
+# checks double as a layer-level scalar-vs-AVX2 equivalence assertion (the
+# backend contract is bit-exact, so PASS thresholds tuned on scalar must hold).
+# x86-only; pair with `fuzz/fuzz_simd_avx2_diff` for the primitive-level
+# differential. Reuses TSAN_SUITES -- same dispatch-consumer list.
+SAN_AVX2_CC ?= g++ -fsanitize=address,undefined -fno-sanitize-recover=all -O1 \
+               -mavx2 -DTINYMIND_ENABLE_SIMD_AVX2=1
+
+sanitize-avx2 :
+	@for d in $(TSAN_SUITES); do \
+		echo "=== sanitize-avx2: $$d ==="; \
+		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
+		  $(MAKE) CC="$(SAN_AVX2_CC)" WARN="$(SAN_WARN)" >/dev/null && \
+		  $(SAN_ENV) $(MAKE) CC="$(SAN_AVX2_CC)" WARN="$(SAN_WARN)" run ) \
+		  || { echo "SANITIZE-AVX2 FAIL: $$d"; exit 1; }; \
+	done
+	@echo "sanitize-avx2: ASan+UBSan clean with the AVX2 backend active"
+
 # TSan over the OpenMP conv path. TINYMIND_ENABLE_OPENMP=1 parallelizes the
 # QConv2D / QConv2DPerChannel output-filter loop -- the only concurrent code in
 # the library -- and no other gate can see a data race there: ASan/UBSan don't

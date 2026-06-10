@@ -20,9 +20,16 @@ DEFINES       = -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_FLOAT=1 -DTIN
 INCLUDES      = -I../cpp -I../cpp/include -I../include
 
 TARGETS  = fuzz_qlayernorm fuzz_qsoftmax fuzz_qfft1d fuzz_requantize \
-           fuzz_qattention_softmax fuzz_qmha fuzz_qlstm fuzz_qgru fuzz_qcfc
+           fuzz_qattention_softmax fuzz_qmha fuzz_qlstm fuzz_qgru fuzz_qcfc \
+           fuzz_simd_avx2_diff
 MAX_TIME ?= 60
 TARGET   ?= fuzz_qlayernorm
+
+# Differential harness: AVX2 backend vs scalar reference in one binary.
+# x86-only (every GitHub-hosted x64 runner has AVX2); on a non-x86 dev box
+# drop it with `make TARGETS=fuzz_qlayernorm ...` or build targets singly.
+fuzz_simd_avx2_diff : DEFINES += -DTINYMIND_ENABLE_SIMD_AVX2=1
+fuzz_simd_avx2_diff : FUZZ_FLAGS += -mavx2
 
 all : $(TARGETS)
 

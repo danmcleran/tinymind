@@ -40,7 +40,7 @@ jobs:
       matrix:
         target: [fuzz_qlayernorm, fuzz_qsoftmax, fuzz_qfft1d, fuzz_requantize,
                  fuzz_qattention_softmax, fuzz_qmha, fuzz_qlstm, fuzz_qgru,
-                 fuzz_qcfc]
+                 fuzz_qcfc, fuzz_simd_avx2_diff]
     steps:
       - uses: actions/checkout@v4
       - name: Install Clang

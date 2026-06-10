@@ -891,6 +891,7 @@ Every push and pull request runs the [Static & Dynamic Analysis](.github/workflo
 |---|---|---|---|
 | Memory / UB sanitizers | Clang ASan + UBSan over all runtime suites + int8 examples | **Blocking** | `make sanitize` |
 | Data races | Clang TSan over the OpenMP-parallelized conv path | **Blocking** | `make tsan` |
+| SIMD correctness | ASan+UBSan with the AVX2 backend active + scalar-vs-AVX2 differential fuzz | **Blocking** | `make sanitize-avx2` / `make -C fuzz fuzz TARGET=fuzz_simd_avx2_diff` |
 | Static analysis | cppcheck (warning + portability), all headers | **Blocking** | `make cppcheck` |
 | Coverage floor | gcov + lcov, `cpp/` line/function floors | **Blocking** | `make coverage && make coverage-check` |
 | Formal proofs | CBMC over the fixed-point `qformat` kernels | **Blocking** | `make -C formal prove` |
