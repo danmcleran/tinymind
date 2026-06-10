@@ -195,7 +195,10 @@ sanitize :
 # loop actually runs concurrently on small CI runners.
 TSAN_CC     ?= clang++ -fsanitize=thread -fopenmp -DTINYMIND_ENABLE_OPENMP=1 -O1
 TSAN_WARN   ?= -Wall -Wextra -Wpedantic -g
-TSAN_ENV    ?= TSAN_OPTIONS=halt_on_error=1 OMP_NUM_THREADS=4
+# ignore_noninstrumented_modules + the called_from_lib suppression silence the
+# false races TSan reports inside the (uninstrumented) packaged libomp runtime;
+# races between TinyMind's own instrumented loop iterations still report.
+TSAN_ENV    ?= TSAN_OPTIONS="halt_on_error=1 ignore_noninstrumented_modules=1 suppressions=$(CURDIR)/.tsan-suppressions" OMP_NUM_THREADS=4
 TSAN_SUITES = unit_test/quantization examples/resnet_block_int8 \
               examples/resnet18_block_int8 examples/mobilenetv2_int8 \
               examples/kws_cortex_m_int8
