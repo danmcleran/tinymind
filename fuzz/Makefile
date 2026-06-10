@@ -19,7 +19,8 @@ WARN          = -Wall -Wextra -Wpedantic
 DEFINES       = -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_STD=1
 INCLUDES      = -I../cpp -I../cpp/include -I../include
 
-TARGETS  = fuzz_qlayernorm fuzz_qsoftmax fuzz_qfft1d fuzz_requantize
+TARGETS  = fuzz_qlayernorm fuzz_qsoftmax fuzz_qfft1d fuzz_requantize \
+           fuzz_qattention_softmax fuzz_qmha fuzz_qlstm fuzz_qgru fuzz_qcfc
 MAX_TIME ?= 60
 TARGET   ?= fuzz_qlayernorm
 
