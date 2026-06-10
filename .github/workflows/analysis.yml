@@ -22,6 +22,23 @@ jobs:
           BOOST_HOME: /usr
         run: make sanitize
 
+  sanitize-avx2:
+    # Same ASan+UBSan bar but with the AVX2 SIMD backend compiled in and
+    # executing -- the scalar sanitize job never runs the hand-written
+    # intrinsics in cpp/include/simd/. Golden-output example checks double as
+    # a layer-level scalar-vs-AVX2 equivalence assertion. All GitHub-hosted
+    # x64 runners have AVX2.
+    name: ASan + UBSan (AVX2 backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Boost
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev libboost-test-dev
+      - name: Build and run dispatch-consumer suites with AVX2 under ASan/UBSan
+        env:
+          BOOST_HOME: /usr
+        run: make sanitize-avx2
+
   tsan:
     # Data races in the TINYMIND_ENABLE_OPENMP=1 conv output-filter loop --
     # the library's only concurrent code. No other gate covers this class:
