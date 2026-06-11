@@ -2,6 +2,7 @@
 
 [![Static & Dynamic Analysis](https://github.com/danmcleran/tinymind/actions/workflows/analysis.yml/badge.svg)](https://github.com/danmcleran/tinymind/actions/workflows/analysis.yml)
 [![CodeQL](https://github.com/danmcleran/tinymind/actions/workflows/codeql.yml/badge.svg)](https://github.com/danmcleran/tinymind/actions/workflows/codeql.yml)
+[![Fuzz (nightly exploratory)](https://github.com/danmcleran/tinymind/actions/workflows/fuzz-nightly.yml/badge.svg)](https://github.com/danmcleran/tinymind/actions/workflows/fuzz-nightly.yml)
 
 A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, liquid neural networks (LTC and CfC continuous-time cells), linear self-attention, FFT-based signal processing, 1D and 2D convolutions (including MobileNet-style depthwise-separable blocks), binary and ternary neural networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
 
