@@ -27,8 +27,11 @@ Each example states one of three data modes:
   rules of the UCI dataset; no real-data loader (the dataset's *phenomenon* is
   the subject, not its exact rows).
 
-Every example is the `NeuralNet<>` / `LstmNeuralNetwork<>` train-and-deploy
-path run entirely in `QValue` **Q16.16 fixed-point**, the on-MCU shape.
+Most examples are the `NeuralNet<>` / `LstmNeuralNetwork<>` train-and-deploy
+path run entirely in `QValue` **Q16.16 fixed-point**, the on-MCU shape. The
+Japanese Vowels example is the exception that proves the rule: it trains
+offline in float and then sweeps fixed-point formats to find the smallest one
+(Q8.8) that holds the float accuracy.
 
 ---
 
@@ -69,6 +72,13 @@ path run entirely in `QValue` **Q16.16 fixed-point**, the on-MCU shape.
 - **Result:** ~97.5% test accuracy (195/200). `LstmNeuralNetwork<>` for sequence classification.
 - [`examples/har_activity`](https://github.com/danmcleran/tinymind/tree/master/examples/har_activity) · [page]({{ site.baseurl }}/examples/har_activity)
 
+### Japanese Vowels — recurrent (Elman), offline-float → fixed-point sweep
+- **Dataset:** [UCI Japanese Vowels](https://archive.ics.uci.edu/dataset/128/japanese+vowels) — 9 speakers · 12 LPC cepstrum coeffs · 7–29 frame sequences · 270 train / 370 test.
+- **Model:** `ElmanNeuralNetwork` 12→16 (tanh, recurrent)→9 sigmoid, per-frame scores summed over the utterance, argmax speaker. z-score/3 input scaling.
+- **Data:** ships real data (`ae.train` / `ae.test`).
+- **Result:** the deployment-flow demo — trained offline in **double**, then swept across fixed-point formats. **Q8.8 matches double-precision accuracy exactly (94.05%)** in 1.2 KB of weights (4× smaller); Q4.4 collapses. Lands on the Kudo et al. 1999 paper baseline (94.1%).
+- [`examples/elman_vowels`](https://github.com/danmcleran/tinymind/tree/master/examples/elman_vowels) · [page]({{ site.baseurl }}/examples/elman_vowels)
+
 ### Air Quality Forecasting — recurrent (LSTM)
 - **Dataset:** [UCI Air Quality](https://archive.ics.uci.edu/dataset/360) — hourly pollutant series.
 - **Model:** Q16.16 **LSTM** 1→16 (tanh)→1 sigmoid, next-hour forecaster. 24-hour state reset per BPTT segment, series normalized to [0.1, 0.9].
@@ -94,6 +104,7 @@ path run entirely in `QValue` **Q16.16 fixed-point**, the on-MCU shape.
 | Optical Digits | Optical Digits (8×8) | 10-class image | MLP | ships real |
 | Predictive Maintenance | AI4I 2020 | binary | MLP + physics features | optional real |
 | HAR Activity | HAR Smartphones | seq classification | `LstmNeuralNetwork<>` | optional real |
+| Japanese Vowels | Japanese Vowels | seq classification | `ElmanNeuralNetwork<>`, float→Q8.8 sweep | ships real |
 | Air Quality | Air Quality | seq forecasting | `LstmNeuralNetwork<>` | optional real |
 | Gas Sensor Drift | Gas Sensor Array Drift | 6-class + drift | MLP + batchnorm story | synthetic, UCI-inspired |
 
