@@ -985,6 +985,7 @@ tinymind/
     lstm_sinusoid/              # LSTM sinusoid prediction
     lstm_sinusoid_float/        # LSTM sinusoid: float (double) vs Q16.16 side by side
     elman_temporal_xor/         # Elman vs MLP on temporal XOR (recurrent memory demo)
+    elman_vowels/               # Elman speaker ID: offline float training -> Q8.8 fixed-point inference
     maze/                       # Tabular Q-learning maze solver
     dqn_maze/                   # Deep Q-Network maze solver
     kws_cortex_m/               # Depthwise-separable CNN pipeline with bench harness

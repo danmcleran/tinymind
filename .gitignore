@@ -20,6 +20,7 @@ examples/gru_xor/output/
 examples/lstm_sinusoid/output/
 examples/lstm_sinusoid_float/output/
 examples/elman_temporal_xor/output/
+examples/elman_vowels/output/
 examples/kws_cortex_m/output/
 examples/kws_cortex_m_int8/output/
 examples/predictive_maintenance/output/
