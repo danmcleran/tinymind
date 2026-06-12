@@ -13,16 +13,55 @@ permissions:
   security-events: write
 
 jobs:
+  # See analysis.yml for the docs-only gate rationale: "Analyze C++" is a
+  # required check, so the job always runs and reports green; the CodeQL build
+  # + scan steps are guarded so a docs-only PR skips them. The weekly schedule
+  # and pushes to master always run the full scan (code=true for non-PR events).
+  changes:
+    name: changes (codeql)
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Classify diff (docs-only vs code)
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Event ${{ github.event_name }} -> full run"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base='${{ github.event.pull_request.base.sha }}'
+          head='${{ github.event.pull_request.head.sha }}'
+          files="$(git diff --name-only "$base" "$head")"
+          echo "Changed files:"
+          echo "$files"
+          nondoc="$(echo "$files" | grep -vE '^docs/|\.md$' || true)"
+          if [ -z "$files" ] || [ -n "$nondoc" ]; then
+            echo "Non-docs changes present -> full run"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Docs-only change -> CodeQL scan skipped"
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   analyze:
     name: Analyze C++
     runs-on: ubuntu-latest
+    needs: changes
     steps:
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.code == 'true'
 
       - name: Install Boost
+        if: needs.changes.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y libboost-dev libboost-test-dev
 
       - name: Initialize CodeQL
+        if: needs.changes.outputs.code == 'true'
         uses: github/codeql-action/init@v3
         with:
           languages: cpp
@@ -32,6 +71,7 @@ jobs:
       # the header-only templates, which is what CodeQL needs to see. Skipping
       # the example training runs keeps the build fast.
       - name: Build
+        if: needs.changes.outputs.code == 'true'
         env:
           BOOST_HOME: /usr
         run: |
@@ -43,6 +83,7 @@ jobs:
           done
 
       - name: Perform CodeQL Analysis
+        if: needs.changes.outputs.code == 'true'
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:cpp"
