@@ -10,14 +10,60 @@ permissions:
   contents: read
 
 jobs:
+  # Docs-only gate. Branch protection requires the analysis jobs below BY NAME,
+  # so they must always run and report a green context -- skipping a required
+  # job (via `paths-ignore` or a job-level `if:`) leaves its context unreported
+  # and blocks the PR forever. Instead this job classifies the diff and every
+  # heavy step downstream is guarded on `needs.changes.outputs.code == 'true'`.
+  # A docs-only PR thus completes each required job green in seconds with no
+  # apt-get / build. Non-PR events (push to master, manual dispatch) always run
+  # fully.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Classify diff (docs-only vs code)
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Event ${{ github.event_name }} -> full run"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base='${{ github.event.pull_request.base.sha }}'
+          head='${{ github.event.pull_request.head.sha }}'
+          files="$(git diff --name-only "$base" "$head")"
+          echo "Changed files:"
+          echo "$files"
+          # Docs-only == every changed path is under docs/ or ends in .md.
+          # Anything else (code, workflow YAML, plot.py, datasets) -> full run.
+          # An empty diff also forces a full run, to be safe.
+          nondoc="$(echo "$files" | grep -vE '^docs/|\.md$' || true)"
+          if [ -z "$files" ] || [ -n "$nondoc" ]; then
+            echo "Non-docs changes present -> full run"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Docs-only change -> heavy steps skipped"
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   sanitize:
     name: ASan + UBSan
     runs-on: ubuntu-latest
+    needs: changes
     steps:
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.code == 'true'
       - name: Install Boost
+        if: needs.changes.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y libboost-dev libboost-test-dev
       - name: Build and run all runtime suites + int8 examples under ASan/UBSan
+        if: needs.changes.outputs.code == 'true'
         env:
           BOOST_HOME: /usr
         run: make sanitize
@@ -30,11 +76,15 @@ jobs:
     # x64 runners have AVX2.
     name: ASan + UBSan (AVX2 backend)
     runs-on: ubuntu-latest
+    needs: changes
     steps:
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.code == 'true'
       - name: Install Boost
+        if: needs.changes.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y libboost-dev libboost-test-dev
       - name: Build and run dispatch-consumer suites with AVX2 under ASan/UBSan
+        if: needs.changes.outputs.code == 'true'
         env:
           BOOST_HOME: /usr
         run: make sanitize-avx2
@@ -47,11 +97,15 @@ jobs:
     # report false races on its own barriers.
     name: TSan (OpenMP conv path)
     runs-on: ubuntu-latest
+    needs: changes
     steps:
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.code == 'true'
       - name: Install toolchain
+        if: needs.changes.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y clang libomp-dev libboost-dev libboost-test-dev
       - name: Build and run OpenMP-enabled suites under TSan
+        if: needs.changes.outputs.code == 'true'
         env:
           BOOST_HOME: /usr
         run: make tsan
@@ -59,21 +113,29 @@ jobs:
   cppcheck:
     name: cppcheck
     runs-on: ubuntu-latest
+    needs: changes
     steps:
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.code == 'true'
       - name: Install cppcheck
+        if: needs.changes.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y cppcheck
       - name: cppcheck (warning + portability)
+        if: needs.changes.outputs.code == 'true'
         run: make cppcheck
 
   coverage:
     name: Coverage gate
     runs-on: ubuntu-latest
+    needs: changes
     steps:
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.code == 'true'
       - name: Install Boost + lcov
+        if: needs.changes.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y libboost-dev libboost-test-dev lcov
       - name: Capture coverage and enforce floor
+        if: needs.changes.outputs.code == 'true'
         env:
           BOOST_HOME: /usr
         run: |
@@ -87,6 +149,7 @@ jobs:
     # fuzz-nightly.yml.
     name: Fuzz int8 kernels
     runs-on: ubuntu-latest
+    needs: changes
     # Hard gate: deterministic replay of the committed seed + crash corpus
     # (-runs=0, no new mutation). Fast and reproducible -- a regressed kernel
     # re-triggers its archived crash input. Exploratory fuzzing runs nightly
@@ -94,35 +157,46 @@ jobs:
     # at second 89 vs 91.
     steps:
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.code == 'true'
       - name: Install Clang
+        if: needs.changes.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y clang
       - name: Replay committed corpus (ASan+UBSan)
+        if: needs.changes.outputs.code == 'true'
         run: make -C fuzz replay FUZZ_CXX=clang++
 
   cbmc:
     name: CBMC proofs (qformat kernels)
     runs-on: ubuntu-latest
+    needs: changes
     steps:
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.code == 'true'
       - name: Install CBMC
+        if: needs.changes.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y cbmc
       - name: Prove fixed-point kernels
+        if: needs.changes.outputs.code == 'true'
         run: make -C formal prove
 
   misra:
     name: MISRA C:2012 (advisory)
     runs-on: ubuntu-latest
+    needs: changes
     # Advisory: cppcheck's MISRA C ruleset run against C++17 template code.
     # Most findings are expected; this surfaces them for review, never blocks.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.code == 'true'
       - name: Install cppcheck
+        if: needs.changes.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y cppcheck
       - name: MISRA C:2012 addon
+        if: needs.changes.outputs.code == 'true'
         run: make misra
       - name: Upload report
-        if: always()
+        if: always() && needs.changes.outputs.code == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: misra-report
@@ -132,19 +206,23 @@ jobs:
   tidy:
     name: clang-tidy (advisory)
     runs-on: ubuntu-latest
+    needs: changes
     # Advisory: surfaces clang-tidy findings (incl. clang static analyzer) but
     # never blocks the merge. The hard gates are sanitize + cppcheck.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.code == 'true'
       - name: Install toolchain
+        if: needs.changes.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y libboost-dev libboost-test-dev clang-tidy bear
       - name: clang-tidy
+        if: needs.changes.outputs.code == 'true'
         env:
           BOOST_HOME: /usr
         run: make tidy
       - name: Upload report
-        if: always()
+        if: always() && needs.changes.outputs.code == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tidy-report
