@@ -156,7 +156,8 @@ void initialize()
 
     fillSawtooth(dw_w, DwType::TotalWeights, 31);
     fillI32     (dw_b, DwType::Channels,      7);
-    for (std::size_t c = 0; c < DwType::Channels; ++c) {
+    for (std::size_t c = 0; c < DwType::Channels; ++c)
+    {
         dw_req[c] = defaultRequantizer();
     }
 
@@ -172,7 +173,8 @@ template<typename Layer>
 double benchPwOrConv(Layer& layer, const int8_t* in, int8_t* out, int iters)
 {
     auto t0 = std::chrono::steady_clock::now();
-    for (int i = 0; i < iters; ++i) {
+    for (int i = 0; i < iters; ++i)
+    {
         layer.forward(in, out);
     }
     auto t1 = std::chrono::steady_clock::now();
@@ -187,7 +189,8 @@ int64_t outputChecksum(const int8_t* p, std::size_t n)
     // value is unchanged.
     uint64_t sum = 0;
     uint64_t mix = 1469598103934665603ULL;
-    for (std::size_t i = 0; i < n; ++i) {
+    for (std::size_t i = 0; i < n; ++i)
+    {
         const uint64_t v = static_cast<uint64_t>(static_cast<int64_t>(p[i]));
         sum += v;
         mix ^= v + (mix << 5) + (mix >> 2);
