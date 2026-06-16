@@ -310,7 +310,8 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
 
         // Handle the bit shift calculation carefully for large fracBits
         double leftShift;
-        if (fracBits <= 63) {
+        if (fracBits <= 63)
+        {
             leftShift = static_cast<double>(1ULL << fracBits);
         } else {
             // For fracBits > 63, calculate 2^fracBits using pow
@@ -346,14 +347,16 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
                     uint64_t high = static_cast<uint64_t>(val128 >> 64);
                     uint64_t low = static_cast<uint64_t>(val128);
                     
-                    if (high != 0) {
+                    if (high != 0)
+                    {
                         outFile << spaces << "            0x" << std::hex << std::uppercase << high << std::setfill('0') << std::setw(16) << low << "," << endl;
                     } else {
                         outFile << spaces << "            0x" << std::hex << std::uppercase << low << "," << endl;
                     }
 #else
                     // Fallback: split the double into high and low parts
-                    if (num >= pow(2.0, 64.0)) {
+                    if (num >= pow(2.0, 64.0))
+                    {
                         uint64_t high = static_cast<uint64_t>(num / pow(2.0, 64.0));
                         uint64_t low = static_cast<uint64_t>(fmod(num, pow(2.0, 64.0)));
                         outFile << spaces << "            0x" << std::hex << std::uppercase << high << std::setfill('0') << std::setw(16) << low << "," << endl;

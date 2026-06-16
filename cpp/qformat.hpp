@@ -92,7 +92,8 @@ namespace tinymind {
 
             T result{};
 
-            switch (opType) {
+            switch (opType)
+            {
                 case AdditionOp:
                     result = origValue + target;
                     break;
@@ -118,60 +119,94 @@ namespace tinymind {
         static T saturate(const T& origValue, const T& target, const T& minValue, const T& maxValue, const OperatorType_e opType)
         {
             T result{};
-            switch (opType) {
+            switch (opType)
+            {
                 case AdditionOp:
-                    if (target > 0) {
-                        if (origValue > (maxValue - target)) {
+                    if (target > 0)
+                    {
+                        if (origValue > (maxValue - target))
+                        {
                             result = maxValue; // Saturate to maximum
-                        } else {
+                        }
+                        else
+                        {
                             result = origValue + target;  // Safe addition
                         }
-                    } else if (target < 0) {
-                        if (origValue < (minValue - target)) {
+                    }
+                    else if (target < 0)
+                    {
+                        if (origValue < (minValue - target))
+                        {
                             result = minValue; // Saturate to minimum
-                        } else {
+                        }
+                        else
+                        {
                             result = origValue + target;  // Safe addition
                         }
-                    } else {
+                    }
+                    else
+                    {
                         result = origValue; // Adding zero: no overflow possible
                     }
                     break;
                 case SubtractionOp:
-                    if (target > 0) {
-                        if (origValue < (minValue + target)) {
+                    if (target > 0)
+                    {
+                        if (origValue < (minValue + target))
+                        {
                             result = minValue;  // Saturate to minimum
-                        } else {
+                        }
+                        else
+                        {
                             result = origValue - target; // Safe subtraction
                         }
-                    } else if (target < 0) {
-                        if (origValue > (maxValue + target)) {
+                    }
+                    else if (target < 0)
+                    {
+                        if (origValue > (maxValue + target))
+                        {
                             result = maxValue; // Saturate to maximum
-                        } else {
+                        }
+                        else
+                        {
                             result = origValue - target; // Safe subtraction
                         }
-                    } else {
+                    }
+                    else
+                    {
                         result = origValue; // Subtracting zero: no overflow possible
                     }
                     break;
                 case MultiplicationOp:
                     // Check for multiplication overflow
-                    if ((origValue * target) > maxValue) {
+                    if ((origValue * target) > maxValue)
+                    {
                         result = maxValue;
                     // Check for multiplication underflow as well    
-                    } else if ((origValue * target) < minValue) {
+                    }
+                    else if ((origValue * target) < minValue)
+                    {
                         result = minValue;
-                    } else {
+                    }
+                    else
+                    {
                         result = origValue * target; // Safe multiplication
                     }
                     break;
                 case DivisionOp:
                     if (target == 0) { // Handle division by zero first
                         result = (origValue > 0) ? maxValue : minValue;
-                    } else if ((origValue / target) > maxValue) {
+                    }
+                    else if ((origValue / target) > maxValue)
+                    {
                         result = maxValue;
-                    } else if ((origValue / target) < minValue) {
+                    }
+                    else if ((origValue / target) < minValue)
+                    {
                         result = minValue;
-                    } else {
+                    }
+                    else
+                    {
                         result = origValue / target; // Safe division
                     }
                     break;

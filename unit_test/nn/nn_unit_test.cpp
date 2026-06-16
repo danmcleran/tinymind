@@ -2312,9 +2312,11 @@ BOOST_AUTO_TEST_CASE(test_softmax_2x2_image_2_classes)
     
     // Linear transformation: logits = weights * input + bias
     SignedQ8_8SatPolicyType logits[numClasses];
-    for (size_t c = 0; c < numClasses; ++c) {
+    for (size_t c = 0; c < numClasses; ++c)
+    {
         logits[c] = bias[c];
-        for (size_t i = 0; i < inputSize; ++i) {
+        for (size_t i = 0; i < inputSize; ++i)
+        {
             logits[c] += weights[c][i] * inputImage[i];
         }
     }
@@ -2329,7 +2331,8 @@ BOOST_AUTO_TEST_CASE(test_softmax_2x2_image_2_classes)
     
     // Verify: Sum of probabilities should be close to 1.0
     SignedQ8_8SatPolicyType sum(0, 0);
-    for (size_t c = 0; c < numClasses; ++c) {
+    for (size_t c = 0; c < numClasses; ++c)
+    {
         sum += probabilities[c];
     }
     
@@ -2347,7 +2350,8 @@ BOOST_AUTO_TEST_CASE(test_softmax_2x2_image_2_classes)
     BOOST_TEST(sumValue <= (expectedValue + tolerance));
     
     // Verify each probability is in [0, 1] range
-    for (size_t c = 0; c < numClasses; ++c) {
+    for (size_t c = 0; c < numClasses; ++c)
+    {
         BOOST_TEST(probabilities[c].getValue() >= 0);
         BOOST_TEST(probabilities[c].getValue() <= SignedQ8_8SatPolicyType(1, 0).getValue());
     }
