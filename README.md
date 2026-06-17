@@ -161,7 +161,6 @@ Fixed-point activations use pre-computed lookup tables for speed. Floating-point
 - Tabular Q-learning with configurable reward and learning policies
 - Deep Q-Network (DQN) with neural network function approximation
 - Experience replay buffer for DQN training
-- Dyna-Q hybrid model-free/model-based learning
 
 ### Benchmark Harness (`cpp/include/bench/`)
 
