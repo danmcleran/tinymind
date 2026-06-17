@@ -25,6 +25,8 @@ check :
 	cd examples/kws_cortex_m_int8 && make clean && make && make release && cd -
 	cd examples/resnet_block_int8 && make clean && make && make release && make run && cd -
 	cd examples/transformer_encoder_int8 && make clean && make && make release && make run && cd -
+	cd examples/transformer_encoder_stack_int8 && make clean && make && make release && make run && make golden && cd -
+	cd examples/transformer_encoder_stack_softmax_int8 && make clean && make && make release && make run && make golden && cd -
 	cd examples/resnet18_block_int8 && make clean && make && make release && make run && cd -
 	cd examples/mobilenetv2_int8 && make clean && make && make release && make run && cd -
 	cd examples/mixed_precision_kws && make clean && make && make release && make run && cd -

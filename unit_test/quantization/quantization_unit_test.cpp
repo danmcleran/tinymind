@@ -60,6 +60,8 @@
 #include "qattention1d.hpp"
 #include "qattention_softmax.hpp"
 #include "qmha.hpp"
+#include "qembedding.hpp"
+#include "qpositional.hpp"
 #include "qformat.hpp"
 #include "include/tinymind_fp16.hpp"
 #include "include/simd/simd_dispatch.hpp"
@@ -4978,6 +4980,137 @@ BOOST_AUTO_TEST_CASE(simd_active_backend_name_reports_a_known_value)
         if (*a == *b) { found = true; break; }
     }
     BOOST_TEST(found);
+}
+
+// ---------------------------------------------------------------------------
+// QEmbedding -- token gather (transformer input layer).
+// ---------------------------------------------------------------------------
+
+BOOST_AUTO_TEST_CASE(qembedding_gather_selects_correct_rows)
+{
+    constexpr std::size_t V = 4, E = 3, S = 3;
+    const int8_t table[V * E] =
+    {
+         10,  11,  12,   // id 0
+         -5,  -6,  -7,   // id 1
+         20,  21,  22,   // id 2
+          1,   2,   3,   // id 3
+    };
+
+    tinymind::QEmbedding<int8_t, int8_t, V, E> emb;
+    emb.table = table;
+    emb.requantizer = nullptr;
+
+    const int32_t tokens[S] = {2, 0, 3};
+    int8_t out[S * E];
+    emb.forward(tokens, S, out);
+
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        const std::size_t id = static_cast<std::size_t>(tokens[t]);
+        for (std::size_t e = 0; e < E; ++e)
+        {
+            BOOST_TEST(static_cast<int>(out[t * E + e]) ==
+                       static_cast<int>(table[id * E + e]));
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qembedding_requantizer_rescales_gathered_codes)
+{
+    constexpr std::size_t V = 2, E = 4, S = 2;
+    const int8_t table[V * E] =
+    {
+         10, -6, 0, 20,
+        -12,  5, 1, -3,
+    };
+
+    // ratio = (input_scale * weight_scale) / output_scale = (2 * 1) / 1 = 2:
+    // a power-of-two multiplier doubles each code exactly (no rounding noise).
+    auto r = buildRequantizer<int8_t>(2.0f, 1.0f, 1.0f, 0, -128, 127);
+
+    tinymind::QEmbedding<int8_t, int8_t, V, E> emb;
+    emb.table = table;
+    emb.requantizer = &r;
+
+    const int32_t tokens[S] = {1, 0};
+    int8_t out[S * E];
+    emb.forward(tokens, S, out);
+
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        const std::size_t id = static_cast<std::size_t>(tokens[t]);
+        for (std::size_t e = 0; e < E; ++e)
+        {
+            BOOST_TEST(static_cast<int>(out[t * E + e]) ==
+                       2 * static_cast<int>(table[id * E + e]));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// QPositionalEncoding1D -- fused positional add + sinusoidal table generator.
+// ---------------------------------------------------------------------------
+
+BOOST_AUTO_TEST_CASE(qpositional_add_matches_float_reference)
+{
+    constexpr std::size_t S = 2, E = 3, N = S * E;
+
+    const float in_f[N]  = {-0.4f, 0.9f, 0.1f, -1.0f, 0.5f, 0.7f};
+    const float tab_f[N] = { 0.2f, -0.3f, 0.6f, 0.4f, -0.8f, 0.1f};
+
+    const float scale_in = 0.01f;  const int32_t zp_in = -3;
+    const float scale_tab = 0.008f; const int32_t zp_tab = 5;
+    const float scale_out = 0.015f; const int32_t zp_out = -2;
+
+    int8_t qin[N], qtab[N], out[N];
+    quantizeBuffer<int8_t>(in_f, qin, N, scale_in, zp_in, -128, 127);
+    quantizeBuffer<int8_t>(tab_f, qtab, N, scale_tab, zp_tab, -128, 127);
+
+    tinymind::QPositionalEncoding1D<int8_t, int8_t, int8_t, S, E> pos;
+    pos.table = qtab;
+    const QAddParams p = buildQAddParams(scale_in, scale_tab, scale_out);
+    pos.adder.input_a_zero_point = static_cast<int8_t>(zp_in);
+    pos.adder.input_b_zero_point = static_cast<int8_t>(zp_tab);
+    pos.adder.left_shift = p.left_shift;
+    pos.adder.input_a_multiplier = p.input_a_multiplier;
+    pos.adder.input_a_shift = p.input_a_shift;
+    pos.adder.input_b_multiplier = p.input_b_multiplier;
+    pos.adder.input_b_shift = p.input_b_shift;
+    pos.adder.output_requantizer.multiplier = p.output_multiplier;
+    pos.adder.output_requantizer.shift = p.output_shift;
+    pos.adder.output_requantizer.zero_point = static_cast<int8_t>(zp_out);
+    pos.adder.output_requantizer.qmin = -128;
+    pos.adder.output_requantizer.qmax = 127;
+
+    pos.forward(qin, out);
+
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        const float deq = dequantize<int8_t>(out[i], scale_out, zp_out);
+        const float ref = in_f[i] + tab_f[i];
+        BOOST_TEST(std::abs(deq - ref) < scale_out + 1e-3f);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qpositional_sinusoidal_table_matches_formula)
+{
+    constexpr std::size_t S = 4, D = 4;
+    float t[S * D];
+    tinymind::sinusoidalPositionalTable(S, D, t);
+
+    // pos 0: even index sin(0) = 0, odd index cos(0) = 1.
+    BOOST_TEST(std::fabs(t[0] - 0.0f) < 1e-6f);
+    BOOST_TEST(std::fabs(t[1] - 1.0f) < 1e-6f);
+    BOOST_TEST(std::fabs(t[2] - 0.0f) < 1e-6f);
+    BOOST_TEST(std::fabs(t[3] - 1.0f) < 1e-6f);
+
+    // pos 1: pair 0 -> denom 1 -> angle 1; pair 1 -> denom 10000^0.5=100 ->
+    // angle 0.01.
+    BOOST_TEST(std::fabs(t[1 * D + 0] - std::sin(1.0f)) < 1e-5f);
+    BOOST_TEST(std::fabs(t[1 * D + 1] - std::cos(1.0f)) < 1e-5f);
+    BOOST_TEST(std::fabs(t[1 * D + 2] - std::sin(0.01f)) < 1e-5f);
+    BOOST_TEST(std::fabs(t[1 * D + 3] - std::cos(0.01f)) < 1e-5f);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

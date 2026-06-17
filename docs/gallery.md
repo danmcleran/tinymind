@@ -53,6 +53,12 @@ these exactly.
 **Transformer encoder block (int8)** — int8 vs float output overlay + per-element quantization error.
 ![Transformer int8 parity]({{ site.baseurl }}/assets/plots/transformer_int8_parity.png)
 
+**Transformer encoder stack (int8)** — token embedding + sinusoidal positional encoding + 2 stacked linear-attention blocks, end-to-end.
+![Transformer encoder stack int8 parity]({{ site.baseurl }}/assets/plots/transformer_encoder_stack_int8.png)
+
+**Transformer encoder stack, softmax attention (int8)** — same stack with standard softmax self-attention (score grid + exp LUT).
+![Transformer encoder stack softmax int8 parity]({{ site.baseurl }}/assets/plots/transformer_encoder_stack_softmax_int8.png)
+
 **MobileNetV2-shaped pipeline (int8)** — logit parity vs the float reference.
 ![MobileNetV2 int8 parity]({{ site.baseurl }}/assets/plots/mobilenetv2_int8_parity.png)
 
