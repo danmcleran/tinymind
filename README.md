@@ -97,6 +97,7 @@ A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside*
 - **Normalization** -- `QBatchNorm1D` / `QBatchNorm2D` (per-channel (multiplier, shift, bias) triple), `QLayerNorm1D` (integer mean/variance per row, `qInvSqrtQ30` Newton iteration), `QSoftmax1D` (two-pass int8->int8 softmax via 256-entry int32 exp LUT, output 1/256, zp -128)
 - **Recurrent cells** -- `QLSTMCell` (4 gates, TFLite ordering, int8 or int16 cell state via `TINYMIND_ENABLE_INT16_ACCUM=1`), `QGRUCell` (3 gates, reset-before-multiply), and `QCfCCell` (closed-form continuous-time: backbone trunk + tanh heads + folded-`ts` time-gate + interpolation). Standalone single-step; caller owns time loop and hidden/cell buffers
 - **Attention + FFT** -- `QFFT1D` (radix-2 DIT on int16 buffers, Q1.15 twiddles, scaled butterflies), `QAttention1D` (int8 linear-attention with ReLU kernel), `QAttentionSoftmax1D` (standard softmax attention with `1/sqrt(d_k)` folded into score Requantizer), `QMultiHeadLinearAttention1D` (stacks N heads)
+- **Transformer input layers** -- `QEmbedding` (int8 token-id gather from a `[Vocab, E]` table, optional requantizer onto a downstream grid) and `QPositionalEncoding1D` (fused affine add of a sinusoidal or learned positional table; host `sinusoidalPositionalTable()` generator)
 - **Activations** -- `qrelu` / `qrelu6` plus `clampForRelu` / `clampForRelu6` helpers that fold the activation into the upstream Requantizer's saturation pass; 256-entry int8 sigmoid / tanh LUTs via `buildQSigmoidLUT` / `buildQTanhLUT` + `qApplyLUT` / `qApplyLUTBuffer` -- no `<cmath>` on the inference path
 - **Host-side calibration** (`cpp/include/qcalibration.hpp`, gated on `FLOAT && STD`) -- `RangeObserver`, `PercentileObserver`, `KLDivergenceObserver` (TensorRT entropy), `crossLayerEqualizeDense` / `crossLayerEqualizeConv2D` (Nagel CLE), `computeAffineParamsAsymmetric` / `Symmetric`, `computePerChannelSymmetricScales`, `quantizeBuffer`, `buildRequantizer`, `buildRescaler`, `buildQAddParams`, `buildQMulRequantizer`, `foldBatchNorm` (Conv2D+BN fusion), `buildQBatchNormChannelParams`, `buildQSoftmaxExpLUT`, `buildQLSTMParams` / `quantizeQLSTMBiases`, `buildQGRUParams` / `quantizeQGRUBiases`, `buildQCfCParams` / `quantizeQCfCBias` / `quantizeQCfCTimeBias`, `buildQFFTTwiddles`, `qAttentionInvSqrt`
 - **Pure integer at runtime**: deployable shape is `TINYMIND_ENABLE_QUANTIZATION=1, FLOAT=0, STD=0`; `unit_test/embedded` exercises this corner as `quant_freestanding`; `unit_test/quantization` Boost.Test suite covers the math (Requantizer round-trip, per-channel depthwise, calibration, Phase 11-15 ops, SIMD bit-exactness)
@@ -107,6 +108,8 @@ A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside*
   - [`examples/resnet18_block_int8/`](examples/resnet18_block_int8/) -- int8 ResNet-18-shaped stem + one basic-block stage. `make run`, `make bench`, `make golden`
   - [`examples/mobilenetv2_int8/`](examples/mobilenetv2_int8/) -- int8 MobileNetV2 inverted-residual block sequence with linear bottlenecks
   - [`examples/transformer_encoder_int8/`](examples/transformer_encoder_int8/) -- int8 encoder block: `QLayerNorm1D` -> `QAttention1D` -> `QAdd` -> `QLayerNorm1D` -> `QDense` + `qrelu` -> `QDense` -> `QAdd`. ~2% max-abs error vs float on bundled dataset
+  - [`examples/transformer_encoder_stack_int8/`](examples/transformer_encoder_stack_int8/) -- end-to-end from token ids: `QEmbedding` -> `QPositionalEncoding1D` (sinusoidal) -> N grid-chained linear-attention encoder blocks. ~1% max-abs error vs float
+  - [`examples/transformer_encoder_stack_softmax_int8/`](examples/transformer_encoder_stack_softmax_int8/) -- same stack with `QAttentionSoftmax1D` (int8 score grid + exp LUT + 1/256 probability grid). ~1% max-abs error vs float
   - [`examples/mixed_precision_kws/`](examples/mixed_precision_kws/) -- mixed-precision: int8 frontend -> fp16 attention head -> int8 classifier. Exercises Phase 9 qbridge converters
   - [`examples/mixed_precision_mlp_int8_qformat/`](examples/mixed_precision_mlp_int8_qformat/) -- hybrid int8 affine <-> Q8.8 via Phase 17 pure-integer bridges. Deployable at `QUANT=1 FLOAT=0 STD=0`
   - [`examples/import_demo/`](examples/import_demo/) -- end-to-end Phase 15 importer flow. 3-8-4-2 MLP, three observers + CLE, ~0.004 max-abs error vs float
@@ -845,6 +848,8 @@ cd examples/resnet_block_int8 && make clean && make
 cd examples/resnet18_block_int8 && make clean && make
 cd examples/mobilenetv2_int8 && make clean && make
 cd examples/transformer_encoder_int8 && make clean && make
+cd examples/transformer_encoder_stack_int8 && make clean && make
+cd examples/transformer_encoder_stack_softmax_int8 && make clean && make
 cd examples/mixed_precision_kws && make clean && make
 cd examples/mixed_precision_mlp_int8_qformat && make clean && make
 cd examples/import_demo && make clean && make

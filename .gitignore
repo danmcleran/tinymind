@@ -12,6 +12,8 @@ examples/perf_matrix/output/
 examples/pytorch_quant/xor/output/
 examples/resnet_block_int8/output/
 examples/transformer_encoder_int8/output/
+examples/transformer_encoder_stack_int8/output/
+examples/transformer_encoder_stack_softmax_int8/output/
 examples/dqn_maze/output/
 examples/maze/output/
 examples/xor/output/
