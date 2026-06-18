@@ -8,6 +8,8 @@ coverage/
 *.gcov
 apps/activation/output/
 examples/import_demo/output/
+examples/import_moe_demo/output/
+examples/moe_regimes_int8/output/
 examples/perf_matrix/output/
 examples/pytorch_quant/xor/output/
 examples/resnet_block_int8/output/

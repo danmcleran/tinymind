@@ -27,6 +27,7 @@ check :
 	cd examples/transformer_encoder_int8 && make clean && make && make release && make run && cd -
 	cd examples/transformer_encoder_stack_int8 && make clean && make && make release && make run && make golden && cd -
 	cd examples/transformer_encoder_stack_softmax_int8 && make clean && make && make release && make run && make golden && cd -
+	cd examples/moe_regimes_int8 && make clean && make && make release && make run && make bench && make golden && cd -
 	cd examples/resnet18_block_int8 && make clean && make && make release && make run && cd -
 	cd examples/mobilenetv2_int8 && make clean && make && make release && make run && cd -
 	cd examples/mixed_precision_kws && make clean && make && make release && make run && cd -
@@ -34,6 +35,7 @@ check :
 	cd unit_test/integration && make clean && make && make run && cd -
 	cd examples/pytorch_quant/xor && make clean && make && make release && make run && cd -
 	cd examples/import_demo && make clean && make && make release && make run && cd -
+	cd examples/import_moe_demo && make clean && make && make release && make run && cd -
 	cd examples/iris && make clean && make release && make run && cd -
 	cd examples/energy_efficiency && make clean && make release && make run && cd -
 	cd examples/optical_digits && make clean && make release && make run && cd -

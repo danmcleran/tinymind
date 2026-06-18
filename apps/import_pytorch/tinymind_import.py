@@ -20,6 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+from __future__ import annotations
+
 """
 PyTorch -> TinyMind int8 importer (Phase 15).
 
@@ -47,8 +49,6 @@ qcalibration.hpp; the deployable MCU shape bakes the integer
 Rounding convention is std::lround (ties away from zero) so the metadata
 emitted here is bit-identical to what the C++ Requantizer expects.
 """
-
-from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
@@ -344,6 +344,66 @@ class Softmax(Layer):
 
 
 @dataclass
+class MoE(Layer):
+    """Mixture-of-Experts layer with top-1 routing (cpp/qmoe.hpp).
+
+    A linear router (NumExperts x NumInputs) scores the input; the argmax
+    expert runs and produces the output. Experts are linear QDense layers
+    (NumOutputs x NumInputs). All experts are resident; one runs per sample.
+
+    Quantization shape:
+      * Router weights: symmetric per-tensor int8. The router is NOT
+        requantized at runtime -- the C++ layer argmaxes over the raw int32
+        logits -- so the router weight scale only sets the bias scale and never
+        affects the decision (argmax is invariant to a shared positive scale).
+      * Router bias (optional): int32 at scale input_scale * router_weight_scale.
+      * Each expert: its OWN symmetric per-tensor weight scale (per-expert
+        scale), so every expert uses the full int8 range for its own weights.
+      * Output activation: a SINGLE shared scale/zero_point observed over the
+        realized MoE output (whichever expert fired). Each expert's Requantizer
+        maps its int32 accumulator into this shared output scale, so a
+        downstream layer sees one consistent quantization regardless of which
+        expert produced the value.
+
+    The float forward used for calibration is computed directly from the
+    supplied float weights (experts are linear), so no `forward` callable is
+    required.
+    """
+    router_weight: np.ndarray = None              # [num_experts, in]
+    router_bias: Optional[np.ndarray] = None      # [num_experts]
+    expert_weights: Sequence[np.ndarray] = None   # each [out, in]
+    expert_biases: Optional[Sequence[np.ndarray]] = None  # each [out] or None
+    input_name: str = ""
+    # Filled by importer:
+    router_weight_scale: float = 0.0
+    q_router_weight: np.ndarray = None
+    q_router_bias: np.ndarray = None
+    expert_weight_scales: Sequence[float] = None
+    q_expert_weights: Sequence[np.ndarray] = None
+    q_expert_biases: Sequence[np.ndarray] = None
+
+    @property
+    def num_experts(self) -> int:
+        return len(self.expert_weights)
+
+
+def moe_float_forward(layer: "MoE", parent: np.ndarray) -> np.ndarray:
+    """Top-1 float forward: argmax router logits, run that expert.
+
+    parent is a single sample [in]. Mirrors cpp/qmoe.hpp routing: ties resolve
+    to the lowest index (np.argmax convention).
+    """
+    logits = parent @ layer.router_weight.T
+    if layer.router_bias is not None:
+        logits = logits + layer.router_bias
+    e = int(np.argmax(logits))
+    y = parent @ layer.expert_weights[e].T
+    if layer.expert_biases is not None and layer.expert_biases[e] is not None:
+        y = y + layer.expert_biases[e]
+    return y
+
+
+@dataclass
 class QFormatDense(Layer):
     """Q-format dense layer (TinyMind QValue pipeline).
 
@@ -477,6 +537,8 @@ def calibrate(layers: Sequence[Layer],
             parent = per_sample[layer.input_name]
             if isinstance(layer, (Dense, Conv2D, QFormatDense)):
                 y = layer.forward(parent)
+            elif isinstance(layer, MoE):
+                y = moe_float_forward(layer, parent)
             elif isinstance(layer, BatchNorm2D):
                 sigma_eff = layer.gamma / np.sqrt(layer.variance + layer.eps)
                 y = (parent - layer.mean) * sigma_eff + layer.beta
@@ -529,6 +591,34 @@ def quantize_weights(layers: Sequence[Layer],
                 input_scale = ranges[layer.input_name][0]
                 bias_scale = input_scale * layer.weight_scale
                 layer.q_bias = quantize_bias_int32(layer.bias, bias_scale)
+        elif isinstance(layer, MoE):
+            input_scale = ranges[layer.input_name][0]
+            # Router: symmetric per-tensor weights; bias at input*router scale.
+            layer.router_weight_scale = symmetric_weight_scale(layer.router_weight)
+            layer.q_router_weight = quantize_symmetric_weights(
+                layer.router_weight, layer.router_weight_scale)
+            if layer.router_bias is not None:
+                router_bias_scale = input_scale * layer.router_weight_scale
+                layer.q_router_bias = quantize_bias_int32(
+                    layer.router_bias, router_bias_scale)
+            # Experts: per-expert weight scale; bias at input*expert scale.
+            scales: list[float] = []
+            qws: list[np.ndarray] = []
+            qbs: list[Optional[np.ndarray]] = []
+            for e in range(layer.num_experts):
+                w = layer.expert_weights[e]
+                ws = symmetric_weight_scale(w)
+                scales.append(ws)
+                qws.append(quantize_symmetric_weights(w, ws))
+                b = (layer.expert_biases[e]
+                     if layer.expert_biases is not None else None)
+                if b is not None:
+                    qbs.append(quantize_bias_int32(b, input_scale * ws))
+                else:
+                    qbs.append(None)
+            layer.expert_weight_scales = scales
+            layer.q_expert_weights = qws
+            layer.q_expert_biases = qbs
         elif isinstance(layer, QFormatDense):
             layer.q_weight = quantize_qformat_weights(
                 layer.weight, layer.fractional_bits,
@@ -676,6 +766,40 @@ def emit_weights_header(path: str,
                 parts.append(_fmt_int_array(f"k{nm}_Biases",
                                             layer.q_bias.reshape(-1).tolist(),
                                             storage))
+
+    if any(isinstance(layer, MoE) for layer in layers):
+        parts.append("\n    // Mixture-of-Experts (cpp/qmoe.hpp): top-1 router "
+                     "+ per-expert int8 experts.\n")
+        for layer in layers:
+            if not isinstance(layer, MoE):
+                continue
+            nm = layer.name.replace("/", "_").replace("-", "_")
+            parts.append(f"    constexpr std::size_t k{nm}_NumExperts = "
+                         f"{layer.num_experts};\n")
+            # Router (no requantizer: argmax over raw int32 logits).
+            parts.append(f"    constexpr float k{nm}_Router_WeightScale = "
+                         f"{layer.router_weight_scale!r}f;\n")
+            parts.append(_fmt_int_array(f"k{nm}_Router_Weights",
+                                        layer.q_router_weight.reshape(-1).tolist(),
+                                        "int8_t"))
+            if layer.q_router_bias is not None:
+                parts.append(_fmt_int_array(f"k{nm}_Router_Biases",
+                                            layer.q_router_bias.tolist(),
+                                            "int32_t"))
+            # Experts: each its own weight scale; all share the layer output
+            # scale (k{nm}_Scale / k{nm}_ZeroPoint above).
+            for e in range(layer.num_experts):
+                parts.append(f"    constexpr float k{nm}_Expert{e}_WeightScale = "
+                             f"{layer.expert_weight_scales[e]!r}f;\n")
+                parts.append(_fmt_int_array(
+                    f"k{nm}_Expert{e}_Weights",
+                    layer.q_expert_weights[e].reshape(-1).tolist(),
+                    "int8_t"))
+                if layer.q_expert_biases[e] is not None:
+                    parts.append(_fmt_int_array(
+                        f"k{nm}_Expert{e}_Biases",
+                        layer.q_expert_biases[e].tolist(),
+                        "int32_t"))
 
     if boundaries:
         parts.append("\n    // Hybrid precision-tier bridges (cpp/qbridge.hpp).\n")

@@ -20,6 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+from __future__ import annotations
+
 """
 ONNX-runtime PTQ -> TinyMind int8 importer (Phase 15).
 
@@ -44,8 +46,6 @@ This module avoids hard-dependency on onnx / onnxruntime at module import
 time so the test surface can run without the heavyweight packages -- the
 parse_onnx_model() entry point imports onnx lazily.
 """
-
-from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
