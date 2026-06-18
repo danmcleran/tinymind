@@ -60,6 +60,7 @@ TINYMIND_DISABLE_WARNING_POP
 #include "binarylayer.hpp"
 #include "ternarylayer.hpp"
 #include "selfattention1d.hpp"
+#include "moe.hpp"
 #include "fft1d.hpp"
 #include "networkStats.hpp"
 #include "random.hpp"
@@ -6550,6 +6551,294 @@ BOOST_AUTO_TEST_CASE(test_case_selfattention1d_fixed_point_bias)
     BOOST_TEST(std::abs(output[1].getValue() - expected12.getValue()) <= tolerance);
     BOOST_TEST(std::abs(output[2].getValue() - expected8.getValue()) <= tolerance);
     BOOST_TEST(std::abs(output[3].getValue() - expected12.getValue()) <= tolerance);
+}
+
+// ============================================================================
+// MixtureOfExperts tests (phase 1: float, top-1 argmax routing)
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_case_moe_static_sizes)
+{
+    typedef tinymind::MixtureOfExperts<double, 8, 4, 3> MoEType;
+
+    static_assert(MoEType::InputSize == 8, "Wrong input size");
+    static_assert(MoEType::OutputSize == 4, "Wrong output size");
+    static_assert(MoEType::NumberOfExperts == 3, "Wrong expert count");
+
+    // Default expert is LinearExpert with matching dims
+    static_assert(MoEType::Expert::InputSize == 8, "Wrong expert input size");
+    static_assert(MoEType::Expert::OutputSize == 4, "Wrong expert output size");
+    static_assert(MoEType::Expert::TotalWeights == 32, "Wrong expert weights"); // 8 * 4
+    // Router maps InputDim -> NumExperts
+    static_assert(MoEType::Router::OutputSize == 3, "Wrong router output size");
+    static_assert(MoEType::Router::TotalWeights == 24, "Wrong router weights"); // 8 * 3
+    BOOST_TEST(true);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_linear_expert_forward)
+{
+    // output[o] = bias[o] + sum_i W(o,i) * input[i]
+    tinymind::LinearExpert<double, 3, 2> expert;
+
+    // W = [[1, 2, 3], [4, 5, 6]], bias = [10, 20]
+    expert.setWeightAt(0, 0, 1.0); expert.setWeightAt(0, 1, 2.0); expert.setWeightAt(0, 2, 3.0);
+    expert.setWeightAt(1, 0, 4.0); expert.setWeightAt(1, 1, 5.0); expert.setWeightAt(1, 2, 6.0);
+    expert.setBias(0, 10.0);
+    expert.setBias(1, 20.0);
+
+    double input[3] = {1.0, 1.0, 1.0};
+    double output[2];
+    expert.forward(input, output);
+
+    // out[0] = 10 + (1+2+3) = 16 ; out[1] = 20 + (4+5+6) = 35
+    BOOST_TEST(fabs(output[0] - 16.0) < 1e-9);
+    BOOST_TEST(fabs(output[1] - 35.0) < 1e-9);
+
+    // Flat accessor agrees with structured: W(1,2) at index 1*3 + 2 = 5
+    BOOST_TEST(fabs(expert.getWeight(5) - 6.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_moe_routes_to_argmax_expert)
+{
+    // Router picks the expert with the highest logit; that expert's output
+    // is what forward() returns.
+    tinymind::MixtureOfExperts<double, 2, 1, 3> moe;
+
+    // Router: drive logit of expert 1 highest for this input.
+    // logit[e] = sum_i W(e,i) * input[i] (biases default 0)
+    moe.router().setWeightAt(0, 0, 0.0); moe.router().setWeightAt(0, 1, 0.0); // expert 0 -> 0
+    moe.router().setWeightAt(1, 0, 1.0); moe.router().setWeightAt(1, 1, 1.0); // expert 1 -> 2
+    moe.router().setWeightAt(2, 0, 0.5); moe.router().setWeightAt(2, 1, 0.0); // expert 2 -> 0.5
+
+    // Give each expert a distinct constant output via bias so we can identify it.
+    moe.expert(0).setBias(0, 100.0);
+    moe.expert(1).setBias(0, 200.0);
+    moe.expert(2).setBias(0, 300.0);
+
+    double input[2] = {1.0, 1.0};
+    double output[1];
+    moe.forward(input, output);
+
+    // logits = [0, 2, 0.5] -> argmax = expert 1 -> output 200
+    BOOST_TEST(moe.getLastSelectedExpert() == 1u);
+    BOOST_TEST(fabs(output[0] - 200.0) < 1e-9);
+
+    // route() agrees and reports the logits
+    double logits[3];
+    const size_t sel = moe.route(input, logits);
+    BOOST_TEST(sel == 1u);
+    BOOST_TEST(fabs(logits[1] - 2.0) < 1e-9);
+    BOOST_TEST(fabs(logits[2] - 0.5) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_moe_selection_changes_with_input)
+{
+    // Different inputs route to different experts.
+    tinymind::MixtureOfExperts<double, 2, 1, 2> moe;
+
+    // expert 0 wins when input[0] dominates; expert 1 wins when input[1] does.
+    moe.router().setWeightAt(0, 0, 1.0); moe.router().setWeightAt(0, 1, 0.0);
+    moe.router().setWeightAt(1, 0, 0.0); moe.router().setWeightAt(1, 1, 1.0);
+
+    moe.expert(0).setBias(0, -1.0);
+    moe.expert(1).setBias(0, 1.0);
+
+    double output[1];
+
+    double inA[2] = {5.0, 1.0};
+    moe.forward(inA, output);
+    BOOST_TEST(moe.getLastSelectedExpert() == 0u);
+    BOOST_TEST(fabs(output[0] - (-1.0)) < 1e-9);
+
+    double inB[2] = {1.0, 5.0};
+    moe.forward(inB, output);
+    BOOST_TEST(moe.getLastSelectedExpert() == 1u);
+    BOOST_TEST(fabs(output[0] - 1.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_moe_argmax_ties_lowest_index)
+{
+    // Equal logits resolve to the lowest expert index.
+    tinymind::MixtureOfExperts<double, 1, 1, 3> moe;
+
+    // All router weights zero -> all logits 0 (tie)
+    double input[1] = {1.0};
+    double output[1];
+    moe.expert(0).setBias(0, 7.0);
+    moe.forward(input, output);
+
+    BOOST_TEST(moe.getLastSelectedExpert() == 0u);
+    BOOST_TEST(fabs(output[0] - 7.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_moe_fixed_point)
+{
+    // Top-1 routing works with Q-format value types.
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> Q16;
+    tinymind::MixtureOfExperts<Q16, 2, 1, 2> moe;
+
+    moe.router().setWeightAt(0, 0, Q16(0, 0)); moe.router().setWeightAt(0, 1, Q16(0, 0));
+    moe.router().setWeightAt(1, 0, Q16(1, 0)); moe.router().setWeightAt(1, 1, Q16(0, 0));
+
+    moe.expert(0).setBias(0, Q16(3, 0));
+    moe.expert(1).setBias(0, Q16(9, 0));
+
+    Q16 input[2] = {Q16(1, 0), Q16(0, 0)};
+    Q16 output[1];
+    moe.forward(input, output);
+
+    // logits = [0, 1] -> expert 1 -> output 9
+    BOOST_TEST(moe.getLastSelectedExpert() == 1u);
+    BOOST_TEST(output[0].getValue() == Q16(9, 0).getValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_moe_initialize_and_run)
+{
+    // Random init then a forward pass: selection is in range, output finite.
+    tinymind::MixtureOfExperts<double, 4, 2, 3> moe;
+    moe.initializeWeights<UniformRealRandomNumberGenerator<double>>();
+
+    double input[4] = {0.5, -0.5, 0.25, -0.25};
+    double output[2];
+    moe.forward(input, output);
+
+    BOOST_TEST(moe.getLastSelectedExpert() < 3u);
+    BOOST_TEST(std::isfinite(output[0]));
+    BOOST_TEST(std::isfinite(output[1]));
+}
+
+BOOST_AUTO_TEST_CASE(test_case_moe_custom_expert_type)
+{
+    // Plug a SelfAttention-like expert? Use LinearExpert explicitly as the
+    // template-template argument to confirm the pluggable path compiles and
+    // routes identically to the default.
+    tinymind::MixtureOfExperts<double, 3, 3, 2, tinymind::LinearExpert> moe;
+
+    moe.router().setWeightAt(0, 0, 0.0); moe.router().setWeightAt(0, 1, 0.0); moe.router().setWeightAt(0, 2, 0.0);
+    moe.router().setWeightAt(1, 0, 1.0); moe.router().setWeightAt(1, 1, 1.0); moe.router().setWeightAt(1, 2, 1.0);
+
+    // expert 1 = identity
+    for (size_t r = 0; r < 3; ++r)
+    {
+        moe.expert(1).setWeightAt(r, r, 1.0);
+    }
+
+    double input[3] = {2.0, 3.0, 4.0};
+    double output[3];
+    moe.forward(input, output);
+
+    // logits = [0, 9] -> expert 1 (identity) -> output == input
+    BOOST_TEST(moe.getLastSelectedExpert() == 1u);
+    BOOST_TEST(fabs(output[0] - 2.0) < 1e-9);
+    BOOST_TEST(fabs(output[1] - 3.0) < 1e-9);
+    BOOST_TEST(fabs(output[2] - 4.0) < 1e-9);
+}
+
+// ============================================================================
+// TopKMixtureOfExperts tests (phase 5: float, softmax-gated blend)
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_case_moe_topk_static_sizes)
+{
+    typedef tinymind::TopKMixtureOfExperts<double, 6, 3, 4, 2> MoEType;
+    static_assert(MoEType::InputSize == 6, "Wrong input size");
+    static_assert(MoEType::OutputSize == 3, "Wrong output size");
+    static_assert(MoEType::NumberOfExperts == 4, "Wrong expert count");
+    static_assert(MoEType::TopK == 2, "Wrong K");
+    BOOST_TEST(true);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_moe_topk_k1_equals_top1)
+{
+    // K=1 collapses to top-1: gate weight 1.0, output == argmax expert.
+    tinymind::TopKMixtureOfExperts<double, 2, 1, 3, 1> moe;
+
+    moe.router().setWeightAt(0, 0, 0.0); moe.router().setWeightAt(0, 1, 0.0);
+    moe.router().setWeightAt(1, 0, 1.0); moe.router().setWeightAt(1, 1, 1.0);
+    moe.router().setWeightAt(2, 0, 0.5); moe.router().setWeightAt(2, 1, 0.0);
+
+    moe.expert(0).setBias(0, 100.0);
+    moe.expert(1).setBias(0, 200.0);
+    moe.expert(2).setBias(0, 300.0);
+
+    double input[2] = {1.0, 1.0};
+    double output[1];
+    moe.forward(input, output);
+
+    // logits {0,2,0.5} -> expert 1, gate 1.0
+    BOOST_TEST(moe.getSelectedExpert(0) == 1u);
+    BOOST_TEST(fabs(moe.getGate(0) - 1.0) < 1e-12);
+    BOOST_TEST(fabs(output[0] - 200.0) < 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_moe_topk_dense_average)
+{
+    // Dense MoE (K==NumExperts), tied logits -> equal 0.5/0.5 gates ->
+    // output is the average of the two expert outputs.
+    tinymind::TopKMixtureOfExperts<double, 1, 1, 2, 2> moe;
+
+    // Router weights zero -> logits {0,0} tie.
+    moe.expert(0).setBias(0, 2.0);
+    moe.expert(1).setBias(0, 4.0);
+
+    double input[1] = {1.0};
+    double output[1];
+    moe.forward(input, output);
+
+    BOOST_TEST(fabs(moe.getGate(0) - 0.5) < 1e-9);
+    BOOST_TEST(fabs(moe.getGate(1) - 0.5) < 1e-9);
+    BOOST_TEST(fabs(output[0] - 3.0) < 1e-9); // 0.5*2 + 0.5*4
+}
+
+BOOST_AUTO_TEST_CASE(test_case_moe_topk_top2_of_3_blend)
+{
+    // Top-2 of 3: the two highest logits are softmax-blended, the lowest
+    // expert is dropped entirely.
+    tinymind::TopKMixtureOfExperts<double, 1, 1, 3, 2> moe;
+
+    // Logits = weight * input(=1): expert0=0, expert1=2, expert2=1.
+    moe.router().setWeightAt(0, 0, 0.0);
+    moe.router().setWeightAt(1, 0, 2.0);
+    moe.router().setWeightAt(2, 0, 1.0);
+
+    moe.expert(0).setBias(0, -999.0); // must be excluded
+    moe.expert(1).setBias(0, 10.0);
+    moe.expert(2).setBias(0, 20.0);
+
+    double input[1] = {1.0};
+    double output[1];
+    moe.forward(input, output);
+
+    // Selected: expert 1 (logit 2) then expert 2 (logit 1).
+    BOOST_TEST(moe.getSelectedExpert(0) == 1u);
+    BOOST_TEST(moe.getSelectedExpert(1) == 2u);
+
+    // softmax over {2,1}: w1 = e^2/(e^2+e^1), w2 = e^1/(e^2+e^1).
+    const double e2 = exp(2.0), e1 = exp(1.0);
+    const double w1 = e2 / (e2 + e1), w2 = e1 / (e2 + e1);
+    const double expected = w1 * 10.0 + w2 * 20.0;
+    BOOST_TEST(fabs(output[0] - expected) < 1e-9);
+    // Excluded expert 0 never contributes.
+    BOOST_TEST(output[0] > 0.0);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_moe_topk_gates_sum_to_one)
+{
+    // Random init: the K gates always form a convex combination.
+    tinymind::TopKMixtureOfExperts<double, 4, 2, 4, 3> moe;
+    moe.initializeWeights<UniformRealRandomNumberGenerator<double>>();
+
+    double input[4] = {0.3, -0.7, 0.5, 0.1};
+    double output[2];
+    moe.forward(input, output);
+
+    double gsum = 0.0;
+    for (size_t j = 0; j < 3; ++j)
+    {
+        BOOST_TEST(moe.getGate(j) >= 0.0);
+        gsum += moe.getGate(j);
+    }
+    BOOST_TEST(fabs(gsum - 1.0) < 1e-9);
 }
 
 // ============================================================================

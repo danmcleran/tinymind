@@ -20,6 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+from __future__ import annotations
+
 """
 Phase 15 import_demo: full PyTorch -> TinyMind importer round-trip.
 
@@ -37,8 +39,6 @@ float_reference.hpp without needing PyTorch installed.
 Dependencies: torch, numpy. Use pyenv to isolate the install (the system
 Python is PEP 668-managed).
 """
-
-from __future__ import annotations
 
 import os
 import sys

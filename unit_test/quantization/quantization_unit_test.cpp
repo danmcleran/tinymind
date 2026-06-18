@@ -41,6 +41,7 @@
 #include "qcalibration.hpp"
 #include "qactivations.hpp"
 #include "qdense.hpp"
+#include "qmoe.hpp"
 #include "qconv2d.hpp"
 #include "qpool2d.hpp"
 #include "qdepthwiseconv2d.hpp"
@@ -84,6 +85,8 @@ using tinymind::qrelu6Buffer;
 using tinymind::clampForRelu;
 using tinymind::clampForRelu6;
 using tinymind::QDense;
+using tinymind::QMixtureOfExperts;
+using tinymind::QTopKMixtureOfExperts;
 using tinymind::QConv2D;
 using tinymind::QMaxPool2D;
 using tinymind::QAvgPool2D;
@@ -805,6 +808,302 @@ BOOST_AUTO_TEST_CASE(qdense_end_to_end_against_float_reference)
     BOOST_TEST(std::abs(out_f[0] - ref[0]) <= 4.0f * op.scale);
     BOOST_TEST(std::abs(out_f[1] - ref[1]) <= 4.0f * op.scale);
 }
+// ---------------------------------------------------------------------------
+// Quantized Mixture-of-Experts (top-1 routing).
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    // Configure a QDense expert with identity-pass scales (ratio 1.0) so the
+    // int8 output equals the integer accumulator. Caller owns the buffers.
+    template<std::size_t In, std::size_t Out>
+    void configureExpert(QDense<int8_t, int8_t, int32_t, int8_t, In, Out>& e,
+                         const int8_t* weights, const int32_t* biases)
+    {
+        e.weights = weights;
+        e.biases = biases;
+        e.input_zero_point = 0;
+        e.requantizer = buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qmoe_static_shape)
+{
+    typedef QMixtureOfExperts<int8_t, int8_t, int32_t, int8_t, 4, 2, 3> MoE;
+    static_assert(MoE::InputLength == 4, "Wrong input length");
+    static_assert(MoE::OutputLength == 2, "Wrong output length");
+    static_assert(MoE::NumberOfExperts == 3, "Wrong expert count");
+    static_assert(MoE::Expert::InputLength == 4, "Wrong expert input length");
+    static_assert(MoE::Expert::OutputLength == 2, "Wrong expert output length");
+    BOOST_TEST(true);
+}
+
+BOOST_AUTO_TEST_CASE(qmoe_routes_to_argmax_expert_golden)
+{
+    // 2 inputs -> 1 output, 3 experts. Router logits chosen so expert 1 wins.
+    // Expert weights/biases produce a known int8 byte for the golden check.
+    typedef QMixtureOfExperts<int8_t, int8_t, int32_t, int8_t, 2, 1, 3> MoE;
+
+    // Router rows (row-major [expert][input]). input = {2, 3}, zp = 0:
+    //   logit0 = 0*2 + 0*3   = 0
+    //   logit1 = 2*2 + 1*3   = 7
+    //   logit2 = 1*2 + 0*3   = 2
+    const int8_t router_w[6] = {
+        0, 0,   // expert 0
+        2, 1,   // expert 1
+        1, 0,   // expert 2
+    };
+
+    // Per-expert weights (each 2 inputs -> 1 output) and biases.
+    const int8_t e0_w[2] = {1, 1};  const int32_t e0_b[1] = {0};
+    const int8_t e1_w[2] = {3, 0};  const int32_t e1_b[1] = {10};
+    const int8_t e2_w[2] = {0, 0};  const int32_t e2_b[1] = {0};
+
+    MoE moe;
+    moe.router_weights = router_w;
+    moe.router_biases = nullptr;
+    moe.input_zero_point = 0;
+    configureExpert(moe.experts[0], e0_w, e0_b);
+    configureExpert(moe.experts[1], e1_w, e1_b);
+    configureExpert(moe.experts[2], e2_w, e2_b);
+
+    const int8_t input[2] = {2, 3};
+    int8_t out[1] = {0};
+    const std::size_t selected = moe.forward(input, out);
+
+    // argmax(logits {0,7,2}) = expert 1.
+    BOOST_TEST(selected == 1u);
+    // expert 1 output = 10 + (3*2 + 0*3) = 16  (golden byte)
+    BOOST_TEST(static_cast<int>(out[0]) == 16);
+
+    // route() reports the raw int32 logits and the same winner.
+    int32_t logits[3] = {0, 0, 0};
+    const std::size_t r = moe.route(input, logits);
+    BOOST_TEST(r == 1u);
+    BOOST_TEST(logits[0] == 0);
+    BOOST_TEST(logits[1] == 7);
+    BOOST_TEST(logits[2] == 2);
+}
+
+BOOST_AUTO_TEST_CASE(qmoe_selection_changes_with_input)
+{
+    // Two experts; router favors expert 0 on input[0], expert 1 on input[1].
+    typedef QMixtureOfExperts<int8_t, int8_t, int32_t, int8_t, 2, 1, 2> MoE;
+
+    const int8_t router_w[4] = {
+        1, 0,   // expert 0 tracks input[0]
+        0, 1,   // expert 1 tracks input[1]
+    };
+    const int8_t e0_w[2] = {0, 0};  const int32_t e0_b[1] = {-5};
+    const int8_t e1_w[2] = {0, 0};  const int32_t e1_b[1] = {5};
+
+    MoE moe;
+    moe.router_weights = router_w;
+    moe.router_biases = nullptr;
+    moe.input_zero_point = 0;
+    configureExpert(moe.experts[0], e0_w, e0_b);
+    configureExpert(moe.experts[1], e1_w, e1_b);
+
+    int8_t out[1] = {0};
+
+    const int8_t inA[2] = {9, 1};
+    BOOST_TEST(moe.forward(inA, out) == 0u);
+    BOOST_TEST(static_cast<int>(out[0]) == -5);
+
+    const int8_t inB[2] = {1, 9};
+    BOOST_TEST(moe.forward(inB, out) == 1u);
+    BOOST_TEST(static_cast<int>(out[0]) == 5);
+}
+
+BOOST_AUTO_TEST_CASE(qmoe_argmax_ties_lowest_index)
+{
+    // All router weights zero with no bias -> all logits 0 (tie) -> expert 0.
+    typedef QMixtureOfExperts<int8_t, int8_t, int32_t, int8_t, 1, 1, 3> MoE;
+
+    const int8_t router_w[3] = {0, 0, 0};
+    const int8_t e0_w[1] = {0};  const int32_t e0_b[1] = {7};
+    const int8_t e1_w[1] = {0};  const int32_t e1_b[1] = {8};
+    const int8_t e2_w[1] = {0};  const int32_t e2_b[1] = {9};
+
+    MoE moe;
+    moe.router_weights = router_w;
+    moe.router_biases = nullptr;
+    moe.input_zero_point = 0;
+    configureExpert(moe.experts[0], e0_w, e0_b);
+    configureExpert(moe.experts[1], e1_w, e1_b);
+    configureExpert(moe.experts[2], e2_w, e2_b);
+
+    const int8_t input[1] = {5};
+    int8_t out[1] = {0};
+    BOOST_TEST(moe.forward(input, out) == 0u);
+    BOOST_TEST(static_cast<int>(out[0]) == 7);
+}
+
+BOOST_AUTO_TEST_CASE(qmoe_router_bias_and_input_zero_point)
+{
+    // Router uses a bias and an asymmetric input zero point.
+    typedef QMixtureOfExperts<int8_t, int8_t, int32_t, int8_t, 2, 1, 2> MoE;
+
+    const int8_t router_w[4] = {
+        1, 0,
+        0, 1,
+    };
+    // bias tips expert 1 ahead unless input strongly favors expert 0.
+    const int32_t router_b[2] = {0, 4};
+
+    const int8_t e0_w[2] = {0, 0};  const int32_t e0_b[1] = {1};
+    const int8_t e1_w[2] = {0, 0};  const int32_t e1_b[1] = {2};
+
+    MoE moe;
+    moe.router_weights = router_w;
+    moe.router_biases = router_b;
+    moe.input_zero_point = 5;   // effective input = q - 5
+    configureExpert(moe.experts[0], e0_w, e0_b);
+    configureExpert(moe.experts[1], e1_w, e1_b);
+
+    // input q = {10, 6} -> effective {5, 1}
+    //   logit0 = 0 + 1*5 = 5
+    //   logit1 = 4 + 1*1 = 5  -> tie -> expert 0
+    const int8_t inTie[2] = {10, 6};
+    int8_t out[1] = {0};
+    BOOST_TEST(moe.forward(inTie, out) == 0u);
+    BOOST_TEST(static_cast<int>(out[0]) == 1);
+
+    // input q = {6, 10} -> effective {1, 5}
+    //   logit0 = 1 ; logit1 = 4 + 5 = 9 -> expert 1
+    const int8_t inE1[2] = {6, 10};
+    BOOST_TEST(moe.forward(inE1, out) == 1u);
+    BOOST_TEST(static_cast<int>(out[0]) == 2);
+}
+
+// ---------------------------------------------------------------------------
+// Quantized top-k / dense Mixture-of-Experts (softmax-gated blend).
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    // Identity-pass requantizer (ratio 1.0, zp 0) reused for router + experts.
+    tinymind::Requantizer<int32_t, int8_t> identityRequant()
+    {
+        return buildRequantizer<int8_t>(1.0f, 1.0f, 1.0f, 0, -128, 127);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qtopk_static_shape)
+{
+    typedef QTopKMixtureOfExperts<int8_t, int8_t, int32_t, int8_t, 4, 2, 3, 2> MoE;
+    static_assert(MoE::InputLength == 4, "Wrong input length");
+    static_assert(MoE::OutputLength == 2, "Wrong output length");
+    static_assert(MoE::NumberOfExperts == 3, "Wrong expert count");
+    static_assert(MoE::TopK == 2, "Wrong K");
+    BOOST_TEST(true);
+}
+
+BOOST_AUTO_TEST_CASE(qtopk_k1_matches_top1)
+{
+    // K=1: the gate is 1.0, so the blended output must equal the single
+    // argmax expert -- byte-identical to QMixtureOfExperts.
+    const int8_t router_w[6] = {
+        0, 0,   // expert 0
+        2, 1,   // expert 1 (wins for input {2,3})
+        1, 0,   // expert 2
+    };
+    const int8_t e0_w[2] = {1, 1};  const int32_t e0_b[1] = {0};
+    const int8_t e1_w[2] = {3, 0};  const int32_t e1_b[1] = {10};
+    const int8_t e2_w[2] = {0, 0};  const int32_t e2_b[1] = {0};
+
+    int32_t lut[256];
+    tinymind::buildQSoftmaxExpLUT(1.0f, lut);
+
+    QTopKMixtureOfExperts<int8_t, int8_t, int32_t, int8_t, 2, 1, 3, 1> moe;
+    moe.router_weights = router_w;
+    moe.router_biases = nullptr;
+    moe.input_zero_point = 0;
+    moe.router_requantizer = identityRequant();
+    moe.exp_lut = lut;
+    moe.output_zero_point = 0;
+    moe.output_qmin = -128;
+    moe.output_qmax = 127;
+    configureExpert(moe.experts[0], e0_w, e0_b);
+    configureExpert(moe.experts[1], e1_w, e1_b);
+    configureExpert(moe.experts[2], e2_w, e2_b);
+
+    const int8_t input[2] = {2, 3};
+    int8_t out[1] = {0};
+    const std::size_t top = moe.forward(input, out);
+
+    BOOST_TEST(top == 1u);
+    BOOST_TEST(static_cast<int>(out[0]) == 16); // 10 + 3*2 ; same as QMoE top-1
+}
+
+BOOST_AUTO_TEST_CASE(qtopk_dense_tied_average_golden)
+{
+    // Dense MoE (K==NumExperts) with tied router logits -> equal gates ->
+    // the blend is the average of the two expert outputs.
+    const int8_t router_w[4] = {0, 0, 0, 0};        // logits {0,0} tie
+    const int8_t e0_w[2] = {0, 0};  const int32_t e0_b[1] = {10};
+    const int8_t e1_w[2] = {0, 0};  const int32_t e1_b[1] = {40};
+
+    int32_t lut[256];
+    tinymind::buildQSoftmaxExpLUT(1.0f, lut);
+
+    QTopKMixtureOfExperts<int8_t, int8_t, int32_t, int8_t, 2, 1, 2, 2> moe;
+    moe.router_weights = router_w;
+    moe.router_biases = nullptr;
+    moe.input_zero_point = 0;
+    moe.router_requantizer = identityRequant();
+    moe.exp_lut = lut;
+    moe.output_zero_point = 0;
+    moe.output_qmin = -128;
+    moe.output_qmax = 127;
+    configureExpert(moe.experts[0], e0_w, e0_b);
+    configureExpert(moe.experts[1], e1_w, e1_b);
+
+    const int8_t input[2] = {5, 7};
+    int8_t out[1] = {0};
+    moe.forward(input, out);
+
+    // gates 0.5/0.5 over outputs {10,40} -> 25 (golden byte).
+    BOOST_TEST(static_cast<int>(out[0]) == 25);
+}
+
+BOOST_AUTO_TEST_CASE(qtopk_top2_of_3_excludes_lowest)
+{
+    // Top-2 of 3: the two highest-logit experts blend; the lowest is dropped.
+    const int8_t router_w[3] = {0, 2, 1};   // logits {0,2,1} for input {1}
+    const int8_t e0_w[1] = {0};  const int32_t e0_b[1] = {120}; // would saturate if used
+    const int8_t e1_w[1] = {0};  const int32_t e1_b[1] = {10};
+    const int8_t e2_w[1] = {0};  const int32_t e2_b[1] = {20};
+
+    int32_t lut[256];
+    tinymind::buildQSoftmaxExpLUT(1.0f, lut);
+
+    QTopKMixtureOfExperts<int8_t, int8_t, int32_t, int8_t, 1, 1, 3, 2> moe;
+    moe.router_weights = router_w;
+    moe.router_biases = nullptr;
+    moe.input_zero_point = 0;
+    moe.router_requantizer = identityRequant();
+    moe.exp_lut = lut;
+    moe.output_zero_point = 0;
+    moe.output_qmin = -128;
+    moe.output_qmax = 127;
+    configureExpert(moe.experts[0], e0_w, e0_b);
+    configureExpert(moe.experts[1], e1_w, e1_b);
+    configureExpert(moe.experts[2], e2_w, e2_b);
+
+    const int8_t input[1] = {1};
+    int8_t out[1] = {0};
+    const std::size_t top = moe.forward(input, out);
+
+    // expert 1 (logit 2) is the top; expert 2 (logit 1) blends in; expert 0
+    // (logit 0, value 120) is excluded -> output stays a convex blend of
+    // {10, 20}, weighted toward 10.
+    BOOST_TEST(top == 1u);
+    BOOST_TEST(static_cast<int>(out[0]) >= 10);
+    BOOST_TEST(static_cast<int>(out[0]) <= 20);
+    BOOST_TEST(static_cast<int>(out[0]) < 15); // expert 1 (10) dominates the softmax
+}
+
 // ---------------------------------------------------------------------------
 // Phase 4: quantized 2D conv + pool layers.
 // ---------------------------------------------------------------------------

@@ -62,6 +62,11 @@ these exactly.
 **MobileNetV2-shaped pipeline (int8)** — logit parity vs the float reference.
 ![MobileNetV2 int8 parity]({{ site.baseurl }}/assets/plots/mobilenetv2_int8_parity.png)
 
+## Mixture-of-Experts
+
+**int8 MoE regime routing** — a top-1 router partitions the input domain into three regimes; one of three linear experts runs per inference (color blocks = the routing map).
+![int8 MoE regime routing]({{ site.baseurl }}/assets/plots/moe_regimes_int8.png)
+
 ## UCI dataset solutions
 
 End-to-end examples on real (or documented-synthetic) UCI datasets — see the
