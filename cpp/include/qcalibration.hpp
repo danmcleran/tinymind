@@ -1303,6 +1303,97 @@ namespace tinymind {
         }
     }
 
+    /**
+     * quantizeMultiplier for a signed ratio.
+     *
+     * quantizeMultiplier expects a positive ratio (it decomposes |mantissa|).
+     * Coefficients in the state-space layers (a/b/c/d) are signed, so fit the
+     * magnitude and carry the sign on the Q0.31 multiplier -- the runtime
+     * saturatingRoundingDoublingHighMul handles a negative multiplier directly.
+     */
+    inline void signedQuantizeMultiplier(double ratio, int32_t& multiplier, int32_t& shift)
+    {
+        const double mag = (ratio < 0.0) ? -ratio : ratio;
+        quantizeMultiplier(mag, multiplier, shift);
+        if (ratio < 0.0)
+        {
+            multiplier = -multiplier;
+        }
+    }
+
+    /**
+     * Phase 19 -- diagonal state-space (QStateSpace1D) per-channel parameters.
+     *
+     * Fills the four per-channel (multiplier, shift) coefficient arrays from
+     * the real-valued diagonal coefficients and the activation / state scales:
+     *
+     *   a[c]  decay        : ratio = a[c]                     (dimensionless)
+     *   b[c]  input drive  : ratio = b[c] * x_scale / s_scale
+     *   c[c]  readout      : ratio = c[c] * s_scale / y_scale
+     *   d[c]  skip         : ratio = d[c] * x_scale / y_scale (d may be nullptr)
+     *
+     * s_scale is the calibrated state scale (state stored int32). Stability
+     * needs |a[c]| < 1 so the recurrence -- and the int32 state -- stays bounded.
+     * The d_* output arrays may be nullptr together with d_real to skip the
+     * skip path.
+     */
+    inline void buildQSSMParams(const float* a_real, const float* b_real,
+                                const float* c_real, const float* d_real,
+                                float x_scale, float s_scale, float y_scale,
+                                std::size_t num_channels,
+                                int32_t* a_mult, int32_t* a_shift,
+                                int32_t* b_mult, int32_t* b_shift,
+                                int32_t* c_mult, int32_t* c_shift,
+                                int32_t* d_mult, int32_t* d_shift)
+    {
+        for (std::size_t c = 0; c < num_channels; ++c)
+        {
+            signedQuantizeMultiplier(static_cast<double>(a_real[c]),
+                                     a_mult[c], a_shift[c]);
+            signedQuantizeMultiplier(static_cast<double>(b_real[c]) *
+                                     static_cast<double>(x_scale) /
+                                     static_cast<double>(s_scale),
+                                     b_mult[c], b_shift[c]);
+            signedQuantizeMultiplier(static_cast<double>(c_real[c]) *
+                                     static_cast<double>(s_scale) /
+                                     static_cast<double>(y_scale),
+                                     c_mult[c], c_shift[c]);
+            if (d_real != nullptr && d_mult != nullptr)
+            {
+                signedQuantizeMultiplier(static_cast<double>(d_real[c]) *
+                                         static_cast<double>(x_scale) /
+                                         static_cast<double>(y_scale),
+                                         d_mult[c], d_shift[c]);
+            }
+        }
+    }
+
+    /**
+     * Phase 19 -- per-channel hard-sigmoid gate parameters for
+     * QSelectiveStateSpace1D.
+     *
+     * The gate pre-activation is g_pre = wg[c] * x_real + bg[c], emitted in Q15
+     * (so the layer can clamp it to [0, 1] == [0, 32767] directly):
+     *
+     *   gate_mult/shift : ratio = wg[c] * x_scale * 2^15  (applied to xq - x_zp)
+     *   gate_bias       : round(bg[c] * 2^15)
+     */
+    inline void buildQSelectiveGateParams(const float* wg_real, const float* bg_real,
+                                          float x_scale, std::size_t num_channels,
+                                          int32_t* gate_mult, int32_t* gate_shift,
+                                          int32_t* gate_bias)
+    {
+        const double q15 = 32768.0;
+        for (std::size_t c = 0; c < num_channels; ++c)
+        {
+            signedQuantizeMultiplier(static_cast<double>(wg_real[c]) *
+                                     static_cast<double>(x_scale) * q15,
+                                     gate_mult[c], gate_shift[c]);
+            gate_bias[c] = static_cast<int32_t>(std::lround(
+                static_cast<double>(bg_real[c]) * q15));
+        }
+    }
+
 } // namespace tinymind
 
 #endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD

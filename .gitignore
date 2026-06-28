@@ -115,3 +115,4 @@ graphify-out/2026-*/
 # CI-published graph data copy (regenerated during Pages build)
 docs/assets/knowledge-graph/graph.json
 examples/seq2seq_softmax_int8/output/
+examples/state_space_int8/output/

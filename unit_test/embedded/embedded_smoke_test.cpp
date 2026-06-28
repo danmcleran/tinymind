@@ -99,6 +99,7 @@
 #include "qcausalattention_softmax.hpp"
 #include "qcrossattention.hpp"
 #include "qkvcache.hpp"
+#include "qssm.hpp"
 #include "qmha.hpp"
 #endif
 
@@ -684,6 +685,35 @@ bool exerciseQuantPipeline()
     int8_t cross_sm_out[2 * 3] = {0};
     qcross_sm.forward(attn_in, attn_in, cross_cache, xq, xcs_score, xcs_attn, cross_sm_out);
 
+    // Diagonal state-space family (LTI + selective). Per-channel integer
+    // coefficient arrays; freestanding (no LUT, gate is a clamped affine).
+    static const int32_t ssm_mult[3] = {0x40000000, 0x40000000, 0x40000000};
+    static const int32_t ssm_shift[3] = {0, 0, 0};
+    static const int32_t ssm_gbias[3] = {0, 0, 0};
+    typedef tinymind::QStateSpace1D<int8_t, int32_t, int8_t, 4, 3> QSSMType;
+    QSSMType qssm;
+    qssm.input_zero_point = 0; qssm.output_zero_point = 0; qssm.qmin = -128; qssm.qmax = 127;
+    qssm.a_multiplier = ssm_mult; qssm.a_shift = ssm_shift;
+    qssm.b_multiplier = ssm_mult; qssm.b_shift = ssm_shift;
+    qssm.c_multiplier = ssm_mult; qssm.c_shift = ssm_shift;
+    qssm.d_multiplier = nullptr;  qssm.d_shift = nullptr;
+    QSSMType::State ssm_state;
+    int8_t ssm_in[QSSMType::InputSize] = {0};
+    int8_t ssm_out[QSSMType::OutputSize] = {0};
+    qssm.forward(ssm_in, ssm_state, ssm_out);
+
+    typedef tinymind::QSelectiveStateSpace1D<int8_t, int32_t, int8_t, 4, 3> QSelSSMType;
+    QSelSSMType qsel;
+    qsel.input_zero_point = 0; qsel.output_zero_point = 0; qsel.qmin = -128; qsel.qmax = 127;
+    qsel.a_multiplier = ssm_mult; qsel.a_shift = ssm_shift;
+    qsel.b_multiplier = ssm_mult; qsel.b_shift = ssm_shift;
+    qsel.c_multiplier = ssm_mult; qsel.c_shift = ssm_shift;
+    qsel.d_multiplier = nullptr;  qsel.d_shift = nullptr;
+    qsel.gate_multiplier = ssm_mult; qsel.gate_shift = ssm_shift; qsel.gate_bias = ssm_gbias;
+    QSelSSMType::State sel_state;
+    int8_t sel_out[QSelSSMType::OutputSize] = {0};
+    qsel.forward(ssm_in, sel_state, sel_out);
+
     return (qDenseOut[0] == qDenseOut[0]) && (s != 0)
         && (add_y[0] == add_y[0]) && (mul_y[0] == mul_y[0])
         && (cc_out[0] == cc_out[0]) && (pad_out[0] == pad_out[0])
@@ -700,7 +730,9 @@ bool exerciseQuantPipeline()
         && (causal_out[0] == causal_out[0])
         && (cs_out[0] == cs_out[0])
         && (cross_out[0] == cross_out[0])
-        && (cross_sm_out[0] == cross_sm_out[0]);
+        && (cross_sm_out[0] == cross_sm_out[0])
+        && (ssm_out[0] == ssm_out[0])
+        && (sel_out[0] == sel_out[0]);
 }
 int32_t gIntegerBridgeSink[2];
 
