@@ -7,6 +7,8 @@ nav_order: 10
 
 # Transformer Decoder (seq2seq)
 
+> **Real-world use:** an offline voice-command device turns a recognized phrase into a structured control sequence ("set thermostat to 21 and arm the alarm"). The decoder generates the output tokens autoregressively against a fixed-size KV state, so memory stays flat no matter how long the command — the whole sequence-to-sequence step runs on-device with nothing sent off-chip.
+
 TinyMind's encoder layers (linear / softmax self-attention, embedding,
 positional encoding) produce a memory tensor. The **decoder** family consumes
 it, completing an int8 encoder-decoder (seq2seq) transformer. It adds three

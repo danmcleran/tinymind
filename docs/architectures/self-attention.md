@@ -7,6 +7,8 @@ nav_order: 5
 
 # Linear Self-Attention
 
+> **Real-world use:** a wearable gesture sensor fuses several IMU channels over a short motion window, learning which channel matters at each timestep. The ReLU-kernel linear attention does this at O(N) cost instead of the quadratic cost of softmax attention, so a Cortex-M0 keeps up at sensor rates with no exponential or division on the inference path.
+
 Tinymind provides `SelfAttention1D`, a standalone composable layer that implements linear self-attention for sequence processing. It uses a ReLU kernel feature map instead of softmax, reducing complexity from O(N^2 * D) to O(N * D * P + N * P^2) and eliminating the need for exponential or division operations -- making it practical for fixed-point targets.
 
 ## Why Linear Attention?

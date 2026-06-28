@@ -7,6 +7,8 @@ nav_order: 5
 
 # Int8 Affine Quantization
 
+> **Real-world use:** a MobileNet-style image classifier trained in PyTorch ships to a Cortex-M with no FPU. Post-training int8 calibration maps the trained float weights onto an int8 grid, so the deployed model keeps its accuracy while every inference op stays pure integer — the same TFLite-shape path the rest of the embedded ecosystem expects.
+
 TinyMind ships a TFLite / CMSIS-NN style **post-training int8** layer family that lives alongside the existing `QValue` Q-format pipeline and the float pipeline. Weights and activations are int8, accumulators are int32, and a per-layer integer **Requantizer** (Q0.31 multiplier + shift) rescales between layers without any floating-point math on the inference path.
 
 This is a different kind of "quantization" than [BinaryDense / TernaryDense]({{ site.baseurl }}/architectures/quantized-networks). Those layers binarize / ternarize the weights themselves (1- or 2-bit storage, multiply-free MACs). The int8 path keeps a full integer multiply-accumulate but maps the float distribution onto an int8 grid via a calibrated `(scale, zero_point)` per tensor.

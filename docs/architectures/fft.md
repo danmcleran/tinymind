@@ -7,6 +7,8 @@ nav_order: 6
 
 # FFT1D -- Fixed-Point Fast Fourier Transform
 
+> **Real-world use:** an industrial bearing monitor watches for a specific fault frequency. A 64-point fixed-point FFT turns the raw vibration stream into spectral bins, so a tiny classifier reads the energy at the fault harmonic directly instead of spending model capacity learning the Fourier basis from raw samples.
+
 Tinymind provides `FFT1D`, a standalone radix-2 decimation-in-time FFT for power-of-two lengths. It is designed for embedded signal processing where frequency-domain features feed into a neural network classifier. All dimensions are compile-time template parameters with zero dynamic allocation.
 
 ## Why FFT for Embedded ML?

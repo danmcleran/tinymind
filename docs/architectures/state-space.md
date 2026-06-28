@@ -7,6 +7,8 @@ nav_order: 11
 
 # State-Space (S4-lite)
 
+> **Real-world use:** an always-on vibration monitor on a motor bearing flags a developing fault from a 4 kHz accelerometer stream. The diagonal recurrence summarizes the entire history in a fixed-size state, so the per-step cost and memory are the same after a month of runtime as after the first second — the right shape for a sensor that never stops streaming.
+
 TinyMind provides a diagonal **state-space** layer family — a linear-recurrent
 sequence model (S4-lite / linear RNN) that processes a stream one timestep at a
 time with a fixed-size state. It is the structured-sequence cousin of the
