@@ -111,6 +111,7 @@ A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside*
   - [`examples/transformer_encoder_stack_int8/`](examples/transformer_encoder_stack_int8/) -- end-to-end from token ids: `QEmbedding` -> `QPositionalEncoding1D` (sinusoidal) -> N grid-chained linear-attention encoder blocks. ~1% max-abs error vs float
   - [`examples/transformer_encoder_stack_softmax_int8/`](examples/transformer_encoder_stack_softmax_int8/) -- same stack with `QAttentionSoftmax1D` (int8 score grid + exp LUT + 1/256 probability grid). ~1% max-abs error vs float
   - [`examples/seq2seq_int8/`](examples/seq2seq_int8/) -- int8 encoder-decoder (seq2seq): encoder memory -> decoder block (`QCausalAttention1D` causal self-attn + `QCrossAttention1D` cross-attn + FFN). Asserts the O(1) KV-cache `step()` decode matches the full-sequence `forward()` byte-for-byte. ~0.7% max-abs error vs float
+  - [`examples/tiny_generate_int8/`](examples/tiny_generate_int8/) -- decoder-only nano-LM: autoregressive greedy decode via `QCausalAttention1D::step()` over a fixed E×E KV state (O(1) attention memory, any length). int8 greedy decode reproduces the float reference's tokens (48/48)
   - [`examples/mixed_precision_kws/`](examples/mixed_precision_kws/) -- mixed-precision: int8 frontend -> fp16 attention head -> int8 classifier. Exercises Phase 9 qbridge converters
   - [`examples/mixed_precision_mlp_int8_qformat/`](examples/mixed_precision_mlp_int8_qformat/) -- hybrid int8 affine <-> Q8.8 via Phase 17 pure-integer bridges. Deployable at `QUANT=1 FLOAT=0 STD=0`
   - [`examples/import_demo/`](examples/import_demo/) -- end-to-end Phase 15 importer flow. 3-8-4-2 MLP, three observers + CLE, ~0.004 max-abs error vs float
@@ -851,6 +852,7 @@ cd examples/transformer_encoder_int8 && make clean && make
 cd examples/transformer_encoder_stack_int8 && make clean && make
 cd examples/transformer_encoder_stack_softmax_int8 && make clean && make
 cd examples/seq2seq_int8 && make clean && make
+cd examples/tiny_generate_int8 && make clean && make
 cd examples/mixed_precision_kws && make clean && make
 cd examples/mixed_precision_mlp_int8_qformat && make clean && make
 cd examples/import_demo && make clean && make
@@ -1008,6 +1010,7 @@ tinymind/
     mobilenetv2_int8/           # int8 MobileNetV2 inverted-residual sequence
     transformer_encoder_int8/   # int8 transformer encoder block (LayerNorm + attention + dense)
     seq2seq_int8/               # int8 encoder-decoder (causal self + cross-attn, O(1) KV-cache decode)
+    tiny_generate_int8/         # int8 decoder-only nano-LM, autoregressive greedy decode via step()
     mixed_precision_kws/        # int8 -> fp16 -> int8 KWS (Phase 9 qbridge)
     mixed_precision_mlp_int8_qformat/ # Hybrid int8 affine <-> Q8.8 (Phase 17 integer bridges)
     import_demo/                # End-to-end Phase 15 importer (3-8-4-2 MLP, three observers + CLE)

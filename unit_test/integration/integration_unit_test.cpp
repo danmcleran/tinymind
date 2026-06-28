@@ -143,7 +143,22 @@ const char* kGoldenSeq2Seq =
     "sample 4: -36 48 -32 44 -33 54 -16 65 93 70 31 97 14 91 14 89 104 -2 42 101 22 97 17 92 -40 -125 -28 18 -54 31 -39 41 -24 -13 61 93 22 104 34 107 -32 68 76 99 31 113 39 114\n"
     "sample 5: 0 82 4 80 4 91 21 100 78 55 15 78 -6 71 -6 70 35 -64 -18 42 -30 53 -17 64 37 -53 42 85 10 89 13 86 -27 -20 54 84 12 92 19 91 -128 -27 -18 7 -57 28 -40 39\n";
 
+const char* kGoldenTinyGenerate =
+    "# tiny_generate_int8 golden output\n"
+    "# prompts=4 gen=12 token_match=48/48\n"
+    "prompt 1 5 -> 6 7 0 1 2 3 4 5 6 7 0 1\n"
+    "prompt 3 6 -> 7 0 1 2 3 4 5 6 7 0 1 2\n"
+    "prompt 7 2 -> 3 4 5 6 7 0 1 2 3 4 5 6\n"
+    "prompt 4 0 -> 1 2 3 4 5 6 7 0 1 2 3 4\n";
+
 } // namespace
+
+BOOST_AUTO_TEST_CASE(tiny_generate_int8_golden_match)
+{
+    requireGoldenMatch(
+        "../../../examples/tiny_generate_int8/output/tiny_generate_int8",
+        kGoldenTinyGenerate);
+}
 
 BOOST_AUTO_TEST_CASE(seq2seq_int8_golden_match)
 {
