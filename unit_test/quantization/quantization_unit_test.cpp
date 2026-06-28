@@ -64,6 +64,7 @@
 #include "qcausalattention_softmax.hpp"
 #include "qcrossattention.hpp"
 #include "qkvcache.hpp"
+#include "qssm.hpp"
 #include "qmha.hpp"
 #include "qembedding.hpp"
 #include "qpositional.hpp"
@@ -6206,6 +6207,246 @@ BOOST_AUTO_TEST_CASE(qcross_softmax_parity_with_float_reference)
         if (e > max_err) max_err = e;
     }
     BOOST_TEST(max_err < 0.16f * y_ref_max);
+}
+
+// ---------------------------------------------------------------------------
+// Diagonal state-space (qssm.hpp) float references + tests.
+// ---------------------------------------------------------------------------
+namespace {
+
+template<std::size_t T, std::size_t C>
+void floatSSMReference(const float* x, const float* a, const float* b,
+                       const float* c, const float* d, float* y)
+{
+    float s[C];
+    for (std::size_t ch = 0; ch < C; ++ch) s[ch] = 0.0f;
+    for (std::size_t t = 0; t < T; ++t)
+        for (std::size_t ch = 0; ch < C; ++ch)
+        {
+            s[ch] = a[ch] * s[ch] + b[ch] * x[t * C + ch];
+            y[t * C + ch] = c[ch] * s[ch] + d[ch] * x[t * C + ch];
+        }
+}
+
+template<std::size_t T, std::size_t C>
+void floatSelectiveSSMReference(const float* x, const float* a, const float* b,
+                                const float* c, const float* d,
+                                const float* wg, const float* bg, float* y)
+{
+    float s[C];
+    for (std::size_t ch = 0; ch < C; ++ch) s[ch] = 0.0f;
+    for (std::size_t t = 0; t < T; ++t)
+        for (std::size_t ch = 0; ch < C; ++ch)
+        {
+            float g = wg[ch] * x[t * C + ch] + bg[ch];
+            if (g < 0.0f) g = 0.0f;
+            if (g > 1.0f) g = 1.0f;
+            s[ch] = a[ch] * s[ch] + g * b[ch] * x[t * C + ch];
+            y[t * C + ch] = c[ch] * s[ch] + d[ch] * x[t * C + ch];
+        }
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(qssm_lti_parity_with_float_reference)
+{
+    constexpr std::size_t T = 12, C = 4;
+
+    float x[T * C];
+    for (std::size_t i = 0; i < T * C; ++i)
+        x[i] = 0.4f * std::sin(0.7f * static_cast<float>(i) + 0.3f);
+    // |a| < 1 for stability.
+    float a[C] = {0.80f, -0.55f, 0.62f, 0.40f};
+    float b[C] = {0.5f, 0.7f, -0.4f, 0.6f};
+    float c[C] = {0.9f, 0.6f, 0.8f, -0.7f};
+    float d[C] = {0.2f, -0.1f, 0.15f, 0.05f};
+
+    float y_ref[T * C];
+    floatSSMReference<T, C>(x, a, b, c, d, y_ref);
+
+    // Observe the state range for calibration.
+    float s_absmax = 0.0f;
+    {
+        float s[C] = {0, 0, 0, 0};
+        for (std::size_t t = 0; t < T; ++t)
+            for (std::size_t ch = 0; ch < C; ++ch)
+            {
+                s[ch] = a[ch] * s[ch] + b[ch] * x[t * C + ch];
+                const float av = std::fabs(s[ch]);
+                if (av > s_absmax) s_absmax = av;
+            }
+    }
+
+    const auto px = computeAffineParamsAsymmetric(
+        absmaxBuf(x, T * C) * -1.0f, absmaxBuf(x, T * C), -128, 127);
+    const auto py = computeAffineParamsAsymmetric(
+        absmaxBuf(y_ref, T * C) * -1.0f, absmaxBuf(y_ref, T * C), -128, 127);
+    const float s_scale = (s_absmax > 0.0f) ? s_absmax / 32767.0f : 1.0f;
+
+    int8_t x_q[T * C];
+    quantizeBuffer<int8_t>(x, x_q, T * C, px.scale, px.zero_point, -128, 127);
+
+    int32_t am[C], ash[C], bm[C], bsh[C], cm[C], csh[C], dm[C], dsh[C];
+    tinymind::buildQSSMParams(a, b, c, d, px.scale, s_scale, py.scale, C,
+                    am, ash, bm, bsh, cm, csh, dm, dsh);
+
+    tinymind::QStateSpace1D<int8_t, int32_t, int8_t, T, C> ssm;
+    ssm.input_zero_point = static_cast<int8_t>(px.zero_point);
+    ssm.output_zero_point = static_cast<int8_t>(py.zero_point);
+    ssm.qmin = -128; ssm.qmax = 127;
+    ssm.a_multiplier = am; ssm.a_shift = ash;
+    ssm.b_multiplier = bm; ssm.b_shift = bsh;
+    ssm.c_multiplier = cm; ssm.c_shift = csh;
+    ssm.d_multiplier = dm; ssm.d_shift = dsh;
+
+    decltype(ssm)::State state;
+    int8_t y_q[T * C];
+    ssm.forward(x_q, state, y_q);
+
+    const float y_ref_max = absmaxBuf(y_ref, T * C);
+    float max_err = 0.0f;
+    for (std::size_t i = 0; i < T * C; ++i)
+    {
+        const float yb = dequantize<int8_t>(y_q[i], py.scale, py.zero_point);
+        const float e = std::fabs(yb - y_ref[i]);
+        if (e > max_err) max_err = e;
+    }
+    BOOST_TEST(max_err < 0.10f * y_ref_max);
+}
+
+BOOST_AUTO_TEST_CASE(qssm_selective_parity_with_float_reference)
+{
+    constexpr std::size_t T = 12, C = 4;
+
+    float x[T * C];
+    for (std::size_t i = 0; i < T * C; ++i)
+        x[i] = 0.5f * std::sin(0.9f * static_cast<float>(i) + 0.1f);
+    float a[C] = {0.75f, -0.50f, 0.60f, 0.35f};
+    float b[C] = {0.6f, 0.8f, -0.5f, 0.7f};
+    float c[C] = {0.9f, 0.7f, 0.8f, -0.6f};
+    float d[C] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float wg[C] = {1.2f, 0.8f, -1.0f, 0.6f};
+    float bg[C] = {0.3f, 0.1f, 0.5f, 0.2f};
+
+    float y_ref[T * C];
+    floatSelectiveSSMReference<T, C>(x, a, b, c, d, wg, bg, y_ref);
+
+    float s_absmax = 0.0f;
+    {
+        float s[C] = {0, 0, 0, 0};
+        for (std::size_t t = 0; t < T; ++t)
+            for (std::size_t ch = 0; ch < C; ++ch)
+            {
+                float g = wg[ch] * x[t * C + ch] + bg[ch];
+                if (g < 0.0f) g = 0.0f;
+                if (g > 1.0f) g = 1.0f;
+                s[ch] = a[ch] * s[ch] + g * b[ch] * x[t * C + ch];
+                const float av = std::fabs(s[ch]);
+                if (av > s_absmax) s_absmax = av;
+            }
+    }
+
+    const auto px = computeAffineParamsAsymmetric(
+        absmaxBuf(x, T * C) * -1.0f, absmaxBuf(x, T * C), -128, 127);
+    const auto py = computeAffineParamsAsymmetric(
+        absmaxBuf(y_ref, T * C) * -1.0f, absmaxBuf(y_ref, T * C), -128, 127);
+    const float s_scale = (s_absmax > 0.0f) ? s_absmax / 32767.0f : 1.0f;
+
+    int8_t x_q[T * C];
+    quantizeBuffer<int8_t>(x, x_q, T * C, px.scale, px.zero_point, -128, 127);
+
+    int32_t am[C], ash[C], bm[C], bsh[C], cm[C], csh[C];
+    int32_t gm[C], gsh[C], gb[C];
+    tinymind::buildQSSMParams(a, b, c, nullptr, px.scale, s_scale, py.scale, C,
+                    am, ash, bm, bsh, cm, csh, nullptr, nullptr);
+    tinymind::buildQSelectiveGateParams(wg, bg, px.scale, C, gm, gsh, gb);
+
+    tinymind::QSelectiveStateSpace1D<int8_t, int32_t, int8_t, T, C> ssm;
+    ssm.input_zero_point = static_cast<int8_t>(px.zero_point);
+    ssm.output_zero_point = static_cast<int8_t>(py.zero_point);
+    ssm.qmin = -128; ssm.qmax = 127;
+    ssm.a_multiplier = am; ssm.a_shift = ash;
+    ssm.b_multiplier = bm; ssm.b_shift = bsh;
+    ssm.c_multiplier = cm; ssm.c_shift = csh;
+    ssm.d_multiplier = nullptr; ssm.d_shift = nullptr;
+    ssm.gate_multiplier = gm; ssm.gate_shift = gsh; ssm.gate_bias = gb;
+
+    decltype(ssm)::State state;
+    int8_t y_q[T * C];
+    ssm.forward(x_q, state, y_q);
+
+    const float y_ref_max = absmaxBuf(y_ref, T * C);
+    float max_err = 0.0f;
+    for (std::size_t i = 0; i < T * C; ++i)
+    {
+        const float yb = dequantize<int8_t>(y_q[i], py.scale, py.zero_point);
+        const float e = std::fabs(yb - y_ref[i]);
+        if (e > max_err) max_err = e;
+    }
+    BOOST_TEST(max_err < 0.12f * y_ref_max);
+}
+
+BOOST_AUTO_TEST_CASE(qssm_lti_step_equals_forward)
+{
+    constexpr std::size_t T = 10, C = 3;
+    int8_t x_q[T * C];
+    for (std::size_t i = 0; i < T * C; ++i)
+        x_q[i] = static_cast<int8_t>((static_cast<int>(i) * 7 % 41) - 20);
+
+    int32_t am[C], ash[C], bm[C], bsh[C], cm[C], csh[C];
+    float a[C] = {0.7f, -0.5f, 0.6f}, b[C] = {0.5f, 0.6f, -0.4f}, c[C] = {0.8f, 0.7f, 0.9f};
+    tinymind::buildQSSMParams(a, b, c, nullptr, 0.01f, 0.001f, 0.02f, C,
+                    am, ash, bm, bsh, cm, csh, nullptr, nullptr);
+
+    tinymind::QStateSpace1D<int8_t, int32_t, int8_t, T, C> ssm;
+    ssm.input_zero_point = 0; ssm.output_zero_point = 0; ssm.qmin = -128; ssm.qmax = 127;
+    ssm.a_multiplier = am; ssm.a_shift = ash; ssm.b_multiplier = bm; ssm.b_shift = bsh;
+    ssm.c_multiplier = cm; ssm.c_shift = csh; ssm.d_multiplier = nullptr; ssm.d_shift = nullptr;
+
+    decltype(ssm)::State fwd_state;
+    int8_t y_fwd[T * C];
+    ssm.forward(x_q, fwd_state, y_fwd);
+
+    decltype(ssm)::State step_state; step_state.reset();
+    int8_t y_step[T * C];
+    for (std::size_t t = 0; t < T; ++t)
+        ssm.step(x_q + t * C, step_state, y_step + t * C);
+
+    for (std::size_t i = 0; i < T * C; ++i)
+        BOOST_TEST(static_cast<int>(y_step[i]) == static_cast<int>(y_fwd[i]));
+}
+
+BOOST_AUTO_TEST_CASE(qssm_selective_step_equals_forward)
+{
+    constexpr std::size_t T = 10, C = 3;
+    int8_t x_q[T * C];
+    for (std::size_t i = 0; i < T * C; ++i)
+        x_q[i] = static_cast<int8_t>((static_cast<int>(i) * 5 % 37) - 18);
+
+    int32_t am[C], ash[C], bm[C], bsh[C], cm[C], csh[C], gm[C], gsh[C], gb[C];
+    float a[C] = {0.7f, -0.5f, 0.6f}, b[C] = {0.5f, 0.6f, -0.4f}, c[C] = {0.8f, 0.7f, 0.9f};
+    float wg[C] = {1.0f, -0.8f, 0.6f}, bg[C] = {0.2f, 0.4f, 0.1f};
+    tinymind::buildQSSMParams(a, b, c, nullptr, 0.01f, 0.001f, 0.02f, C,
+                    am, ash, bm, bsh, cm, csh, nullptr, nullptr);
+    tinymind::buildQSelectiveGateParams(wg, bg, 0.01f, C, gm, gsh, gb);
+
+    tinymind::QSelectiveStateSpace1D<int8_t, int32_t, int8_t, T, C> ssm;
+    ssm.input_zero_point = 0; ssm.output_zero_point = 0; ssm.qmin = -128; ssm.qmax = 127;
+    ssm.a_multiplier = am; ssm.a_shift = ash; ssm.b_multiplier = bm; ssm.b_shift = bsh;
+    ssm.c_multiplier = cm; ssm.c_shift = csh; ssm.d_multiplier = nullptr; ssm.d_shift = nullptr;
+    ssm.gate_multiplier = gm; ssm.gate_shift = gsh; ssm.gate_bias = gb;
+
+    decltype(ssm)::State fwd_state;
+    int8_t y_fwd[T * C];
+    ssm.forward(x_q, fwd_state, y_fwd);
+
+    decltype(ssm)::State step_state; step_state.reset();
+    int8_t y_step[T * C];
+    for (std::size_t t = 0; t < T; ++t)
+        ssm.step(x_q + t * C, step_state, y_step + t * C);
+
+    for (std::size_t i = 0; i < T * C; ++i)
+        BOOST_TEST(static_cast<int>(y_step[i]) == static_cast<int>(y_fwd[i]));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
