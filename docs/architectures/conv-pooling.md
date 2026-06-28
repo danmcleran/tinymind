@@ -7,6 +7,8 @@ nav_order: 3
 
 # Convolutional and Pooling Layers
 
+> **Real-world use:** a wrist-worn fall detector turns a raw 50 Hz accelerometer stream into discriminative features before a tiny classifier ever sees it. A `Conv1D -> MaxPool1D -> Dropout` pipeline in 1,825 bytes of Q8.8 runs on a coin-cell wearable, catching the impact signature without a learned Fourier or feature stage burning model capacity.
+
 Tinymind provides standalone composable signal processing layers for both 1D time-series and 2D spatial feature extraction:
 
 - **1D:** `Conv1D`, `MaxPool1D`, `AvgPool1D`, `BatchNorm1D`, `Dropout`

@@ -7,6 +7,8 @@ nav_order: 4
 
 # Quantized Neural Networks
 
+> **Real-world use:** a sub-dollar microcontroller with no hardware multiplier runs an always-on wake-word detector. `BinaryDense` packs a 64-wide layer into 128 bytes and executes the MAC as XNOR + popcount, so a part that physically cannot multiply fast still spots the trigger phrase in real time.
+
 This page covers TinyMind's **extreme-quantization** layer types for ultra-low-power inference: `BinaryDense` and `TernaryDense`. For the more familiar **TFLite / CMSIS-NN style int8 affine quantization** path (per-tensor / per-channel `(scale, zero_point)`, int32 accumulators, integer Requantizer), see [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization). The two paths coexist; pick the binary / ternary route when you need 32x compression and a multiply-free MAC, pick the int8 route for drop-in MobileNet-shape deployment.
 
 `BinaryDense` and `TernaryDense` replace full-precision multiply-accumulate operations with bitwise logic (XNOR + popcount for binary) or conditional add/subtract/skip (for ternary), achieving massive memory reduction and eliminating multiplication entirely from the forward pass.

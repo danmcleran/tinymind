@@ -7,6 +7,8 @@ nav_order: 12
 
 # Decision Trees & GBDT
 
+> **Real-world use:** a pump controller decides on/off from a handful of temperature, pressure, and flow readings. A gradient-boosted tree ensemble walks root-to-leaf with nothing but integer compares and branches — no matmul, no activation tables — making it the cheapest model the microcontroller can run, and a better fit for tabular sensor data than a dense net.
+
 TinyMind provides an int8 **decision-tree** family — single trees and
 gradient-boosted ensembles — as a non-neural model family. Tree inference is
 the cheapest model a microcontroller can run: a walk from root to leaf is a

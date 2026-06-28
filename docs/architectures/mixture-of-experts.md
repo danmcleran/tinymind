@@ -7,6 +7,8 @@ nav_order: 9
 
 # Mixture of Experts
 
+> **Real-world use:** a gesture-control hub must recognize many different gesture vocabularies but only ever uses one at a time. N specialist experts hold the combined capacity in flash, a top-1 router picks the one that fits the current context, and only that expert runs — so per-inference compute stays flat even as the bank of supported gesture sets grows.
+
 TinyMind provides a Mixture-of-Experts (MoE) layer family: a small **router**
 network scores the input against several **expert** sub-networks, and only the
 selected expert(s) run. The headline property for embedded targets is that

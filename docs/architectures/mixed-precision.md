@@ -7,6 +7,8 @@ nav_order: 8
 
 # Mixed Precision
 
+> **Real-world use:** a smart-doorbell camera runs an int8 CNN frontend to extract cheap features, hands off to an fp16 attention head for the part that needs the extra range, then projects back to int8 for the final classifier. Each block runs at the precision it actually needs, and the `qbridge` converters only fire once per tensor crossing — not on every MAC.
+
 TinyMind composes its three numeric pipelines through a small set of **pointwise converters** that live at layer boundaries, plus a software half-precision storage tier. A single network can run an int8 affine CNN frontend, hand off to a Q-format LSTM head, hand off again to an fp16 attention block, and project back to int8 for the classifier — every layer keeps the runtime cost of its own grid, the bridges only run once per tensor crossing.
 
 ## Three pipelines, one model

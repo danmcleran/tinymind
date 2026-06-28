@@ -7,6 +7,8 @@ nav_order: 1
 
 # LSTM and GRU Recurrent Networks
 
+> **Real-world use:** a battery-powered sleep tracker classifies sleep stages on the wrist from a continuous PPG and accelerometer stream. An 808-byte GRU carries the temporal context across the night, so the device decides locally — no radio, no cloud round-trip — and the battery lasts because nothing leaves the chip.
+
 Tinymind provides three recurrent neural network architectures for learning from sequential data: Elman (simple recurrent), LSTM (Long Short-Term Memory), and GRU (Gated Recurrent Unit). All are implemented as C++ templates and support both fixed-point and floating-point value types.
 
 Recurrent networks maintain internal state across time steps, making them suitable for tasks like sequence prediction, time-series forecasting, and temporal pattern recognition. The key architectural difference from feed-forward networks is that hidden neurons receive feedback connections from the previous time step.
