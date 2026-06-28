@@ -71,6 +71,9 @@ these exactly.
 **State-space / S4-lite (int8)** — a diagonal linear-recurrent layer filters a signal with a fixed O(1) state; int8 streaming step() matches the full-sequence pass byte-for-byte.
 ![int8 state-space parity]({{ site.baseurl }}/assets/plots/state_space_int8.png)
 
+**GBDT decision regions (int8)** — a gradient-boosted decision-tree ensemble classifies a 2D feature grid; int8 compare-and-branch inference reproduces the float tree's regions.
+![int8 GBDT decision regions]({{ site.baseurl }}/assets/plots/gbdt_tabular_int8.png)
+
 **MobileNetV2-shaped pipeline (int8)** — logit parity vs the float reference.
 ![MobileNetV2 int8 parity]({{ site.baseurl }}/assets/plots/mobilenetv2_int8_parity.png)
 

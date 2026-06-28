@@ -65,6 +65,7 @@
 #include "qcrossattention.hpp"
 #include "qkvcache.hpp"
 #include "qssm.hpp"
+#include "qtree.hpp"
 #include "qmha.hpp"
 #include "qembedding.hpp"
 #include "qpositional.hpp"
@@ -6447,6 +6448,140 @@ BOOST_AUTO_TEST_CASE(qssm_selective_step_equals_forward)
 
     for (std::size_t i = 0; i < T * C; ++i)
         BOOST_TEST(static_cast<int>(y_step[i]) == static_cast<int>(y_fwd[i]));
+}
+
+BOOST_AUTO_TEST_CASE(qtree_walk_selects_expected_leaf)
+{
+    // Depth-2 binary tree over 2 features. Internal node: branch left if
+    // x[feature] <= threshold. Leaves carry distinct values.
+    //   node0: f0 <= 0 ? node1 : node2
+    //   node1: f1 <= 0 ? leaf3(10) : leaf4(20)
+    //   node2: f1 <= 0 ? leaf5(30) : leaf6(40)
+    typedef tinymind::QTreeNode<int8_t> Node;
+    const Node nodes[7] = {
+        { 0,  0,  1,  2,  0 },
+        { 1,  0,  3,  4,  0 },
+        { 1,  0,  5,  6,  0 },
+        { -1, 0, -1, -1, 10 },
+        { -1, 0, -1, -1, 20 },
+        { -1, 0, -1, -1, 30 },
+        { -1, 0, -1, -1, 40 },
+    };
+    tinymind::QDecisionTree<int8_t, int8_t, 7, 2> tree;
+    tree.nodes = nodes;
+
+    const int8_t x_mm[2] = {-5, -5};
+    const int8_t x_mp[2] = {-5,  5};
+    const int8_t x_pm[2] = { 5, -5};
+    const int8_t x_pp[2] = { 5,  5};
+    BOOST_TEST(tree.predict(x_mm) == 10);
+    BOOST_TEST(tree.predict(x_mp) == 20);
+    BOOST_TEST(tree.predict(x_pm) == 30);
+    BOOST_TEST(tree.predict(x_pp) == 40);
+}
+
+BOOST_AUTO_TEST_CASE(qgbdt_accumulates_class_logits)
+{
+    // Three stumps over a shared node pool, two classes.
+    //   tree0 (root 0, class 0): f0 <= 0 ? +5 : -5
+    //   tree1 (root 3, class 1): f1 <= 0 ? +8 : -8
+    //   tree2 (root 6, class 0): f0 <= 0 ? +3 : -3
+    typedef tinymind::QTreeNode<int8_t> Node;
+    const Node pool[9] = {
+        { 0,  0,  1,  2,  0 }, { -1, 0, -1, -1,  5 }, { -1, 0, -1, -1, -5 },
+        { 1,  0,  4,  5,  0 }, { -1, 0, -1, -1,  8 }, { -1, 0, -1, -1, -8 },
+        { 0,  0,  7,  8,  0 }, { -1, 0, -1, -1,  3 }, { -1, 0, -1, -1, -3 },
+    };
+    const int16_t roots[3]   = {0, 3, 6};
+    const int16_t classes[3] = {0, 1, 0};
+
+    tinymind::QGBDT<int8_t, int8_t, 3, 2, 9, 2> gbdt;
+    gbdt.nodes = pool;
+    gbdt.tree_root = roots;
+    gbdt.tree_class = classes;
+    gbdt.base_score = nullptr;
+
+    int32_t logits[2];
+
+    const int8_t x_mm[2] = {-1, -1};  // +5/+3 -> c0=8 ; +8 -> c1=8
+    gbdt.forward(x_mm, logits);
+    BOOST_TEST(logits[0] == 8);
+    BOOST_TEST(logits[1] == 8);
+    BOOST_TEST(gbdt.predict(x_mm) == 0u);  // tie resolves to first
+
+    const int8_t x_pm[2] = {5, -1};   // -5/-3 -> c0=-8 ; +8 -> c1=8
+    gbdt.forward(x_pm, logits);
+    BOOST_TEST(logits[0] == -8);
+    BOOST_TEST(logits[1] == 8);
+    BOOST_TEST(gbdt.predict(x_pm) == 1u);
+
+    // base_score seeds the logits.
+    const int32_t base[2] = {100, 0};
+    gbdt.base_score = base;
+    gbdt.forward(x_pm, logits);
+    BOOST_TEST(logits[0] == 92);
+    BOOST_TEST(logits[1] == 8);
+    BOOST_TEST(gbdt.predict(x_pm) == 0u);
+}
+
+BOOST_AUTO_TEST_CASE(qtree_quantized_matches_float_tree)
+{
+    // A float decision tree quantized onto a shared int8 feature grid must
+    // reproduce the float tree's leaf for every input away from a split
+    // boundary (the affine map is monotone, so x_q <= t_q == x_real <= t_real).
+    constexpr std::size_t NF = 4;
+    struct FNode { int f; float thr; int left; int right; int leaf; };
+    const FNode ftree[7] = {
+        { 2,  0.10f, 1, 2, 0 },
+        { 0, -0.20f, 3, 4, 0 },
+        { 3,  0.30f, 5, 6, 0 },
+        { -1, 0.0f, -1, -1, 0 },
+        { -1, 0.0f, -1, -1, 1 },
+        { -1, 0.0f, -1, -1, 2 },
+        { -1, 0.0f, -1, -1, 3 },
+    };
+    auto floatWalk = [&](const float* x) -> int
+    {
+        int n = 0;
+        while (ftree[n].f >= 0)
+            n = (x[ftree[n].f] <= ftree[n].thr) ? ftree[n].left : ftree[n].right;
+        return ftree[n].leaf;
+    };
+
+    // Shared feature grid covering [-1, 1].
+    const auto pg = computeAffineParamsAsymmetric(-1.0f, 1.0f, -128, 127);
+
+    typedef tinymind::QTreeNode<int8_t> Node;
+    Node qnodes[7];
+    for (std::size_t i = 0; i < 7; ++i)
+    {
+        qnodes[i].feature = static_cast<int16_t>(ftree[i].f);
+        qnodes[i].left    = static_cast<int16_t>(ftree[i].left);
+        qnodes[i].right   = static_cast<int16_t>(ftree[i].right);
+        qnodes[i].leaf_value = ftree[i].leaf;
+        qnodes[i].threshold = (ftree[i].f < 0) ? 0
+            : quantize<int8_t>(ftree[i].thr, pg.scale, pg.zero_point, -128, 127);
+    }
+    tinymind::QDecisionTree<int8_t, int8_t, 7, NF> qtree;
+    qtree.nodes = qnodes;
+
+    int agree = 0, total = 0;
+    for (int i = 0; i < 200; ++i)
+    {
+        float x[NF];
+        for (std::size_t f = 0; f < NF; ++f)
+            x[f] = 0.9f * std::sin(0.37f * static_cast<float>(i) + 1.7f * static_cast<float>(f));
+        int8_t xq[NF];
+        for (std::size_t f = 0; f < NF; ++f)
+            xq[f] = quantize<int8_t>(x[f], pg.scale, pg.zero_point, -128, 127);
+        ++total;
+        if (static_cast<int>(qtree.predict(xq)) == floatWalk(x)) ++agree;
+    }
+    // Quantization can only disagree for a sample whose feature value lands
+    // within one int8 grid step of a threshold (here ~0.008); the monotone
+    // map preserves every other split exactly. Allow a couple of such
+    // boundary flips across the 200-sample sweep.
+    BOOST_TEST(agree >= total - 2);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -31,6 +31,7 @@ check :
 	cd examples/seq2seq_softmax_int8 && make clean && make && make release && make run && make golden && cd -
 	cd examples/tiny_generate_int8 && make clean && make && make release && make run && make golden && cd -
 	cd examples/state_space_int8 && make clean && make && make release && make run && make golden && cd -
+	cd examples/gbdt_tabular_int8 && make clean && make && make release && make run && make golden && cd -
 	cd examples/moe_regimes_int8 && make clean && make && make release && make run && make bench && make golden && cd -
 	cd examples/resnet18_block_int8 && make clean && make && make release && make run && cd -
 	cd examples/mobilenetv2_int8 && make clean && make && make release && make run && cd -

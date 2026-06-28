@@ -114,6 +114,7 @@ A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside*
   - [`examples/seq2seq_softmax_int8/`](examples/seq2seq_softmax_int8/) -- softmax-decoder variant: `QCausalAttentionSoftmax1D` (growing KV cache) + `QCrossAttentionSoftmax1D` + exp LUTs. Same incremental==full-sequence byte-identical check. ~0.9% max-abs error vs float
   - [`examples/tiny_generate_int8/`](examples/tiny_generate_int8/) -- decoder-only nano-LM: autoregressive greedy decode via `QCausalAttention1D::step()` over a fixed E×E KV state (O(1) attention memory, any length). int8 greedy decode reproduces the float reference's tokens (48/48)
   - [`examples/state_space_int8/`](examples/state_space_int8/) -- diagonal state-space (S4-lite): `QStateSpace1D` (LTI) + `QSelectiveStateSpace1D` (input-gated) streaming sequence filter, O(1) state for any length; int8 `step()` matches full-sequence `forward()` byte-for-byte. ~0.8% max-abs error vs float
+  - [`examples/gbdt_tabular_int8/`](examples/gbdt_tabular_int8/) -- int8 gradient-boosted decision trees (`QGBDT` over `QDecisionTree`): tabular 3-class ensemble, compare+branch inference (no MACs), quantized thresholds reproduce the float tree's decision regions (~98% over a dense grid; rest are boundary cells)
   - [`examples/mixed_precision_kws/`](examples/mixed_precision_kws/) -- mixed-precision: int8 frontend -> fp16 attention head -> int8 classifier. Exercises Phase 9 qbridge converters
   - [`examples/mixed_precision_mlp_int8_qformat/`](examples/mixed_precision_mlp_int8_qformat/) -- hybrid int8 affine <-> Q8.8 via Phase 17 pure-integer bridges. Deployable at `QUANT=1 FLOAT=0 STD=0`
   - [`examples/import_demo/`](examples/import_demo/) -- end-to-end Phase 15 importer flow. 3-8-4-2 MLP, three observers + CLE, ~0.004 max-abs error vs float
@@ -857,6 +858,7 @@ cd examples/seq2seq_int8 && make clean && make
 cd examples/seq2seq_softmax_int8 && make clean && make
 cd examples/tiny_generate_int8 && make clean && make
 cd examples/state_space_int8 && make clean && make
+cd examples/gbdt_tabular_int8 && make clean && make
 cd examples/mixed_precision_kws && make clean && make
 cd examples/mixed_precision_mlp_int8_qformat && make clean && make
 cd examples/import_demo && make clean && make
@@ -961,6 +963,7 @@ tinymind/
     qcrossattention.hpp         # QCrossAttention1D / QCrossAttentionSoftmax1D (encoder-decoder)
     qkvcache.hpp                # QLinearKVState / QSoftmaxKVCache (autoregressive decode state)
     qssm.hpp                    # QStateSpace1D / QSelectiveStateSpace1D (diagonal state-space, S4-lite)
+    qtree.hpp                   # QDecisionTree / QGBDT (int8 decision trees + boosted ensemble)
     qmha.hpp                    # QMultiHeadLinearAttention1D
     qbridge.hpp                 # Mixed-precision bridges (qformat <-> affine <-> fp16/bf16/float)
     activationFunctions.hpp     # Activation function policies (9 functions)
@@ -1018,6 +1021,7 @@ tinymind/
     seq2seq_softmax_int8/       # seq2seq with softmax decoder (growing KV cache + exp LUT)
     tiny_generate_int8/         # int8 decoder-only nano-LM, autoregressive greedy decode via step()
     state_space_int8/           # int8 diagonal state-space (S4-lite): LTI + selective, O(1) streaming
+    gbdt_tabular_int8/          # int8 gradient-boosted decision trees (tabular, compare+branch)
     mixed_precision_kws/        # int8 -> fp16 -> int8 KWS (Phase 9 qbridge)
     mixed_precision_mlp_int8_qformat/ # Hybrid int8 affine <-> Q8.8 (Phase 17 integer bridges)
     import_demo/                # End-to-end Phase 15 importer (3-8-4-2 MLP, three observers + CLE)
