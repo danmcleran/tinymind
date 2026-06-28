@@ -21,3 +21,4 @@ TinyMind provides a range of neural network architectures, all as header-only C+
 | [Mixed Precision]({{ site.baseurl }}/architectures/mixed-precision) | int8 + fp16 + bf16 bridges | `qbridge` converters between int8 affine / `QValue` Q-format / float / fp16 / bf16 |
 | [SIMD Backends]({{ site.baseurl }}/architectures/simd-backends) | n/a (perf, not capacity) | ISA-capability gates: NEON / SVE / Helium / AVX2 / AVX-512, byte-identical to scalar |
 | [Mixture of Experts]({{ site.baseurl }}/architectures/mixture-of-experts) | router + N resident experts | Decouples compute from capacity: 1 of N experts runs per inference (top-1), or k-of-N softmax-blended |
+| [Transformer Decoder (seq2seq)]({{ site.baseurl }}/architectures/transformer-decoder) | O(1) linear KV state / growing softmax cache | Causal self-attention, cross-attention to encoder memory, autoregressive decode that matches the full-sequence pass byte-for-byte |

@@ -59,6 +59,9 @@ these exactly.
 **Transformer encoder stack, softmax attention (int8)** — same stack with standard softmax self-attention (score grid + exp LUT).
 ![Transformer encoder stack softmax int8 parity]({{ site.baseurl }}/assets/plots/transformer_encoder_stack_softmax_int8.png)
 
+**Encoder-decoder (seq2seq, int8)** — encoder memory + decoder with causal self-attention and cross-attention; O(1) KV-cache decode matches the full-sequence pass byte-for-byte.
+![seq2seq int8 parity]({{ site.baseurl }}/assets/plots/seq2seq_int8.png)
+
 **MobileNetV2-shaped pipeline (int8)** — logit parity vs the float reference.
 ![MobileNetV2 int8 parity]({{ site.baseurl }}/assets/plots/mobilenetv2_int8_parity.png)
 
