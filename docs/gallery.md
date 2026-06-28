@@ -62,6 +62,9 @@ these exactly.
 **Encoder-decoder (seq2seq, int8)** — encoder memory + decoder with causal self-attention and cross-attention; O(1) KV-cache decode matches the full-sequence pass byte-for-byte.
 ![seq2seq int8 parity]({{ site.baseurl }}/assets/plots/seq2seq_int8.png)
 
+**Autoregressive generation (int8)** — a decoder-only nano-LM generates token-by-token via `step()` over a fixed E×E KV state; int8 greedy decode reproduces the float reference's tokens (48/48).
+![int8 autoregressive generation]({{ site.baseurl }}/assets/plots/tiny_generate_int8.png)
+
 **MobileNetV2-shaped pipeline (int8)** — logit parity vs the float reference.
 ![MobileNetV2 int8 parity]({{ site.baseurl }}/assets/plots/mobilenetv2_int8_parity.png)
 
