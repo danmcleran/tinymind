@@ -28,6 +28,7 @@ check :
 	cd examples/transformer_encoder_stack_int8 && make clean && make && make release && make run && make golden && cd -
 	cd examples/transformer_encoder_stack_softmax_int8 && make clean && make && make release && make run && make golden && cd -
 	cd examples/seq2seq_int8 && make clean && make && make release && make run && make golden && cd -
+	cd examples/seq2seq_softmax_int8 && make clean && make && make release && make run && make golden && cd -
 	cd examples/tiny_generate_int8 && make clean && make && make release && make run && make golden && cd -
 	cd examples/moe_regimes_int8 && make clean && make && make release && make run && make bench && make golden && cd -
 	cd examples/resnet18_block_int8 && make clean && make && make release && make run && cd -
