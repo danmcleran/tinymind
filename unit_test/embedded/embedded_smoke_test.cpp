@@ -95,6 +95,10 @@
 #include "qfft1d.hpp"
 #include "qattention1d.hpp"
 #include "qattention_softmax.hpp"
+#include "qcausalattention1d.hpp"
+#include "qcausalattention_softmax.hpp"
+#include "qcrossattention.hpp"
+#include "qkvcache.hpp"
 #include "qmha.hpp"
 #endif
 
@@ -611,6 +615,75 @@ bool exerciseQuantPipeline()
                  attn_q_scratch, attn_k_scratch, attn_v_scratch,
                  attn_kv_scratch, mha_head_out, mha_out);
 
+    // Decoder attention family (causal self + cross). Reuses att_w/att_b
+    // (same 3*E*P weight / 3*P bias shape) and the existing exp_lut.
+    typedef tinymind::QCausalAttention1D<Q, Q, A, Q, Q, Q, 2, 4, 3> QCausalLinType;
+    QCausalLinType qcausal;
+    qcausal.weights = att_w; qcausal.biases = att_b;
+    qcausal.input_zero_point = 0;
+    qcausal.q_zero_point = 0; qcausal.k_zero_point = 0; qcausal.v_zero_point = 0;
+    qcausal.kv_zero_point = 0;
+    qcausal.q_requantizer = r; qcausal.k_requantizer = r; qcausal.v_requantizer = r;
+    qcausal.kv_requantizer = r; qcausal.output_requantizer = r;
+    QCausalLinType::KVState causal_state;
+    int8_t causal_out[QCausalLinType::OutputSize] = {0};
+    qcausal.forward(attn_in, causal_state,
+                    attn_q_scratch, attn_k_scratch, attn_v_scratch,
+                    attn_kv_scratch, causal_out);
+
+    typedef tinymind::QCausalAttentionSoftmax1D<Q, Q, A, Q, Q, Q, Q, 2, 4, 3>
+        QCausalSoftType;
+    QCausalSoftType qcausal_sm;
+    qcausal_sm.weights = att_w; qcausal_sm.biases = att_b;
+    qcausal_sm.input_zero_point = 0;
+    qcausal_sm.q_zero_point = 0; qcausal_sm.k_zero_point = 0; qcausal_sm.v_zero_point = 0;
+    qcausal_sm.attn_zero_point = -128;
+    qcausal_sm.q_requantizer = r; qcausal_sm.k_requantizer = r; qcausal_sm.v_requantizer = r;
+    qcausal_sm.score_requantizer = r;
+    qcausal_sm.softmax_exp_lut = exp_lut;
+    qcausal_sm.attn_qmin = -128; qcausal_sm.attn_qmax = 127;
+    qcausal_sm.output_requantizer = r;
+    QCausalSoftType::KVCache causal_cache;
+    int8_t cs_score[QCausalSoftType::ScoreScratchSize] = {0};
+    int8_t cs_attn [QCausalSoftType::AttnScratchSize]  = {0};
+    int8_t cs_out[QCausalSoftType::OutputSize] = {0};
+    qcausal_sm.forward(attn_in, causal_cache,
+                       attn_q_scratch, attn_k_scratch, attn_v_scratch,
+                       cs_score, cs_attn, cs_out);
+
+    typedef tinymind::QCrossAttention1D<Q, Q, A, Q, Q, Q, 2, 2, 4, 3> QCrossLinType;
+    QCrossLinType qcross;
+    qcross.weights = att_w; qcross.biases = att_b;
+    qcross.q_input_zero_point = 0; qcross.kv_input_zero_point = 0;
+    qcross.q_zero_point = 0; qcross.k_zero_point = 0; qcross.v_zero_point = 0;
+    qcross.kv_zero_point = 0;
+    qcross.q_requantizer = r; qcross.k_requantizer = r; qcross.v_requantizer = r;
+    qcross.kv_requantizer = r; qcross.output_requantizer = r;
+    int8_t xk[QCrossLinType::KScratchSize] = {0};
+    int8_t xv[QCrossLinType::VScratchSize] = {0};
+    int8_t xkv[QCrossLinType::KVScratchSize] = {0};
+    int8_t xq[QCrossLinType::QScratchSize] = {0};
+    int8_t cross_out[2 * 3] = {0};
+    qcross.forward(attn_in, attn_in, xk, xv, xkv, xq, cross_out);
+
+    typedef tinymind::QCrossAttentionSoftmax1D<Q, Q, A, Q, Q, Q, Q, 2, 2, 4, 3>
+        QCrossSoftType;
+    QCrossSoftType qcross_sm;
+    qcross_sm.weights = att_w; qcross_sm.biases = att_b;
+    qcross_sm.q_input_zero_point = 0; qcross_sm.kv_input_zero_point = 0;
+    qcross_sm.q_zero_point = 0; qcross_sm.k_zero_point = 0; qcross_sm.v_zero_point = 0;
+    qcross_sm.attn_zero_point = -128;
+    qcross_sm.q_requantizer = r; qcross_sm.k_requantizer = r; qcross_sm.v_requantizer = r;
+    qcross_sm.score_requantizer = r;
+    qcross_sm.softmax_exp_lut = exp_lut;
+    qcross_sm.attn_qmin = -128; qcross_sm.attn_qmax = 127;
+    qcross_sm.output_requantizer = r;
+    QCrossSoftType::KVCache cross_cache;
+    int8_t xcs_score[QCrossSoftType::ScoreScratchSize] = {0};
+    int8_t xcs_attn [QCrossSoftType::AttnScratchSize]  = {0};
+    int8_t cross_sm_out[2 * 3] = {0};
+    qcross_sm.forward(attn_in, attn_in, cross_cache, xq, xcs_score, xcs_attn, cross_sm_out);
+
     return (qDenseOut[0] == qDenseOut[0]) && (s != 0)
         && (add_y[0] == add_y[0]) && (mul_y[0] == mul_y[0])
         && (cc_out[0] == cc_out[0]) && (pad_out[0] == pad_out[0])
@@ -623,7 +696,11 @@ bool exerciseQuantPipeline()
         && (fft_re[0] == fft_re[0]) && (fft_mag[0] == fft_mag[0])
         && (attn_out[0] == attn_out[0])
         && (sm_out[0] == sm_out[0])
-        && (mha_out[0] == mha_out[0]);
+        && (mha_out[0] == mha_out[0])
+        && (causal_out[0] == causal_out[0])
+        && (cs_out[0] == cs_out[0])
+        && (cross_out[0] == cross_out[0])
+        && (cross_sm_out[0] == cross_sm_out[0]);
 }
 int32_t gIntegerBridgeSink[2];
 

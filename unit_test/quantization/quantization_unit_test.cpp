@@ -60,6 +60,10 @@
 #include "qfft1d.hpp"
 #include "qattention1d.hpp"
 #include "qattention_softmax.hpp"
+#include "qcausalattention1d.hpp"
+#include "qcausalattention_softmax.hpp"
+#include "qcrossattention.hpp"
+#include "qkvcache.hpp"
 #include "qmha.hpp"
 #include "qembedding.hpp"
 #include "qpositional.hpp"
@@ -5410,6 +5414,798 @@ BOOST_AUTO_TEST_CASE(qpositional_sinusoidal_table_matches_formula)
     BOOST_TEST(std::fabs(t[1 * D + 1] - std::cos(1.0f)) < 1e-5f);
     BOOST_TEST(std::fabs(t[1 * D + 2] - std::sin(0.01f)) < 1e-5f);
     BOOST_TEST(std::fabs(t[1 * D + 3] - std::cos(0.01f)) < 1e-5f);
+}
+
+// ---------------------------------------------------------------------------
+// Decoder attention float references (causal self + cross). Placed in an
+// anonymous namespace so they stay file-local like the bidirectional refs.
+// ---------------------------------------------------------------------------
+namespace {
+
+// Causal linear (ReLU-kernel) attention: y[t] = q'[t] . (sum_{s<=t} k'[s]^T v[s]).
+template<std::size_t S, std::size_t E, std::size_t P>
+void floatCausalLinearAttentionReference(const float* x, const float* w,
+                                         const float* b, float* y)
+{
+    float q[S * P], k[S * P], v[S * P];
+    const float* w_q = w;
+    const float* w_k = w + E * P;
+    const float* w_v = w + 2 * E * P;
+    const float* b_q = b;
+    const float* b_k = b + P;
+    const float* b_v = b + 2 * P;
+
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            float aq = b_q[p], ak = b_k[p], av = b_v[p];
+            for (std::size_t e = 0; e < E; ++e)
+            {
+                aq += w_q[e * P + p] * x[t * E + e];
+                ak += w_k[e * P + p] * x[t * E + e];
+                av += w_v[e * P + p] * x[t * E + e];
+            }
+            q[t * P + p] = (aq < 0.0f) ? 0.0f : aq;
+            k[t * P + p] = (ak < 0.0f) ? 0.0f : ak;
+            v[t * P + p] = av;
+        }
+    }
+
+    float kv[P * P];
+    for (std::size_t i = 0; i < P * P; ++i) kv[i] = 0.0f;
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        for (std::size_t i = 0; i < P; ++i)
+        {
+            for (std::size_t j = 0; j < P; ++j)
+            {
+                kv[i * P + j] += k[t * P + i] * v[t * P + j];
+            }
+        }
+        for (std::size_t j = 0; j < P; ++j)
+        {
+            float a = 0.0f;
+            for (std::size_t i = 0; i < P; ++i)
+            {
+                a += q[t * P + i] * kv[i * P + j];
+            }
+            y[t * P + j] = a;
+        }
+    }
+}
+
+// Causal softmax attention: query t attends to keys/values j <= t.
+template<std::size_t S, std::size_t E, std::size_t P>
+void floatCausalSoftmaxAttentionReference(const float* x, const float* w,
+                                          const float* b, float* y)
+{
+    float q[S * P], k[S * P], v[S * P];
+    const float* w_q = w;
+    const float* w_k = w + E * P;
+    const float* w_v = w + 2 * E * P;
+    const float* b_q = b;
+    const float* b_k = b + P;
+    const float* b_v = b + 2 * P;
+
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            float aq = b_q[p], ak = b_k[p], av = b_v[p];
+            for (std::size_t e = 0; e < E; ++e)
+            {
+                aq += w_q[e * P + p] * x[t * E + e];
+                ak += w_k[e * P + p] * x[t * E + e];
+                av += w_v[e * P + p] * x[t * E + e];
+            }
+            q[t * P + p] = aq;
+            k[t * P + p] = ak;
+            v[t * P + p] = av;
+        }
+    }
+
+    const float inv = 1.0f / std::sqrt(static_cast<float>(P));
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        float sc[S];
+        float m = -1.0e30f;
+        for (std::size_t j = 0; j <= t; ++j)
+        {
+            float a = 0.0f;
+            for (std::size_t p = 0; p < P; ++p)
+            {
+                a += q[t * P + p] * k[j * P + p];
+            }
+            sc[j] = a * inv;
+            if (sc[j] > m) m = sc[j];
+        }
+        float sum = 0.0f;
+        for (std::size_t j = 0; j <= t; ++j)
+        {
+            sc[j] = std::exp(sc[j] - m);
+            sum += sc[j];
+        }
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            float a = 0.0f;
+            for (std::size_t j = 0; j <= t; ++j)
+            {
+                a += (sc[j] / sum) * v[j * P + p];
+            }
+            y[t * P + p] = a;
+        }
+    }
+}
+
+// Linear cross-attention: Q' from decoder, K'/V from encoder memory.
+template<std::size_t SDec, std::size_t SEnc, std::size_t E, std::size_t P>
+void floatCrossLinearReference(const float* dec, const float* mem,
+                               const float* w, const float* b, float* y)
+{
+    const float* w_q = w;
+    const float* w_k = w + E * P;
+    const float* w_v = w + 2 * E * P;
+    const float* b_q = b;
+    const float* b_k = b + P;
+    const float* b_v = b + 2 * P;
+
+    float k[SEnc * P], v[SEnc * P];
+    for (std::size_t s = 0; s < SEnc; ++s)
+    {
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            float ak = b_k[p], av = b_v[p];
+            for (std::size_t e = 0; e < E; ++e)
+            {
+                ak += w_k[e * P + p] * mem[s * E + e];
+                av += w_v[e * P + p] * mem[s * E + e];
+            }
+            k[s * P + p] = (ak < 0.0f) ? 0.0f : ak;
+            v[s * P + p] = av;
+        }
+    }
+    float kv[P * P];
+    for (std::size_t i = 0; i < P * P; ++i) kv[i] = 0.0f;
+    for (std::size_t i = 0; i < P; ++i)
+    {
+        for (std::size_t j = 0; j < P; ++j)
+        {
+            for (std::size_t s = 0; s < SEnc; ++s)
+            {
+                kv[i * P + j] += k[s * P + i] * v[s * P + j];
+            }
+        }
+    }
+    for (std::size_t t = 0; t < SDec; ++t)
+    {
+        float q[P];
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            float aq = b_q[p];
+            for (std::size_t e = 0; e < E; ++e)
+            {
+                aq += w_q[e * P + p] * dec[t * E + e];
+            }
+            q[p] = (aq < 0.0f) ? 0.0f : aq;
+        }
+        for (std::size_t j = 0; j < P; ++j)
+        {
+            float a = 0.0f;
+            for (std::size_t i = 0; i < P; ++i)
+            {
+                a += q[i] * kv[i * P + j];
+            }
+            y[t * P + j] = a;
+        }
+    }
+}
+
+// Softmax cross-attention: Q from decoder, K/V from encoder, no mask.
+template<std::size_t SDec, std::size_t SEnc, std::size_t E, std::size_t P>
+void floatCrossSoftmaxReference(const float* dec, const float* mem,
+                                const float* w, const float* b, float* y)
+{
+    const float* w_q = w;
+    const float* w_k = w + E * P;
+    const float* w_v = w + 2 * E * P;
+    const float* b_q = b;
+    const float* b_k = b + P;
+    const float* b_v = b + 2 * P;
+
+    float k[SEnc * P], v[SEnc * P];
+    for (std::size_t s = 0; s < SEnc; ++s)
+    {
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            float ak = b_k[p], av = b_v[p];
+            for (std::size_t e = 0; e < E; ++e)
+            {
+                ak += w_k[e * P + p] * mem[s * E + e];
+                av += w_v[e * P + p] * mem[s * E + e];
+            }
+            k[s * P + p] = ak;
+            v[s * P + p] = av;
+        }
+    }
+    const float inv = 1.0f / std::sqrt(static_cast<float>(P));
+    for (std::size_t t = 0; t < SDec; ++t)
+    {
+        float q[P];
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            float aq = b_q[p];
+            for (std::size_t e = 0; e < E; ++e)
+            {
+                aq += w_q[e * P + p] * dec[t * E + e];
+            }
+            q[p] = aq;
+        }
+        float sc[SEnc];
+        float m = -1.0e30f;
+        for (std::size_t j = 0; j < SEnc; ++j)
+        {
+            float a = 0.0f;
+            for (std::size_t p = 0; p < P; ++p)
+            {
+                a += q[p] * k[j * P + p];
+            }
+            sc[j] = a * inv;
+            if (sc[j] > m) m = sc[j];
+        }
+        float sum = 0.0f;
+        for (std::size_t j = 0; j < SEnc; ++j)
+        {
+            sc[j] = std::exp(sc[j] - m);
+            sum += sc[j];
+        }
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            float a = 0.0f;
+            for (std::size_t j = 0; j < SEnc; ++j)
+            {
+                a += (sc[j] / sum) * v[j * P + p];
+            }
+            y[t * P + p] = a;
+        }
+    }
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(qcausal_linear_parity_with_float_reference)
+{
+    constexpr std::size_t S = 5, E = 6, P = 4;
+
+    float x[S * E];
+    for (std::size_t i = 0; i < S * E; ++i)
+        x[i] = 0.1f * static_cast<float>((static_cast<int>(i) % 7) - 3);
+    float w[3 * E * P];
+    for (std::size_t i = 0; i < 3 * E * P; ++i)
+        w[i] = 0.05f * static_cast<float>((static_cast<int>(i) % 11) - 5);
+    float b[3 * P];
+    for (std::size_t i = 0; i < 3 * P; ++i)
+        b[i] = 0.02f * static_cast<float>((static_cast<int>(i) % 3) - 1);
+
+    float y_ref[S * P];
+    floatCausalLinearAttentionReference<S, E, P>(x, w, b, y_ref);
+
+    // Re-project to observe per-tensor ranges. The cumulative KV peaks at the
+    // last position (== the full-sequence sum), so the bidirectional KV range
+    // is a safe calibration upper bound for every prefix.
+    float q_buf[S * P], k_buf[S * P], v_buf[S * P], kv_buf[P * P];
+    {
+        const float* wq = w; const float* wk = w + E * P; const float* wv = w + 2 * E * P;
+        const float* bq = b; const float* bk = b + P;     const float* bv = b + 2 * P;
+        for (std::size_t t = 0; t < S; ++t)
+            for (std::size_t p = 0; p < P; ++p)
+            {
+                float aq = bq[p], ak = bk[p], av = bv[p];
+                for (std::size_t e = 0; e < E; ++e)
+                {
+                    aq += wq[e * P + p] * x[t * E + e];
+                    ak += wk[e * P + p] * x[t * E + e];
+                    av += wv[e * P + p] * x[t * E + e];
+                }
+                q_buf[t * P + p] = (aq < 0.0f) ? 0.0f : aq;
+                k_buf[t * P + p] = (ak < 0.0f) ? 0.0f : ak;
+                v_buf[t * P + p] = av;
+            }
+        for (std::size_t i = 0; i < P; ++i)
+            for (std::size_t j = 0; j < P; ++j)
+            {
+                float a = 0.0f;
+                for (std::size_t t = 0; t < S; ++t) a += k_buf[t * P + i] * v_buf[t * P + j];
+                kv_buf[i * P + j] = a;
+            }
+    }
+
+    const float x_scale  = absmaxBuf(x, S * E) / 127.0f;
+    const float wq_scale = absmaxBuf(w,             E * P) / 127.0f;
+    const float wk_scale = absmaxBuf(w + E * P,     E * P) / 127.0f;
+    const float wv_scale = absmaxBuf(w + 2 * E * P, E * P) / 127.0f;
+    const float q_scale  = absmaxBuf(q_buf,  S * P) / 127.0f;
+    const float k_scale  = absmaxBuf(k_buf,  S * P) / 127.0f;
+    const float v_scale  = absmaxBuf(v_buf,  S * P) / 127.0f;
+    const float kv_scale = absmaxBuf(kv_buf, P * P) / 127.0f;
+    const float y_scale  = absmaxBuf(y_ref,  S * P) / 127.0f;
+
+    int8_t x_q[S * E];
+    int8_t w_q[3 * E * P];
+    int32_t b_q[3 * P];
+    quantizeBuffer<int8_t>(x, x_q, S * E, x_scale, 0, -128, 127);
+    quantizeSymToI8(w,             E * P, wq_scale, w_q);
+    quantizeSymToI8(w + E * P,     E * P, wk_scale, w_q + E * P);
+    quantizeSymToI8(w + 2 * E * P, E * P, wv_scale, w_q + 2 * E * P);
+    for (std::size_t p = 0; p < P; ++p)
+    {
+        b_q[p] = static_cast<int32_t>(std::lround(static_cast<double>(b[p]) /
+            (static_cast<double>(x_scale) * static_cast<double>(wq_scale))));
+        b_q[P + p] = static_cast<int32_t>(std::lround(static_cast<double>(b[P + p]) /
+            (static_cast<double>(x_scale) * static_cast<double>(wk_scale))));
+        b_q[2 * P + p] = static_cast<int32_t>(std::lround(static_cast<double>(b[2 * P + p]) /
+            (static_cast<double>(x_scale) * static_cast<double>(wv_scale))));
+    }
+
+    tinymind::QCausalAttention1D<int8_t, int8_t, int32_t, int8_t, int8_t, int8_t,
+                                 S, E, P> attn;
+    attn.weights = w_q;
+    attn.biases  = b_q;
+    attn.input_zero_point = 0;
+    attn.q_zero_point = 0; attn.k_zero_point = 0; attn.v_zero_point = 0;
+    attn.kv_zero_point = 0;
+    attn.q_requantizer = buildRequantizer<int8_t>(x_scale, wq_scale, q_scale, 0, 0, 127);
+    attn.k_requantizer = buildRequantizer<int8_t>(x_scale, wk_scale, k_scale, 0, 0, 127);
+    attn.v_requantizer = buildRequantizer<int8_t>(x_scale, wv_scale, v_scale, 0, -128, 127);
+    attn.kv_requantizer = buildRequantizer<int8_t>(k_scale, v_scale, kv_scale, 0, -128, 127);
+    attn.output_requantizer = buildRequantizer<int8_t>(q_scale, kv_scale, y_scale, 0, -128, 127);
+
+    decltype(attn)::KVState state;
+    int8_t q_sc[S * P], k_sc[S * P], v_sc[S * P], kv_sc[P * P], y_q[S * P];
+    attn.forward(x_q, state, q_sc, k_sc, v_sc, kv_sc, y_q);
+
+    const float y_ref_max = absmaxBuf(y_ref, S * P);
+    float max_err = 0.0f;
+    for (std::size_t i = 0; i < S * P; ++i)
+    {
+        const float y_back = dequantize<int8_t>(y_q[i], y_scale, 0);
+        const float e = std::fabs(y_back - y_ref[i]);
+        if (e > max_err) max_err = e;
+    }
+    BOOST_TEST(max_err < 0.10f * y_ref_max);
+}
+
+BOOST_AUTO_TEST_CASE(qcausal_linear_step_equals_forward)
+{
+    // Incremental decode must reproduce the full-sequence pass byte-for-byte.
+    constexpr std::size_t S = 6, E = 4, P = 3;
+
+    int8_t x_q[S * E];
+    for (std::size_t i = 0; i < S * E; ++i)
+        x_q[i] = static_cast<int8_t>((static_cast<int>(i) * 7 % 31) - 15);
+    int8_t w_q[3 * E * P];
+    for (std::size_t i = 0; i < 3 * E * P; ++i)
+        w_q[i] = static_cast<int8_t>((static_cast<int>(i) * 5 % 17) - 8);
+    int32_t b_q[3 * P] = {0};
+
+    tinymind::QCausalAttention1D<int8_t, int8_t, int32_t, int8_t, int8_t, int8_t,
+                                 S, E, P> attn;
+    attn.weights = w_q;
+    attn.biases  = b_q;
+    attn.input_zero_point = 0;
+    attn.q_zero_point = 0; attn.k_zero_point = 0; attn.v_zero_point = 0;
+    attn.kv_zero_point = 0;
+    attn.q_requantizer = makeI8Requant(kQ31One, 6, 0);
+    attn.k_requantizer = makeI8Requant(kQ31One, 6, 0);
+    attn.v_requantizer = makeI8Requant(kQ31One, 6, 0);
+    attn.kv_requantizer = makeI8Requant(kQ31One, 6, 0);
+    attn.output_requantizer = makeI8Requant(kQ31One, 6, 0);
+
+    decltype(attn)::KVState fwd_state;
+    int8_t q_sc[S * P], k_sc[S * P], v_sc[S * P], kv_sc[P * P], y_fwd[S * P];
+    attn.forward(x_q, fwd_state, q_sc, k_sc, v_sc, kv_sc, y_fwd);
+
+    decltype(attn)::KVState step_state;
+    step_state.reset();
+    int8_t y_step[S * P];
+    int8_t q_r[P], k_r[P], v_r[P], kv_r[P * P];
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        attn.step(x_q + t * E, step_state, q_r, k_r, v_r, kv_r, y_step + t * P);
+    }
+
+    for (std::size_t i = 0; i < S * P; ++i)
+    {
+        BOOST_TEST(static_cast<int>(y_step[i]) == static_cast<int>(y_fwd[i]));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qcausal_softmax_parity_with_float_reference)
+{
+    constexpr std::size_t S = 5, E = 6, P = 4;
+
+    float x[S * E];
+    for (std::size_t i = 0; i < S * E; ++i)
+        x[i] = 0.1f * static_cast<float>((static_cast<int>(i) % 5) - 2);
+    float w[3 * E * P];
+    for (std::size_t i = 0; i < 3 * E * P; ++i)
+        w[i] = 0.05f * static_cast<float>((static_cast<int>(i) % 9) - 4);
+    float b[3 * P] = {0};
+
+    float y_ref[S * P];
+    floatCausalSoftmaxAttentionReference<S, E, P>(x, w, b, y_ref);
+
+    float q_buf[S * P], k_buf[S * P], v_buf[S * P], scores_buf[S * S];
+    {
+        const float* wq = w; const float* wk = w + E * P; const float* wv = w + 2 * E * P;
+        for (std::size_t t = 0; t < S; ++t)
+            for (std::size_t p = 0; p < P; ++p)
+            {
+                float aq = 0.0f, ak = 0.0f, av = 0.0f;
+                for (std::size_t e = 0; e < E; ++e)
+                {
+                    aq += wq[e * P + p] * x[t * E + e];
+                    ak += wk[e * P + p] * x[t * E + e];
+                    av += wv[e * P + p] * x[t * E + e];
+                }
+                q_buf[t * P + p] = aq; k_buf[t * P + p] = ak; v_buf[t * P + p] = av;
+            }
+        const float inv = 1.0f / std::sqrt(static_cast<float>(P));
+        for (std::size_t i = 0; i < S; ++i)
+            for (std::size_t j = 0; j < S; ++j)
+            {
+                float a = 0.0f;
+                for (std::size_t p = 0; p < P; ++p) a += q_buf[i * P + p] * k_buf[j * P + p];
+                scores_buf[i * S + j] = a * inv;
+            }
+    }
+
+    const float x_scale  = absmaxBuf(x, S * E) / 127.0f;
+    const float wq_scale = absmaxBuf(w,             E * P) / 127.0f;
+    const float wk_scale = absmaxBuf(w + E * P,     E * P) / 127.0f;
+    const float wv_scale = absmaxBuf(w + 2 * E * P, E * P) / 127.0f;
+    const float q_scale  = absmaxBuf(q_buf, S * P) / 127.0f;
+    const float k_scale  = absmaxBuf(k_buf, S * P) / 127.0f;
+    const float v_scale  = absmaxBuf(v_buf, S * P) / 127.0f;
+    const float score_scale = absmaxBuf(scores_buf, S * S) / 127.0f;
+    const float attn_scale  = 1.0f / 256.0f;
+    const float y_scale  = absmaxBuf(y_ref, S * P) / 127.0f;
+
+    int8_t x_q[S * E];
+    int8_t w_q[3 * E * P];
+    int32_t b_q[3 * P] = {0};
+    quantizeBuffer<int8_t>(x, x_q, S * E, x_scale, 0, -128, 127);
+    quantizeSymToI8(w,             E * P, wq_scale, w_q);
+    quantizeSymToI8(w + E * P,     E * P, wk_scale, w_q + E * P);
+    quantizeSymToI8(w + 2 * E * P, E * P, wv_scale, w_q + 2 * E * P);
+
+    int32_t exp_lut[256];
+    buildQSoftmaxExpLUT(score_scale, exp_lut);
+
+    tinymind::QCausalAttentionSoftmax1D<int8_t, int8_t, int32_t,
+                                        int8_t, int8_t, int8_t, int8_t,
+                                        S, E, P> attn;
+    attn.weights = w_q;
+    attn.biases  = b_q;
+    attn.input_zero_point = 0;
+    attn.q_zero_point = 0; attn.k_zero_point = 0; attn.v_zero_point = 0;
+    attn.attn_zero_point = -128;
+    attn.q_requantizer = buildRequantizer<int8_t>(x_scale, wq_scale, q_scale, 0, -128, 127);
+    attn.k_requantizer = buildRequantizer<int8_t>(x_scale, wk_scale, k_scale, 0, -128, 127);
+    attn.v_requantizer = buildRequantizer<int8_t>(x_scale, wv_scale, v_scale, 0, -128, 127);
+    {
+        Requantizer<int32_t, int8_t> r;
+        const double ratio = (static_cast<double>(q_scale) * static_cast<double>(k_scale)) /
+            static_cast<double>(score_scale) * qAttentionInvSqrt(P);
+        int32_t mult = 0, shft = 0;
+        quantizeMultiplier(ratio, mult, shft);
+        r.multiplier = mult; r.shift = shft; r.zero_point = 0; r.qmin = -128; r.qmax = 127;
+        attn.score_requantizer = r;
+    }
+    attn.softmax_exp_lut = exp_lut;
+    attn.attn_qmin = -128; attn.attn_qmax = 127;
+    attn.output_requantizer = buildRequantizer<int8_t>(attn_scale, v_scale, y_scale, 0, -128, 127);
+
+    decltype(attn)::KVCache cache;
+    int8_t q_sc[S * P], k_sc[S * P], v_sc[S * P];
+    int8_t score_sc[S], attn_sc[S], y_q[S * P];
+    attn.forward(x_q, cache, q_sc, k_sc, v_sc, score_sc, attn_sc, y_q);
+
+    const float y_ref_max = absmaxBuf(y_ref, S * P);
+    float max_err = 0.0f;
+    for (std::size_t i = 0; i < S * P; ++i)
+    {
+        const float y_back = dequantize<int8_t>(y_q[i], y_scale, 0);
+        const float e = std::fabs(y_back - y_ref[i]);
+        if (e > max_err) max_err = e;
+    }
+    BOOST_TEST(max_err < 0.16f * y_ref_max);
+}
+
+BOOST_AUTO_TEST_CASE(qcausal_softmax_step_equals_forward)
+{
+    constexpr std::size_t S = 6, E = 4, P = 3;
+
+    int8_t x_q[S * E];
+    for (std::size_t i = 0; i < S * E; ++i)
+        x_q[i] = static_cast<int8_t>((static_cast<int>(i) * 7 % 31) - 15);
+    int8_t w_q[3 * E * P];
+    for (std::size_t i = 0; i < 3 * E * P; ++i)
+        w_q[i] = static_cast<int8_t>((static_cast<int>(i) * 5 % 17) - 8);
+    int32_t b_q[3 * P] = {0};
+    int32_t exp_lut[256];
+    buildQSoftmaxExpLUT(0.5f, exp_lut);
+
+    tinymind::QCausalAttentionSoftmax1D<int8_t, int8_t, int32_t,
+                                        int8_t, int8_t, int8_t, int8_t,
+                                        S, E, P> attn;
+    attn.weights = w_q;
+    attn.biases  = b_q;
+    attn.input_zero_point = 0;
+    attn.q_zero_point = 0; attn.k_zero_point = 0; attn.v_zero_point = 0;
+    attn.attn_zero_point = -128;
+    attn.q_requantizer = makeI8Requant(kQ31One, 6, 0);
+    attn.k_requantizer = makeI8Requant(kQ31One, 6, 0);
+    attn.v_requantizer = makeI8Requant(kQ31One, 6, 0);
+    attn.score_requantizer = makeI8Requant(kQ31One, 6, 0);
+    attn.softmax_exp_lut = exp_lut;
+    attn.attn_qmin = -128; attn.attn_qmax = 127;
+    attn.output_requantizer = makeI8Requant(kQ31One, 6, 0);
+
+    decltype(attn)::KVCache fwd_cache;
+    int8_t q_sc[S * P], k_sc[S * P], v_sc[S * P];
+    int8_t score_sc[S], attn_sc[S], y_fwd[S * P];
+    attn.forward(x_q, fwd_cache, q_sc, k_sc, v_sc, score_sc, attn_sc, y_fwd);
+
+    decltype(attn)::KVCache step_cache;
+    step_cache.reset();
+    int8_t y_step[S * P];
+    int8_t q_r[P], k_r[P], v_r[P], sc_r[S], at_r[S];
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        attn.step(x_q + t * E, step_cache, q_r, k_r, v_r, sc_r, at_r, y_step + t * P);
+    }
+
+    for (std::size_t i = 0; i < S * P; ++i)
+    {
+        BOOST_TEST(static_cast<int>(y_step[i]) == static_cast<int>(y_fwd[i]));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qcross_linear_parity_with_float_reference)
+{
+    constexpr std::size_t SDec = 4, SEnc = 5, E = 6, P = 4;
+
+    float dec[SDec * E], mem[SEnc * E];
+    for (std::size_t i = 0; i < SDec * E; ++i)
+        dec[i] = 0.1f * static_cast<float>((static_cast<int>(i) % 7) - 3);
+    for (std::size_t i = 0; i < SEnc * E; ++i)
+        mem[i] = 0.1f * static_cast<float>((static_cast<int>(i) % 5) - 2);
+    float w[3 * E * P];
+    for (std::size_t i = 0; i < 3 * E * P; ++i)
+        w[i] = 0.05f * static_cast<float>((static_cast<int>(i) % 11) - 5);
+    float b[3 * P];
+    for (std::size_t i = 0; i < 3 * P; ++i)
+        b[i] = 0.02f * static_cast<float>((static_cast<int>(i) % 3) - 1);
+
+    float y_ref[SDec * P];
+    floatCrossLinearReference<SDec, SEnc, E, P>(dec, mem, w, b, y_ref);
+
+    float q_buf[SDec * P], k_buf[SEnc * P], v_buf[SEnc * P], kv_buf[P * P];
+    {
+        const float* wq = w; const float* wk = w + E * P; const float* wv = w + 2 * E * P;
+        const float* bq = b; const float* bk = b + P;     const float* bv = b + 2 * P;
+        for (std::size_t s = 0; s < SEnc; ++s)
+            for (std::size_t p = 0; p < P; ++p)
+            {
+                float ak = bk[p], av = bv[p];
+                for (std::size_t e = 0; e < E; ++e)
+                {
+                    ak += wk[e * P + p] * mem[s * E + e];
+                    av += wv[e * P + p] * mem[s * E + e];
+                }
+                k_buf[s * P + p] = (ak < 0.0f) ? 0.0f : ak;
+                v_buf[s * P + p] = av;
+            }
+        for (std::size_t t = 0; t < SDec; ++t)
+            for (std::size_t p = 0; p < P; ++p)
+            {
+                float aq = bq[p];
+                for (std::size_t e = 0; e < E; ++e) aq += wq[e * P + p] * dec[t * E + e];
+                q_buf[t * P + p] = (aq < 0.0f) ? 0.0f : aq;
+            }
+        for (std::size_t i = 0; i < P; ++i)
+            for (std::size_t j = 0; j < P; ++j)
+            {
+                float a = 0.0f;
+                for (std::size_t s = 0; s < SEnc; ++s) a += k_buf[s * P + i] * v_buf[s * P + j];
+                kv_buf[i * P + j] = a;
+            }
+    }
+
+    const float d_scale  = absmaxBuf(dec, SDec * E) / 127.0f;
+    const float m_scale  = absmaxBuf(mem, SEnc * E) / 127.0f;
+    // Single input scale shared by Q (decoder) and K/V (encoder) projections.
+    const float in_scale = (d_scale > m_scale) ? d_scale : m_scale;
+    const float wq_scale = absmaxBuf(w,             E * P) / 127.0f;
+    const float wk_scale = absmaxBuf(w + E * P,     E * P) / 127.0f;
+    const float wv_scale = absmaxBuf(w + 2 * E * P, E * P) / 127.0f;
+    const float q_scale  = absmaxBuf(q_buf,  SDec * P) / 127.0f;
+    const float k_scale  = absmaxBuf(k_buf,  SEnc * P) / 127.0f;
+    const float v_scale  = absmaxBuf(v_buf,  SEnc * P) / 127.0f;
+    const float kv_scale = absmaxBuf(kv_buf, P * P) / 127.0f;
+    const float y_scale  = absmaxBuf(y_ref,  SDec * P) / 127.0f;
+
+    int8_t dec_q[SDec * E], mem_q[SEnc * E];
+    int8_t w_q[3 * E * P];
+    int32_t b_q[3 * P];
+    quantizeBuffer<int8_t>(dec, dec_q, SDec * E, in_scale, 0, -128, 127);
+    quantizeBuffer<int8_t>(mem, mem_q, SEnc * E, in_scale, 0, -128, 127);
+    quantizeSymToI8(w,             E * P, wq_scale, w_q);
+    quantizeSymToI8(w + E * P,     E * P, wk_scale, w_q + E * P);
+    quantizeSymToI8(w + 2 * E * P, E * P, wv_scale, w_q + 2 * E * P);
+    for (std::size_t p = 0; p < P; ++p)
+    {
+        b_q[p] = static_cast<int32_t>(std::lround(static_cast<double>(b[p]) /
+            (static_cast<double>(in_scale) * static_cast<double>(wq_scale))));
+        b_q[P + p] = static_cast<int32_t>(std::lround(static_cast<double>(b[P + p]) /
+            (static_cast<double>(in_scale) * static_cast<double>(wk_scale))));
+        b_q[2 * P + p] = static_cast<int32_t>(std::lround(static_cast<double>(b[2 * P + p]) /
+            (static_cast<double>(in_scale) * static_cast<double>(wv_scale))));
+    }
+
+    tinymind::QCrossAttention1D<int8_t, int8_t, int32_t, int8_t, int8_t, int8_t,
+                                SDec, SEnc, E, P> attn;
+    attn.weights = w_q;
+    attn.biases  = b_q;
+    attn.q_input_zero_point = 0; attn.kv_input_zero_point = 0;
+    attn.q_zero_point = 0; attn.k_zero_point = 0; attn.v_zero_point = 0;
+    attn.kv_zero_point = 0;
+    attn.q_requantizer = buildRequantizer<int8_t>(in_scale, wq_scale, q_scale, 0, 0, 127);
+    attn.k_requantizer = buildRequantizer<int8_t>(in_scale, wk_scale, k_scale, 0, 0, 127);
+    attn.v_requantizer = buildRequantizer<int8_t>(in_scale, wv_scale, v_scale, 0, -128, 127);
+    attn.kv_requantizer = buildRequantizer<int8_t>(k_scale, v_scale, kv_scale, 0, -128, 127);
+    attn.output_requantizer = buildRequantizer<int8_t>(q_scale, kv_scale, y_scale, 0, -128, 127);
+
+    int8_t k_sc[SEnc * P], v_sc[SEnc * P], kv_sc[P * P], q_sc[SDec * P], y_q[SDec * P];
+    attn.forward(dec_q, mem_q, k_sc, v_sc, kv_sc, q_sc, y_q);
+
+    const float y_ref_max = absmaxBuf(y_ref, SDec * P);
+    float max_err = 0.0f;
+    for (std::size_t i = 0; i < SDec * P; ++i)
+    {
+        const float y_back = dequantize<int8_t>(y_q[i], y_scale, 0);
+        const float e = std::fabs(y_back - y_ref[i]);
+        if (e > max_err) max_err = e;
+    }
+    BOOST_TEST(max_err < 0.12f * y_ref_max);
+}
+
+BOOST_AUTO_TEST_CASE(qcross_softmax_parity_with_float_reference)
+{
+    constexpr std::size_t SDec = 4, SEnc = 5, E = 6, P = 4;
+
+    float dec[SDec * E], mem[SEnc * E];
+    for (std::size_t i = 0; i < SDec * E; ++i)
+        dec[i] = 0.1f * static_cast<float>((static_cast<int>(i) % 7) - 3);
+    for (std::size_t i = 0; i < SEnc * E; ++i)
+        mem[i] = 0.1f * static_cast<float>((static_cast<int>(i) % 5) - 2);
+    float w[3 * E * P];
+    for (std::size_t i = 0; i < 3 * E * P; ++i)
+        w[i] = 0.05f * static_cast<float>((static_cast<int>(i) % 9) - 4);
+    // Non-zero biases keep the softmax-weighted value average off zero; with
+    // these symmetric inputs a bias-free projection would cancel to ~0 and the
+    // relative-error tolerance would be meaningless.
+    float b[3 * P];
+    for (std::size_t i = 0; i < 3 * P; ++i)
+        b[i] = 0.05f * static_cast<float>((static_cast<int>(i) % 3) + 1);
+
+    float y_ref[SDec * P];
+    floatCrossSoftmaxReference<SDec, SEnc, E, P>(dec, mem, w, b, y_ref);
+
+    float q_buf[SDec * P], k_buf[SEnc * P], v_buf[SEnc * P], scores_buf[SDec * SEnc];
+    {
+        const float* wq = w; const float* wk = w + E * P; const float* wv = w + 2 * E * P;
+        const float* bq = b; const float* bk = b + P;     const float* bv = b + 2 * P;
+        for (std::size_t s = 0; s < SEnc; ++s)
+            for (std::size_t p = 0; p < P; ++p)
+            {
+                float ak = bk[p], av = bv[p];
+                for (std::size_t e = 0; e < E; ++e)
+                {
+                    ak += wk[e * P + p] * mem[s * E + e];
+                    av += wv[e * P + p] * mem[s * E + e];
+                }
+                k_buf[s * P + p] = ak; v_buf[s * P + p] = av;
+            }
+        for (std::size_t t = 0; t < SDec; ++t)
+            for (std::size_t p = 0; p < P; ++p)
+            {
+                float aq = bq[p];
+                for (std::size_t e = 0; e < E; ++e) aq += wq[e * P + p] * dec[t * E + e];
+                q_buf[t * P + p] = aq;
+            }
+        const float inv = 1.0f / std::sqrt(static_cast<float>(P));
+        for (std::size_t t = 0; t < SDec; ++t)
+            for (std::size_t j = 0; j < SEnc; ++j)
+            {
+                float a = 0.0f;
+                for (std::size_t p = 0; p < P; ++p) a += q_buf[t * P + p] * k_buf[j * P + p];
+                scores_buf[t * SEnc + j] = a * inv;
+            }
+    }
+
+    const float d_scale  = absmaxBuf(dec, SDec * E) / 127.0f;
+    const float m_scale  = absmaxBuf(mem, SEnc * E) / 127.0f;
+    const float in_scale = (d_scale > m_scale) ? d_scale : m_scale;
+    const float wq_scale = absmaxBuf(w,             E * P) / 127.0f;
+    const float wk_scale = absmaxBuf(w + E * P,     E * P) / 127.0f;
+    const float wv_scale = absmaxBuf(w + 2 * E * P, E * P) / 127.0f;
+    const float q_scale  = absmaxBuf(q_buf, SDec * P) / 127.0f;
+    const float k_scale  = absmaxBuf(k_buf, SEnc * P) / 127.0f;
+    const float v_scale  = absmaxBuf(v_buf, SEnc * P) / 127.0f;
+    const float score_scale = absmaxBuf(scores_buf, SDec * SEnc) / 127.0f;
+    const float attn_scale  = 1.0f / 256.0f;
+    const float y_scale  = absmaxBuf(y_ref, SDec * P) / 127.0f;
+
+    int8_t dec_q[SDec * E], mem_q[SEnc * E];
+    int8_t w_q[3 * E * P];
+    int32_t b_q[3 * P];
+    quantizeBuffer<int8_t>(dec, dec_q, SDec * E, in_scale, 0, -128, 127);
+    quantizeBuffer<int8_t>(mem, mem_q, SEnc * E, in_scale, 0, -128, 127);
+    quantizeSymToI8(w,             E * P, wq_scale, w_q);
+    quantizeSymToI8(w + E * P,     E * P, wk_scale, w_q + E * P);
+    quantizeSymToI8(w + 2 * E * P, E * P, wv_scale, w_q + 2 * E * P);
+    for (std::size_t p = 0; p < P; ++p)
+    {
+        b_q[p] = static_cast<int32_t>(std::lround(static_cast<double>(b[p]) /
+            (static_cast<double>(in_scale) * static_cast<double>(wq_scale))));
+        b_q[P + p] = static_cast<int32_t>(std::lround(static_cast<double>(b[P + p]) /
+            (static_cast<double>(in_scale) * static_cast<double>(wk_scale))));
+        b_q[2 * P + p] = static_cast<int32_t>(std::lround(static_cast<double>(b[2 * P + p]) /
+            (static_cast<double>(in_scale) * static_cast<double>(wv_scale))));
+    }
+
+    int32_t exp_lut[256];
+    buildQSoftmaxExpLUT(score_scale, exp_lut);
+
+    tinymind::QCrossAttentionSoftmax1D<int8_t, int8_t, int32_t,
+                                       int8_t, int8_t, int8_t, int8_t,
+                                       SDec, SEnc, E, P> attn;
+    attn.weights = w_q;
+    attn.biases  = b_q;
+    attn.q_input_zero_point = 0; attn.kv_input_zero_point = 0;
+    attn.q_zero_point = 0; attn.k_zero_point = 0; attn.v_zero_point = 0;
+    attn.attn_zero_point = -128;
+    attn.q_requantizer = buildRequantizer<int8_t>(in_scale, wq_scale, q_scale, 0, -128, 127);
+    attn.k_requantizer = buildRequantizer<int8_t>(in_scale, wk_scale, k_scale, 0, -128, 127);
+    attn.v_requantizer = buildRequantizer<int8_t>(in_scale, wv_scale, v_scale, 0, -128, 127);
+    {
+        Requantizer<int32_t, int8_t> r;
+        const double ratio = (static_cast<double>(q_scale) * static_cast<double>(k_scale)) /
+            static_cast<double>(score_scale) * qAttentionInvSqrt(P);
+        int32_t mult = 0, shft = 0;
+        quantizeMultiplier(ratio, mult, shft);
+        r.multiplier = mult; r.shift = shft; r.zero_point = 0; r.qmin = -128; r.qmax = 127;
+        attn.score_requantizer = r;
+    }
+    attn.softmax_exp_lut = exp_lut;
+    attn.attn_qmin = -128; attn.attn_qmax = 127;
+    attn.output_requantizer = buildRequantizer<int8_t>(attn_scale, v_scale, y_scale, 0, -128, 127);
+
+    decltype(attn)::KVCache cache;
+    int8_t q_sc[SDec * P], score_sc[SEnc], attn_sc[SEnc], y_q[SDec * P];
+    attn.forward(dec_q, mem_q, cache, q_sc, score_sc, attn_sc, y_q);
+
+    const float y_ref_max = absmaxBuf(y_ref, SDec * P);
+    float max_err = 0.0f;
+    for (std::size_t i = 0; i < SDec * P; ++i)
+    {
+        const float y_back = dequantize<int8_t>(y_q[i], y_scale, 0);
+        const float e = std::fabs(y_back - y_ref[i]);
+        if (e > max_err) max_err = e;
+    }
+    BOOST_TEST(max_err < 0.16f * y_ref_max);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
