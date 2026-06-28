@@ -167,7 +167,19 @@ const char* kGoldenStateSpace =
     "lti: 0 4 -3 -1 15 9 -10 -13 26 7 -22 -28 37 15 -35 -26 61 14 -39 -1 84 5 -27 23 95 0 -7 25 105 1 9 12 122 -6 21 -3 127 -15 27 -19 119 -12 19 -26 113 -6 0 -12 108 -7 -15 14 90 -6 -22 23 64 4 -23 14 46 10 -17 2 28 7 0 -11 1 7 17 -22 -24 11 21 -18 -35 8 18 5 -48 -2 12 20 -65 -3 0 16 -70 -2 -17 6 -64 -8 -22 -4 -61 -13 -16 -15 -60 -7 -7 -19 -46 -2 3 -4 -26 -3 15 15 -15 -2 21 16 -4 8 14 8 17 10 3 0 35 5 -5 -9\n"
     "sel: -1 -1 -1 -1 12 2 1 -7 20 1 4 -20 29 11 6 -17 55 12 3 -7 80 -3 1 -6 91 -2 13 -3 103 -1 23 -1 120 0 31 -3 127 3 34 -12 115 4 27 -17 106 2 23 -8 99 2 18 -5 84 2 11 -5 72 -1 6 -2 63 3 2 -2 55 1 14 -5 45 0 27 -13 39 6 26 -10 35 2 21 -5 30 -5 15 -5 25 1 14 -2 23 -1 13 -1 21 1 6 -2 18 3 2 -8 15 3 4 -11 18 1 9 -4 28 0 18 -4 29 0 23 -3 31 0 18 -1 49 5 13 -2 63 -3 8 -4\n";
 
+const char* kGoldenGbdtTabular =
+    "# gbdt_tabular_int8 golden output\n"
+    "# trees=5 classes=3 grid=48 agree=2256/2304\n"
+    "probes: 0 0 1 1 2 2 0 2\n";
+
 } // namespace
+
+BOOST_AUTO_TEST_CASE(gbdt_tabular_int8_golden_match)
+{
+    requireGoldenMatch(
+        "../../../examples/gbdt_tabular_int8/output/gbdt_tabular_int8",
+        kGoldenGbdtTabular);
+}
 
 BOOST_AUTO_TEST_CASE(state_space_int8_golden_match)
 {

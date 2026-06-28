@@ -100,6 +100,7 @@
 #include "qcrossattention.hpp"
 #include "qkvcache.hpp"
 #include "qssm.hpp"
+#include "qtree.hpp"
 #include "qmha.hpp"
 #endif
 
@@ -714,6 +715,22 @@ bool exerciseQuantPipeline()
     int8_t sel_out[QSelSSMType::OutputSize] = {0};
     qsel.forward(ssm_in, sel_state, sel_out);
 
+    // Quantized decision tree + GBDT ensemble (int compare + branch, no LUT).
+    static const tinymind::QTreeNode<int8_t> tree_nodes[3] = {
+        { 0, 0, 1, 2, 0 }, { -1, 0, -1, -1, 7 }, { -1, 0, -1, -1, -7 },
+    };
+    tinymind::QDecisionTree<int8_t, int8_t, 3, 2> qtree;
+    qtree.nodes = tree_nodes;
+    int8_t tree_x[2] = {0, 0};
+    const int32_t tree_leaf = qtree.predict(tree_x);
+
+    static const int16_t gbdt_roots[1] = {0};
+    static const int16_t gbdt_classes[1] = {0};
+    tinymind::QGBDT<int8_t, int8_t, 1, 2, 3, 2> qgbdt;
+    qgbdt.nodes = tree_nodes; qgbdt.tree_root = gbdt_roots;
+    qgbdt.tree_class = gbdt_classes; qgbdt.base_score = nullptr;
+    const std::size_t gbdt_cls = qgbdt.predict(tree_x);
+
     return (qDenseOut[0] == qDenseOut[0]) && (s != 0)
         && (add_y[0] == add_y[0]) && (mul_y[0] == mul_y[0])
         && (cc_out[0] == cc_out[0]) && (pad_out[0] == pad_out[0])
@@ -732,7 +749,9 @@ bool exerciseQuantPipeline()
         && (cross_out[0] == cross_out[0])
         && (cross_sm_out[0] == cross_sm_out[0])
         && (ssm_out[0] == ssm_out[0])
-        && (sel_out[0] == sel_out[0]);
+        && (sel_out[0] == sel_out[0])
+        && (tree_leaf == 7)
+        && (gbdt_cls == 0u);
 }
 int32_t gIntegerBridgeSink[2];
 
