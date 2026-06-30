@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/tinymind_logo_darkmode.png">
+    <img src="docs/assets/tinymind_logo_lightmode.png" alt="TinyMind logo" width="140">
+  </picture>
+</p>
+
 # TinyMind
 
 [![Static & Dynamic Analysis](https://github.com/danmcleran/tinymind/actions/workflows/analysis.yml/badge.svg)](https://github.com/danmcleran/tinymind/actions/workflows/analysis.yml)
