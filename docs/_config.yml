@@ -1,6 +1,7 @@
 theme: just-the-docs
 title: TinyMind
 description: Header-only C++ template library for neural networks on embedded systems
+logo: "/assets/tinymind_logo.png"
 baseurl: "/tinymind"
 url: "https://danmcleran.github.io"
 aux_links:

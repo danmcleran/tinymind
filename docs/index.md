@@ -4,6 +4,8 @@ layout: default
 nav_order: 1
 ---
 
+<img src="{{ site.baseurl }}/assets/tinymind_logo.png" alt="TinyMind logo" width="160" style="display:block;margin:0 auto 1rem;">
+
 # Machine Learning for Embedded Systems
 {: .fs-9 }
 
@@ -13,10 +15,6 @@ nav_order: 1
 [Get Started]({{ site.baseurl }}/getting-started/xor-under-4kb){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [View on GitHub](https://github.com/danmcleran/tinymind){: .btn .fs-5 .mb-4 .mb-md-0 }
 [Example Gallery]({{ site.baseurl }}/gallery){: .btn .fs-5 .mb-4 .mb-md-0 }
-
-![int8 XOR decision surface]({{ site.baseurl }}/assets/plots/xor_decision_surface.png)
-
-*A PyTorch-trained XOR network running pure-integer int8 inference in TinyMind — see the [Example Gallery]({{ site.baseurl }}/gallery) for behavior graphs of every example (each writes a CSV + ships a matplotlib `plot.py`).*
 
 ---
 
