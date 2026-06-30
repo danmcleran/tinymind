@@ -1,6 +1,6 @@
 theme: just-the-docs
 title: TinyMind
-description: Header-only C++ template library for neural networks on embedded systems
+description: "Header-only C++ template library for neural networks and Q-learning on embedded systems: int8 and fixed-point inference with no FPU, heap, or operating system required."
 logo: "/assets/tinymind_logo.png"
 baseurl: "/tinymind"
 url: "https://danmcleran.github.io"
