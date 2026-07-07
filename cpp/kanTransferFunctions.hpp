@@ -21,6 +21,8 @@
 */
 
 #pragma once
+#include <cstddef>
+#include <cstdint>
 
 #include "activationFunctions.hpp"
 #include "error.hpp"

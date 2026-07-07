@@ -20,6 +20,8 @@
 * SOFTWARE.
 */
 #pragma once
+#include <cstddef>
+#include <cstdint>
 
 #include "include/tinymind_platform.hpp"
 #include "dual.hpp"

@@ -293,13 +293,13 @@ tidy : compile_commands.json
 	-run-clang-tidy -p . -quiet -header-filter='.*/cpp/.*\.hpp$$' '$(CURDIR)/(cpp|unit_test)/.*' 2>/dev/null | tee tidy-report.txt
 	@echo "tidy: advisory report written to tidy-report.txt (not a gate)"
 
-# Header self-containment (ADVISORY). Header-only library: each cpp/**/*.hpp
-# should compile as its own translation unit. The library's include contract is
+# Header self-containment (HARD GATE). Header-only library: each cpp/**/*.hpp
+# must compile as its own translation unit. The library's include contract is
 # "tinymind_platform.hpp first, then the header" (see CLAUDE.md), so that prelude
 # is injected before each header. Bundled builds mask missing includes because
-# an earlier TU drags in <cstddef> et al.; this surfaces them one file at a time.
-# Advisory: pre-existing non-self-contained headers are reported, not gated, so
-# the list can be ratcheted down without blocking unrelated work.
+# an earlier TU drags in <cstddef>/<cstdint> et al.; this catches them one file
+# at a time. Fails if any header is not self-contained -- fix by adding the
+# missing standard include to the header itself.
 PLATFORM_HDR = cpp/include/tinymind_platform.hpp
 .PHONY : header-selfcheck
 header-selfcheck :
@@ -314,8 +314,9 @@ header-selfcheck :
 	done; \
 	echo "header-selfcheck: $$pass self-contained, $$fail not"; \
 	if [ -n "$$failed" ]; then \
-	  echo "not self-contained (advisory -- fix by adding the missing include to the header):"; \
+	  echo "NOT self-contained (add the missing standard include to the header):"; \
 	  for f in $$failed; do echo "  $$f"; done; \
+	  exit 1; \
 	fi
 
 # Conversion / promotion warnings (ADVISORY). -Wconversion + -Wsign-conversion

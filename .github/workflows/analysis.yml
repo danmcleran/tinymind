@@ -286,13 +286,12 @@ jobs:
           if-no-files-found: ignore
 
   header-selfcheck:
-    name: Header self-containment (advisory)
+    name: Header self-containment
     runs-on: ubuntu-latest
     needs: changes
-    # Advisory: compiles each cpp/**/*.hpp standalone (platform.hpp prelude).
-    # Reports headers that only build via bundled include order so the list can
-    # be ratcheted down; never blocks.
-    continue-on-error: true
+    # HARD GATE. Every cpp/**/*.hpp compiles standalone (platform.hpp prelude).
+    # A new header that only builds via bundled include order -- relying on an
+    # earlier TU to drag in <cstddef>/<cstdint> et al. -- fails the gate.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'

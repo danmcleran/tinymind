@@ -20,6 +20,8 @@
 * SOFTWARE.
 */
 #pragma once
+#include <cstddef>
+#include <cstdint>
 
 // Liquid Time-Constant (LTC) recurrent cell -- Hasani, Lechner, Amini, Rus, Grosu
 // "Liquid Time-constant Networks" (AAAI 2021), the fused (semi-implicit Euler)

@@ -20,6 +20,8 @@
 * SOFTWARE.
 */
 #pragma once
+#include <cstddef>
+#include <cstdint>
 
 // Reverse-mode (adjoint) automatic differentiation via a tape: record every
 // operation on the forward pass, then sweep the tape once in reverse to get the

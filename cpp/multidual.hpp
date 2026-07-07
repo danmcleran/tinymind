@@ -20,6 +20,8 @@
 * SOFTWARE.
 */
 #pragma once
+#include <cstddef>
+#include <cstdint>
 
 // Vector forward-mode automatic differentiation: a value carrying N tangent
 // (partial-derivative) directions at once. One forward evaluation of a scalar

@@ -21,6 +21,7 @@
 */
 
 #pragma once
+#include <cstddef>
 
 namespace tinymind {
     template<typename ValueType>
