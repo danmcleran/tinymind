@@ -293,14 +293,58 @@ tidy : compile_commands.json
 	-run-clang-tidy -p . -quiet -header-filter='.*/cpp/.*\.hpp$$' '$(CURDIR)/(cpp|unit_test)/.*' 2>/dev/null | tee tidy-report.txt
 	@echo "tidy: advisory report written to tidy-report.txt (not a gate)"
 
-analyze : misra tidy cppcheck
+# Header self-containment (ADVISORY). Header-only library: each cpp/**/*.hpp
+# should compile as its own translation unit. The library's include contract is
+# "tinymind_platform.hpp first, then the header" (see CLAUDE.md), so that prelude
+# is injected before each header. Bundled builds mask missing includes because
+# an earlier TU drags in <cstddef> et al.; this surfaces them one file at a time.
+# Advisory: pre-existing non-self-contained headers are reported, not gated, so
+# the list can be ratcheted down without blocking unrelated work.
+PLATFORM_HDR = cpp/include/tinymind_platform.hpp
+.PHONY : header-selfcheck
+header-selfcheck :
+	@pass=0; fail=0; failed=""; \
+	for h in $$(find cpp -name '*.hpp' | sort); do \
+	  if g++ -std=c++17 -fsyntax-only $(ANALYZE_INC) $(ANALYZE_DEF) \
+	         -include $(PLATFORM_HDR) -include "$$h" -xc++ /dev/null 2>/dev/null; then \
+	    pass=$$((pass+1)); \
+	  else \
+	    fail=$$((fail+1)); failed="$$failed $$h"; \
+	  fi; \
+	done; \
+	echo "header-selfcheck: $$pass self-contained, $$fail not"; \
+	if [ -n "$$failed" ]; then \
+	  echo "not self-contained (advisory -- fix by adding the missing include to the header):"; \
+	  for f in $$failed; do echo "  $$f"; done; \
+	fi
 
-.PHONY : sanitize cppcheck misra tidy analyze coverage-check
+# Conversion / promotion warnings (ADVISORY). -Wconversion + -Wsign-conversion
+# are the highest-signal warnings for fixed-point Q-format code (implicit narrow
+# / sign flips in QValue shifts and casts); -Wdouble-promotion catches an
+# accidental float->double that silently pulls software double math onto a
+# single-precision FPU. Not in the -Werror baseline because template
+# instantiations produce expected fixed-point narrowings; this reports the count
+# so it can be reviewed and ratcheted. Compiled over the broad hosted+quant
+# corner of the embedded smoke source.
+STRICT_WARN = -Wconversion -Wsign-conversion -Wdouble-promotion -Wshadow
+STRICT_SRC  = unit_test/embedded/embedded_smoke_test.cpp
+.PHONY : warnings-strict
+warnings-strict :
+	@g++ -std=c++17 -fsyntax-only $(ANALYZE_INC) $(ANALYZE_DEF) $(STRICT_WARN) \
+	    $(STRICT_SRC) 2>strict-warnings.txt || true
+	@n=$$(grep -c 'warning:' strict-warnings.txt 2>/dev/null || echo 0); \
+	echo "=== conversion/promotion warnings by kind ==="; \
+	grep -oE '\[-W[a-z-]+\]' strict-warnings.txt 2>/dev/null | sort | uniq -c | sort -rn || true; \
+	echo "warnings-strict: $$n advisory finding(s) (full list in strict-warnings.txt)"
+
+analyze : misra tidy cppcheck header-selfcheck warnings-strict
+
+.PHONY : sanitize cppcheck misra tidy analyze coverage-check header-selfcheck warnings-strict
 
 # Recursively clean every unit test, example, and app (each subdir Makefile has
 # its own clean target), plus the coverage artifacts.
 clean : coverage-clean
-	rm -rf compile_commands.json tidy-report.txt
+	rm -rf compile_commands.json tidy-report.txt strict-warnings.txt misra-report.txt
 	@for m in $$(find unit_test examples apps -name Makefile); do \
 		d=$$(dirname $$m); \
 		echo "clean $$d"; \
