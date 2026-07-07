@@ -147,6 +147,83 @@ simd_prereq_regressions:
 	@! $(CC) $(WARN) -c $(SOURCES) -o /dev/null $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_AVX512_VNNI=1 2>/dev/null
 	@echo "[prereq] all prerequisite checks behaved as expected"
 
+# -----------------------------------------------------------------------------
+# ARM cross-compilation (build-only). HARD gate.
+#
+# The matrix above builds every gate corner with the host g++ and freestanding
+# -D macros -- it proves the headers stay free of hosted deps, but it never
+# proves they *assemble for a Cortex-M*. Host x86 hides ABI/size assumptions,
+# int-width edge cases, missing intrinsics and soft/hard-float behaviour. This
+# target compiles (no link -- bare metal has no libc/startup here) the smoke
+# source across representative Cortex-M profiles and float ABIs with the real
+# arm-none-eabi toolchain. Compile-only catches the large majority of
+# target-only breakage without any hardware.
+ARM_CXX  ?= arm-none-eabi-g++
+ARM_STD  ?= -std=c++17
+ARM_WARN ?= -Wall -Wextra -Werror -Wpedantic
+ARM_M0   = -mcpu=cortex-m0plus -mfloat-abi=soft -mthumb
+ARM_M4   = -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16 -mthumb
+ARM_M33  = -mcpu=cortex-m33 -mfloat-abi=hard -mfpu=fpv5-sp-d16 -mthumb
+
+.PHONY: arm_crosscompile
+arm_crosscompile:
+	@command -v $(ARM_CXX) >/dev/null 2>&1 || { echo "ERROR: $(ARM_CXX) not found. sudo apt install gcc-arm-none-eabi"; exit 1; }
+	@echo "[arm] cortex-m0plus soft-float: freestanding"
+	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M0) -c $(SOURCES) $(INCLUDES) -o /dev/null
+	@echo "[arm] cortex-m0plus soft-float: quant freestanding (deployable int8 shape)"
+	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M0) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
+	@echo "[arm] cortex-m4 hard-float: float forward-pass (no stdlib)"
+	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M4) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_FLOAT=1 -o /dev/null
+	@echo "[arm] cortex-m4 hard-float: quant freestanding"
+	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M4) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
+	@echo "[arm] cortex-m4 hard-float: fp16 storage tier"
+	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M4) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_FP16=1 -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
+	@echo "[arm] cortex-m33 hard-float: freestanding"
+	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M33) -c $(SOURCES) $(INCLUDES) -o /dev/null
+	@echo "[arm] cortex-m33 hard-float: quant freestanding"
+	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M33) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
+	@echo "arm_crosscompile: all Cortex-M corners assemble clean"
+
+# -----------------------------------------------------------------------------
+# Heap-free guarantee (build-only). HARD gate.
+#
+# TinyMind targets no-heap MCUs: the library must never pull in the dynamic
+# allocator. This compiles the freestanding + quant corners to objects and
+# asserts none references malloc / operator new (Itanium ABI: _Znwj/_Znwm =
+# new, _Znaj/_Znam = new[], _Zdl*/_Zda* = delete). A regression that adds a
+# std::vector / new into an embedded header re-triggers the gate.
+.PHONY: heapfree
+heapfree:
+	$(MKDIR)
+	$(CC) $(ARM_STD) $(WARN) -c $(SOURCES) $(INCLUDES) -o ./output/heapfree_free.o
+	$(CC) $(ARM_STD) $(WARN) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -o ./output/heapfree_quant.o
+	@fail=0; for o in free quant; do \
+	  syms="$$(nm -u ./output/heapfree_$$o.o | grep -iE '(^| )(malloc|calloc|realloc|free|_Zn[aw][jm]|_Zd[al][apv])' || true)"; \
+	  if [ -n "$$syms" ]; then echo "HEAP GATE FAIL ($$o corner): dynamic-allocation symbols referenced:"; echo "$$syms"; fail=1; fi; \
+	done; \
+	if [ $$fail -ne 0 ]; then exit 1; fi; \
+	echo "heapfree: no dynamic-allocation symbols in freestanding or quant object"
+
+# -----------------------------------------------------------------------------
+# Static stack-usage report (build-only). ADVISORY.
+#
+# Embedded parts have kilobytes of RAM; unbounded per-frame stack is a class of
+# bug the runtime bench::stackHighWater watermark only catches after the fact.
+# -fstack-usage emits a .su file with the worst-case frame of every function.
+# This reports the deepest frames for the deployable Cortex-M4 int8 shape so a
+# reviewer can eyeball growth. Advisory: template frames vary by compiler and
+# the aggregating harness function dominates, so this informs, never blocks.
+.PHONY: stack_usage
+stack_usage:
+	$(MKDIR)
+	@command -v $(ARM_CXX) >/dev/null 2>&1 || { echo "ERROR: $(ARM_CXX) not found. sudo apt install gcc-arm-none-eabi"; exit 1; }
+	$(ARM_CXX) $(ARM_STD) $(WARN) $(ARM_M4) -Os -c $(SOURCES) $(INCLUDES) \
+		-DTINYMIND_ENABLE_QUANTIZATION=1 -fstack-usage -o ./output/stack_usage.o
+	@su=$$(find . -name 'embedded_smoke_test.su' -o -name 'stack_usage.su' | head -1); \
+	echo "=== deepest stack frames (Cortex-M4 int8, -Os), bytes ==="; \
+	sort -t"	" -k2 -rn "$$su" | awk -F"	" 'NR<=12{printf "%8s  %s\n", $$2, $$1}'; \
+	echo "stack_usage: advisory report (not a gate); full data in $$su"
+
 run:
 	$(OUT_FREESTANDING)
 	$(OUT_NO_STDLIB)

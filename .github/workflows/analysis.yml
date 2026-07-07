@@ -24,7 +24,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
       - id: filter
@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'
       - name: Install Boost
         if: needs.changes.outputs.code == 'true'
@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'
       - name: Install Boost
         if: needs.changes.outputs.code == 'true'
@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'
       - name: Install toolchain
         if: needs.changes.outputs.code == 'true'
@@ -115,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'
       - name: Install cppcheck
         if: needs.changes.outputs.code == 'true'
@@ -129,7 +129,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'
       - name: Install Boost + lcov
         if: needs.changes.outputs.code == 'true'
@@ -156,7 +156,7 @@ jobs:
     # (fuzz-nightly.yml), not here, so the PR gate never flaps on a path found
     # at second 89 vs 91.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'
       - name: Install Clang
         if: needs.changes.outputs.code == 'true'
@@ -170,7 +170,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'
       - name: Install CBMC
         if: needs.changes.outputs.code == 'true'
@@ -187,7 +187,7 @@ jobs:
     # Most findings are expected; this surfaces them for review, never blocks.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'
       - name: Install cppcheck
         if: needs.changes.outputs.code == 'true'
@@ -197,7 +197,7 @@ jobs:
         run: make misra
       - name: Upload report
         if: always() && needs.changes.outputs.code == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: misra-report
           path: misra-report.txt
@@ -211,7 +211,7 @@ jobs:
     # never blocks the merge. The hard gates are sanitize + cppcheck.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'
       - name: Install toolchain
         if: needs.changes.outputs.code == 'true'
@@ -223,8 +223,96 @@ jobs:
         run: make tidy
       - name: Upload report
         if: always() && needs.changes.outputs.code == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: tidy-report
           path: tidy-report.txt
           if-no-files-found: ignore
+
+  arm-crosscompile:
+    # HARD GATE. The embedded matrix builds every gate corner with host g++ and
+    # freestanding -D macros -- it never proves the headers assemble for a real
+    # Cortex-M. This compiles (no link) the smoke source across M0+/M4/M33 and
+    # soft/hard float ABIs with the arm-none-eabi toolchain, catching ABI/size/
+    # intrinsic breakage the host build hides. Build-only; no hardware needed.
+    name: ARM cross-compile (Cortex-M)
+    runs-on: ubuntu-latest
+    needs: changes
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: needs.changes.outputs.code == 'true'
+      - name: Install arm-none-eabi toolchain
+        if: needs.changes.outputs.code == 'true'
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - name: Cross-compile smoke corners for Cortex-M
+        if: needs.changes.outputs.code == 'true'
+        run: make -C unit_test/embedded arm_crosscompile
+
+  heap-free:
+    # HARD GATE. TinyMind targets no-heap MCUs; the library must never reference
+    # the dynamic allocator. Compiles the freestanding + quant corners and
+    # asserts no malloc / operator new symbols. A std::vector / new sneaking into
+    # an embedded header re-triggers this.
+    name: Heap-free guarantee
+    runs-on: ubuntu-latest
+    needs: changes
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: needs.changes.outputs.code == 'true'
+      - name: Assert no dynamic-allocation symbols
+        if: needs.changes.outputs.code == 'true'
+        run: make -C unit_test/embedded heapfree
+
+  warnings-strict:
+    name: Conversion warnings (advisory)
+    runs-on: ubuntu-latest
+    needs: changes
+    # Advisory: -Wconversion/-Wsign-conversion/-Wdouble-promotion over the
+    # fixed-point paths. Expected narrowings in QValue internals mean this is a
+    # review signal + ratchet baseline, never a merge gate.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: needs.changes.outputs.code == 'true'
+      - name: Report conversion / promotion warnings
+        if: needs.changes.outputs.code == 'true'
+        run: make warnings-strict
+      - name: Upload report
+        if: always() && needs.changes.outputs.code == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: strict-warnings
+          path: strict-warnings.txt
+          if-no-files-found: ignore
+
+  header-selfcheck:
+    name: Header self-containment (advisory)
+    runs-on: ubuntu-latest
+    needs: changes
+    # Advisory: compiles each cpp/**/*.hpp standalone (platform.hpp prelude).
+    # Reports headers that only build via bundled include order so the list can
+    # be ratcheted down; never blocks.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: needs.changes.outputs.code == 'true'
+      - name: Compile each header standalone
+        if: needs.changes.outputs.code == 'true'
+        run: make header-selfcheck
+
+  stack-usage:
+    name: Stack-usage report (advisory)
+    runs-on: ubuntu-latest
+    needs: changes
+    # Advisory: -fstack-usage over the deployable Cortex-M4 int8 shape. Reports
+    # deepest per-frame stack for review of unbounded growth; never blocks.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: needs.changes.outputs.code == 'true'
+      - name: Install arm-none-eabi toolchain
+        if: needs.changes.outputs.code == 'true'
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - name: Report deepest stack frames
+        if: needs.changes.outputs.code == 'true'
+        run: make -C unit_test/embedded stack_usage
