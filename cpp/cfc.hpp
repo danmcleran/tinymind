@@ -20,6 +20,8 @@
 * SOFTWARE.
 */
 #pragma once
+#include <cstddef>
+#include <cstdint>
 
 // Closed-form Continuous-time (CfC) recurrent cell -- Hasani, Lechner, Amini,
 // Liebenwein, Ray, Tschaikowski, Teschl, Rus, "Closed-form continuous-time

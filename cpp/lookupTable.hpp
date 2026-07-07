@@ -21,6 +21,7 @@
 */
 
 #pragma once
+#include <cstddef>
 
 #include "activation.hpp"
 #include "interpolate.hpp"

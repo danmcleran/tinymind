@@ -20,6 +20,8 @@
 * SOFTWARE.
 */
 #pragma once
+#include <cstddef>
+#include <cstdint>
 
 // Reusable Physics-Informed Neural Network building blocks:
 //   - PinnMlp: a small fully-connected tanh MLP whose forward pass is templated

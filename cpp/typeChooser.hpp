@@ -21,6 +21,7 @@
 */
 
 #pragma once
+#include <cstdint>
 
 namespace tinymind {
     template<unsigned NumBits, bool IsSigned>

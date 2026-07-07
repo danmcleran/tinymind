@@ -20,6 +20,8 @@
 * SOFTWARE.
 */
 #pragma once
+#include <cstddef>
+#include <cstdint>
 
 // Taylor-mode automatic differentiation: a truncated Taylor polynomial (a
 // "jet") in one variable, carrying coefficients c_k = f^(k)(x0)/k! up to a

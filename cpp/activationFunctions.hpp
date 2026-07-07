@@ -21,6 +21,8 @@
 */
 
 #pragma once
+#include <cstddef>
+#include <cstdint>
 
 #include "lookupTable.hpp"
 #include "constants.hpp"
