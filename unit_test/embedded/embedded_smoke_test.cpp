@@ -58,6 +58,7 @@
 #include "dual.hpp"
 #include "conv1d.hpp"
 #include "pool1d.hpp"
+#include "upsample1d.hpp"
 #include "conv2d.hpp"
 #include "depthwiseconv2d.hpp"
 #include "pointwiseconv2d.hpp"
@@ -122,6 +123,11 @@ typedef tinymind::QValue<8, 8, true> Q88;
 // 1D pipeline.
 typedef tinymind::Conv1D<Q88, 16, 3, 1, 4> Conv1Type;       // 16 -> 14, 4 filters
 typedef tinymind::MaxPool1D<Q88, Conv1Type::OutputLength, 2, 2, 4> Pool1Type;
+// Decoder-side upsampling: restore the pooled length. Nearest exercises the
+// no-arithmetic path (holds at FLOAT=0/STD=0); Linear exercises the QValue
+// arithmetic path.
+typedef tinymind::UpsampleNearest1D<Q88, Pool1Type::OutputLength, 2, 4> UpNearest1Type;
+typedef tinymind::UpsampleLinear1D<Q88, Pool1Type::OutputLength, 2, 4> UpLinear1Type;
 
 // 2D pipeline.
 typedef tinymind::Conv2D<Q88, 8, 8, 1, 3, 3, 1, 1, 2> Conv2Type;
@@ -138,6 +144,8 @@ typedef tinymind::SelfAttention1D<Q88, 4, 4, 4> AttType;
 Q88 input1d[16];
 Q88 conv1Out[Conv1Type::OutputSize];
 Q88 pool1Out[Pool1Type::OutputSize];
+Q88 upNearest1Out[UpNearest1Type::OutputSize];
+Q88 upLinear1Out[UpLinear1Type::OutputSize];
 
 Q88 input2d[8 * 8];
 Q88 conv2Out[Conv2Type::OutputSize];
@@ -153,6 +161,8 @@ Q88 attOut[AttType::OutputSize];
 
 Conv1Type gConv1;
 Pool1Type gPool1;
+UpNearest1Type gUpNearest1;
+UpLinear1Type gUpLinear1;
 Conv2Type gConv2;
 Pool2Type gPool2;
 DwType    gDw;
@@ -884,6 +894,8 @@ int main()
 
     gConv1.forward(input1d, conv1Out);
     gPool1.forward(conv1Out, pool1Out);
+    gUpNearest1.forward(pool1Out, upNearest1Out);
+    gUpLinear1.forward(pool1Out, upLinear1Out);
 
     gConv2.forward(input2d, conv2Out);
     gPool2.forward(conv2Out, pool2Out);

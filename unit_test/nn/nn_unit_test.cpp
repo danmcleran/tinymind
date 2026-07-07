@@ -48,6 +48,7 @@ TINYMIND_DISABLE_WARNING_POP
 #include "truncatedBPTT.hpp"
 #include "conv1d.hpp"
 #include "pool1d.hpp"
+#include "upsample1d.hpp"
 #include "conv2d.hpp"
 #include "depthwiseconv2d.hpp"
 #include "pointwiseconv2d.hpp"
@@ -4787,6 +4788,153 @@ BOOST_AUTO_TEST_CASE(test_case_avgpool1d_fixed_point)
     // (2+4)/2 = 3.0; (6+8)/2 = 7.0.
     BOOST_TEST(output[0].getValue() == ValueType(3, 0).getValue());
     BOOST_TEST(output[1].getValue() == ValueType(7, 0).getValue());
+}
+
+// ============================================================
+// UpsampleNearest1D tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_upsample_nearest1d_forward)
+{
+    // Repeat each element by factor 2: dual of a stride-2 pool.
+    tinymind::UpsampleNearest1D<double, 4, 2, 1> up;
+
+    double input[4] = {3.0, 7.0, 2.0, 9.0};
+    double output[8]; // 4 * 2
+
+    up.forward(input, output);
+
+    const double expected[8] = {3.0, 3.0, 7.0, 7.0, 2.0, 2.0, 9.0, 9.0};
+    for (size_t i = 0; i < 8; ++i)
+    {
+        BOOST_TEST(fabs(output[i] - expected[i]) < 0.001);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_upsample_nearest1d_backward)
+{
+    // Backward accumulates the ScaleFactor output grads onto each input.
+    tinymind::UpsampleNearest1D<double, 3, 3, 1> up;
+
+    double outputDeltas[9] = {0.1, 0.2, 0.3, 1.0, 1.0, 1.0, 0.5, 0.0, -0.5};
+    double inputDeltas[3];
+    up.backward(outputDeltas, inputDeltas);
+
+    BOOST_TEST(fabs(inputDeltas[0] - 0.6) < 0.001); // 0.1+0.2+0.3
+    BOOST_TEST(fabs(inputDeltas[1] - 3.0) < 0.001); // 1+1+1
+    BOOST_TEST(fabs(inputDeltas[2] - 0.0) < 0.001); // 0.5+0-0.5
+}
+
+BOOST_AUTO_TEST_CASE(test_case_upsample_nearest1d_multichannel)
+{
+    // 2 channels, 3 elements each, factor 2, channel-major.
+    tinymind::UpsampleNearest1D<double, 3, 2, 2> up;
+
+    double input[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+    double output[12];
+    up.forward(input, output);
+
+    const double expected[12] = {1.0, 1.0, 2.0, 2.0, 3.0, 3.0,
+                                 4.0, 4.0, 5.0, 5.0, 6.0, 6.0};
+    for (size_t i = 0; i < 12; ++i)
+    {
+        BOOST_TEST(fabs(output[i] - expected[i]) < 0.001);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_upsample_nearest1d_static_sizes)
+{
+    typedef tinymind::UpsampleNearest1D<double, 50, 4, 3> UpType;
+
+    static_assert(UpType::OutputLength == 200, "Wrong output length"); // 50 * 4
+    static_assert(UpType::OutputSize == 600, "Wrong output size");     // 3 * 200
+    static_assert(UpType::InputSize == 150, "Wrong input size");       // 3 * 50
+    BOOST_TEST(true);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_upsample_nearest1d_fixed_point)
+{
+    // No arithmetic: exact bit copies in Q8.8.
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::UpsampleNearest1D<ValueType, 2, 3, 1> up;
+
+    ValueType input[2] = {ValueType(3, 0), ValueType(5, 0)};
+    ValueType output[6];
+    up.forward(input, output);
+
+    BOOST_TEST(output[0].getValue() == ValueType(3, 0).getValue());
+    BOOST_TEST(output[1].getValue() == ValueType(3, 0).getValue());
+    BOOST_TEST(output[2].getValue() == ValueType(3, 0).getValue());
+    BOOST_TEST(output[3].getValue() == ValueType(5, 0).getValue());
+    BOOST_TEST(output[4].getValue() == ValueType(5, 0).getValue());
+    BOOST_TEST(output[5].getValue() == ValueType(5, 0).getValue());
+}
+
+// ============================================================
+// UpsampleLinear1D tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_upsample_linear1d_forward)
+{
+    // Factor 2: input nodes land on even outputs; odds are the midpoints.
+    tinymind::UpsampleLinear1D<double, 4, 2, 1> up;
+
+    double input[4] = {0.0, 4.0, 2.0, 10.0};
+    double output[8];
+    up.forward(input, output);
+
+    // node, mid, node, mid, node, mid, node, tail-clamped last value
+    const double expected[8] = {0.0, 2.0, 4.0, 3.0, 2.0, 6.0, 10.0, 10.0};
+    for (size_t i = 0; i < 8; ++i)
+    {
+        BOOST_TEST(fabs(output[i] - expected[i]) < 0.001);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_upsample_linear1d_nodes_preserved)
+{
+    // Every input element must reappear exactly at index k * ScaleFactor.
+    tinymind::UpsampleLinear1D<double, 5, 3, 1> up;
+
+    double input[5] = {1.0, 2.0, 4.0, 8.0, 16.0};
+    double output[15];
+    up.forward(input, output);
+
+    for (size_t k = 0; k < 5; ++k)
+    {
+        BOOST_TEST(fabs(output[k * 3] - input[k]) < 0.001);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_upsample_linear1d_backward)
+{
+    // Backward is the transpose: a unit grad on a midpoint splits by weight.
+    tinymind::UpsampleLinear1D<double, 2, 2, 1> up;
+
+    // outputs: [node0, mid, node1, tail]; mid weight = 0.5 to each node.
+    double outputDeltas[4] = {0.0, 1.0, 0.0, 0.0};
+    double inputDeltas[2];
+    up.backward(outputDeltas, inputDeltas);
+
+    BOOST_TEST(fabs(inputDeltas[0] - 0.5) < 0.001);
+    BOOST_TEST(fabs(inputDeltas[1] - 0.5) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_upsample_linear1d_fixed_point)
+{
+    // Midpoint of [2.0, 6.0] in Q8.8 must be exactly 4.0 (weight 0.5 built via
+    // the (FixedPart, FractionalPart) constructor, not raw bits).
+    typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+    tinymind::UpsampleLinear1D<ValueType, 2, 2, 1> up;
+
+    ValueType input[2] = {ValueType(2, 0), ValueType(6, 0)};
+    ValueType output[4];
+    up.forward(input, output);
+
+    BOOST_TEST(output[0].getValue() == ValueType(2, 0).getValue()); // node
+    BOOST_TEST(output[1].getValue() == ValueType(4, 0).getValue()); // midpoint
+    BOOST_TEST(output[2].getValue() == ValueType(6, 0).getValue()); // node
+    BOOST_TEST(output[3].getValue() == ValueType(6, 0).getValue()); // tail clamp
 }
 
 // ============================================================

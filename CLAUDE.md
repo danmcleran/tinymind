@@ -71,6 +71,7 @@ These layers sit outside the neural network template and can be chained into pip
 
 - **`conv1d.hpp`** — 1D convolution layer for time-series feature extraction.
 - **`pool1d.hpp`** — `MaxPool1D` and `AvgPool1D` for downsampling.
+- **`upsample1d.hpp`** — `UpsampleNearest1D` (repeat; no arithmetic, holds at `FLOAT=0`/`STD=0`) and `UpsampleLinear1D` (interpolated; QValue/float arithmetic) for integer-factor upsampling. The decoder-side counterpart to `pool1d.hpp`; a cheap, checkerboard-free alternative to a transposed convolution.
 - **`conv2d.hpp`** — 2D convolution for spectrograms/images, NHWC layout, VALID padding.
 - **`depthwiseconv2d.hpp`** / **`pointwiseconv2d.hpp`** — MobileNet-style depthwise-separable blocks.
 - **`pool2d.hpp`** — `MaxPool2D`, `AvgPool2D`, and `GlobalAvgPool2D` (GAP replaces the big flatten-to-dense matrix).
