@@ -58,7 +58,9 @@ jobs:
 
       - name: Install Boost
         if: needs.changes.outputs.code == 'true'
-        run: sudo apt-get update && sudo apt-get install -y libboost-dev libboost-test-dev
+        uses: ./.github/actions/apt-install
+        with:
+          packages: libboost-dev libboost-test-dev
 
       - name: Initialize CodeQL
         if: needs.changes.outputs.code == 'true'
