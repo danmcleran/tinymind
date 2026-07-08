@@ -1,0 +1,38 @@
+name: apt-install
+description: >
+  apt-get update + install with retries. GitHub-hosted runners intermittently
+  hit transient apt mirror/network failures (exit 100) at the install step,
+  which fail an otherwise-green job and send a false-alarm failure email. This
+  retries update+install a few times with linear backoff before giving up.
+
+inputs:
+  packages:
+    description: Space-separated list of apt packages to install.
+    required: true
+  attempts:
+    description: Maximum number of attempts before failing.
+    required: false
+    default: "5"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -uo pipefail
+        packages="${{ inputs.packages }}"
+        max="${{ inputs.attempts }}"
+        for attempt in $(seq 1 "$max"); do
+          if sudo apt-get update && sudo apt-get install -y $packages; then
+            echo "apt-install: '$packages' succeeded on attempt $attempt"
+            exit 0
+          fi
+          if [ "$attempt" -lt "$max" ]; then
+            wait=$((attempt * 10))
+            echo "apt-install: attempt $attempt/$max failed; cleaning and retrying in ${wait}s" >&2
+            sudo apt-get clean || true
+            sleep "$wait"
+          fi
+        done
+        echo "apt-install: '$packages' failed after $max attempts" >&2
+        exit 1
