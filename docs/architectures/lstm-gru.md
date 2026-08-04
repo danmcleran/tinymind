@@ -316,3 +316,53 @@ For inference-only deployment that does not need the trainable Q-format pipeline
 - `QCfCCell` — int8 closed-form continuous-time (liquid) cell. Backbone trunk + two tanh heads + a sigmoid time-gate + the `(1 - t) * ff1 + t * ff2` interpolation; the elapsed time `ts` is folded into the time-gate-A requantizer at calibration (regular-sampling deployable form). Reuses the QGRU `(1 - t) == 128 - t` sigmoid-grid identity.
 
 All are single-step cells; the caller owns the time loop and the hidden / cell state buffers. See [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) for the full int8 layer family and `buildQLSTMParams` / `buildQGRUParams` / `buildQCfCParams` host-side calibration helpers.
+
+## Calibrating an int8 Cell
+
+Every constant the device consumes is derived once on the host. You supply the float scales; the helper turns them into the integer `(multiplier, shift)` pairs the cell reads. These helpers need `TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD`, so they run in the calibration build only — the deployed binary sees integers.
+
+```cpp
+constexpr std::size_t I = 10;   // inputs
+constexpr std::size_t H = 16;   // hidden units
+
+tinymind::QLSTMScales sc;
+sc.input_scale     = 1.0f / 127.0f;   // activation grids
+sc.hidden_scale    = 1.0f / 127.0f;
+sc.cell_scale      = 4.0f / 127.0f;
+sc.lut_input_scale = 8.0f / 127.0f;   // shared pre-activation grid
+for (std::size_t g = 0; g < 4; ++g)
+{
+    // Symmetric per-gate weight scales: max |w| over the gate block / 127.
+    sc.w_input_scale    [g] = absmax(w_in  + g * H * I, H * I) / 127.0f;
+    sc.w_recurrent_scale[g] = absmax(w_rec + g * H * H, H * H) / 127.0f;
+}
+
+tinymind::QLSTMParams p;
+tinymind::buildQLSTMParams(sc, p);                    // every multiplier / shift
+
+int32_t biases_q[4 * H];
+tinymind::quantizeQLSTMBiases(bias, H, sc.lut_input_scale, biases_q);
+```
+
+Biases land directly in the LUT input scale as int32, so they add to the rescaled accumulators with no further conversion. The `(multiplier, shift)` pairs, the quantized weights, the biases, and the sigmoid / tanh tables are then assigned to the cell's fields — see the `qlstm_single_step_parity_with_float_reference` test in [`unit_test/quantization/`](https://github.com/danmcleran/tinymind/tree/master/unit_test/quantization) for the complete field-by-field wiring. `buildQGRUParams` / `quantizeQGRUBiases` are the three-gate equivalents.
+
+## int8 Cell Footprint
+
+Weights are one byte each and biases four, so the deployed size follows directly from the cell shape. For a cell with 10 inputs and 16 hidden units:
+
+| | `QLSTMCell` (4 gates) | `QGRUCell` (3 gates) |
+|---|---|---|
+| Input weights | 640 B | 480 B |
+| Recurrent weights | 1,024 B | 768 B |
+| Biases (int32) | 256 B | 192 B |
+| Sigmoid + tanh LUTs | 512 B | 512 B |
+| **Constants total** | **2,432 B** | **1,952 B** |
+| State (RAM) | 32 B | 16 B |
+| Scratch (stack) | 64 B | 64 B |
+| MACs per timestep | 1,664 | 1,248 |
+
+The LUTs are shared across every cell in the model, so a second layer adds only its own weights and biases. The GRU runs about 25% lighter on both counts — the usual reason it wins on a constrained target.
+
+Two properties are worth calling out. The per-timestep cost depends only on the cell shape, never on how many samples have already been processed: a recurrent cell is the one architecture whose inference cost does not grow with sequence length. And nothing in that table is heap — the state buffers are the caller's, and the scratch is a compile-time-sized stack array inside `forward`.
+
+Selecting the wide cell state costs `2 * NumHidden` bytes for the cell buffer instead of `NumHidden` — 32 B rather than 16 B here, taking the LSTM's total state to 48 B — and resolves the same cell dynamic range 256 times more finely. The quantization suite drives the `int16_t` variant for 256 consecutive timesteps against a float reference, asserting both a bounded drift and that no unit pins to the saturation rail.
