@@ -142,6 +142,25 @@ Per-channel scales for `QDepthwiseConv2D` are mandatory in TFLite for accuracy r
 
 Standalone single-step cells; the caller owns the time loop and the hidden / cell state buffers. The matching `buildQLSTMParams` / `buildQGRUParams` / `buildQCfCParams` host helpers turn float scales into the gate-by-gate (multiplier, shift) triples.
 
+#### Why the gate LUT output conventions are pinned
+
+Unlike every other activation grid in the library, the sigmoid and tanh **output** conventions used by the recurrent cells are `constexpr` constants in the headers rather than calibration outputs:
+
+```cpp
+static constexpr int32_t kQLstmSigmoidZeroPoint = -128;  // scale 1/256
+static constexpr int32_t kQLstmTanhZeroPoint    =    0;  // scale 1/128
+```
+
+A gate output is always consumed by an elementwise product (`f * c_prev`, `i * g`, `o * tanh(c)`, `z * h_prev`), never by another MAC. Pinning the grid means the scale of each of those products is known at compile time, so `buildQLSTMParams` derives every rescaler in closed form — `sig * tanh / cell_scale` for `i * g`, `sig * tanh / hidden_scale` for the output — instead of needing a measured activation range per product. The cell math is therefore bit-stable across calibrations.
+
+The pinned zero point also makes a gate complement exact. `QGRUCell` needs `(1 - z)`. On the sigmoid grid the centered value of `z` is `z_q - (-128) = z_q + 128`, and `1.0` is 256 units at scale `1/256`, so the centered complement falls out as a subtraction:
+
+```
+one_minus_z = 256 - (z_q + 128) = 128 - z_q
+```
+
+One subtraction, no second table, and no additional quantization error. `QCfCCell` reuses the identity for its `(1 - t)` time-gate interpolation.
+
 ### Quantized attention + FFT
 
 | Header | Layer | Notes |
