@@ -27,10 +27,13 @@ Instance sizes in bytes for XOR network configurations using `QValue<8,8,true>` 
 | Architecture | Hidden Neurons | Trainable | Non-trainable | Training Overhead |
 |---|---|---|---|---|
 | MLP (2->3->1) | 3 | 328 bytes | 144 bytes | +184 bytes (+128%) |
+| MLP (2->5->1) | 5 | 440 bytes | 200 bytes | +240 bytes (+120%) |
 | Elman RNN (2->3->1) | 3 | 472 bytes | 192 bytes | +280 bytes (+146%) |
 | LSTM (2->3->1) | 3 | 952 bytes | 384 bytes | +568 bytes (+148%) |
 | GRU (2->3->1) | 3 | 808 bytes | 336 bytes | +472 bytes (+140%) |
-| KAN (2->5->1, G=5, k=1) | 5 | 1,192 bytes | 416 bytes | +776 bytes (+187%) |
+| KAN (2->5->1, G=5, k=1) | 5 | 1,200 bytes | 416 bytes | +784 bytes (+188%) |
+
+The KAN row is a 5-neuron hidden layer, so the matched comparison is the MLP (2->5->1) row, not the 3-neuron row used for the recurrent architectures.
 
 ### Relative Size (vs MLP)
 
@@ -45,7 +48,9 @@ Instance sizes in bytes for XOR network configurations using `QValue<8,8,true>` 
 | Elman / MLP | 1.4x | 1.3x |
 | LSTM / MLP | 2.9x | 2.7x |
 | GRU / MLP | 2.5x | 2.3x |
-| KAN / MLP | 3.6x | 2.9x |
+| KAN / MLP | 2.7x | 2.1x |
+
+Each ratio is against the MLP of the same hidden width: the Elman / LSTM / GRU rows divide by MLP (2->3->1), the KAN rows by MLP (2->5->1).
 
 ### GRU vs LSTM
 
@@ -64,7 +69,7 @@ GRU uses 3 gates (update, reset, candidate) versus LSTM's 4 gates (input, forget
 - **GRU**: 3 gates (update, reset, candidate) multiply connection weights by 3x, plus recurrent state. ~20% smaller than LSTM.
 - **KAN**: Each edge stores B-spline coefficients (`GridSize + SplineDegree` = 6 per edge with G=5, k=1), plus a base weight and spline weight. Training adds gradient, delta weight, and previous delta weight for every learnable parameter.
 
-All architectures remain well under 1.2 KB in Q8.8 fixed-point even in trainable form, making them suitable for embedded deployment.
+All architectures remain under 1.25 KB in Q8.8 fixed-point even in trainable form, making them suitable for embedded deployment.
 
 ## Liquid Cells (Continuous-Time): LTC & CfC
 
