@@ -19,9 +19,9 @@ KAN can be more parameter-efficient than MLP for certain smooth, low-dimensional
 
 ## KAN on Embedded: Trading Memory for Accuracy
 
-KAN uses more memory per connection than MLP (8 parameters per edge vs 1 weight), so it is 3-4x larger for the same topology. However, KAN can sometimes approximate smooth functions with fewer neurons than an equivalent MLP, potentially offsetting the per-edge cost.
+KAN uses more memory per connection than MLP (8 parameters per edge vs 1 weight at `GridSize=5, SplineDegree=1`), so at the *same* topology it is roughly 2.7x larger trainable and 2.1x larger inference-only. It is not 8x, because both networks carry the same neuron and layer scaffolding. KAN can sometimes approximate smooth functions with fewer neurons than an equivalent MLP, offsetting part of the per-edge cost.
 
-Even at its largest, a trainable KAN (2->5->1) in Q8.8 fixed-point is 1,192 bytes -- still well within reach for any ARM Cortex-M class device. For inference-only deployment (`IsTrainable=false`), this drops to 416 bytes.
+A trainable KAN (2->5->1) in Q8.8 fixed-point is 1,200 bytes -- well within reach for any ARM Cortex-M class device. For inference-only deployment (`IsTrainable=false`), this drops to 416 bytes.
 
 For fixed-point targets, always use `SplineDegree=1` (piecewise linear). Higher-degree polynomials involve multi-step intermediate computations that risk overflow in Q-format arithmetic.
 
@@ -108,14 +108,19 @@ Source code: [examples/kan_xor/](https://github.com/danmcleran/tinymind/tree/mas
 ## Network Definition
 
 ```cpp
-typedef tinymind::QValue<8, 8, true> ValueType;
+// Q16.16: KAN training needs more range and precision than Q8.8 provides.
+// With 8 learnable parameters per edge accumulating gradients, Q8.8 saturates
+// and fails to converge. Inference has no gradients to accumulate, so a
+// deployed (IsTrainable=false) network can drop back to Q8.8.
+typedef tinymind::QValue<16, 16, true> ValueType;
 
 static const size_t GRID_SIZE = 5;
 static const size_t SPLINE_DEGREE = 1; // piecewise linear -- best for fixed-point
 
 typedef tinymind::KanTransferFunctions<ValueType,
                                        RandomNumberGenerator,
-                                       1> TransferFunctionsType;
+                                       1,
+                                       KanNetworkInitializer> TransferFunctionsType;
 
 typedef tinymind::KolmogorovArnoldNetwork<ValueType,
                                           2,             // inputs
@@ -128,6 +133,8 @@ typedef tinymind::KolmogorovArnoldNetwork<ValueType,
                                           GRID_SIZE,
                                           SPLINE_DEGREE> KanNetworkType;
 ```
+
+`KanNetworkInitializer` is a custom network initializer supplying a lower learning rate (~0.03125), momentum (~0.0625), and acceleration than the MLP defaults. A KAN edge has 8 learnable parameters instead of 1, and the default rates drive it to diverge.
 
 ## Training Loop
 
@@ -157,20 +164,29 @@ for (unsigned i = 0; i < 20000; ++i)
 
 ```bash
 cd examples/kan_xor
-make        # debug build
-make release # optimized build
-cd output
-./kan_xor
+make          # debug build
+make release  # optimized build
+make run      # runs the corner-trained and --dense variants, writes CSVs
+make plot     # renders the learning curve
 ```
+
+`make run` executes both modes. The default trains on the four crisp XOR corners; `--dense` samples the whole `[0,1]^2` input region and labels by the XOR of the two halves, which constrains the splines everywhere and yields a smooth decision surface. Average error falls from ~0.38 at iteration 100 to ~0.004 at iteration 20,000.
 
 # Size Comparison: KAN vs MLP
 
-| | MLP [2]->[3]->[1] | KAN [2]->[5]->[1] G=5 k=1 |
+Matched topology, `sizeof` of the whole network object. The KAN is `GridSize=5, SplineDegree=1`.
+
+| | MLP [2]->[5]->[1] | KAN [2]->[5]->[1] G=5 k=1 |
 |---|---|---|
-| Trainable (Q8.8) | 328 bytes | 1,192 bytes |
-| Non-trainable (Q8.8) | 144 bytes | 416 bytes |
+| Trainable (Q8.8) | 440 bytes | 1,200 bytes |
+| Non-trainable (Q8.8) | 200 bytes | 416 bytes |
+| Trainable (Q16.16) | 632 bytes | 2,200 bytes |
+| Non-trainable (Q16.16) | 224 bytes | 696 bytes |
 | Trainable (double) | 1,008 bytes | 4,208 bytes |
+| Non-trainable (double) | 360 bytes | 1,256 bytes |
 | Parameters per edge | 1 scalar weight | 8 (6 coefficients + w_b + w_s) |
+
+Trainable storage is roughly 3x inference storage: `TrainableKanConnection` adds a gradient, a delta weight, and a previous delta weight for *every* learnable parameter. Setting `IsTrainable=false` drops all of it.
 
 # Weight Import/Export
 
