@@ -75,6 +75,7 @@ These layers sit outside the neural network template and can be chained into pip
 - **`conv2d.hpp`** — 2D convolution for spectrograms/images, NHWC layout, VALID padding.
 - **`depthwiseconv2d.hpp`** / **`pointwiseconv2d.hpp`** — MobileNet-style depthwise-separable blocks.
 - **`pool2d.hpp`** — `MaxPool2D`, `AvgPool2D`, and `GlobalAvgPool2D` (GAP replaces the big flatten-to-dense matrix).
+- **`anfis.hpp`** — Adaptive Neuro-Fuzzy Inference System (Takagi-Sugeno), inference only. `Anfis<ValueType, NumberOfInputs, NumberOfMembershipFunctionsPerInput, NumberOfRules, MembershipFunctionPolicy, FirstOrderConsequent, NumberOfOutputs>` plus four membership-function policies (`Triangular`, `Trapezoidal`, `GeneralizedBell`, `Gaussian`) and `AnfisFullGridRuleTable`. Rule base is an explicit `uint8_t` antecedent table (supports offline pruning + don't-care antecedents), not an implicit `M^N` grid. Triangular / trapezoidal / bell are arithmetic-only and hold at `FLOAT=0`/`STD=0`; the Gaussian rides the integer exp LUT. Training (hybrid least-squares + gradient descent) is host-side only.
 - **`selfattention1d.hpp`** — Linear self-attention layer using ReLU kernel feature map (no softmax). O(N*D*P + N*P^2) complexity. Supports both float and Q-format.
 - **`fft1d.hpp`** — Radix-2 decimation-in-time FFT with compile-time bit-reversal tables and scaled butterfly stages. Twiddle factors injected externally for Q-format compatibility.
 - **`batchnorm.hpp`** — Batch normalization with training/inference modes.

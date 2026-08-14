@@ -61,6 +61,7 @@ TINYMIND_DISABLE_WARNING_POP
 #include "binarylayer.hpp"
 #include "ternarylayer.hpp"
 #include "selfattention1d.hpp"
+#include "anfis.hpp"
 #include "moe.hpp"
 #include "fft1d.hpp"
 #include "networkStats.hpp"
@@ -4935,6 +4936,351 @@ BOOST_AUTO_TEST_CASE(test_case_upsample_linear1d_fixed_point)
     BOOST_TEST(output[1].getValue() == ValueType(4, 0).getValue()); // midpoint
     BOOST_TEST(output[2].getValue() == ValueType(6, 0).getValue()); // node
     BOOST_TEST(output[3].getValue() == ValueType(6, 0).getValue()); // tail clamp
+}
+
+// ============================================================
+// ANFIS membership function tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_triangular_membership_function)
+{
+    typedef tinymind::TriangularMembershipFunction<double> MfType;
+
+    static_assert(MfType::NumberOfParameters == 3, "Triangle takes {a, b, c}");
+
+    const double parameters[3] = {0.0, 1.0, 2.0};
+
+    BOOST_TEST(fabs(MfType::evaluate(parameters, -1.0) - 0.0) < 0.001); // left of support
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 0.0) - 0.0) < 0.001);  // left foot
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 0.25) - 0.25) < 0.001);
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 1.0) - 1.0) < 0.001);  // peak
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 1.5) - 0.5) < 0.001);
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 2.0) - 0.0) < 0.001);  // right foot
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 9.0) - 0.0) < 0.001);  // right of support
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_triangular_shoulders)
+{
+    // a == b is a left shoulder, b == c a right shoulder. Neither may divide
+    // by zero: the degenerate side is unreachable from inside the support.
+    typedef tinymind::TriangularMembershipFunction<double> MfType;
+
+    const double leftShoulder[3] = {0.0, 0.0, 2.0};
+    BOOST_TEST(fabs(MfType::evaluate(leftShoulder, 1.0) - 0.5) < 0.001);
+    BOOST_TEST(fabs(MfType::evaluate(leftShoulder, 0.0) - 0.0) < 0.001);
+
+    const double rightShoulder[3] = {0.0, 2.0, 2.0};
+    BOOST_TEST(fabs(MfType::evaluate(rightShoulder, 1.0) - 0.5) < 0.001);
+    BOOST_TEST(fabs(MfType::evaluate(rightShoulder, 2.0) - 0.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_trapezoidal_membership_function)
+{
+    typedef tinymind::TrapezoidalMembershipFunction<double> MfType;
+
+    static_assert(MfType::NumberOfParameters == 4, "Trapezoid takes {a, b, c, d}");
+
+    const double parameters[4] = {0.0, 1.0, 3.0, 4.0};
+
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 0.0) - 0.0) < 0.001);
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 0.5) - 0.5) < 0.001);
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 1.0) - 1.0) < 0.001); // plateau start
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 2.0) - 1.0) < 0.001);
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 3.0) - 1.0) < 0.001); // plateau end
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 3.5) - 0.5) < 0.001);
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 4.0) - 0.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_generalized_bell_membership_function)
+{
+    // mu = 1 / (1 + (((x - c) / a)^2)^BellExponent)
+    typedef tinymind::GeneralizedBellMembershipFunction<double, 1> Bell1Type;
+    typedef tinymind::GeneralizedBellMembershipFunction<double, 2> Bell2Type;
+
+    static_assert(Bell1Type::NumberOfParameters == 2, "Bell takes {a, c}");
+
+    const double parameters[2] = {1.0, 0.0}; // width 1, centered at 0
+
+    BOOST_TEST(fabs(Bell1Type::evaluate(parameters, 0.0) - 1.0) < 0.001);
+    BOOST_TEST(fabs(Bell1Type::evaluate(parameters, 1.0) - 0.5) < 0.001);  // the half-width point
+    BOOST_TEST(fabs(Bell2Type::evaluate(parameters, 1.0) - 0.5) < 0.001);  // b does not move it
+    BOOST_TEST(fabs(Bell2Type::evaluate(parameters, 0.5) - (1.0 / 1.0625)) < 0.001);
+
+    // t >= 64 is reported as 0 so a narrow Q format cannot overflow.
+    BOOST_TEST(fabs(Bell1Type::evaluate(parameters, 100.0) - 0.0) < 0.001);
+
+    // a == 0 degenerates to an impulse rather than dividing by zero.
+    const double impulse[2] = {0.0, 3.0};
+    BOOST_TEST(fabs(Bell1Type::evaluate(impulse, 3.0) - 1.0) < 0.001);
+    BOOST_TEST(fabs(Bell1Type::evaluate(impulse, 3.5) - 0.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_gaussian_membership_function)
+{
+    // Parameters are {c, sigma, 1/sigma}; the reciprocal is precomputed so the
+    // inference path carries no divide.
+    typedef tinymind::GaussianMembershipFunction<double> MfType;
+
+    static_assert(MfType::NumberOfParameters == 3, "Gaussian takes {c, sigma, 1/sigma}");
+
+    const double parameters[3] = {0.0, 1.0, 1.0};
+
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 0.0) - 1.0) < 0.001);
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 1.0) - exp(-0.5)) < 0.001);
+    BOOST_TEST(fabs(MfType::evaluate(parameters, -1.0) - exp(-0.5)) < 0.001); // symmetric
+    BOOST_TEST(fabs(MfType::evaluate(parameters, 4.0) - 0.0) < 0.001);        // hard cut at 4 sigma
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_gaussian_membership_function_fixed_point)
+{
+    // The Q-format Gaussian rides the integer exp lookup table, so it needs no
+    // FPU. It must track the float form closely.
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::GaussianMembershipFunction<ValueType> MfType;
+
+    const ValueType parameters[3] = {ValueType(0, 0), ValueType(1, 0), ValueType(1, 0)};
+
+    const ValueType mu = MfType::evaluate(parameters, ValueType(1, 0));
+    const double muAsDouble = static_cast<double>(mu.getValue()) / 65536.0;
+    BOOST_TEST(fabs(muAsDouble - exp(-0.5)) < 0.01);
+
+    const ValueType far = MfType::evaluate(parameters, ValueType(5, 0));
+    BOOST_TEST(far.getValue() == 0);
+}
+
+// ============================================================
+// ANFIS rule table tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_full_grid_rule_table)
+{
+    typedef tinymind::AnfisFullGridRuleTable<2, 3> GridType;
+
+    static_assert(GridType::NumberOfRules == 9, "3^2 == 9");
+    static_assert(GridType::RuleTableSize == 18, "9 rules * 2 inputs");
+
+    uint8_t ruleTable[GridType::RuleTableSize];
+    GridType::generate(ruleTable);
+
+    // Odometer order: the last input varies fastest.
+    const uint8_t expected[18] = {0, 0,  0, 1,  0, 2,
+                                  1, 0,  1, 1,  1, 2,
+                                  2, 0,  2, 1,  2, 2};
+    for (size_t i = 0; i < GridType::RuleTableSize; ++i)
+    {
+        BOOST_TEST(ruleTable[i] == expected[i]);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_full_grid_rule_count_explodes)
+{
+    // The reason the rule base is an explicit table and not an implicit grid.
+    static_assert(tinymind::AnfisFullGridRuleTable<4, 3>::NumberOfRules == 81, "3^4");
+    static_assert(tinymind::AnfisFullGridRuleTable<8, 3>::NumberOfRules == 6561, "3^8");
+    BOOST_TEST(true);
+}
+
+// ============================================================
+// ANFIS inference tests
+// ============================================================
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_zeroth_order_inference)
+{
+    // One input, two triangles crossing at 0.5, constant consequents 10 and 20.
+    // Both rules fire at 0.5 -> the output is the midpoint.
+    typedef tinymind::TriangularMembershipFunction<double> MfType;
+    typedef tinymind::Anfis<double, 1, 2, 2, MfType, false, 1> AnfisType;
+
+    static_assert(AnfisType::NumberOfPremiseParameters == 6, "2 MFs * 3 parameters");
+    static_assert(AnfisType::NumberOfConsequentParametersPerRule == 1, "Zeroth order is a constant");
+    static_assert(AnfisType::NumberOfConsequentParameters == 2, "2 rules * 1 output * 1 parameter");
+
+    const double premise[AnfisType::NumberOfPremiseParameters] = {-1.0, 0.0, 1.0,
+                                                                   0.0, 1.0, 2.0};
+    const uint8_t ruleTable[AnfisType::RuleTableSize] = {0, 1};
+    const double consequent[AnfisType::NumberOfConsequentParameters] = {10.0, 20.0};
+
+    AnfisType anfis(premise, ruleTable, consequent);
+
+    double input[1] = {0.5};
+    double output[1];
+    anfis.forward(input, output);
+
+    BOOST_TEST(fabs(output[0] - 15.0) < 0.001);
+    BOOST_TEST(fabs(anfis.getNormalizedFiringStrength(0) - 0.5) < 0.001);
+    BOOST_TEST(fabs(anfis.getNormalizedFiringStrength(1) - 0.5) < 0.001);
+
+    // Sitting on a peak makes that rule the only one that fires.
+    input[0] = 0.0;
+    anfis.forward(input, output);
+    BOOST_TEST(fabs(output[0] - 10.0) < 0.001);
+    BOOST_TEST(fabs(anfis.getNormalizedFiringStrength(0) - 1.0) < 0.001);
+    BOOST_TEST(anfis.getDominantRule() == 0);
+
+    input[0] = 1.0;
+    anfis.forward(input, output);
+    BOOST_TEST(fabs(output[0] - 20.0) < 0.001);
+    BOOST_TEST(anfis.getDominantRule() == 1);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_first_order_inference)
+{
+    // Two inputs, two triangles each, the full 2x2 grid, linear consequents.
+    typedef tinymind::TriangularMembershipFunction<double> MfType;
+    typedef tinymind::AnfisFullGridRuleTable<2, 2> GridType;
+    typedef tinymind::Anfis<double, 2, 2, GridType::NumberOfRules, MfType, true, 1> AnfisType;
+
+    static_assert(AnfisType::NumberOfConsequentParametersPerRule == 3, "2 coefficients + 1 constant");
+
+    uint8_t ruleTable[GridType::RuleTableSize];
+    GridType::generate(ruleTable);
+
+    const double premise[AnfisType::NumberOfPremiseParameters] = {
+        -1.0, 0.0, 1.0,   0.0, 1.0, 2.0,   // input 0
+        -1.0, 0.0, 1.0,   0.0, 1.0, 2.0};  // input 1
+
+    // f_r = p0 * x0 + p1 * x1 + q
+    const double consequent[AnfisType::NumberOfConsequentParameters] = {
+        1.0, 0.0, 0.0,   // rule 0: x0
+        0.0, 1.0, 0.0,   // rule 1: x1
+        0.0, 0.0, 5.0,   // rule 2: 5
+        1.0, 1.0, 1.0};  // rule 3: x0 + x1 + 1
+
+    AnfisType anfis(premise, ruleTable, consequent);
+
+    double input[2] = {0.5, 0.5};
+    double output[1];
+    anfis.forward(input, output);
+
+    // Every grade is 0.5, so every firing strength is 0.25 and the total is 1.
+    // f = [0.5, 0.5, 5.0, 2.0] -> y = 0.25 * 8.0 = 2.0
+    BOOST_TEST(fabs(anfis.getTotalFiringStrength() - 1.0) < 0.001);
+    BOOST_TEST(fabs(output[0] - 2.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_multiple_outputs_share_the_premise)
+{
+    // Two outputs off one premise layer: the membership grades and firing
+    // strengths are computed once and reused.
+    typedef tinymind::TriangularMembershipFunction<double> MfType;
+    typedef tinymind::Anfis<double, 1, 2, 2, MfType, false, 2> AnfisType;
+
+    static_assert(AnfisType::NumberOfConsequentParameters == 4, "2 rules * 2 outputs * 1 parameter");
+
+    const double premise[AnfisType::NumberOfPremiseParameters] = {-1.0, 0.0, 1.0,
+                                                                   0.0, 1.0, 2.0};
+    const uint8_t ruleTable[AnfisType::RuleTableSize] = {0, 1};
+    // [rule][output]
+    const double consequent[AnfisType::NumberOfConsequentParameters] = {10.0, -1.0,
+                                                                        20.0,  1.0};
+
+    AnfisType anfis(premise, ruleTable, consequent);
+
+    double input[1] = {0.5};
+    double output[2];
+    anfis.forward(input, output);
+
+    BOOST_TEST(fabs(output[0] - 15.0) < 0.001);
+    BOOST_TEST(fabs(output[1] - 0.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_dont_care_antecedent)
+{
+    // A pruned rule ignores an input entirely: the antecedent contributes a
+    // grade of 1 no matter how far outside every membership function it sits.
+    typedef tinymind::TriangularMembershipFunction<double> MfType;
+    typedef tinymind::Anfis<double, 2, 2, 1, MfType, false, 1> AnfisType;
+
+    const double premise[AnfisType::NumberOfPremiseParameters] = {
+        -1.0, 0.0, 1.0,   0.0, 1.0, 2.0,
+        -1.0, 0.0, 1.0,   0.0, 1.0, 2.0};
+    const uint8_t ruleTable[AnfisType::RuleTableSize] = {0, AnfisType::DontCareIndex};
+    const double consequent[AnfisType::NumberOfConsequentParameters] = {7.0};
+
+    AnfisType anfis(premise, ruleTable, consequent);
+
+    double input[2] = {0.5, 99.0}; // input 1 is outside every membership function
+    double output[1];
+    anfis.forward(input, output);
+
+    BOOST_TEST(fabs(anfis.getFiringStrength(0) - 0.5) < 0.001); // grade of input 0 alone
+    BOOST_TEST(fabs(output[0] - 7.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_no_rule_fires)
+{
+    // Outside the support of every membership function nothing fires. The
+    // output must be zeroed without attempting a divide by zero.
+    typedef tinymind::TriangularMembershipFunction<double> MfType;
+    typedef tinymind::Anfis<double, 1, 1, 1, MfType, false, 1> AnfisType;
+
+    const double premise[AnfisType::NumberOfPremiseParameters] = {-1.0, 0.0, 1.0};
+    const uint8_t ruleTable[AnfisType::RuleTableSize] = {0};
+    const double consequent[AnfisType::NumberOfConsequentParameters] = {42.0};
+
+    AnfisType anfis(premise, ruleTable, consequent);
+
+    double input[1] = {5.0};
+    double output[1] = {123.0};
+    anfis.forward(input, output);
+
+    BOOST_TEST(fabs(output[0] - 0.0) < 0.001);
+    BOOST_TEST(fabs(anfis.getTotalFiringStrength() - 0.0) < 0.001);
+    BOOST_TEST(fabs(anfis.getNormalizedFiringStrength(0) - 0.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_partition_of_unity)
+{
+    // Two triangles that sum to 1 across the crossover region make a
+    // zeroth-order ANFIS interpolate linearly between its two consequents.
+    typedef tinymind::TriangularMembershipFunction<double> MfType;
+    typedef tinymind::Anfis<double, 1, 2, 2, MfType, false, 1> AnfisType;
+
+    const double premise[AnfisType::NumberOfPremiseParameters] = {-1.0, 0.0, 1.0,
+                                                                   0.0, 1.0, 2.0};
+    const uint8_t ruleTable[AnfisType::RuleTableSize] = {0, 1};
+    const double consequent[AnfisType::NumberOfConsequentParameters] = {0.0, 10.0};
+
+    AnfisType anfis(premise, ruleTable, consequent);
+
+    for (size_t step = 1; step < 10; ++step)
+    {
+        const double x = static_cast<double>(step) / 10.0;
+        double input[1] = {x};
+        double output[1];
+        anfis.forward(input, output);
+
+        BOOST_TEST(fabs(anfis.getTotalFiringStrength() - 1.0) < 0.001);
+        BOOST_TEST(fabs(output[0] - (10.0 * x)) < 0.001);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_fixed_point_inference)
+{
+    // Q16.16 is the recommended deployment format: the fused
+    // sum(w * f) / sum(w) defuzzification needs headroom for the weighted sum.
+    typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+    typedef tinymind::TriangularMembershipFunction<ValueType> MfType;
+    typedef tinymind::Anfis<ValueType, 1, 2, 2, MfType, false, 1> AnfisType;
+
+    const ValueType premise[AnfisType::NumberOfPremiseParameters] = {
+        ValueType(-1, 0), ValueType(0, 0), ValueType(1, 0),
+        ValueType(0, 0),  ValueType(1, 0), ValueType(2, 0)};
+    const uint8_t ruleTable[AnfisType::RuleTableSize] = {0, 1};
+    const ValueType consequent[AnfisType::NumberOfConsequentParameters] = {ValueType(10, 0),
+                                                                           ValueType(20, 0)};
+
+    AnfisType anfis(premise, ruleTable, consequent);
+
+    ValueType input[1] = {ValueType(0, 1u << 15)}; // 0.5
+    ValueType output[1];
+    anfis.forward(input, output);
+
+    BOOST_TEST(output[0].getValue() == ValueType(15, 0).getValue());
+
+    input[0] = ValueType(1, 0);
+    anfis.forward(input, output);
+    BOOST_TEST(output[0].getValue() == ValueType(20, 0).getValue());
 }
 
 // ============================================================

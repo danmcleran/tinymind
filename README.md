@@ -28,6 +28,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **Linear self-attention** (`SelfAttention1D`) using ReLU kernel feature map -- O(N*P^2) instead of O(N^2*D), no softmax/exp required, works with Q-format fixed-point
 - **FFT layer** (`FFT1D`) with radix-2 decimation-in-time, compile-time bit-reversal tables, and scaled butterfly stages for fixed-point overflow prevention -- frequency-domain feature extraction for signal processing pipelines
 - **Kolmogorov-Arnold Networks (KAN)** with learnable B-spline activation functions on edges
+- **Neuro-fuzzy inference** (`Anfis`) -- Takagi-Sugeno ANFIS with triangular / trapezoidal / generalized-bell / Gaussian membership functions, an explicit prunable rule table, and readable per-rule firing strengths; inference only, one divide per output
 - **Recurrent neural networks** (Elman) with configurable recurrent connection depth
 - **LSTM networks** with gated cell state, supporting single and multi-layer configurations
 - **GRU networks** (Gated Recurrent Unit) with 3-gate architecture -- ~25% less memory than LSTM per hidden neuron
@@ -63,6 +64,17 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - SiLU activation reuses existing sigmoid lookup tables -- no new tables needed
 - Supports both training and inference-only modes via `IsTrainable` template parameter
 - Same user-facing API as `MultilayerPerceptron`: `feedForward`, `trainNetwork`, `calculateError`, `getLearnedValues`
+
+### Neuro-Fuzzy Inference (ANFIS)
+
+- Takagi-Sugeno ANFIS (Jang, 1993) as a standalone composable layer -- five feed-forward stages, no state between calls, no dynamic allocation, data-independent latency
+- Membership function policies: `TriangularMembershipFunction`, `TrapezoidalMembershipFunction`, `GeneralizedBellMembershipFunction` (compile-time exponent, so no `pow()`), `GaussianMembershipFunction` (rides the integer exp lookup table)
+- The first three are arithmetic-only and hold at `TINYMIND_ENABLE_FLOAT=0` / `TINYMIND_ENABLE_STD=0`
+- Zeroth-order (constant) and first-order (linear) consequents, with multiple outputs sharing one premise layer
+- Rule base is an explicit `uint8_t` antecedent table, so an offline pruning pass can ship only the rules that carry weight; `AnfisFullGridRuleTable` fills a full `M^N` grid when that is what is wanted, and a `DontCareIndex` antecedent drops an input from a rule
+- Normalization and defuzzification fused into one divide per output -- faster and far more accurate in a narrow Q format than a per-rule reciprocal
+- Per-rule firing strengths survive the call: ask which rules explain a given output
+- Inference only -- the hybrid least-squares/gradient-descent fit belongs on a host, as with the rest of the deployment path
 
 ### Forward-Mode Autodiff (Physics-Informed Neural Networks)
 
@@ -569,6 +581,39 @@ tinymind::FFT1D<double, N>::magnitudeSquared(real, imag, magSq);
 classifier.feedForward(magSq);
 ```
 
+### ANFIS (Neuro-Fuzzy Control)
+
+```cpp
+#include "anfis.hpp"
+
+// 2 inputs (error, error rate), 3 triangular membership functions each
+// ("negative", "zero", "positive"), the full 9-rule grid, linear consequents.
+typedef tinymind::TriangularMembershipFunction<double> MfType;
+typedef tinymind::AnfisFullGridRuleTable<2, 3> GridType;
+typedef tinymind::Anfis<double, 2, 3, GridType::NumberOfRules, MfType, true, 1> AnfisType;
+
+// Premise parameters: [input][membershipFunction]{a, b, c}
+const double premise[AnfisType::NumberOfPremiseParameters] = {
+    -2.0, -1.0,  0.0,   -1.0, 0.0, 1.0,   0.0, 1.0, 2.0,   // error
+    -2.0, -1.0,  0.0,   -1.0, 0.0, 1.0,   0.0, 1.0, 2.0};  // error rate
+
+uint8_t ruleTable[GridType::RuleTableSize];
+GridType::generate(ruleTable);   // or ship a pruned table from the host
+
+// Consequent parameters: [rule][output]{p0, p1, q} -- learned offline
+const double consequent[AnfisType::NumberOfConsequentParameters] = { /* 9 * 3 */ };
+
+AnfisType anfis(premise, ruleTable, consequent);
+
+double input[2] = {error, errorRate};
+double output[1];
+anfis.forward(input, output);
+
+// Why did it say that? Read the rule base back.
+const size_t rule = anfis.getDominantRule();
+const double share = anfis.getNormalizedFiringStrength(rule);
+```
+
 ### Binary Dense Layer (Multiplication-Free)
 
 ```cpp
@@ -746,6 +791,7 @@ double u_value = u<double>(x0, t0);
 | Binary Dense | `BinaryDense` | XNOR+popcount dense layer with 1-bit packed weights |
 | Ternary Dense | `TernaryDense` | Multiply-free dense layer with 2-bit packed {-1,0,+1} weights |
 | KAN | `KolmogorovArnoldNetwork` | Learnable B-spline activations on edges |
+| ANFIS | `Anfis` | Takagi-Sugeno neuro-fuzzy inference with a prunable rule table |
 | Elman RNN | `ElmanNeuralNetwork` | Simple recurrent with depth-1 feedback |
 | Recurrent | `RecurrentNeuralNetwork` | Configurable recurrent connection depth |
 | LSTM | `LstmNeuralNetwork` | Long Short-Term Memory with 4 gates |
@@ -940,6 +986,7 @@ tinymind/
     pool1d.hpp                  # MaxPool1D and AvgPool1D layers
     pool2d.hpp                  # MaxPool2D, AvgPool2D, GlobalAvgPool2D
     selfattention1d.hpp         # Linear self-attention layer
+    anfis.hpp                   # Takagi-Sugeno ANFIS + membership function policies
     fft1d.hpp                   # Radix-2 FFT with compile-time bit-reversal tables
     batchnorm.hpp               # Batch normalization (training/inference)
     binarylayer.hpp             # Binary neural network layer (XNOR+popcount)
@@ -1034,7 +1081,7 @@ tinymind/
     import_demo/                # End-to-end Phase 15 importer (3-8-4-2 MLP, three observers + CLE)
     perf_matrix/                # SIMD gate bench (CSV per backend, invariant output_checksum)
   unit_test/
-    nn/                         # Neural network tests (171 test cases)
+    nn/                         # Neural network tests (249 test cases)
     kan/                        # KAN tests (16 test cases)
     qformat/                    # Fixed-point type tests (static_assert)
     qlearn/                     # Q-learning tests
