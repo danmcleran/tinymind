@@ -68,6 +68,7 @@
 #include "binarylayer.hpp"
 #include "ternarylayer.hpp"
 #include "selfattention1d.hpp"
+#include "anfis.hpp"
 #include "fft1d.hpp"
 #include "adam.hpp"
 #include "rmsprop.hpp"
@@ -141,6 +142,20 @@ typedef tinymind::BatchNorm1D<Q88, 4> BnType;
 typedef tinymind::Dropout<Q88, 4, 25> DropType;
 typedef tinymind::SelfAttention1D<Q88, 4, 4, 4> AttType;
 
+// Takagi-Sugeno ANFIS. Triangular and generalized-bell membership functions
+// are arithmetic-only (compare, subtract, multiply, divide), so both must hold
+// at FLOAT=0 / STD=0. The Gaussian membership function is deliberately not
+// instantiated here: it rides the exp lookup table and therefore needs the
+// matching TINYMIND_USE_EXP_<F>_<Fr> build macro, which a freestanding target
+// need not define.
+typedef tinymind::TriangularMembershipFunction<Q88> AnfisTriangleType;
+typedef tinymind::GeneralizedBellMembershipFunction<Q88, 2> AnfisBellType;
+typedef tinymind::AnfisFullGridRuleTable<2, 2> AnfisGridType;
+typedef tinymind::Anfis<Q88, 2, 2, AnfisGridType::NumberOfRules,
+                        AnfisTriangleType, true, 1> AnfisFirstOrderType;
+typedef tinymind::Anfis<Q88, 2, 2, AnfisGridType::NumberOfRules,
+                        AnfisBellType, false, 2> AnfisZerothOrderType;
+
 Q88 input1d[16];
 Q88 conv1Out[Conv1Type::OutputSize];
 Q88 pool1Out[Pool1Type::OutputSize];
@@ -172,12 +187,60 @@ BnType    gBn;
 DropType  gDrop;
 AttType   gAtt;
 
+const Q88 anfisTrianglePremise[AnfisFirstOrderType::NumberOfPremiseParameters] = {
+    Q88(-1, 0), Q88(0, 0), Q88(1, 0),   Q88(0, 0), Q88(1, 0), Q88(2, 0),  // input 0
+    Q88(-1, 0), Q88(0, 0), Q88(1, 0),   Q88(0, 0), Q88(1, 0), Q88(2, 0)}; // input 1
+const Q88 anfisBellPremise[AnfisZerothOrderType::NumberOfPremiseParameters] = {
+    Q88(1, 0), Q88(0, 0),   Q88(1, 0), Q88(1, 0),   // input 0: {a, c}
+    Q88(1, 0), Q88(0, 0),   Q88(1, 0), Q88(1, 0)};  // input 1: {a, c}
+const Q88 anfisFirstOrderConsequent[AnfisFirstOrderType::NumberOfConsequentParameters] = {
+    Q88(1, 0), Q88(0, 0), Q88(0, 0),
+    Q88(0, 0), Q88(1, 0), Q88(0, 0),
+    Q88(0, 0), Q88(0, 0), Q88(5, 0),
+    Q88(1, 0), Q88(1, 0), Q88(1, 0)};
+const Q88 anfisZerothOrderConsequent[AnfisZerothOrderType::NumberOfConsequentParameters] = {
+    Q88(1, 0), Q88(-1, 0),
+    Q88(2, 0), Q88(-2, 0),
+    Q88(3, 0), Q88(-3, 0),
+    Q88(4, 0), Q88(-4, 0)};
+
+uint8_t anfisRuleTable[AnfisGridType::RuleTableSize];
+Q88 anfisFirstOrderOut[AnfisFirstOrderType::OutputSize];
+Q88 anfisZerothOrderOut[AnfisZerothOrderType::OutputSize];
+
 void clearTo(Q88* p, size_t n, int v)
 {
     for (size_t i = 0; i < n; ++i)
     {
         p[i] = Q88(v, 0);
     }
+}
+
+// Exercise the ANFIS inference path. Builds a full-grid rule table, then runs
+// both a first-order (linear) and a zeroth-order (constant) Takagi-Sugeno
+// consequent. Neither must touch float or the stdlib.
+bool exerciseAnfis()
+{
+    AnfisGridType::generate(anfisRuleTable);
+
+    AnfisFirstOrderType firstOrder(anfisTrianglePremise, anfisRuleTable, anfisFirstOrderConsequent);
+    AnfisZerothOrderType zerothOrder(anfisBellPremise, anfisRuleTable, anfisZerothOrderConsequent);
+
+    Q88 anfisIn[2];
+    anfisIn[0] = Q88(0, 1u << 7); // 0.5
+    anfisIn[1] = Q88(0, 1u << 7);
+
+    firstOrder.forward(anfisIn, anfisFirstOrderOut);
+    zerothOrder.forward(anfisIn, anfisZerothOrderOut);
+
+    // Every triangle grade is 0.5 here, so all four rules fire and the total
+    // firing strength is 1. The bell membership functions never reach exactly
+    // zero, so that system fires everywhere too.
+    return (firstOrder.getTotalFiringStrength() != Q88(0, 0)) &&
+           (zerothOrder.getTotalFiringStrength() != Q88(0, 0)) &&
+           (firstOrder.getDominantRule() < AnfisGridType::NumberOfRules) &&
+           (anfisFirstOrderOut[0] == anfisFirstOrderOut[0]) &&
+           (anfisZerothOrderOut[1] == anfisZerothOrderOut[1]);
 }
 
 // Exercise the QValue path of nnproperties' generic ValueParser /
@@ -920,6 +983,7 @@ int main()
     bool ok = (v.getValue() != 0) && (gapOut[0] == gapOut[0]);
 
     ok = ok && exerciseDual();
+    ok = ok && exerciseAnfis();
 
 #if TINYMIND_ENABLE_QUANTIZATION
     ok = ok && exerciseQuantPipeline();
