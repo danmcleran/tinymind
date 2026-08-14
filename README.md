@@ -1081,7 +1081,7 @@ tinymind/
     import_demo/                # End-to-end Phase 15 importer (3-8-4-2 MLP, three observers + CLE)
     perf_matrix/                # SIMD gate bench (CSV per backend, invariant output_checksum)
   unit_test/
-    nn/                         # Neural network tests (249 test cases)
+    nn/                         # Neural network tests (250 test cases)
     kan/                        # KAN tests (16 test cases)
     qformat/                    # Fixed-point type tests (static_assert)
     qlearn/                     # Q-learning tests

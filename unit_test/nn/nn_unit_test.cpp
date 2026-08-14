@@ -5006,8 +5006,11 @@ BOOST_AUTO_TEST_CASE(test_case_anfis_generalized_bell_membership_function)
     BOOST_TEST(fabs(Bell2Type::evaluate(parameters, 1.0) - 0.5) < 0.001);  // b does not move it
     BOOST_TEST(fabs(Bell2Type::evaluate(parameters, 0.5) - (1.0 / 1.0625)) < 0.001);
 
-    // t >= 64 is reported as 0 so a narrow Q format cannot overflow.
+    // t >= 64 is reported as 0 so a narrow Q format cannot overflow. The clamp
+    // sits both before the exponent loop (t itself is already over) and inside
+    // it (t is under, but t^BellExponent is not: t = 9 -> t^2 = 81).
     BOOST_TEST(fabs(Bell1Type::evaluate(parameters, 100.0) - 0.0) < 0.001);
+    BOOST_TEST(fabs(Bell2Type::evaluate(parameters, 3.0) - 0.0) < 0.001);
 
     // a == 0 degenerates to an impulse rather than dividing by zero.
     const double impulse[2] = {0.0, 3.0};
@@ -5227,6 +5230,34 @@ BOOST_AUTO_TEST_CASE(test_case_anfis_no_rule_fires)
     BOOST_TEST(fabs(output[0] - 0.0) < 0.001);
     BOOST_TEST(fabs(anfis.getTotalFiringStrength() - 0.0) < 0.001);
     BOOST_TEST(fabs(anfis.getNormalizedFiringStrength(0) - 0.0) < 0.001);
+
+    // Back inside the support the same system produces its consequent again:
+    // the dead path must not be sticky.
+    input[0] = 0.0;
+    anfis.forward(input, output);
+    BOOST_TEST(fabs(output[0] - 42.0) < 0.001);
+    BOOST_TEST(fabs(anfis.getTotalFiringStrength() - 1.0) < 0.001);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_anfis_membership_grades_are_readable)
+{
+    // The premise layer is readable too, not just the rule layer.
+    typedef tinymind::TriangularMembershipFunction<double> MfType;
+    typedef tinymind::Anfis<double, 1, 2, 2, MfType, false, 1> AnfisType;
+
+    const double premise[AnfisType::NumberOfPremiseParameters] = {-1.0, 0.0, 1.0,
+                                                                   0.0, 1.0, 2.0};
+    const uint8_t ruleTable[AnfisType::RuleTableSize] = {0, 1};
+    const double consequent[AnfisType::NumberOfConsequentParameters] = {10.0, 20.0};
+
+    AnfisType anfis(premise, ruleTable, consequent);
+
+    double input[1] = {0.25};
+    double output[1];
+    anfis.forward(input, output);
+
+    BOOST_TEST(fabs(anfis.getMembershipGrade(0, 0) - 0.75) < 0.001);
+    BOOST_TEST(fabs(anfis.getMembershipGrade(0, 1) - 0.25) < 0.001);
 }
 
 BOOST_AUTO_TEST_CASE(test_case_anfis_partition_of_unity)
