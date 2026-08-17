@@ -75,6 +75,8 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - Normalization and defuzzification fused into one divide per output -- faster and far more accurate in a narrow Q format than a per-rule reciprocal
 - Per-rule firing strengths survive the call: ask which rules explain a given output
 - Inference only -- the hybrid least-squares/gradient-descent fit belongs on a host, as with the rest of the deployment path
+- Host trainer in [`apps/anfis_train/`](apps/anfis_train/) (numpy): exact least-squares consequents, normalized premise descent, rule pruning by mean firing strength, emits the frozen arrays as a header
+- Demo: [`examples/anfis_mackey_glass/`](examples/anfis_mackey_glass/) runs Jang's own 1993 benchmark in 16 rules and 448 bytes of Q16.16 -- test RMSE 0.004066 (double) vs 0.004081 (Q16.16) -- and shows why the rule table is explicit: an oversized 81-rule grid scores test RMSE 1.77, pruning to 25 rules brings it to 0.0053
 
 ### Forward-Mode Autodiff (Physics-Informed Neural Networks)
 
@@ -1055,6 +1057,7 @@ tinymind/
   examples/
     xor/                        # MLP XOR gate learning
     kan_xor/                    # KAN XOR gate learning
+    anfis_mackey_glass/         # Mackey-Glass ANFIS (Jang's benchmark, 16 rules, 448 B)
     gru_xor/                    # GRU XOR gate learning
     lstm_sinusoid/              # LSTM sinusoid prediction
     lstm_sinusoid_float/        # LSTM sinusoid: float (double) vs Q16.16 side by side
@@ -1093,6 +1096,7 @@ tinymind/
     activation/                 # Lookup table generator tool
     import_pytorch/             # PyTorch -> TinyMind int8 importer (numpy core)
     import_onnx/                # QDQ-format ONNX -> TinyMind int8 importer
+    anfis_train/                # Host ANFIS trainer (hybrid LSE + premise descent, numpy)
 ```
 
 ## Documentation

@@ -32,6 +32,11 @@ these exactly.
 **KAN XOR learning curve** — Kolmogorov-Arnold network with learnable B-spline edges.
 ![KAN XOR learning curve]({{ site.baseurl }}/assets/plots/kan_xor_learning_curve.png)
 
+## Neuro-fuzzy inference
+
+**Mackey-Glass ANFIS** — Jang's benchmark, a 16-rule Takagi-Sugeno system in 448 bytes of Q16.16: held-out fit, hybrid training, the rule base read back, and what pruning an oversized 81-rule grid recovers.
+![Mackey-Glass ANFIS]({{ site.baseurl }}/assets/plots/anfis_mackey_glass.png)
+
 ## Liquid neural networks (continuous-time)
 
 **LTC** — fused ODE-solver cell trained to a leaky-integrator step response via reverse-mode autodiff.
