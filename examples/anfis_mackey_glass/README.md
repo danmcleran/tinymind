@@ -68,11 +68,19 @@ to reach for ANFIS here.
 
 **Pruning an oversized grid.** Three membership functions per input is 81
 rules and 405 consequent parameters against 500 training samples, and it
-overfits catastrophically — train RMSE 0.000116, test RMSE **1.77**. Pruning
-by mean firing strength recovers it: 25 of 81 rules gives test RMSE 0.00533,
-a ~330x improvement while shipping 31% of the rule base. This is why
+overfits catastrophically — train RMSE 0.000091, test RMSE **0.636**. Pruning
+by mean firing strength recovers it: 21 of 81 rules gives test RMSE 0.004793,
+a ~130x improvement while shipping 26% of the rule base. This is why
 `cpp/anfis.hpp` carries an explicit rule table rather than an implicit
 `M^N` grid.
+
+Read those figures qualitatively. The unpruned 81-rule design matrix is rank
+deficient — rank 402 of 405, condition number 9.0e12 — so which least-squares
+solution the 200-epoch premise trajectory lands on shifts with floating-point
+summation order; the unpruned test RMSE has been observed anywhere from 0.64
+to 1.77 across equivalent code paths. The shape of the result is robust, the
+digit is not. The shipped 16-rule model is a different regime: rank 80 of 80,
+condition number 1.9e5, and reproducible exactly.
 
 ## Deployment note
 

@@ -107,19 +107,73 @@ what recovers it:
 
 | threshold | rules kept | train RMSE | test RMSE |
 |---|---|---|---|
-| 0.000 | 81/81 | 0.000116 | 1.768326 |
-| 0.001 | 58/81 | 0.000836 | 0.020733 |
-| 0.005 | 39/81 | 0.002413 | 0.006387 |
-| 0.010 | 25/81 | 0.004271 | 0.005330 |
-| 0.020 | 13/81 | 0.007238 | 0.006822 |
+| 0.000 | 81/81 | 0.000091 | 0.635650 |
+| 0.001 | 55/81 | 0.000719 | 0.010929 |
+| 0.005 | 35/81 | 0.002733 | 0.004798 |
+| 0.010 | 21/81 | 0.004182 | 0.004793 |
+| 0.020 | 13/81 | 0.007016 | 0.007482 |
 
-Pruning to 25 rules cuts the test error by a factor of ~330 while shipping
-31% of the rule base.
+Pruning to 21 rules cuts the test error by a factor of ~130 while shipping
+26% of the rule base.
+
+**Read this table qualitatively, not to the digit.** The unpruned 81-rule
+design matrix is rank deficient — rank 402 of 405 columns, condition number
+9.0e12 — so which least-squares solution the 200-epoch premise trajectory
+lands on is sensitive to floating-point summation order. Reordering one
+`numpy` reduction moved the unpruned test RMSE from 1.77 to 0.64 while
+leaving the shipped 16-rule model bit-stable. What is robust is the shape:
+the full grid overfits by two to three orders of magnitude, and pruning
+recovers it to roughly 0.005. The shipped model is a different regime
+entirely — rank 80 of 80, condition number 1.9e5, and reproducible exactly.
+
+## Membership function policies
+
+Shape is a policy, chosen at construction:
+
+```python
+model = build_grid_anfis(X, n_mfs=2, mf=TriangularMembership)
+```
+
+| policy | parameters | `cpp/anfis.hpp` type |
+|---|---|---|
+| `BellMembership` (default) | `{a, c}` | `GeneralizedBellMembershipFunction<ValueType, 1>` |
+| `TriangularMembership` | `{a, b, c}` | `TriangularMembershipFunction<ValueType>` |
+
+Neither needs a transcendental function, so either deploys at `FLOAT=0` /
+`STD=0`.
+
+**Prefer bells for the descent.** A bell is smooth and non-zero everywhere
+inside its clamp, so the premise gradient never vanishes just because a
+membership function drifted away from the data. A triangle has compact
+support: once it no longer covers any sample, both `mu` and `d(mu)/d(param)`
+are exactly zero there and it can never come back. Triangles are also
+non-differentiable at the peak and at each foot; those kinks are measure-zero
+and reported as a zero derivative.
+
+On the bundled benchmark (4 inputs, 2 membership functions, 16 rules):
+
+| policy | test RMSE, least squares only | after hybrid training |
+|---|---|---|
+| bell | 0.004579 | **0.004066** |
+| triangular | 0.008551 | **0.007702** |
+
+Both improve under premise descent; the bell reaches roughly half the error.
+Reach for triangles when the deployment target wants the compact support —
+`cpp/anfis.hpp` bails out of the product t-norm on the first zero grade, so
+compact support buys real cycles on a large rule base.
+
+Adding a shape means adding a class with `NumberOfParameters`,
+`parameter_names`, `cpp_type`, `evaluate`, `gradients`, `initialize`, and
+`project`. Check any new `gradients` against central finite differences —
+but jitter the knots off the data first, since `initialize` places the middle
+membership functions' feet exactly on the observed min and max, and
+differencing across a kink converges to the mean of the one-sided
+derivatives rather than to either of them.
 
 ## Not implemented
 
 * **Subtractive clustering / scatter partition.** Only grid partition
-  (`grid_partition`, `full_grid_rules`) is provided. A scatter partition
+  (`initialize`, `full_grid_rules`) is provided. A scatter partition
   would fit the same `Anfis` container — one rule per cluster, with each
   cluster owning its own membership function per input — but it is not
   written.

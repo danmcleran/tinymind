@@ -40,14 +40,12 @@ which is the whole point of the hybrid rule. It is also why training does
 not belong on a microcontroller: a pseudo-inverse over a
 (samples x rules*(inputs+1)) design matrix is not an MCU workload.
 
-Membership functions are generalized bells with the exponent pinned at 1,
-matching GeneralizedBellMembershipFunction<ValueType, 1> in
-cpp/anfis.hpp:
+Membership function shape is a policy, mirroring cpp/anfis.hpp:
 
-    u        = (x - c) / a
-    mu(x)    = 1 / (1 + u^2)
+  * BellMembership       -> GeneralizedBellMembershipFunction<ValueType, 1>
+  * TriangularMembership -> TriangularMembershipFunction<ValueType>
 
-The bell needs no transcendental function, so a model trained here deploys
+Neither needs a transcendental function, so a model trained here deploys
 into the freestanding (TINYMIND_ENABLE_FLOAT=0 / TINYMIND_ENABLE_STD=0)
 corner unchanged.
 
@@ -58,8 +56,18 @@ import numpy as np
 
 
 # ---------------------------------------------------------------------------
-# Membership functions
+# Membership function policies
 # ---------------------------------------------------------------------------
+#
+# Each policy provides:
+#   NumberOfParameters  parameters per membership function
+#   parameter_names     names, in stored order (documents the emitted header)
+#   cpp_type            the matching cpp/anfis.hpp policy
+#   evaluate(p, x)      -> mu, broadcasting p against x
+#   gradients(p, x)     -> d(mu)/d(parameter), stacked on a trailing axis
+#   initialize(X, M)    -> [inputs, M, NumberOfParameters] grid partition
+#   project(p, eps)     -> in-place repair of any constraint descent broke
+
 
 # Mirrors the clamp in cpp/anfis.hpp: the device reports mu = 0 once
 # u^2 reaches this, which both keeps the rule base sparse and stops a
@@ -68,35 +76,172 @@ import numpy as np
 BELL_CLAMP = 64.0
 
 
-def bell(a, c, x):
-    """mu and the intermediate u for a generalized bell with exponent 1.
+class BellMembership:
+    """Generalized bell with the exponent pinned at 1.
 
-    a and c broadcast against x; the caller decides the shape.
+        u     = (x - c) / a
+        mu(x) = 1 / (1 + u^2)
+
+    Smooth everywhere and non-zero everywhere inside the clamp, which makes
+    it the shape to train with: the premise gradient never vanishes just
+    because a membership function drifted away from the data.
     """
-    u = (x - c) / a
-    t = u * u
-    mu = np.where(t >= BELL_CLAMP, 0.0, 1.0 / (1.0 + t))
-    return mu, u
+
+    NumberOfParameters = 2
+    parameter_names = ("a", "c")
+    cpp_type = "GeneralizedBellMembershipFunction<ValueType, 1>"
+    name = "bell"
+
+    @staticmethod
+    def evaluate(p, x):
+        a = p[..., 0]
+        c = p[..., 1]
+        u = (x - c) / a
+        t = u * u
+        return np.where(t >= BELL_CLAMP, 0.0, 1.0 / (1.0 + t))
+
+    @staticmethod
+    def gradients(p, x):
+        """d(mu)/da and d(mu)/dc.
+
+            d(mu)/du = -2u / (1 + u^2)^2
+            du/dc    = -1/a   ->  d(mu)/dc = 2u   / (a (1 + u^2)^2)
+            du/da    = -u/a   ->  d(mu)/da = 2u^2 / (a (1 + u^2)^2)
+
+        Both are zero past the clamp, matching `evaluate`.
+        """
+        a = p[..., 0]
+        c = p[..., 1]
+        u = (x - c) / a
+        t = u * u
+        denom = (1.0 + t) ** 2
+        live = t < BELL_CLAMP
+        d_da = np.where(live, 2.0 * t / (a * denom), 0.0)
+        d_dc = np.where(live, 2.0 * u / (a * denom), 0.0)
+        return np.stack([d_da, d_dc], axis=-1)
+
+    @staticmethod
+    def initialize(X, n_mfs):
+        lo = X.min(axis=0)
+        hi = X.max(axis=0)
+        span = np.where(hi > lo, hi - lo, 1.0)
+        n_inputs = X.shape[1]
+
+        p = np.zeros((n_inputs, n_mfs, 2))
+        step = span / max(n_mfs - 1, 1)
+        for i in range(n_inputs):
+            p[i, :, 0] = step[i] * 0.5                       # width
+            p[i, :, 1] = np.linspace(lo[i], hi[i], n_mfs)    # centers
+        return p
+
+    @staticmethod
+    def project(p, eps):
+        # A non-positive width is not a bell.
+        np.maximum(p[..., 0], eps, out=p[..., 0])
 
 
-def bell_gradients(a, c, x):
-    """d(mu)/da and d(mu)/dc for the exponent-1 generalized bell.
+class TriangularMembership:
+    """Triangle with feet at a and c and its peak at b.
 
-    With u = (x - c) / a and mu = 1 / (1 + u^2):
+        mu(x) = 0                  x <= a or x >= c
+                (x - a) / (b - a)  a <  x <  b
+                1                  x == b
+                (c - x) / (c - b)  b <  x <  c
 
-        d(mu)/du = -2u / (1 + u^2)^2
-        du/dc    = -1/a          ->  d(mu)/dc = 2u  / (a (1 + u^2)^2)
-        du/da    = -u/a          ->  d(mu)/da = 2u^2 / (a (1 + u^2)^2)
-
-    Both are zero past the clamp, matching `bell`.
+    Compact support, so most rules contribute nothing for most inputs --
+    cheap on the device (cpp/anfis.hpp bails out of the product t-norm on
+    the first zero grade) but harder to train: a triangle that drifts off
+    the data has an exactly zero gradient and can never come back. Prefer
+    BellMembership for the descent and switch to triangles only if the
+    deployment target wants the compact support.
     """
-    u = (x - c) / a
-    t = u * u
-    denom = (1.0 + t) ** 2
-    live = t < BELL_CLAMP
-    d_dc = np.where(live, 2.0 * u / (a * denom), 0.0)
-    d_da = np.where(live, 2.0 * t / (a * denom), 0.0)
-    return d_da, d_dc
+
+    NumberOfParameters = 3
+    parameter_names = ("a", "b", "c")
+    cpp_type = "TriangularMembershipFunction<ValueType>"
+    name = "triangular"
+
+    @staticmethod
+    def evaluate(p, x):
+        a = p[..., 0]
+        b = p[..., 1]
+        c = p[..., 2]
+
+        rising = np.divide(x - a, b - a, out=np.zeros_like(x * a),
+                           where=(b - a) > 0.0)
+        falling = np.divide(c - x, c - b, out=np.zeros_like(x * a),
+                            where=(c - b) > 0.0)
+
+        mu = np.where(x < b, rising, np.where(x > b, falling, 1.0))
+        mu = np.where((x <= a) | (x >= c), 0.0, mu)
+        return np.clip(mu, 0.0, 1.0)
+
+    @staticmethod
+    def gradients(p, x):
+        """d(mu)/da, d(mu)/db, d(mu)/dc.
+
+        On the rising flank, mu = (x - a) / (b - a):
+            d(mu)/da = (x - b) / (b - a)^2      (negative: the ramp shifts right)
+            d(mu)/db = -(x - a) / (b - a)^2     (negative: the ramp widens)
+            d(mu)/dc = 0
+
+        On the falling flank, mu = (c - x) / (c - b):
+            d(mu)/db = (c - x) / (c - b)^2
+            d(mu)/dc = (x - b) / (c - b)^2
+            d(mu)/da = 0
+
+        Outside the support every derivative is zero, and the two kinks (at
+        the peak and at each foot) are measure-zero, so they are reported as
+        zero rather than as a one-sided derivative.
+        """
+        a = p[..., 0]
+        b = p[..., 1]
+        c = p[..., 2]
+
+        zero = np.zeros_like(x * a)
+        inside = (x > a) & (x < c)
+        rising = inside & (x < b)
+        falling = inside & (x > b)
+
+        left = np.divide(1.0, (b - a) ** 2, out=np.zeros_like(zero),
+                         where=(b - a) > 0.0)
+        right = np.divide(1.0, (c - b) ** 2, out=np.zeros_like(zero),
+                          where=(c - b) > 0.0)
+
+        d_da = np.where(rising, (x - b) * left, 0.0)
+        d_db = np.where(rising, -(x - a) * left, 0.0) + \
+               np.where(falling, (c - x) * right, 0.0)
+        d_dc = np.where(falling, (x - b) * right, 0.0)
+        return np.stack([d_da, d_db, d_dc], axis=-1)
+
+    @staticmethod
+    def initialize(X, n_mfs):
+        """Partition of unity: peaks evenly spaced, feet at the neighbours.
+
+        Adjacent triangles then cross at mu = 0.5 and sum to 1 across the
+        observed range, which starts training from a sensible partition.
+        """
+        lo = X.min(axis=0)
+        hi = X.max(axis=0)
+        span = np.where(hi > lo, hi - lo, 1.0)
+        n_inputs = X.shape[1]
+
+        p = np.zeros((n_inputs, n_mfs, 3))
+        step = span / max(n_mfs - 1, 1)
+        for i in range(n_inputs):
+            centers = np.linspace(lo[i], hi[i], n_mfs)
+            p[i, :, 0] = centers - step[i]
+            p[i, :, 1] = centers
+            p[i, :, 2] = centers + step[i]
+        return p
+
+    @staticmethod
+    def project(p, eps):
+        # Descent can push the three knots out of order, which would invert
+        # a flank or divide by zero. Restore a <= b <= c with a minimum
+        # separation, sweeping left to right.
+        p[..., 1] = np.maximum(p[..., 1], p[..., 0] + eps)
+        p[..., 2] = np.maximum(p[..., 2], p[..., 1] + eps)
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +257,7 @@ class Anfis:
     Parameter layout matches cpp/anfis.hpp exactly, so `premise_flat()`,
     `rule_table_flat()`, and `consequent_flat()` can be emitted verbatim:
 
-      premise     [n_inputs][n_mfs][a, c]
+      premise     [n_inputs][n_mfs][membership function parameters]
       rule table  [n_rules][n_inputs]  -> membership function index
       consequent  [n_rules][n_outputs][p_0 .. p_{n-1}, q]
 
@@ -120,13 +265,19 @@ class Anfis:
     so the emitted header matches the C++ indexing without a special case.
     """
 
-    def __init__(self, n_inputs, n_mfs, rules, a, c):
+    def __init__(self, n_inputs, n_mfs, rules, params, mf=BellMembership):
         self.n_inputs = int(n_inputs)
         self.n_mfs = int(n_mfs)
-        self.rules = np.asarray(rules, dtype=np.int32)   # [R, n_inputs]
-        self.a = np.asarray(a, dtype=np.float64)         # [n_inputs, n_mfs]
-        self.c = np.asarray(c, dtype=np.float64)         # [n_inputs, n_mfs]
+        self.mf = mf
+        self.rules = np.asarray(rules, dtype=np.int32)     # [R, n_inputs]
+        self.params = np.asarray(params, dtype=np.float64)  # [I, M, P]
         self.theta = np.zeros(self.n_rules * (self.n_inputs + 1))
+
+        if self.params.shape != (self.n_inputs, self.n_mfs, mf.NumberOfParameters):
+            raise ValueError(
+                "premise parameters must be [%d, %d, %d] for %s, got %s"
+                % (self.n_inputs, self.n_mfs, mf.NumberOfParameters,
+                   mf.name, self.params.shape))
 
     @property
     def n_rules(self):
@@ -136,9 +287,7 @@ class Anfis:
 
     def memberships(self, X):
         """mu[sample, input, mf] for a batch X of shape [N, n_inputs]."""
-        x = X[:, :, None]                       # [N, n_inputs, 1]
-        mu, _ = bell(self.a[None, :, :], self.c[None, :, :], x)
-        return mu
+        return self.mf.evaluate(self.params[None, :, :, :], X[:, :, None])
 
     def firing_strengths(self, X):
         """Raw product-t-norm firing strengths, shape [N, n_rules].
@@ -187,7 +336,7 @@ class Anfis:
         return self.theta
 
     def premise_gradients(self, X, y):
-        """dE/da and dE/dc for E = mean((y_hat - y)^2).
+        """dE/d(premise parameters) for E = mean((y_hat - y)^2), shape [I, M, P].
 
         With W = sum_r w_r and y_hat = sum_r w_r f_r / W:
 
@@ -215,12 +364,10 @@ class Anfis:
         dE_dw = dE_dy[:, None] * (f - y_hat[:, None]) / safe_total[:, None]
 
         mu = self.memberships(X)                            # [N, I, M]
-        d_da, d_dc = bell_gradients(self.a[None, :, :],
-                                    self.c[None, :, :],
-                                    X[:, :, None])          # [N, I, M] each
+        d_mu = self.mf.gradients(self.params[None, :, :, :],
+                                 X[:, :, None])             # [N, I, M, P]
 
-        g_a = np.zeros_like(self.a)
-        g_c = np.zeros_like(self.c)
+        grad = np.zeros_like(self.params)                   # [I, M, P]
 
         for i in range(self.n_inputs):
             idx = self.rules[:, i]
@@ -234,24 +381,23 @@ class Anfis:
                                   out=np.zeros_like(w[:, sel]),
                                   where=grade[:, None] > 1e-12)
                 dE_dmu = np.sum(dE_dw[:, sel] * ratio, axis=1)   # [N]
-                g_a[i, j] = np.sum(dE_dmu * d_da[:, i, j])
-                g_c[i, j] = np.sum(dE_dmu * d_dc[:, i, j])
+                grad[i, j, :] = dE_dmu @ d_mu[:, i, j, :]
 
-        return g_a, g_c
+        return grad
 
     def fit(self, X, y, epochs=200, step=0.005, min_width=1e-3,
             X_val=None, y_val=None, verbose=False):
         """Hybrid training: exact consequents, descended premises.
 
-        The premise step is *normalized* -- the (dE/da, dE/dc) gradient is
-        scaled to unit L2 norm before stepping, so `step` is the distance
-        the premise parameters travel per epoch in their own units rather
-        than a raw learning rate. This matters because the least-squares
-        step drives the residual down first, which leaves the premise
-        gradient several orders of magnitude smaller than the parameters
-        it acts on; a plain learning rate large enough to move anything on
-        one problem diverges on the next. Normalizing makes `step` mean the
-        same thing regardless of how well the consequents already fit.
+        The premise step is *normalized* -- the gradient is scaled to unit
+        L2 norm before stepping, so `step` is the distance the premise
+        parameters travel per epoch in their own units rather than a raw
+        learning rate. This matters because the least-squares step drives
+        the residual down first, which leaves the premise gradient several
+        orders of magnitude smaller than the parameters it acts on; a plain
+        learning rate large enough to move anything on one problem diverges
+        on the next. Normalizing makes `step` mean the same thing regardless
+        of how well the consequents already fit.
 
         Returns a history list of (epoch, train_rmse, val_rmse) with
         val_rmse == None when no validation set is supplied.
@@ -278,14 +424,13 @@ class Anfis:
             self.solve_consequents(X, y)
             record(epoch)
 
-            g_a, g_c = self.premise_gradients(X, y)
-            norm = np.sqrt(np.sum(g_a * g_a) + np.sum(g_c * g_c))
+            grad = self.premise_gradients(X, y)
+            norm = np.sqrt(np.sum(grad * grad))
             if norm > 0.0:
-                self.a -= step * g_a / norm
-                self.c -= step * g_c / norm
-            # A non-positive width is not a bell; clamp rather than let the
-            # step walk the model into a divide by zero.
-            np.maximum(self.a, min_width, out=self.a)
+                self.params -= step * grad / norm
+            # Repair whatever constraint the step may have broken (a
+            # non-positive bell width, out-of-order triangle knots).
+            self.mf.project(self.params, min_width)
 
         # The last descent step moved the premises, so re-solve to leave the
         # consequents exact for the premises actually being shipped, and
@@ -324,8 +469,8 @@ class Anfis:
     # -- flat parameter views for the header emitter ------------------------
 
     def premise_flat(self):
-        """[n_inputs][n_mfs][a, c] flattened, matching cpp/anfis.hpp."""
-        return np.stack([self.a, self.c], axis=-1).reshape(-1)
+        """[n_inputs][n_mfs][parameters] flattened, matching cpp/anfis.hpp."""
+        return self.params.reshape(-1)
 
     def rule_table_flat(self):
         """[n_rules][n_inputs] flattened, as uint8 antecedent indices."""
@@ -339,29 +484,6 @@ class Anfis:
 # ---------------------------------------------------------------------------
 # Initialization
 # ---------------------------------------------------------------------------
-
-def grid_partition(X, n_mfs):
-    """Even grid partition: n_mfs bells spread across each input's range.
-
-    Centers are placed uniformly between the observed min and max; the
-    width is set so adjacent bells cross near mu = 0.5, which starts
-    training close to a partition of unity.
-
-    Returns (a, c) of shape [n_inputs, n_mfs].
-    """
-    lo = X.min(axis=0)
-    hi = X.max(axis=0)
-    span = np.where(hi > lo, hi - lo, 1.0)
-
-    n_inputs = X.shape[1]
-    c = np.zeros((n_inputs, n_mfs))
-    for i in range(n_inputs):
-        c[i] = np.linspace(lo[i], hi[i], n_mfs)
-
-    step = span / max(n_mfs - 1, 1)
-    a = np.repeat((step * 0.5)[:, None], n_mfs, axis=1)
-    return a, c
-
 
 def full_grid_rules(n_inputs, n_mfs):
     """Every combination of one membership function per input.
@@ -380,11 +502,10 @@ def full_grid_rules(n_inputs, n_mfs):
     return rules
 
 
-def build_grid_anfis(X, n_mfs):
+def build_grid_anfis(X, n_mfs, mf=BellMembership):
     """Grid-partitioned ANFIS over the full rule grid."""
-    a, c = grid_partition(X, n_mfs)
-    rules = full_grid_rules(X.shape[1], n_mfs)
-    return Anfis(X.shape[1], n_mfs, rules, a, c)
+    return Anfis(X.shape[1], n_mfs, full_grid_rules(X.shape[1], n_mfs),
+                 mf.initialize(X, n_mfs), mf=mf)
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +543,7 @@ def emit_model_header(path, model, namespace, value_type="double",
     n_inputs = model.n_inputs
     n_mfs = model.n_mfs
     n_rules = model.n_rules
+    mf = model.mf
 
     parts = []
     parts.append("// Generated by apps/anfis_train/anfis_train.py -- do not edit by hand.\n")
@@ -435,11 +557,15 @@ def emit_model_header(path, model, namespace, value_type="double",
     parts.append("    constexpr std::size_t NumberOfMembershipFunctionsPerInput = %d;\n" % n_mfs)
     parts.append("    constexpr std::size_t NumberOfRules = %d;\n" % n_rules)
     parts.append("    constexpr std::size_t NumberOfOutputs = 1;\n")
+    parts.append("    constexpr std::size_t NumberOfParametersPerMembershipFunction = %d;\n"
+                 % mf.NumberOfParameters)
     for key, value in sorted((meta or {}).items()):
         parts.append("    constexpr std::size_t %s = %d;\n" % (key, int(value)))
     parts.append("\n")
 
-    parts.append("    // [input][membershipFunction]{a, c} -- generalized bell, exponent 1.\n")
+    parts.append("    // Membership function: tinymind::%s\n" % mf.cpp_type)
+    parts.append("    // [input][membershipFunction]{%s}\n"
+                 % ", ".join(mf.parameter_names))
     parts.append(_format_array(value_type, "Premise",
                                model.premise_flat(), 6, "%.9g"))
     parts.append("\n    // [rule][input] -- antecedent membership function index.\n")
