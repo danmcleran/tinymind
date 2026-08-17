@@ -61,11 +61,11 @@ respect to its inputs.
 | Smooth activation (C² or better) | **Present** | `tanh`, `sigmoid`, `ELU`, `GELU` with analytic derivatives; `tanh(Dual)`/`sigmoid(Dual)` overloads in `cpp/dualActivations.hpp`. `ReLU` unsuitable (2nd derivative ≡ 0). |
 | Small network sizes | **Present** | PINNs are typically small MLPs; TinyMind targets embedded-scale models. |
 | Fixed-point / int8 inference | **Present** | Q-format and int8 pipelines run a plain forward pass of `u(x, t)`. |
-| Residual-loss training (∂residual/∂weights) | **Not yet** | Composing input-derivative AD with weight gradients; see next steps. |
+| Residual-loss training (∂residual/∂weights) | **Present** (`cpp/pinn.hpp`, `cpp/multidual.hpp`) | `sgdStep` gets the exact loss gradient w.r.t. all weights in one forward pass via `MultiDual<V,N>`; `sgdStepReverse` does it in one backward pass via the `RevVar` tape. See item 11 below. |
 
 The takeaway: TinyMind now ships the correct **activation family**, the correct
-**size class**, *and* the input-space differentiation operator. The remaining
-work is the training loop, not the derivatives.
+**size class**, the input-space differentiation operator, *and* the residual-loss
+training loop built on top of them.
 
 ## 2. The missing piece: forward-mode / Taylor-mode autodiff
 
@@ -211,6 +211,9 @@ Done:
    to the heat equation with the exact-autodiff residual and finite-difference
    weight gradients; drives the PINN loss down ~370x and the solution L2 error
    to ~1% — all host-side, no device.
+   *(Superseded by item 11: the finite-difference weight gradients described here
+   were replaced by exact one-pass `MultiDual` gradients. This list is a
+   chronological record; read item 11 for the current mechanism.)*
 9. ✅ Elementary `Dual` math (`cpp/dualmath.hpp`): `exp`/`sin`/`cos`/`sqrt` with
    analytic derivatives + nested-recursion (SIREN fields, trig/exp source terms),
    and mixed partials (`d²u/dx dy`) via per-level seed directions.
