@@ -72,13 +72,15 @@ mean firing strength is what recovers it:
 
 | rules kept | train RMSE | test RMSE |
 |---|---|---|
-| 81/81 | 0.000116 | 1.768326 |
-| 58/81 | 0.000836 | 0.020733 |
-| 39/81 | 0.002413 | 0.006387 |
-| 25/81 | 0.004271 | 0.005330 |
-| 13/81 | 0.007238 | 0.006822 |
+| 81/81 | 0.000091 | 0.635650 |
+| 55/81 | 0.000719 | 0.010929 |
+| 35/81 | 0.002733 | 0.004798 |
+| 21/81 | 0.004182 | 0.004793 |
+| 13/81 | 0.007016 | 0.007482 |
 
-Keeping 31% of the rules cuts test error by a factor of ~330.
+Keeping 26% of the rules cuts test error by a factor of ~130.
+
+Read that table qualitatively rather than to the digit: the unpruned 81-rule design matrix is rank deficient (rank 402 of 405, condition number 9.0e12), so which least-squares solution the premise trajectory lands on shifts with floating-point summation order. The shape is robust — orders of magnitude of overfit, recovered by pruning — while the exact unpruned figure is not. The shipped 16-rule model is a different regime: rank 80 of 80, condition number 1.9e5, reproducible exactly.
 
 A `DontCareIndex` antecedent drops an input from a rule entirely,
 contributing a grade of 1 — which is what a pruned antecedent looks like.
