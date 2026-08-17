@@ -105,7 +105,7 @@ Full detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Quick map:
 
 - **`unit_test/`** — `nn/` (NN correctness), `qformat/` (compile-time `static_assert`), `qlearn/`, `quantization/` (int8 path), `embedded/` (cross-corner regression matrix + `simd_prereq_regressions`), `integration/` (Phase 16 golden-byte exemplar suite), `pinn/`, `ltc/`, `cfc/`.
 - **`examples/`** — every runnable example writes a header-row CSV to `output/` and ships a `plot.py` using the shared `examples/plotting/tinymind_plot.py` style module (`make plot`). matplotlib goes in an isolated env (venv/pyenv), never system Python. int8 exemplars expose `make run` / `make bench` / `make golden`.
-- **`apps/`** — `activation/` (LUT generator for `lookupTables.cpp`), `import_pytorch/` + `import_onnx/` (Phase 15 int8 importers).
+- **`apps/`** — `activation/` (LUT generator for `lookupTables.cpp`), `import_pytorch/` + `import_onnx/` (Phase 15 int8 importers), `anfis_train/` (host ANFIS trainer: hybrid least-squares + normalized premise descent, rule pruning, emits the frozen arrays `cpp/anfis.hpp` consumes; numpy only, never run in CI).
 
 ## Benchmark harness (`cpp/include/bench/`)
 

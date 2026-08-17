@@ -117,3 +117,5 @@ docs/assets/knowledge-graph/graph.json
 examples/seq2seq_softmax_int8/output/
 examples/state_space_int8/output/
 examples/gbdt_tabular_int8/output/
+
+examples/anfis_mackey_glass/output/
