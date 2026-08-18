@@ -70,6 +70,8 @@
 #include "qembedding.hpp"
 #include "qpositional.hpp"
 #include "qformat.hpp"
+#include "qanfis.hpp"
+#include "anfis.hpp"
 #include "include/tinymind_fp16.hpp"
 #include "include/simd/simd_dispatch.hpp"
 #include "compiler.h"
@@ -4038,6 +4040,252 @@ void floatCfcReference(const float* x, float* h_state, float ts,
 }
 
 } // namespace
+
+
+// ---------------------------------------------------------------------------
+// Quantized ANFIS (cpp/qanfis.hpp)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr std::size_t kQAnfisInputs = 2;
+constexpr std::size_t kQAnfisMfs    = 2;
+constexpr std::size_t kQAnfisRules  = 4;
+
+// Bell {a, c} per (input, membership function).
+const double kQAnfisPremise[kQAnfisInputs * kQAnfisMfs * 2] = {
+    0.5, 0.0,  0.5, 1.0,
+    0.5, 0.0,  0.5, 1.0
+};
+const uint8_t kQAnfisRuleTable[kQAnfisRules * kQAnfisInputs] = {
+    0, 0,  0, 1,  1, 0,  1, 1
+};
+const double kQAnfisConsequent[kQAnfisRules * (kQAnfisInputs + 1)] = {
+     1.0,  0.5, 0.1,
+    -0.5,  1.0, 0.2,
+     0.7, -0.3, 0.0,
+     0.2,  0.2, 0.5
+};
+
+typedef tinymind::GeneralizedBellMembershipFunction<double, 1> QAnfisMf;
+typedef tinymind::Anfis<double, kQAnfisInputs, kQAnfisMfs, kQAnfisRules,
+                        QAnfisMf, true, 1> QAnfisReference;
+typedef tinymind::QAnfis<int8_t, int8_t, uint16_t, int32_t, int8_t,
+                         kQAnfisInputs, kQAnfisMfs, kQAnfisRules> QAnfisType;
+
+struct QAnfisFixture
+{
+    static constexpr float   kInScale   = 2.0f / 255.0f;
+    static constexpr int32_t kInZp      = -128;
+    static constexpr float   kOutScale  = 4.0f / 255.0f;
+    static constexpr int32_t kOutZp     = -128;
+
+    std::vector<uint16_t>                  lut;
+    std::vector<int8_t>                    weights;
+    std::vector<int32_t>                   biases;
+    std::vector<tinymind::QAnfisRuleScale> scales;
+    QAnfisType                             layer;
+
+    QAnfisFixture()
+        : lut(QAnfisType::GradeLutSize),
+          weights(QAnfisType::WeightsSize),
+          biases(kQAnfisRules),
+          scales(kQAnfisRules),
+          layer()
+    {
+        const float consequentScale = 4.0f / static_cast<float>(1 << 20);
+
+        for (std::size_t i = 0; i < kQAnfisInputs; ++i)
+        {
+            for (std::size_t j = 0; j < kQAnfisMfs; ++j)
+            {
+                const double* p = &kQAnfisPremise[((i * kQAnfisMfs) + j) * 2];
+                tinymind::buildQAnfisGradeLUT<uint16_t>(
+                    kInScale, kInZp,
+                    [p](float x) { const double xv = x; return QAnfisMf::evaluate(p, xv); },
+                    &lut[((i * kQAnfisMfs) + j) * 256]);
+            }
+        }
+
+        float coefficients[kQAnfisRules * kQAnfisInputs];
+        float constants[kQAnfisRules];
+        for (std::size_t r = 0; r < kQAnfisRules; ++r)
+        {
+            for (std::size_t i = 0; i < kQAnfisInputs; ++i)
+            {
+                coefficients[(r * kQAnfisInputs) + i] =
+                    static_cast<float>(kQAnfisConsequent[(r * (kQAnfisInputs + 1)) + i]);
+            }
+            constants[r] = static_cast<float>(
+                kQAnfisConsequent[(r * (kQAnfisInputs + 1)) + kQAnfisInputs]);
+        }
+
+        tinymind::buildQAnfisConsequents<int8_t>(
+            coefficients, constants, kQAnfisRules, kQAnfisInputs,
+            kInScale, consequentScale,
+            weights.data(), biases.data(), scales.data());
+
+        layer.grade_lut   = lut.data();
+        layer.rule_table  = kQAnfisRuleTable;
+        layer.weights     = weights.data();
+        layer.biases      = biases.data();
+        layer.rule_scales = scales.data();
+        layer.output_requantizer =
+            tinymind::buildQAnfisOutputRequantizer<int8_t>(consequentScale, kOutScale, kOutZp);
+        layer.input_zero_point = static_cast<int8_t>(kInZp);
+    }
+
+    int8_t quantizeInput(double x) const
+    {
+        long v = std::lround(x / static_cast<double>(kInScale)) + kInZp;
+        if (v < -128) { v = -128; }
+        if (v >  127) { v =  127; }
+        return static_cast<int8_t>(v);
+    }
+
+    double dequantizeOutput(int8_t q) const
+    {
+        return static_cast<double>(kOutScale) *
+               (static_cast<double>(q) - static_cast<double>(kOutZp));
+    }
+};
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(qanfis_parity_with_float_reference)
+{
+    // The int8 ANFIS must track the float layer to within the output quantum:
+    // an int8 output physically cannot represent the answer more finely.
+    QAnfisFixture fx;
+    QAnfisReference reference(kQAnfisPremise, kQAnfisRuleTable, kQAnfisConsequent);
+
+    double maxGap = 0.0;
+    std::size_t compared = 0;
+
+    for (int a = 0; a <= 20; ++a)
+    {
+        for (int b = 0; b <= 20; ++b)
+        {
+            const double x[kQAnfisInputs] = {a * 0.1, b * 0.1};
+            double expected[1];
+            reference.forward(x, expected);
+
+            if (reference.getTotalFiringStrength() <= 0.0)
+            {
+                continue;
+            }
+
+            int8_t xq[kQAnfisInputs];
+            for (std::size_t i = 0; i < kQAnfisInputs; ++i)
+            {
+                xq[i] = fx.quantizeInput(x[i]);
+            }
+
+            const double actual = fx.dequantizeOutput(fx.layer.forward(xq));
+            const double gap = std::fabs(actual - expected[0]);
+            if (gap > maxGap) { maxGap = gap; }
+            ++compared;
+        }
+    }
+
+    BOOST_TEST(compared > 400u);
+    BOOST_TEST(maxGap < 2.0 * static_cast<double>(QAnfisFixture::kOutScale));
+}
+
+BOOST_AUTO_TEST_CASE(qanfis_grade_lut_is_monotone_about_the_peak)
+{
+    // A bell peaks at its center: grades must rise to the peak and fall after.
+    // This pins the LUT builder's indexing convention -- an off-by-one in the
+    // zero-point handling would shift or mirror the curve.
+    std::vector<uint16_t> lut(256);
+    const double params[2] = {0.5, 1.0};   // width 0.5, centered at 1.0
+    tinymind::buildQAnfisGradeLUT<uint16_t>(
+        2.0f / 255.0f, -128,
+        [&params](float x) { const double xv = x; return QAnfisMf::evaluate(params, xv); },
+        lut.data());
+
+    std::size_t peak = 0;
+    for (std::size_t i = 1; i < 256; ++i)
+    {
+        if (lut[i] > lut[peak]) { peak = i; }
+    }
+
+    // Center 1.0 on a [0, 2] input grid lands mid-table.
+    BOOST_TEST(peak > 100u);
+    BOOST_TEST(peak < 156u);
+    BOOST_TEST(lut[peak] > 60000u);          // mu ~ 1 at the center
+
+    for (std::size_t i = 1; i <= peak; ++i)
+    {
+        BOOST_TEST(lut[i] >= lut[i - 1]);
+    }
+    for (std::size_t i = peak + 1; i < 256; ++i)
+    {
+        BOOST_TEST(lut[i] <= lut[i - 1]);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qanfis_no_rule_fires_returns_zero_point)
+{
+    // Outside every membership function's support nothing fires. The layer
+    // must emit the output zero point rather than divide by zero.
+    QAnfisFixture fx;
+
+    // Far outside the [0, 2] grid the bells were built over.
+    int8_t xq[kQAnfisInputs] = {127, 127};
+
+    std::vector<uint16_t> deadLut(QAnfisType::GradeLutSize, 0u);
+    QAnfisType dead = fx.layer;
+    dead.grade_lut = deadLut.data();
+
+    BOOST_TEST(dead.forward(xq) == dead.output_requantizer.zero_point);
+}
+
+BOOST_AUTO_TEST_CASE(qanfis_dont_care_antecedent_contributes_unity)
+{
+    // A don't-care antecedent must drop its input from the product entirely,
+    // matching cpp/anfis.hpp. Compare a rule table whose second antecedent is
+    // don't-care against one whose second membership function is identically 1.
+    QAnfisFixture fx;
+
+    const uint8_t dontCareRules[kQAnfisRules * kQAnfisInputs] = {
+        0, tinymind::QAnfisDontCare,
+        0, tinymind::QAnfisDontCare,
+        1, tinymind::QAnfisDontCare,
+        1, tinymind::QAnfisDontCare
+    };
+
+    QAnfisType layer = fx.layer;
+    layer.rule_table = dontCareRules;
+
+    const int8_t xq[kQAnfisInputs] = {0, 0};
+
+    // Rule 0's strength must equal input 0's grade alone.
+    const std::size_t idx =
+        (0 * kQAnfisMfs + 0) * 256u + tinymind::qAnfisGradeIndex(0);
+    BOOST_TEST(layer.firingStrength(xq, 0) ==
+               static_cast<uint32_t>(fx.lut[idx]));
+}
+
+BOOST_AUTO_TEST_CASE(qanfis_firing_strength_bails_on_a_zero_grade)
+{
+    // The product t-norm must short-circuit: one zero grade zeroes the rule.
+    QAnfisFixture fx;
+
+    std::vector<uint16_t> lut = fx.lut;
+    // Force input 1's membership function 0 to zero everywhere.
+    for (std::size_t k = 0; k < 256; ++k)
+    {
+        lut[((1 * kQAnfisMfs) + 0) * 256 + k] = 0u;
+    }
+
+    QAnfisType layer = fx.layer;
+    layer.grade_lut = lut.data();
+
+    const int8_t xq[kQAnfisInputs] = {0, 0};
+    // Rule 0 is {mf0, mf0}, so it reads the zeroed table and must die.
+    BOOST_TEST(layer.firingStrength(xq, 0) == 0u);
+}
 
 BOOST_AUTO_TEST_CASE(qcfc_single_step_parity_with_float_reference)
 {

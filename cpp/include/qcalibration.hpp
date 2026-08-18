@@ -50,6 +50,7 @@
 #if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 
 #include "qaffine.hpp"
+#include "../qanfis.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -1392,6 +1393,127 @@ namespace tinymind {
             gate_bias[c] = static_cast<int32_t>(std::lround(
                 static_cast<double>(bg_real[c]) * q15));
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Quantized ANFIS (cpp/qanfis.hpp)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Build one membership-grade lookup table.
+     *
+     * The table is indexed by the raw int8 input pattern shifted into
+     * [0, 255], so it is built over exactly the grid the layer will see and
+     * the input zero_point cancels at runtime. `evaluate` is any callable
+     * mapping a real input to a grade in [0, 1] -- pass the float form of
+     * whichever membership function the model was fitted with; the shape stops
+     * mattering once it is a table.
+     *
+     * Grades are clamped to QAnfisGradeOne so mu = 1 is representable without
+     * overflowing the 2^-16 grid.
+     */
+    template<typename GradeStorage, typename Evaluate>
+    inline void buildQAnfisGradeLUT(float input_scale, int32_t input_zero_point,
+                                    Evaluate evaluate, GradeStorage* lut_out)
+    {
+        for (int32_t q = -128; q <= 127; ++q)
+        {
+            const float x = input_scale * static_cast<float>(q - input_zero_point);
+            float mu = static_cast<float>(evaluate(x));
+
+            if (!(mu > 0.0f)) { mu = 0.0f; }   // also catches NaN
+            if (mu > 1.0f)    { mu = 1.0f; }
+
+            uint32_t g = static_cast<uint32_t>(
+                mu * static_cast<float>(1u << QAnfisGradeBits) + 0.5f);
+            if (g > QAnfisGradeOne) { g = QAnfisGradeOne; }
+
+            lut_out[static_cast<std::size_t>(q + 128)] =
+                static_cast<GradeStorage>(g);
+        }
+    }
+
+    /**
+     * Per-rule consequent quantization for QAnfis.
+     *
+     * Each rule gets its own symmetric weight scale. That is not a refinement
+     * -- it is required. A least-squares consequent solve spans orders of
+     * magnitude across rules, and one shared scale quantizes the
+     * small-coefficient rules to nothing.
+     *
+     * Every rule's accumulator then carries a different effective scale
+     * (input_scale * weight_scale[r]), so each also gets a rescaler onto the
+     * shared consequent grid where the firing-strength-weighted sum happens.
+     *
+     * @param coefficients   [num_rules][num_inputs], row-major, float
+     * @param constants      [num_rules] constant terms, float
+     * @param consequent_scale  the shared grid the weighted sum runs on
+     * @param weights_out    [num_rules][num_inputs] int8 output
+     * @param biases_out     [num_rules] int32, at each rule's own scale
+     * @param scales_out     [num_rules] rescalers onto the shared grid
+     */
+    template<typename WeightStorage>
+    inline void buildQAnfisConsequents(const float* coefficients,
+                                       const float* constants,
+                                       std::size_t num_rules,
+                                       std::size_t num_inputs,
+                                       float input_scale,
+                                       float consequent_scale,
+                                       WeightStorage* weights_out,
+                                       int32_t* biases_out,
+                                       QAnfisRuleScale* scales_out)
+    {
+        for (std::size_t r = 0; r < num_rules; ++r)
+        {
+            float peak = 0.0f;
+            for (std::size_t i = 0; i < num_inputs; ++i)
+            {
+                const float a = std::fabs(coefficients[(r * num_inputs) + i]);
+                if (a > peak) { peak = a; }
+            }
+            if (!(peak > 0.0f)) { peak = 1e-12f; }
+
+            const float weight_scale = peak / 127.0f;
+
+            for (std::size_t i = 0; i < num_inputs; ++i)
+            {
+                float q = coefficients[(r * num_inputs) + i] / weight_scale;
+                q = (q >= 0.0f) ? std::floor(q + 0.5f) : std::ceil(q - 0.5f);
+                if (q >  127.0f) { q =  127.0f; }
+                if (q < -127.0f) { q = -127.0f; }
+                weights_out[(r * num_inputs) + i] = static_cast<WeightStorage>(q);
+            }
+
+            // The rule's accumulator scale, which its bias must share.
+            const float rule_scale = input_scale * weight_scale;
+            const float b = constants[r] / rule_scale;
+            biases_out[r] = static_cast<int32_t>(
+                (b >= 0.0f) ? std::floor(b + 0.5f) : std::ceil(b - 0.5f));
+
+            int32_t multiplier = 0;
+            int32_t shift = 0;
+            quantizeMultiplier(rule_scale / consequent_scale, multiplier, shift);
+            scales_out[r].multiplier = multiplier;
+            scales_out[r].shift = shift;
+        }
+    }
+
+    /**
+     * Output requantizer for QAnfis.
+     *
+     * The fused defuzzification divides the firing-strength-weighted sum by the
+     * total firing strength, and a factor common to every firing strength
+     * cancels exactly in that quotient. So the result arrives on the shared
+     * consequent grid with the grade scale gone, and the final step is an
+     * ordinary rescale -- no ANFIS-specific machinery.
+     */
+    template<typename DstStorage>
+    inline Requantizer<int32_t, DstStorage> buildQAnfisOutputRequantizer(
+        float consequent_scale, float output_scale, int32_t output_zero_point,
+        int32_t qmin = -128, int32_t qmax = 127)
+    {
+        return buildRescaler<DstStorage>(consequent_scale, output_scale,
+                                         output_zero_point, qmin, qmax);
     }
 
 } // namespace tinymind
