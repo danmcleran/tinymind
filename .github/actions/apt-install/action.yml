@@ -1,9 +1,11 @@
 name: apt-install
 description: >
-  apt-get update + install with retries. GitHub-hosted runners intermittently
-  hit transient apt mirror/network failures (exit 100) at the install step,
-  which fail an otherwise-green job and send a false-alarm failure email. This
-  retries update+install a few times with linear backoff before giving up.
+  apt-get update + install with timeouts and retries. GitHub-hosted runners
+  intermittently hit transient apt mirror/network trouble, which shows up two
+  different ways: apt exits non-zero (exit 100), or apt HANGS on a stalled
+  connection and never returns. Retrying alone only covers the first. Every
+  apt call here is therefore bounded by both apt's own network timeouts and an
+  outer `timeout`, so a hang degrades into a failure the retry loop can absorb.
 
 inputs:
   packages:
@@ -12,7 +14,20 @@ inputs:
   attempts:
     description: Maximum number of attempts before failing.
     required: false
-    default: "5"
+    default: "4"
+  update-timeout:
+    description: Seconds to allow for a single apt-get update.
+    required: false
+    default: "120"
+  install-timeout:
+    description: >
+      Seconds to allow for a single apt-get install. The default is generous
+      next to a healthy runner (the largest package set in this repo,
+      gcc-arm-none-eabi, normally lands in well under a minute) so that a
+      merely slow mirror still succeeds and only a genuinely stuck one is cut
+      off.
+    required: false
+    default: "300"
 
 runs:
   using: composite
@@ -22,17 +37,50 @@ runs:
         set -uo pipefail
         packages="${{ inputs.packages }}"
         max="${{ inputs.attempts }}"
+        update_timeout="${{ inputs.update-timeout }}"
+        install_timeout="${{ inputs.install-timeout }}"
+
+        # Bound apt's own network waits so a stalled socket fails fast rather
+        # than blocking until the job's global timeout. The outer `timeout`
+        # below is the backstop for anything these do not cover (a wedged
+        # dpkg, a hung post-install script).
+        apt_opts="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+        apt_opts="$apt_opts -o Acquire::ftp::Timeout=30 -o Acquire::Retries=2"
+
         for attempt in $(seq 1 "$max"); do
-          if sudo apt-get update && sudo apt-get install -y $packages; then
+          # Capture the status via `|| status=$?` rather than reading $? after
+          # an `if`: an `if` whose condition fails and which has no `else`
+          # branch itself returns 0, so `status=$?` there would always read
+          # success and every diagnostic would claim "exit 0".
+          #
+          # -k sends SIGKILL if the process ignores SIGTERM, so a wedged apt
+          # cannot outlive its budget.
+          status=0
+          sudo timeout -k 30 "$update_timeout" apt-get $apt_opts update &&
+            sudo timeout -k 30 "$install_timeout" apt-get $apt_opts install -y $packages ||
+            status=$?
+
+          if [ "$status" -eq 0 ]; then
             echo "apt-install: '$packages' succeeded on attempt $attempt"
             exit 0
           fi
+
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+            echo "apt-install: attempt $attempt/$max TIMED OUT (exit $status)" >&2
+          else
+            echo "apt-install: attempt $attempt/$max failed (exit $status)" >&2
+          fi
+
           if [ "$attempt" -lt "$max" ]; then
             wait=$((attempt * 10))
-            echo "apt-install: attempt $attempt/$max failed; cleaning and retrying in ${wait}s" >&2
+            echo "apt-install: cleaning and retrying in ${wait}s" >&2
+            # A killed apt can leave dpkg mid-transaction and the lock held;
+            # recover before the next attempt instead of failing on the lock.
+            sudo dpkg --configure -a || true
             sudo apt-get clean || true
             sleep "$wait"
           fi
         done
+
         echo "apt-install: '$packages' failed after $max attempts" >&2
         exit 1
