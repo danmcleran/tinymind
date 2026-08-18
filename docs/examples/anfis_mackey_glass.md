@@ -38,9 +38,12 @@ make release
 make run                 # writes output/*.csv
 make plot                # needs matplotlib; a venv/pyenv works
 make regenerate-model    # optional: refit with train.py (needs numpy)
+make golden              # deterministic Q16.16 stream for the integration gate
 ```
 
 The model is committed, so the build needs no Python.
+
+`make golden` emits the byte stream that `unit_test/integration` locks byte-for-byte, the same gate the int8 exemplars carry. It contains only raw Q16.16 integers and rule indices — never formatted doubles, since the fixed-point path is reproducible across compilers and optimization levels while printed floating point is not (verified identical under `-O0`, `-g`, `-O3`, and `-O2 -ffast-math`). The rule indices ride along because the defuzzified output alone could mask a regression in the premise or t-norm stages.
 
 ## Output
 
