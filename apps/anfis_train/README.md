@@ -126,6 +126,50 @@ the full grid overfits by two to three orders of magnitude, and pruning
 recovers it to roughly 0.005. The shipped model is a different regime
 entirely — rank 80 of 80, condition number 1.9e5, and reproducible exactly.
 
+## Two ways to lay out the rule base
+
+```python
+model = build_grid_anfis(X, n_mfs=2)            # Cartesian grid: M^N rules
+model = build_scatter_anfis(X, radius=0.5)      # one rule per cluster
+```
+
+A **grid** takes the Cartesian product of every input's membership functions,
+so the rule count is `M^N` and tracks the *input count*. That is the classic
+knock on ANFIS, and it bites fast.
+
+A **scatter** partition runs Chiu's subtractive clustering (1994) over the
+training data and gives each cluster one rule, with one membership function per
+input centered on that cluster's coordinate. The rule table is the diagonal —
+rule `r` reads membership function `r` of every input — which `cpp/anfis.hpp`
+consumes unchanged, since it takes an explicit table rather than assuming a
+grid. The rule count then tracks the *data's structure*, not the input count:
+
+| inputs | grid at 3 MFs | subtractive clustering (`radius=0.5`) |
+|---|---|---|
+| 2 | 9 | 3 |
+| 4 | 81 | 8 |
+| 6 | 729 | 8 |
+| 8 | 6561 | 14 |
+
+Accuracy on the bundled Mackey-Glass benchmark, after hybrid training:
+
+| partition | rules | parameters | test RMSE |
+|---|---|---|---|
+| scatter, `radius=0.3` | 19 | 247 | 0.004042 |
+| grid, `n_mfs=2` | 16 | 96 | 0.004066 |
+| scatter, `radius=0.6` | 5 | 65 | 0.004812 |
+| scatter, `radius=0.5` | 7 | 91 | 0.005487 |
+| grid, `n_mfs=3` | 81 | 429 | 0.635650 (overfit) |
+
+Five rules and 65 parameters land within 18% of the 16-rule grid's error. The
+`radius` knob is the one that matters — smaller radius, more clusters — and it
+is measured on the unit hypercube (each input min-max scaled), so it means the
+same thing regardless of the inputs' physical units.
+
+Grid partition is still the right default for two or three well-understood
+inputs, where the rules are meant to be read as a legible table. Scatter wins
+as soon as the input count climbs.
+
 ## Membership function policies
 
 Shape is a policy, chosen at construction:
@@ -172,11 +216,6 @@ derivatives rather than to either of them.
 
 ## Not implemented
 
-* **Subtractive clustering / scatter partition.** Only grid partition
-  (`initialize`, `full_grid_rules`) is provided. A scatter partition
-  would fit the same `Anfis` container — one rule per cluster, with each
-  cluster owning its own membership function per input — but it is not
-  written.
 * **Multiple outputs.** The parameter layout carries the output axis so the
   emitted header matches the C++ indexing, but only `n_outputs == 1` is
   trained.
