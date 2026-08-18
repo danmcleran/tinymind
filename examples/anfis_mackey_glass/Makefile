@@ -34,6 +34,10 @@ run :
 regenerate-model :
 	python3 train.py
 
+# Deterministic Q16.16 byte stream for the unit_test/integration golden gate.
+golden :
+	cd ./output && ./anfis_mackey_glass --golden > anfis_mackey_glass.golden && cd ../
+
 clean :
 	rm -f ./output/*
 

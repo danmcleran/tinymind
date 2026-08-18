@@ -47,6 +47,25 @@ make regenerate-model    # runs train.py, rewrites anfis_model.hpp + anfis_data.
 
 `train.py` needs numpy. Use an isolated environment — never system Python.
 
+## Golden regression
+
+`make golden` emits a deterministic byte stream that `unit_test/integration`
+locks byte-for-byte, the same gate the int8 exemplars carry.
+
+The stream contains only **raw Q16.16 integers** and rule indices — never
+formatted doubles. The fixed-point path is pure integer arithmetic, so its bit
+patterns are reproducible across compilers and optimization levels, while
+printed floating point is not; a golden that drifts with the platform is worse
+than no golden. Verified identical under `-O0`, `-g`, `-O3`, and
+`-O2 -ffast-math`.
+
+The rule indices are in the stream alongside the outputs because the
+defuzzified value alone could mask a regression in the premise or product
+t-norm stages — two different rule sets can average to a similar number.
+
+Perturbing a single consequent parameter by ~0.003% shifts four of the eight
+probe values, so the gate is sensitive to real drift rather than decorative.
+
 ## What the four panels show
 
 **Held-out fit.** The prediction sits on the target through every swing of

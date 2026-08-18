@@ -54,6 +54,7 @@
 #include "anfis_data.hpp"
 
 #include <cstddef>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <cmath>
@@ -152,12 +153,86 @@ namespace {
 
 } // namespace
 
-int main()
+// Emit a compact, deterministic byte stream for the golden-regression test in
+// unit_test/integration.
+//
+// Only Q16.16 raw integers are printed, never doubles. The fixed-point path is
+// pure integer arithmetic, so its bit patterns are reproducible across
+// compilers, optimization levels, and hosts; formatted floating point is not,
+// and a golden that drifts with the platform is worse than no golden at all.
+// The rule indices and firing-strength raw values likewise pin the premise and
+// t-norm stages, so a regression anywhere in the five-stage forward pass trips
+// this string.
+namespace {
+
+int emitGolden(QAnfis& anfisQ)
 {
+    // Fixed probes spanning the held-out set rather than the first few
+    // consecutive samples, so the stream covers the series' whole range.
+    static const std::size_t probes[8] = {0, 37, 84, 131, 178, 225, 311, 499};
+
+    std::printf("# anfis_mackey_glass golden output\n");
+    std::printf("# rules=%zu inputs=%zu mfs=%zu q=16.16\n",
+                static_cast<std::size_t>(model::NumberOfRules),
+                static_cast<std::size_t>(model::NumberOfInputs),
+                static_cast<std::size_t>(model::NumberOfMembershipFunctionsPerInput));
+
+    std::printf("q16_16:");
+    for (std::size_t p = 0; p < 8; ++p)
+    {
+        const double* sample =
+            &data::TestInputs[probes[p] * model::NumberOfInputs];
+
+        QType inputQ[model::NumberOfInputs];
+        for (std::size_t i = 0; i < model::NumberOfInputs; ++i)
+        {
+            inputQ[i] = ToQ::convertToDestinationType(sample[i]);
+        }
+
+        QType outputQ[model::NumberOfOutputs];
+        anfisQ.forward(inputQ, outputQ);
+        std::printf(" %ld", static_cast<long>(outputQ[0].getValue()));
+    }
+    std::printf("\n");
+
+    // Dominant rule per probe: pins the premise + product-t-norm stages, which
+    // the defuzzified output alone could mask.
+    std::printf("rule:");
+    for (std::size_t p = 0; p < 8; ++p)
+    {
+        const double* sample =
+            &data::TestInputs[probes[p] * model::NumberOfInputs];
+
+        QType inputQ[model::NumberOfInputs];
+        for (std::size_t i = 0; i < model::NumberOfInputs; ++i)
+        {
+            inputQ[i] = ToQ::convertToDestinationType(sample[i]);
+        }
+
+        QType outputQ[model::NumberOfOutputs];
+        anfisQ.forward(inputQ, outputQ);
+        std::printf(" %zu", anfisQ.getDominantRule());
+    }
+    std::printf("\n");
+
+    return 0;
+}
+
+} // namespace
+
+int main(int argc, char** argv)
+{
+    const bool goldenMode = (argc >= 2) && (std::strcmp(argv[1], "--golden") == 0);
+
     convertModelToFixedPoint();
 
     DoubleAnfis anfisDouble(model::Premise, model::RuleTable, model::Consequent);
     QAnfis anfisQ(gPremiseQ, model::RuleTable, gConsequentQ);
+
+    if (goldenMode)
+    {
+        return emitGolden(anfisQ);
+    }
 
     std::ofstream predictions("anfis_prediction.csv");
     predictions << "t,target,predicted_double,predicted_q16_16\n";
