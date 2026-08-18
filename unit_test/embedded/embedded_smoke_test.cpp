@@ -103,6 +103,7 @@
 #include "qkvcache.hpp"
 #include "qssm.hpp"
 #include "qtree.hpp"
+#include "qanfis.hpp"
 #include "qmha.hpp"
 #endif
 
@@ -287,6 +288,17 @@ tinymind::Requantizer<A, Q> qDwReq[QDwType::Channels];
 Q qPwW[QPwType::TotalWeights];
 A qPwB[QPwType::NumFilters];
 Q qDenseW[QDenseType::InputLength * QDenseType::OutputLength];
+
+// Quantized ANFIS. The deployable shape: pure integer, no calibration helpers
+// (those live behind FLOAT && STD), so every parameter here is the frozen data
+// a host would have emitted.
+typedef tinymind::QAnfis<Q, Q, uint16_t, A, Q, 2, 2, 4> QAnfisType;
+
+uint16_t qAnfisLut[QAnfisType::GradeLutSize];
+const uint8_t qAnfisRules[QAnfisType::RuleTableSize] = {0, 0, 0, 1, 1, 0, 1, 1};
+Q qAnfisWeights[QAnfisType::WeightsSize];
+A qAnfisBiases[QAnfisType::NumRules];
+tinymind::QAnfisRuleScale qAnfisScales[QAnfisType::NumRules];
 A qDenseB[QDenseType::OutputLength];
 
 QConvType  gQConv;
@@ -303,6 +315,54 @@ void clearI8(Q* p, size_t n)
 void clearI32(A* p, size_t n)
 {
     for (size_t i = 0; i < n; ++i) p[i] = 0;
+}
+
+// Exercise the int8 ANFIS forward pass. Must hold with FLOAT=0 and STD=0:
+// the runtime path is integer-only, and the grade lookup tables make the
+// membership function shape irrelevant on device.
+bool exerciseQAnfis()
+{
+    for (size_t k = 0; k < QAnfisType::GradeLutSize; ++k)
+    {
+        // A crude triangle over the int8 grid; the shape does not matter here,
+        // only that some rules fire and some do not.
+        const size_t pos = k % 256u;
+        qAnfisLut[k] = static_cast<uint16_t>(pos < 128u ? (pos * 512u)
+                                                        : ((255u - pos) * 512u));
+    }
+    for (size_t k = 0; k < QAnfisType::WeightsSize; ++k)
+    {
+        qAnfisWeights[k] = static_cast<Q>((k % 7u) + 1u);
+    }
+    for (size_t r = 0; r < QAnfisType::NumRules; ++r)
+    {
+        qAnfisBiases[r] = static_cast<A>(r);
+        qAnfisScales[r].multiplier = 1073741824;   // 0.5 in Q0.31
+        qAnfisScales[r].shift = 0;
+    }
+
+    QAnfisType anfis;
+    anfis.grade_lut = qAnfisLut;
+    anfis.rule_table = qAnfisRules;
+    anfis.weights = qAnfisWeights;
+    anfis.biases = qAnfisBiases;
+    anfis.rule_scales = qAnfisScales;
+    anfis.output_requantizer.multiplier = 1073741824;
+    anfis.output_requantizer.shift = 0;
+    anfis.output_requantizer.zero_point = 0;
+    anfis.output_requantizer.qmin = -128;
+    anfis.output_requantizer.qmax = 127;
+    anfis.input_zero_point = 0;
+
+    const Q in[2] = {32, -16};
+    const Q out = anfis.forward(in);
+
+    // A rule must fire on this input, the dominant rule must be in range, and
+    // the output must land inside the requantizer's saturation bounds.
+    return (anfis.firingStrength(in, 0) > 0u) &&
+           (anfis.dominantRule(in) < QAnfisType::NumRules) &&
+           (out >= anfis.output_requantizer.qmin) &&
+           (out <= anfis.output_requantizer.qmax);
 }
 
 bool exerciseQuantPipeline()
@@ -987,6 +1047,7 @@ int main()
 
 #if TINYMIND_ENABLE_QUANTIZATION
     ok = ok && exerciseQuantPipeline();
+    ok = ok && exerciseQAnfis();
     ok = ok && exerciseIntegerBridges();
 #endif
 

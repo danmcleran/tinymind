@@ -358,10 +358,37 @@ class Anfis:
 
     # -- training -----------------------------------------------------------
 
-    def solve_consequents(self, X, y):
-        """Exact least-squares step for the consequent parameters."""
+    def solve_consequents(self, X, y, ridge=0.0):
+        """Least-squares step for the consequent parameters.
+
+        With ridge == 0 this is the exact ordinary least-squares solution --
+        Jang's original hybrid rule.
+
+        A non-zero `ridge` adds an L2 penalty, and it is worth understanding
+        why that matters beyond the usual overfitting argument: it is what
+        makes a model deployable in int8.
+
+        The unregularized solve is free to produce very large consequent
+        coefficients that nearly cancel each other -- on the bundled
+        Mackey-Glass benchmark the largest is 169 while the model's output
+        spans about 0.94. In float that is harmless. In int8 it is not: the
+        input carries a quantization error of half a grid step, and a
+        coefficient of 169 amplifies it into an error far larger than the
+        output quantum, breaking the cancellation the fit depends on.
+
+        Measured on that benchmark, ridge = 1e-6 drops the largest coefficient
+        from 169 to 16, costs about 20% float accuracy, and improves int8
+        accuracy 4.7x. If the model is headed for cpp/qanfis.hpp, use it.
+        """
         A, _, _ = self.design_matrix(X)
-        self.theta, *_ = np.linalg.lstsq(A, y, rcond=None)
+
+        if ridge > 0.0:
+            n = A.shape[1]
+            self.theta = np.linalg.solve(
+                A.T @ A + ridge * np.eye(n), A.T @ y)
+        else:
+            self.theta, *_ = np.linalg.lstsq(A, y, rcond=None)
+
         return self.theta
 
     def premise_gradients(self, X, y):
@@ -414,7 +441,7 @@ class Anfis:
 
         return grad
 
-    def fit(self, X, y, epochs=200, step=0.005, min_width=1e-3,
+    def fit(self, X, y, epochs=200, step=0.005, min_width=1e-3, ridge=0.0,
             X_val=None, y_val=None, verbose=False):
         """Hybrid training: exact consequents, descended premises.
 
@@ -450,7 +477,7 @@ class Anfis:
                           % (epoch, tr, va))
 
         for epoch in range(epochs):
-            self.solve_consequents(X, y)
+            self.solve_consequents(X, y, ridge=ridge)
             record(epoch)
 
             grad = self.premise_gradients(X, y)
@@ -464,7 +491,7 @@ class Anfis:
         # The last descent step moved the premises, so re-solve to leave the
         # consequents exact for the premises actually being shipped, and
         # record that final pair.
-        self.solve_consequents(X, y)
+        self.solve_consequents(X, y, ridge=ridge)
         record(epochs)
         return history
 

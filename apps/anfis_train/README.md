@@ -93,6 +93,31 @@ smaller than the parameters it acts on (on the bundled Mackey-Glass problem,
 gradients around 1e-5 against parameters around 0.5). A plain learning rate
 tuned to move anything on one problem does nothing on the next, or diverges.
 
+## Regularize the consequents if the model is headed for int8
+
+`fit(ridge=...)` and `solve_consequents(ridge=...)` add an L2 penalty to the
+consequent solve. This matters beyond the usual overfitting argument: it is
+what makes a model deployable in int8.
+
+An unregularized least-squares solve is free to produce very large consequent
+coefficients that nearly cancel. On the bundled benchmark the largest is **169**
+while the model's output spans about 0.94. In float that is harmless. In int8
+it is not — the input carries half a grid step of quantization error, and a
+coefficient of 169 amplifies it into an error far larger than the output
+quantum, breaking the cancellation the fit depends on.
+
+| ridge | largest coefficient | float test RMSE | int8 test RMSE |
+|---|---|---|---|
+| 0 | 168.98 | 0.004066 | 0.025542 |
+| 1e-6 | 16.12 | 0.004893 | **0.005462** |
+| 1e-5 | 5.92 | 0.005298 | 0.006009 |
+| 1e-4 | 3.28 | 0.005851 | 0.006339 |
+| 1e-3 | 2.07 | 0.007846 | 0.007951 |
+
+`ridge=1e-6` costs about 20% float accuracy and buys **4.7x** int8 accuracy.
+Leave it at 0 for a float or Q-format deployment; set it if `cpp/qanfis.hpp` is
+the target.
+
 ## Rule pruning
 
 `rule_importance(X)` scores each rule by its mean normalized firing strength
