@@ -290,17 +290,25 @@ class Anfis:
       rule table  [n_rules][n_inputs]  -> membership function index
       consequent  [n_rules][n_outputs][p_0 .. p_{n-1}, q]
 
-    Only n_outputs == 1 is trained here; the layout carries the output axis
-    so the emitted header matches the C++ indexing without a special case.
+    Multiple outputs share one premise layer, one rule table, and one design
+    matrix -- only the consequents differ. That is why a multi-output model
+    costs one pseudo-inverse rather than one per output.
     """
 
-    def __init__(self, n_inputs, n_mfs, rules, params, mf=BellMembership):
+    def __init__(self, n_inputs, n_mfs, rules, params, mf=BellMembership,
+                 n_outputs=1):
         self.n_inputs = int(n_inputs)
         self.n_mfs = int(n_mfs)
+        self.n_outputs = int(n_outputs)
         self.mf = mf
         self.rules = np.asarray(rules, dtype=np.int32)     # [R, n_inputs]
         self.params = np.asarray(params, dtype=np.float64)  # [I, M, P]
-        self.theta = np.zeros(self.n_rules * (self.n_inputs + 1))
+        # Consequents are held as [rule*(inputs+1), outputs] rather than in the
+        # flat C++ order, because that is the shape the least-squares solve
+        # wants: A @ theta is then [samples, outputs] directly.
+        # consequent_flat() does the reordering, in one place.
+        self.theta = np.zeros((self.n_rules * (self.n_inputs + 1),
+                               self.n_outputs))
 
         if self.params.shape != (self.n_inputs, self.n_mfs, mf.NumberOfParameters):
             raise ValueError(
@@ -353,8 +361,14 @@ class Anfis:
         return A.reshape(X.shape[0], -1), w, wbar
 
     def predict(self, X):
+        """Model output.
+
+        Shape [samples] for a single output, [samples, outputs] otherwise, so
+        single-output callers see exactly what they always did.
+        """
         A, _, _ = self.design_matrix(X)
-        return A @ self.theta
+        out = A @ self.theta
+        return out[:, 0] if self.n_outputs == 1 else out
 
     # -- training -----------------------------------------------------------
 
@@ -381,14 +395,31 @@ class Anfis:
         accuracy 4.7x. If the model is headed for cpp/qanfis.hpp, use it.
         """
         A, _, _ = self.design_matrix(X)
+        Y = np.asarray(y)
+        if Y.ndim == 1:
+            Y = Y[:, None]
 
+        # Every output shares this design matrix -- it depends only on the
+        # premises and the inputs, never on the targets. So a multi-output
+        # model costs ONE pseudo-inverse, not one per output; numpy solves all
+        # right-hand sides in a single call.
+        #
+        # A single output is handed to LAPACK as a 1-D right-hand side rather
+        # than an Nx1 matrix. The two are mathematically identical but take
+        # different code paths and differ in the last couple of ULPs, and that
+        # is enough to move an ill-conditioned solve onto a different (equally
+        # valid) least-squares solution. Keeping the 1-D path keeps every
+        # previously fitted single-output model bit-reproducible.
         if ridge > 0.0:
             n = A.shape[1]
-            self.theta = np.linalg.solve(
-                A.T @ A + ridge * np.eye(n), A.T @ y)
+            rhs = A.T @ (Y[:, 0] if self.n_outputs == 1 else Y)
+            solution = np.linalg.solve(A.T @ A + ridge * np.eye(n), rhs)
+        elif self.n_outputs == 1:
+            solution, *_ = np.linalg.lstsq(A, Y[:, 0], rcond=None)
         else:
-            self.theta, *_ = np.linalg.lstsq(A, y, rcond=None)
+            solution, *_ = np.linalg.lstsq(A, Y, rcond=None)
 
+        self.theta = solution.reshape(-1, self.n_outputs)
         return self.theta
 
     def premise_gradients(self, X, y):
@@ -404,20 +435,41 @@ class Anfis:
         """
         n = X.shape[0]
         A, w, _ = self.design_matrix(X)
-        y_hat = A @ self.theta
-        resid = y_hat - y                                   # [N]
+        Y = np.asarray(y)
+        if Y.ndim == 1:
+            Y = Y[:, None]
+
+        y_hat = A @ self.theta                              # [N, O]
+        resid = y_hat - Y                                   # [N, O]
 
         total = w.sum(axis=1)                               # [N]
         safe_total = np.where(total > 0.0, total, 1.0)
 
         # f_r per sample: the rule's own linear consequent.
         Xa = np.hstack([X, np.ones((n, 1))])                # [N, I+1]
-        P = self.theta.reshape(self.n_rules, self.n_inputs + 1)
-        f = Xa @ P.T                                        # [N, R]
+        P = self.theta.reshape(self.n_rules, self.n_inputs + 1,
+                               self.n_outputs)
 
-        # dE/dw_r
-        dE_dy = (2.0 / n) * resid                           # [N]
-        dE_dw = dE_dy[:, None] * (f - y_hat[:, None]) / safe_total[:, None]
+        # dE/dw_r, accumulated across outputs: every output shares the same
+        # firing strengths, so each one pulls on the same premise parameters.
+        #
+        # The single-output case keeps its original two-dimensional
+        # formulation rather than folding into the einsum below. The two are
+        # mathematically identical but sum in a different order, and that is
+        # enough to move a shipped model's last ULP -- which would break the
+        # byte-for-byte reproducibility of every model already fitted with
+        # this trainer. The einsum path is exercised by every multi-output
+        # model, and both are checked against finite differences.
+        dE_dy = (2.0 / n) * resid                           # [N, O]
+
+        if self.n_outputs == 1:
+            f = Xa @ P[:, :, 0].T                           # [N, R]
+            dE_dw = (dE_dy[:, 0][:, None] * (f - y_hat[:, 0][:, None])
+                     / safe_total[:, None])
+        else:
+            f = np.einsum("np,rpo->nro", Xa, P)             # [N, R, O]
+            dE_dw = np.einsum("no,nro->nr",
+                              dE_dy, f - y_hat[:, None, :]) / safe_total[:, None]
 
         mu = self.memberships(X)                            # [N, I, M]
         d_mu = self.mf.gradients(self.params[None, :, :, :],
@@ -517,8 +569,13 @@ class Anfis:
         if keep.size == self.n_rules:
             return keep
 
+        # Slice the consequents BEFORE dropping the rules: n_rules is derived
+        # from self.rules, so reassigning that first would make this reshape
+        # use the post-prune count against a pre-prune array.
+        self.theta = self.theta.reshape(
+            self.n_rules, self.n_inputs + 1, self.n_outputs)[keep].reshape(
+                len(keep) * (self.n_inputs + 1), self.n_outputs)
         self.rules = self.rules[keep]
-        self.theta = self.theta.reshape(-1, self.n_inputs + 1)[keep].reshape(-1)
         self.solve_consequents(X, y)
         return keep
 
@@ -533,8 +590,15 @@ class Anfis:
         return np.clip(self.rules, 0, 255).astype(np.uint8).reshape(-1)
 
     def consequent_flat(self):
-        """[n_rules][n_outputs=1][p_0..p_{n-1}, q] flattened."""
-        return self.theta.reshape(-1)
+        """[n_rules][n_outputs][p_0..p_{n-1}, q] flattened for cpp/anfis.hpp.
+
+        Internally the consequents are [rule*(inputs+1), outputs], which is
+        what the least-squares solve produces. The device wants rule-major,
+        then output, then parameter -- so the transpose happens here, once,
+        rather than being threaded through the training math.
+        """
+        p = self.theta.reshape(self.n_rules, self.n_inputs + 1, self.n_outputs)
+        return np.transpose(p, (0, 2, 1)).reshape(-1)
 
 
 # ---------------------------------------------------------------------------
@@ -558,10 +622,10 @@ def full_grid_rules(n_inputs, n_mfs):
     return rules
 
 
-def build_grid_anfis(X, n_mfs, mf=BellMembership):
+def build_grid_anfis(X, n_mfs, mf=BellMembership, n_outputs=1):
     """Grid-partitioned ANFIS over the full rule grid."""
     return Anfis(X.shape[1], n_mfs, full_grid_rules(X.shape[1], n_mfs),
-                 mf.initialize(X, n_mfs), mf=mf)
+                 mf.initialize(X, n_mfs), mf=mf, n_outputs=n_outputs)
 
 
 def subtractive_clustering(X, radius=0.5, squash=1.25, accept_ratio=0.5,
@@ -637,7 +701,8 @@ def subtractive_clustering(X, radius=0.5, squash=1.25, accept_ratio=0.5,
     return np.array(centers) * span + lo, radius * span
 
 
-def build_scatter_anfis(X, radius=0.5, mf=BellMembership, **kwargs):
+def build_scatter_anfis(X, radius=0.5, mf=BellMembership, n_outputs=1,
+                        **kwargs):
     """Scatter-partitioned ANFIS: one rule per subtractive-clustering center.
 
     This is the structural alternative to `build_grid_anfis`, and the reason
@@ -661,7 +726,7 @@ def build_scatter_anfis(X, radius=0.5, mf=BellMembership, **kwargs):
     rules = np.tile(np.arange(n_clusters, dtype=np.int32)[:, None],
                     (1, n_inputs))
     return Anfis(n_inputs, n_clusters, rules,
-                 mf.initialize_at(centers, widths), mf=mf)
+                 mf.initialize_at(centers, widths), mf=mf, n_outputs=n_outputs)
 
 
 # ---------------------------------------------------------------------------
@@ -712,7 +777,7 @@ def emit_model_header(path, model, namespace, value_type="double",
     parts.append("    constexpr std::size_t NumberOfInputs = %d;\n" % n_inputs)
     parts.append("    constexpr std::size_t NumberOfMembershipFunctionsPerInput = %d;\n" % n_mfs)
     parts.append("    constexpr std::size_t NumberOfRules = %d;\n" % n_rules)
-    parts.append("    constexpr std::size_t NumberOfOutputs = 1;\n")
+    parts.append("    constexpr std::size_t NumberOfOutputs = %d;\n" % model.n_outputs)
     parts.append("    constexpr std::size_t NumberOfParametersPerMembershipFunction = %d;\n"
                  % mf.NumberOfParameters)
     for key, value in sorted((meta or {}).items()):

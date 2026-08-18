@@ -93,6 +93,33 @@ smaller than the parameters it acts on (on the bundled Mackey-Glass problem,
 gradients around 1e-5 against parameters around 0.5). A plain learning rate
 tuned to move anything on one problem does nothing on the next, or diverges.
 
+## Multiple outputs
+
+```python
+model = build_grid_anfis(X, n_mfs=2, n_outputs=3)
+model.fit(X, Y, epochs=200)          # Y is [samples, outputs]
+```
+
+Outputs share the premise layer, the rule table, and the design matrix — only
+the consequents differ. That sharing is the whole economy of the thing: the
+design matrix depends on the premises and inputs but never on the targets, so
+**a multi-output model costs one pseudo-inverse, not one per output**. numpy
+solves every right-hand side in a single call.
+
+`predict` returns `[samples]` for one output and `[samples, outputs]` for
+more, so single-output callers see exactly what they always did.
+
+The shared premises are a genuine compromise rather than free capacity. On a
+two-target synthetic problem, a joint model scored 0.002974 / 0.002434 against
+0.002677 / 0.002436 for two independently fitted single-output models — the
+first output gives up a little so one premise layer can serve both. That is
+the trade you are making, and it is worth it when the device would otherwise
+run two full ANFIS instances.
+
+Only `n_outputs == 1` is exercised by the bundled example, but the emitted
+header carries whatever the model has, and `cpp/anfis.hpp` has supported
+multiple outputs since it landed.
+
 ## Regularize the consequents if the model is headed for int8
 
 `fit(ridge=...)` and `solve_consequents(ridge=...)` add an L2 penalty to the
@@ -241,8 +268,5 @@ derivatives rather than to either of them.
 
 ## Not implemented
 
-* **Multiple outputs.** The parameter layout carries the output axis so the
-  emitted header matches the C++ indexing, but only `n_outputs == 1` is
-  trained.
 * **int8.** This produces float/Q-format parameters. A quantized ANFIS
   (`qanfis.hpp`) is a separate piece of work.
