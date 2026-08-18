@@ -49,6 +49,13 @@ Neither needs a transcendental function, so a model trained here deploys
 into the freestanding (TINYMIND_ENABLE_FLOAT=0 / TINYMIND_ENABLE_STD=0)
 corner unchanged.
 
+Two ways to lay out the rule base:
+
+  * build_grid_anfis     -- the Cartesian grid, M^N rules
+  * build_scatter_anfis  -- one rule per subtractive-clustering center, so
+                            the rule count follows the data rather than the
+                            input count
+
 numpy only -- no torch, no scipy.
 """
 
@@ -132,6 +139,16 @@ class BellMembership:
         for i in range(n_inputs):
             p[i, :, 0] = step[i] * 0.5                       # width
             p[i, :, 1] = np.linspace(lo[i], hi[i], n_mfs)    # centers
+        return p
+
+    @staticmethod
+    def initialize_at(centers, widths):
+        """Place one bell per cluster center. centers is [clusters, inputs]."""
+        n_clusters, n_inputs = centers.shape
+        p = np.zeros((n_inputs, n_clusters, 2))
+        for i in range(n_inputs):
+            p[i, :, 0] = max(widths[i] * 0.5, 1e-3)   # width
+            p[i, :, 1] = centers[:, i]                # center
         return p
 
     @staticmethod
@@ -233,6 +250,18 @@ class TriangularMembership:
             p[i, :, 0] = centers - step[i]
             p[i, :, 1] = centers
             p[i, :, 2] = centers + step[i]
+        return p
+
+    @staticmethod
+    def initialize_at(centers, widths):
+        """Place one triangle per cluster center, feet at +/- the width."""
+        n_clusters, n_inputs = centers.shape
+        p = np.zeros((n_inputs, n_clusters, 3))
+        for i in range(n_inputs):
+            w = max(widths[i], 1e-3)
+            p[i, :, 0] = centers[:, i] - w
+            p[i, :, 1] = centers[:, i]
+            p[i, :, 2] = centers[:, i] + w
         return p
 
     @staticmethod
@@ -506,6 +535,106 @@ def build_grid_anfis(X, n_mfs, mf=BellMembership):
     """Grid-partitioned ANFIS over the full rule grid."""
     return Anfis(X.shape[1], n_mfs, full_grid_rules(X.shape[1], n_mfs),
                  mf.initialize(X, n_mfs), mf=mf)
+
+
+def subtractive_clustering(X, radius=0.5, squash=1.25, accept_ratio=0.5,
+                           reject_ratio=0.15, max_clusters=64):
+    """Chiu's subtractive clustering (1994). Returns (centers, widths).
+
+    Every data point is a candidate cluster center. A point's potential is
+    the sum of its neighbours' proximity, so points in dense regions score
+    highest:
+
+        P_i = sum_j exp(-alpha * ||z_i - z_j||^2),   alpha = 4 / radius^2
+
+    The highest-potential point becomes a center, then that center's
+    influence is *subtracted* from every remaining point, which stops the
+    next pick from landing on its immediate neighbour:
+
+        P_i <- P_i - P_k * exp(-beta * ||z_i - z_k||^2),
+                                     beta = 4 / (squash * radius)^2
+
+    Accept / reject thresholds are relative to the first center's potential.
+    A candidate between the two is taken only if it is far enough from every
+    existing center to be worth a rule of its own; otherwise it is discarded
+    and the search continues.
+
+    Distances are computed on the unit hypercube (each input min-max scaled),
+    so `radius` means the same thing regardless of the physical units of the
+    inputs. It is the one knob that matters: smaller radius, more clusters.
+
+    Returns centers in the ORIGINAL input units, and the per-input width that
+    `radius` corresponds to, ready for a membership function policy's
+    `initialize_at`.
+    """
+    lo = X.min(axis=0)
+    hi = X.max(axis=0)
+    span = np.where(hi > lo, hi - lo, 1.0)
+    Z = (X - lo) / span
+
+    alpha = 4.0 / (radius * radius)
+    beta = 4.0 / ((squash * radius) ** 2)
+
+    squared = ((Z[:, None, :] - Z[None, :, :]) ** 2).sum(-1)
+    potential = np.exp(-alpha * squared).sum(axis=1)
+
+    centers = []
+    first = float(potential.max())
+
+    while len(centers) < max_clusters:
+        k = int(np.argmax(potential))
+        peak = float(potential[k])
+
+        if peak <= 0.0:
+            break
+
+        if peak <= reject_ratio * first:
+            break
+
+        if peak < accept_ratio * first:
+            # Gray zone: keep it only if it buys coverage somewhere new.
+            nearest = min(float(np.sqrt(((Z[k] - c) ** 2).sum()))
+                          for c in centers) if centers else float("inf")
+            if (nearest / radius) + (peak / first) < 1.0:
+                potential[k] = 0.0
+                continue
+
+        centers.append(Z[k].copy())
+        potential = potential - peak * np.exp(
+            -beta * ((Z - Z[k]) ** 2).sum(-1))
+        np.maximum(potential, 0.0, out=potential)
+
+    if not centers:
+        centers = [Z[int(np.argmax(potential))].copy()]
+
+    return np.array(centers) * span + lo, radius * span
+
+
+def build_scatter_anfis(X, radius=0.5, mf=BellMembership, **kwargs):
+    """Scatter-partitioned ANFIS: one rule per subtractive-clustering center.
+
+    This is the structural alternative to `build_grid_anfis`, and the reason
+    to reach for it is rule count. A grid takes the Cartesian product of every
+    input's membership functions, so rules grow as M^N -- 3 membership
+    functions over 8 inputs is 6561 rules, which is unusable. A scatter
+    partition puts one membership function per input *per cluster* and pairs
+    them diagonally, so the rule count is the number of clusters the data
+    actually has, independent of the input count.
+
+    On the bundled Mackey-Glass benchmark (4 inputs), a grid at 3 membership
+    functions is 81 rules while subtractive clustering finds 8; at 8 inputs it
+    is 6561 against 14.
+
+    The rule table is the diagonal -- rule r reads membership function r of
+    every input -- which `cpp/anfis.hpp` consumes unchanged, since it takes an
+    explicit table rather than assuming a grid.
+    """
+    centers, widths = subtractive_clustering(X, radius=radius, **kwargs)
+    n_clusters, n_inputs = centers.shape
+    rules = np.tile(np.arange(n_clusters, dtype=np.int32)[:, None],
+                    (1, n_inputs))
+    return Anfis(n_inputs, n_clusters, rules,
+                 mf.initialize_at(centers, widths), mf=mf)
 
 
 # ---------------------------------------------------------------------------

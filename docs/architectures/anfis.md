@@ -85,6 +85,26 @@ Read that table qualitatively rather than to the digit: the unpruned 81-rule des
 A `DontCareIndex` antecedent drops an input from a rule entirely,
 contributing a grade of 1 — which is what a pruned antecedent looks like.
 
+### Or skip the grid entirely
+
+Because the rule table is explicit, it does not have to *be* a grid. The host
+trainer's `build_scatter_anfis` runs Chiu subtractive clustering over the
+training data and gives each cluster one rule, with one membership function per
+input centered on that cluster. The table becomes the diagonal — rule `r` reads
+membership function `r` of every input — and `cpp/anfis.hpp` runs it unchanged.
+
+The rule count then follows the data's structure rather than the input count:
+
+| inputs | grid at 3 MFs | subtractive clustering |
+|---|---|---|
+| 2 | 9 | 3 |
+| 4 | 81 | 8 |
+| 6 | 729 | 8 |
+| 8 | 6561 | 14 |
+
+On the bundled benchmark, 5 clustered rules and 65 parameters land within 18%
+of the 16-rule grid's test error.
+
 ## Membership functions
 
 Triangular, trapezoidal, and generalized-bell shapes use only compare, add,
