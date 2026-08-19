@@ -174,6 +174,17 @@ const char* kGoldenStateSpace =
 // deliberately absent: the double reference is a host-side check, not a
 // reproducible artifact. Verified identical across -O0, -g, -O3, and
 // -O2 -ffast-math.
+// The int8 ANFIS exemplar. Its stream carries the footprint numbers as well as
+// the outputs, because the headline result of that example is a NEGATIVE one --
+// int8 is larger than Q16.16 for this model -- and a silent change in the
+// lookup-table sizing would otherwise slip past unnoticed.
+const char* kGoldenAnfisMackeyGlassInt8 =
+    "# anfis_mackey_glass_int8 golden output\n"
+    "# rules=16 inputs=4 mfs=2\n"
+    "int8: 63 -23 -34 -11 -47 28 82 -4\n"
+    "rule: 8 12 12 12 12 13 4 12\n"
+    "bytes: qformat=448 int8=4428 lut=4096\n";
+
 const char* kGoldenAnfisMackeyGlass =
     "# anfis_mackey_glass golden output\n"
     "# rules=16 inputs=4 mfs=2 q=16.16\n"
@@ -192,6 +203,13 @@ BOOST_AUTO_TEST_CASE(gbdt_tabular_int8_golden_match)
     requireGoldenMatch(
         "../../../examples/gbdt_tabular_int8/output/gbdt_tabular_int8",
         kGoldenGbdtTabular);
+}
+
+BOOST_AUTO_TEST_CASE(anfis_mackey_glass_int8_golden_match)
+{
+    requireGoldenMatch(
+        "../../../examples/anfis_mackey_glass_int8/output/anfis_mackey_glass_int8",
+        kGoldenAnfisMackeyGlassInt8);
 }
 
 BOOST_AUTO_TEST_CASE(anfis_mackey_glass_golden_match)
