@@ -137,6 +137,25 @@ On the Mackey-Glass model, reading the rule base back shows rule 0 carrying
 10% — the model barely uses the upper half of its most recent input. A dense
 net of the same size cannot make that statement about itself.
 
+## The int8 tier costs memory rather than saving it
+
+`cpp/qanfis.hpp` is the integer counterpart, and it is worth being blunt about
+what it buys. Membership functions become 256-entry lookup tables, so their
+shape stops mattering at runtime — but a table costs 512 bytes regardless of
+how few parameters the shape it replaced had. On the bundled benchmark the
+tables are 4096 bytes, 92.5% of the int8 model, and the whole thing is **9.9x
+larger** than the same model in Q16.16 (4428 bytes against 448).
+
+Per rule int8 is cheaper, 20 bytes against 24, so the crossover is about 1024
+rules — three orders of magnitude past what this model or most published fuzzy
+hardware uses.
+
+Reach for the int8 tier when the rest of the graph is already int8 and you want
+ANFIS to consume that directly, with no bridge and no float on the hot path.
+Reach for Q16.16 when ANFIS is the model. See the
+[int8 exemplar]({{ site.baseurl }}/examples/anfis_mackey_glass_int8) for the
+measurements.
+
 ## Training is host-side
 
 `cpp/anfis.hpp` is inference only. Jang's hybrid scheme solves the

@@ -16,6 +16,7 @@ check :
 	cd examples/ltc_sequence && make clean && make && make release && make run && cd -
 	cd examples/cfc_sequence && make clean && make && make release && make run && cd -
 	cd examples/anfis_mackey_glass && make clean && make && make release && make run && make golden && cd -
+	cd examples/anfis_mackey_glass_int8 && make clean && make && make release && make run && make golden && cd -
 	cd examples/qcfc_liquid_int8 && make clean && make && make release && make run && make bench && make golden && cd -
 	cd examples/xor && make clean && make && make release && cd -
 	cd examples/maze && make clean && make && make release && cd -

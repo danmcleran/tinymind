@@ -37,6 +37,9 @@ these exactly.
 **Mackey-Glass ANFIS** — Jang's benchmark, a 16-rule Takagi-Sugeno system in 448 bytes of Q16.16: held-out fit, hybrid training, the rule base read back, and what pruning an oversized 81-rule grid recovers.
 ![Mackey-Glass ANFIS]({{ site.baseurl }}/assets/plots/anfis_mackey_glass.png)
 
+**int8 ANFIS** — the same model on the int8 tier: accuracy holds, but the grade lookup tables make it 9.9x *larger* than Q16.16. A negative result, measured.
+![int8 ANFIS]({{ site.baseurl }}/assets/plots/anfis_mackey_glass_int8.png)
+
 ## Liquid neural networks (continuous-time)
 
 **LTC** — fused ODE-solver cell trained to a leaky-integrator step response via reverse-mode autodiff.
