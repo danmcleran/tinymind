@@ -356,6 +356,57 @@ jobs:
           BOOST_HOME: /usr
         run: make check-clang-avx2
 
+  clang-integration:
+    name: Clang build (golden-byte exemplars)
+    runs-on: ubuntu-latest
+    needs: changes
+    # HARD GATE. unit_test/integration compiles nothing itself -- it runs
+    # examples/*/output/<name> --golden and compares bytes -- so it is absent
+    # from CLANG_SUITES and needs its example inputs built with clang first.
+    # The int8 pipelines are integer-only and so should be bit-exact across
+    # compilers; this job is what proves it, since the committed goldens are
+    # shared. A divergence here is a real finding, not a tolerance issue.
+    # Name is pinned in branch protection.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: needs.changes.outputs.code == 'true'
+      - name: Install Clang + Boost
+        if: needs.changes.outputs.code == 'true'
+        uses: ./.github/actions/apt-install
+        with:
+          packages: clang libboost-dev libboost-test-dev
+      - name: Build exemplars with clang++ and verify golden bytes
+        if: needs.changes.outputs.code == 'true'
+        env:
+          BOOST_HOME: /usr
+        run: make check-clang-integration
+
+  msan:
+    name: MSan (uninitialized reads)
+    runs-on: ubuntu-latest
+    needs: changes
+    # HARD GATE. Closes a gap ASan and UBSan structurally cannot cover: reads of
+    # uninitialized memory. Both UB sites fixed in #171 -- a
+    # static-initialization-order read and an uninitialized member -- were
+    # invisible to the existing sanitizer jobs, which is why they survived.
+    #
+    # Scoped to unit_test/embedded because MSan requires every linked object to
+    # be instrumented; against a stock libstdc++ the Boost suites die inside
+    # Boost.Test's own static init before reaching TinyMind code. Runs at -O0
+    # because at -O1+ the optimizer folds undef reads away before instrumentation
+    # sees them -- verified by planting one. Name is pinned in branch protection.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: needs.changes.outputs.code == 'true'
+      - name: Install Clang
+        if: needs.changes.outputs.code == 'true'
+        uses: ./.github/actions/apt-install
+        with:
+          packages: clang
+      - name: Run the embedded gate corners under MemorySanitizer
+        if: needs.changes.outputs.code == 'true'
+        run: make check-msan
+
   header-selfcheck:
     name: Header self-containment
     runs-on: ubuntu-latest

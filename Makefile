@@ -393,10 +393,70 @@ check-clang-avx2 :
 	done
 	@echo "check-clang-avx2: AVX2 intrinsics build and pass with $(CLANG_CXX)"
 
+# The examples unit_test/integration shells out to. That suite compiles nothing
+# itself -- it runs `examples/*/output/<name> --golden` and compares bytes -- so
+# covering it under clang means building its inputs with clang first. Worth
+# doing: the int8 pipelines are integer-only and therefore ought to be bit-exact
+# across compilers, and this target is what actually proves it. The committed
+# goldens are the same either way, so a divergence here is a real finding.
+CLANG_INTEGRATION_EXAMPLES = anfis_mackey_glass anfis_mackey_glass_int8 \
+                             gbdt_tabular_int8 mixed_precision_kws \
+                             mixed_precision_mlp_int8_qformat mobilenetv2_int8 \
+                             resnet18_block_int8 seq2seq_int8 \
+                             seq2seq_softmax_int8 state_space_int8 \
+                             tiny_generate_int8 transformer_encoder_int8
+
+check-clang-integration :
+	@command -v $(CLANG_CXX) >/dev/null 2>&1 || \
+	  { echo "ERROR: $(CLANG_CXX) not found. sudo apt install clang"; exit 1; }
+	@for e in $(CLANG_INTEGRATION_EXAMPLES); do \
+		echo "=== check-clang-integration: building examples/$$e ==="; \
+		( cd examples/$$e && $(MAKE) clean >/dev/null 2>&1 && \
+		  $(MAKE) CC="$(CLANG_CXX)" >/dev/null ) \
+		  || { echo "CHECK-CLANG-INTEGRATION BUILD FAIL: examples/$$e"; exit 1; }; \
+	done
+	@echo "=== check-clang-integration: unit_test/integration ==="
+	@( cd unit_test/integration && $(MAKE) clean >/dev/null 2>&1 && \
+	   $(MAKE) CC="$(CLANG_CXX)" && $(MAKE) CC="$(CLANG_CXX)" run ) \
+	   || { echo "CHECK-CLANG-INTEGRATION FAIL: unit_test/integration"; exit 1; }
+	@echo "check-clang-integration: golden bytes match with $(CLANG_CXX)"
+
+# MemorySanitizer over the embedded smoke corners.
+#
+# MSan closes a gap ASan and UBSan structurally cannot: reads of uninitialized
+# memory. Both UB sites fixed in #171 -- a static-initialization-order read and
+# an uninitialized member -- were invisible to the existing sanitizer jobs, and
+# that is why they survived so long.
+#
+# Two deliberate constraints:
+#
+# 1. Embedded smoke only, not the Boost suites. MSan demands that *every* linked
+#    object be instrumented; against a stock libstdc++ the first report lands
+#    inside Boost.Test's own static init and the run dies before reaching any
+#    TinyMind code. Covering the Boost suites means building libc++ and
+#    Boost.Test with MSan, which is a much larger undertaking. The embedded
+#    smoke test uses neither, and it is the code that actually ships.
+#
+# 2. -O0, not -O1. At -O1 and above the optimizer folds an undef read away
+#    before instrumentation sees it: a deliberately planted uninitialized read
+#    is reported at -O0 and silently missed at -O1. An MSan job at -O1 would be
+#    vacuous, so the level here is load-bearing, not a debug convenience.
+MSAN_CC ?= $(CLANG_CXX) -fsanitize=memory -fsanitize-memory-track-origins=2 \
+           -fno-omit-frame-pointer -O0 -g
+
+check-msan :
+	@command -v $(CLANG_CXX) >/dev/null 2>&1 || \
+	  { echo "ERROR: $(CLANG_CXX) not found. sudo apt install clang"; exit 1; }
+	@( cd unit_test/embedded && $(MAKE) clean >/dev/null 2>&1 && \
+	   $(MAKE) CC="$(MSAN_CC)" WARN="$(SAN_WARN)" && \
+	   $(MAKE) CC="$(MSAN_CC)" WARN="$(SAN_WARN)" run ) \
+	   || { echo "CHECK-MSAN FAIL: unit_test/embedded"; exit 1; }
+	@echo "check-msan: no uninitialized reads across the embedded gate corners"
+
 analyze : misra tidy cppcheck header-selfcheck warnings-strict
 
 .PHONY : sanitize cppcheck misra tidy analyze coverage-check header-selfcheck warnings-strict \
-         check-clang check-clang-avx2
+         check-clang check-clang-avx2 check-clang-integration check-msan
 
 # Recursively clean every unit test, example, and app (each subdir Makefile has
 # its own clean target), plus the coverage artifacts.
