@@ -77,6 +77,12 @@ TINYMIND_DISABLE_WARNING_POP
 #define NUMBER_OF_ACTIONS 6
 #define RANDOM_SEED 7U
 
+// Upper bound on the steps any one episode may take. The maze has 6 states, so
+// a policy that is making progress reaches the goal in far fewer; this exists
+// so that a policy which is *not* making progress fails the test instead of
+// looping forever.
+static const size_t MAX_STEPS_PER_EPISODE = 1000;
+
 typedef uint8_t state_t;
 typedef uint8_t action_t;
 
@@ -87,27 +93,46 @@ struct UniformRealRandomNumberGenerator
 
     static ValueType generateRandomWeight()
     {
-        const double temp = distribution(generator);
+        const double temp = distribution()(generator());
         const ValueType weight = WeightConverterPolicy::convertToDestinationType(temp);
 
         return weight;
     }
 
 private:
-    static std::default_random_engine generator;
-    static std::uniform_real_distribution<double> distribution;
+    // Function-local statics, not namespace-scope ones. These are consumed by
+    // the constructors of the static QLearner objects below, and dynamic
+    // initialization of a static data member of a class template is *unordered*
+    // with respect to other non-local variables ([basic.start.dynamic]), so a
+    // namespace-scope definition may or may not have run by the time those
+    // constructors call generateRandomWeight(). It genuinely differed by
+    // compiler: g++ used the still-zero-initialized distribution, handing every
+    // weight 0.0, while clang used a properly constructed [-1, 1). Reading an
+    // object before its lifetime begins is UB either way. Function-local
+    // statics are initialized on first use, so both compilers now see a real
+    // distribution and identical weights.
+    static std::default_random_engine& generator()
+    {
+        static std::default_random_engine instance(RANDOM_SEED);
+
+        return instance;
+    }
+
+    static std::uniform_real_distribution<double>& distribution()
+    {
+        static std::uniform_real_distribution<double> instance(-1.0, 1.0);
+
+        return instance;
+    }
 };
-
-template<typename ValueType>
-std::default_random_engine UniformRealRandomNumberGenerator<ValueType>::generator;
-
-template<typename ValueType>
-std::uniform_real_distribution<double> UniformRealRandomNumberGenerator<ValueType>::distribution(-1.0, 1.0);
 
 template<typename T>
 struct MazeEnvironmentRandomNumberGeneratorPolicy
 {
-    MazeEnvironmentRandomNumberGeneratorPolicy() : mRandomEngine(RANDOM_SEED)
+    // mRandomActionDecisionPoint must be initialized here: getRandomActionDecisionPoint()
+    // is reachable before any setRandomActionDecisionPoint() call, and reading an
+    // uninitialized member is UB that neither ASan nor UBSan diagnoses.
+    MazeEnvironmentRandomNumberGeneratorPolicy() : mRandomEngine(RANDOM_SEED), mRandomActionDecisionPoint(0)
     {
     }
 
@@ -683,8 +708,13 @@ BOOST_AUTO_TEST_CASE(test_qlearn_iterate)
         experience.newState =  static_cast<state_t>(experience.action);
         qLearner.updateFromExperience(experience);
 
-        while (qLearner.getState() != 5)
+        // Bounded: tabular Q-learning on this maze does reach the goal, so the
+        // cap is a guard rather than an expected exit. Hitting it is a failure,
+        // not a hang -- see the assertion after the loop.
+        size_t steps = 0;
+        while (qLearner.getState() != 5 && steps < MAX_STEPS_PER_EPISODE)
         {
+            ++steps;
             action = qLearner.takeAction(qLearner.getState());
             experience.state = qLearner.getState();
             experience.action = action;
@@ -692,6 +722,8 @@ BOOST_AUTO_TEST_CASE(test_qlearn_iterate)
             experience.newState =  static_cast<state_t>(experience.action);
             qLearner.updateFromExperience(experience);
         }
+
+        BOOST_TEST(steps < MAX_STEPS_PER_EPISODE);
 
         if (decisionPoint > 0)
         {
@@ -757,7 +789,17 @@ BOOST_AUTO_TEST_CASE(test_dqn_qlearn_iterate)
         experience.newState =  static_cast<state_t>(experience.action);
         dqnQLearner.updateFromExperience(experience);
 
-        while (dqnQLearner.getState() != dqnQLearner.getEnvironment().getGoalState())
+        // Bounded episode. This case asserts nothing about the policy -- it
+        // exercises the DQN iterate/update machinery -- so an episode that does
+        // not reach the goal is simply cut short rather than spinning forever.
+        // The greedy policy is under no obligation to reach the goal, and with
+        // an unbounded loop it does not: the loop only ever terminated because
+        // the weights were accidentally all zero (see the static-initialization
+        // note on UniformRealRandomNumberGenerator).
+        for (size_t step = 0;
+             step < MAX_STEPS_PER_EPISODE &&
+                 dqnQLearner.getState() != dqnQLearner.getEnvironment().getGoalState();
+             ++step)
         {
             action = dqnQLearner.takeAction(dqnQLearner.getState());
             experience.state = dqnQLearner.getState();
@@ -828,14 +870,21 @@ BOOST_AUTO_TEST_CASE(test_untrained_qlearner_iterate)
         state = static_cast<state_t>(stateDistribution(engine));
         untrainedQLearner.setState(state);
         untrainedQLearner.getEnvironment().setGoalState(goalState);
+        // Bounded: this learner is seeded with the trained Q table, so it does
+        // reach the goal. The cap turns a future regression into a failure
+        // rather than a hang.
+        size_t steps = 0;
         do
         {
+            ++steps;
             action = untrainedQLearner.takeAction(untrainedQLearner.getState());
             experience.state = state;
             experience.action = action;
             experience.newState =  static_cast<state_t>(experience.action);
             untrainedQLearner.setState(experience.newState);
-        } while (untrainedQLearner.getState() != goalState);
+        } while (untrainedQLearner.getState() != goalState && steps < MAX_STEPS_PER_EPISODE);
+
+        BOOST_TEST(steps < MAX_STEPS_PER_EPISODE);
 
         ++iterations;
         BOOST_TEST(goalState == untrainedQLearner.getState());
