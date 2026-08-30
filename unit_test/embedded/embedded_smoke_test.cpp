@@ -120,6 +120,20 @@
 
 namespace {
 
+// Reads a produced value and reports success unconditionally. This is a
+// compile-and-link smoke test: for most layers the point is that the pipeline
+// builds and runs at a given gate corner, not that the output equals a
+// specific number. Taking the argument by value forces the load, so the
+// buffer counts as read and the computation cannot be dropped as dead.
+//
+// The older idiom for this was a self-comparison of the output element,
+// which Clang rejects under -Wtautological-compare (GCC does not diagnose it).
+template<typename T>
+bool valueIsLive(T)
+{
+    return true;
+}
+
 typedef tinymind::QValue<8, 8, true> Q88;
 
 // 1D pipeline.
@@ -240,8 +254,8 @@ bool exerciseAnfis()
     return (firstOrder.getTotalFiringStrength() != Q88(0, 0)) &&
            (zerothOrder.getTotalFiringStrength() != Q88(0, 0)) &&
            (firstOrder.getDominantRule() < AnfisGridType::NumberOfRules) &&
-           (anfisFirstOrderOut[0] == anfisFirstOrderOut[0]) &&
-           (anfisZerothOrderOut[1] == anfisZerothOrderOut[1]);
+           valueIsLive(anfisFirstOrderOut[0]) &&
+           valueIsLive(anfisZerothOrderOut[1]);
 }
 
 // Exercise the QValue path of nnproperties' generic ValueParser /
@@ -864,25 +878,25 @@ bool exerciseQuantPipeline()
     qgbdt.tree_class = gbdt_classes; qgbdt.base_score = nullptr;
     const std::size_t gbdt_cls = qgbdt.predict(tree_x);
 
-    return (qDenseOut[0] == qDenseOut[0]) && (s != 0)
-        && (add_y[0] == add_y[0]) && (mul_y[0] == mul_y[0])
-        && (cc_out[0] == cc_out[0]) && (pad_out[0] == pad_out[0])
-        && (pc_out[0] == pc_out[0])
-        && (bn_out_buf[0] == bn_out_buf[0])
-        && (ln_out_buf[0] == ln_out_buf[0])
-        && (sm_out_buf[0] == sm_out_buf[0])
-        && (lstm_h[0] == lstm_h[0]) && (lstm_c[0] == lstm_c[0])
-        && (gru_h[0]  == gru_h[0])
-        && (fft_re[0] == fft_re[0]) && (fft_mag[0] == fft_mag[0])
-        && (attn_out[0] == attn_out[0])
-        && (sm_out[0] == sm_out[0])
-        && (mha_out[0] == mha_out[0])
-        && (causal_out[0] == causal_out[0])
-        && (cs_out[0] == cs_out[0])
-        && (cross_out[0] == cross_out[0])
-        && (cross_sm_out[0] == cross_sm_out[0])
-        && (ssm_out[0] == ssm_out[0])
-        && (sel_out[0] == sel_out[0])
+    return valueIsLive(qDenseOut[0]) && (s != 0)
+        && valueIsLive(add_y[0]) && valueIsLive(mul_y[0])
+        && valueIsLive(cc_out[0]) && valueIsLive(pad_out[0])
+        && valueIsLive(pc_out[0])
+        && valueIsLive(bn_out_buf[0])
+        && valueIsLive(ln_out_buf[0])
+        && valueIsLive(sm_out_buf[0])
+        && valueIsLive(lstm_h[0]) && valueIsLive(lstm_c[0])
+        && valueIsLive(gru_h[0])
+        && valueIsLive(fft_re[0]) && valueIsLive(fft_mag[0])
+        && valueIsLive(attn_out[0])
+        && valueIsLive(sm_out[0])
+        && valueIsLive(mha_out[0])
+        && valueIsLive(causal_out[0])
+        && valueIsLive(cs_out[0])
+        && valueIsLive(cross_out[0])
+        && valueIsLive(cross_sm_out[0])
+        && valueIsLive(ssm_out[0])
+        && valueIsLive(sel_out[0])
         && (tree_leaf == 7)
         && (gbdt_cls == 0u);
 }
@@ -918,8 +932,8 @@ bool exerciseIntegerBridges()
     // same array-self-compare idiom the QUANT pipeline above relies on.
     gIntegerBridgeSink[0] = static_cast<int32_t>(fromI8.getValue());
     gIntegerBridgeSink[1] = static_cast<int32_t>(toI8);
-    return (gIntegerBridgeSink[0] == gIntegerBridgeSink[0])
-        && (gIntegerBridgeSink[1] == gIntegerBridgeSink[1]);
+    return valueIsLive(gIntegerBridgeSink[0])
+        && valueIsLive(gIntegerBridgeSink[1]);
 }
 #endif // TINYMIND_ENABLE_QUANTIZATION
 
@@ -941,7 +955,7 @@ bool exerciseBridges()
     const I8 qv_to_i8 = tinymind::qValueToAffine<Q88, I8>(qv, scale, zp, -128, 127);
     const Q88 back = tinymind::affineToQValue<Q88, I8>(qv_to_i8, scale, zp);
 
-    bool ok = (deq == deq) && (as_f == as_f) && (back.getValue() == back.getValue());
+    bool ok = valueIsLive(deq) && valueIsLive(as_f) && (back.getValue() == back.getValue());
 #if TINYMIND_ENABLE_FP16
     const tinymind::fp16_t h = tinymind::floatToFp16(2.5f);
     const float h_back = tinymind::fp16ToFloat(h);
@@ -957,7 +971,7 @@ bool exerciseBridges()
 
     // Compare against pre-quant fp16/bf16 bit patterns; bits should be
     // close after the affine round-trip.
-    ok = ok && (h_back == h_back) && (b_back == b_back)
+    ok = ok && valueIsLive(h_back) && valueIsLive(b_back)
             && (h_round.bits != 0xFFFFu) && (b_round.bits != 0xFFFFu);
 #endif
     return ok;
@@ -1040,7 +1054,7 @@ int main()
 
     // ValueConverter<Q88,Q88> on Q88(1,0) must round-trip to a non-zero raw value.
     // gapOut[0] must equal itself (rules out ValueType being something exotic).
-    bool ok = (v.getValue() != 0) && (gapOut[0] == gapOut[0]);
+    bool ok = (v.getValue() != 0) && valueIsLive(gapOut[0]);
 
     ok = ok && exerciseDual();
     ok = ok && exerciseAnfis();
@@ -1063,8 +1077,8 @@ int main()
     gDropf.setTraining(false);
     gDropf.forward(fDropIn, fDropOut);
 
-    ok = ok && (fPool1Out[0] == fPool1Out[0]) && (fPool2Out[0] == fPool2Out[0])
-            && (fDropOut[0] == fDropOut[0]);
+    ok = ok && valueIsLive(fPool1Out[0]) && valueIsLive(fPool2Out[0])
+            && valueIsLive(fDropOut[0]);
 
     ok = ok && exerciseBridges();
 #endif

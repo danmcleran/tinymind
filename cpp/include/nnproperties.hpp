@@ -337,7 +337,7 @@ namespace tinymind {
 
         template<typename SourceType, typename DestinationType>
         static void loadStates(
-                               NeuralNetworkType& neuralNetwork,
+                               NeuralNetworkType&,
                                std::ifstream& inFile,
                                std::vector<SourceType>& sourceTypeStates,
                                std::vector<DestinationType>& destinationTypeStates)
