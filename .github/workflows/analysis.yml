@@ -306,20 +306,19 @@ jobs:
           if-no-files-found: ignore
 
   clang-build:
-    name: Clang build (advisory)
+    name: Clang build
     runs-on: ubuntu-latest
     needs: changes
-    # Advisory for now -- promote to a hard gate once it has run green for a
-    # few PRs. TinyMind is header-only, so users compile cpp/**.hpp with their
+    # HARD GATE. TinyMind is header-only, so users compile cpp/**.hpp with their
     # own toolchain; a GCC-only CI means clang conformance breakage is found by
     # them, not by us. Clang diagnoses template member bodies eagerly (GCC
     # defers to instantiation) and owns -W names GCC lacks, which is the class
     # of defect this job exists to catch. Covers the eight-corner embedded gate
-    # matrix plus every Boost suite.
+    # matrix plus the Boost suites in CLANG_SUITES.
     #
-    # NOTE: promoting this to required means adding "Clang build (advisory)"
-    # -- or whatever it is renamed to -- to branch protection by literal name.
-    continue-on-error: true
+    # NOTE: this job's name is pinned in branch protection by literal string.
+    # Renaming it without updating protection in the same change leaves the
+    # required context unreported and blocks every PR permanently.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'
@@ -335,15 +334,14 @@ jobs:
         run: make check-clang
 
   clang-build-avx2:
-    name: Clang build, AVX2 backend (advisory)
+    name: Clang build (AVX2 backend)
     runs-on: ubuntu-latest
     needs: changes
-    # Advisory. The scalar clang-build job never reaches the hand-written
+    # HARD GATE. The scalar clang-build job never reaches the hand-written
     # intrinsics in cpp/include/simd/ -- intrinsic availability and
     # target-attribute handling is where GCC and clang diverge most. Golden
     # output checks in these suites double as a scalar-vs-AVX2 equivalence
-    # assertion under a second compiler.
-    continue-on-error: true
+    # assertion under a second compiler. Name is pinned in branch protection.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'
