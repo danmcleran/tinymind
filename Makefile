@@ -350,24 +350,14 @@ warnings-strict :
 # beats a makefile assignment and propagates through MAKEFLAGS, so passing
 # CC here is enough -- no sub-Makefile edits needed.
 #
-# unit_test/qlearn is deliberately absent from CLANG_SUITES. Built with clang it
-# does not terminate: test_dqn_qlearn_iterate's inner
-#   while (dqnQLearner.getState() != ...getGoalState())
-# has no iteration cap, so it exits only once the DQN's greedy policy happens to
-# reach the goal state. Under g++ the whole suite finishes in ~0.02s; under
-# clang that loop spins at 100% CPU indefinitely (observed >60 min). The hang
-# reproduces on master with no changes from this branch, so it is a pre-existing
-# latent defect that clang merely exposes -- ASan+UBSan report nothing on the
-# path taken. Re-add this suite once the loop carries a bound.
-#
-# unit_test/integration is also absent: it is a golden-byte suite that shells
-# out to already-built example binaries (examples/*/output/<name> --golden)
+# unit_test/integration is absent from CLANG_SUITES: it is a golden-byte suite
+# that shells out to already-built example binaries (examples/*/output/<name> --golden)
 # rather than compiling anything itself, so running it here only reports
 # whether `make check` happened to leave those artifacts behind -- exit 127 on
 # a clean tree. Covering the exemplars under clang means building the examples
 # with clang first, which is a larger change than this target is scoped for.
 CLANG_CXX    ?= clang++
-CLANG_SUITES  = unit_test/nn unit_test/qformat \
+CLANG_SUITES  = unit_test/nn unit_test/qformat unit_test/qlearn \
                 unit_test/lookuptable unit_test/quantization unit_test/dual \
                 unit_test/kan unit_test/pinn unit_test/ltc unit_test/cfc
 
