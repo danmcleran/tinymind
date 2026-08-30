@@ -926,6 +926,46 @@ cd examples/pinn_heat1d && make clean && make          # PINN residual via autod
 - Debug: `-Wall -Wextra -Werror -Wpedantic -ggdb`
 - Release: `-Wall -Wextra -Werror -Wpedantic -O3`
 
+Both GCC and Clang are built and tested in CI, on the host and (build-only) for
+Cortex-M via `arm-none-eabi-g++`. Because TinyMind is header-only, your
+toolchain compiles these headers directly — so both compilers are kept warning
+clean at `-Werror`, not merely working.
+
+### Warning-Suppression Macros (`include/compiler.h`)
+
+Portable push/pop diagnostics wrappers, mainly for quarantining warnings from
+third-party headers you cannot edit. They expand to the right pragma on
+GCC/Clang, the `__pragma(warning(...))` form on MSVC, and to nothing on an
+unrecognized compiler.
+
+| Macro | Effect |
+|---|---|
+| `TINYMIND_DISABLE_WARNING_PUSH` / `_POP` | Save and restore diagnostic state; always pair them |
+| `TINYMIND_DISABLE_WARNING(w)` | Generic form — quoted `-W` name on GCC/Clang, numeric code on MSVC |
+| `TINYMIND_DISABLE_WARNING_GCC_CLANG(w)` | Quoted `-W` name; no-op on MSVC |
+| `TINYMIND_DISABLE_WARNING_MSVC(code)` | Numeric warning code; no-op on GCC/Clang |
+| `TINYMIND_DISABLE_WARNING_GCC_ONLY(w)` | Applied only by GCC; no-op on Clang and MSVC |
+| `TINYMIND_DISABLE_WARNING_CLANG_ONLY(w)` | Applied only by Clang; no-op on GCC and MSVC |
+
+```cpp
+#include "compiler.h"
+
+TINYMIND_DISABLE_WARNING_PUSH
+TINYMIND_DISABLE_WARNING_GCC_ONLY("-Wdangling-reference")   // GCC 13+ only
+#include <boost/test/included/unit_test.hpp>
+TINYMIND_DISABLE_WARNING_POP
+```
+
+**Use the `_GCC_ONLY` / `_CLANG_ONLY` forms whenever a warning name exists in
+only one compiler.** Naming a warning the other compiler does not recognize is
+itself a diagnostic — `-Wunknown-warning-option` on Clang, `-Wpragmas` on GCC —
+which becomes a hard error under `-Werror`. `-Wdangling-reference` (GCC 13+) and
+`-Wtautological-compare` (Clang) are both in that category. The generic
+`TINYMIND_DISABLE_WARNING` form is correct only for names both compilers share.
+
+Note that Clang also defines `__GNUC__`, so any code branching on the compiler
+must test `__clang__` first; the macros above already do.
+
 ### Platform Feature Gates
 
 TinyMind compiles cleanly on freestanding embedded targets that lack an FPU, a hosted C++ stdlib, or a C runtime `rand()`. Preprocessor macros control which dependencies are pulled in. **All default to 0** so embedded targets get the strictest configuration out of the box; hosted users opt in via `-DTINYMIND_ENABLE_*=1`. The gates are orthogonal — pick exactly the subset your toolchain (and ISA) provides.
@@ -966,11 +1006,17 @@ Every push and pull request runs the [Static & Dynamic Analysis](.github/workflo
 | Coverage floor | gcov + lcov, `cpp/` line/function floors | **Blocking** | `make coverage && make coverage-check` |
 | Formal proofs | CBMC over the fixed-point `qformat` kernels | **Blocking** | `make -C formal prove` |
 | Fuzzing | libFuzzer over int8 kernels, time-boxed, ASan+UBSan | **Blocking** | `make -C fuzz fuzz-ci` |
+| Uninitialized reads | Clang MemorySanitizer over the embedded gate corners, `-O0` | **Blocking** | `make check-msan` |
+| Second toolchain | Clang build + run of the embedded matrix and the Boost suites | **Blocking** | `make check-clang` |
+| Second toolchain (SIMD) | Clang build + run with the AVX2 backend active | **Blocking** | `make check-clang-avx2` |
+| Cross-compiler bit-exactness | int8 exemplars built with Clang must reproduce the committed golden bytes | **Blocking** | `make check-clang-integration` |
 | Semantic code scan | GitHub CodeQL (C/C++) | **Blocking** | — (cloud) |
 | MISRA C:2012 | cppcheck MISRA addon (advisory against C++17 template code) | Advisory | `make misra` |
 | Lint + clang static analyzer | clang-tidy (`bugprone-*`, `cert-*`, `clang-analyzer-*`, narrowing/init) | Advisory | `make tidy` |
 
 The clang-tidy gate runs the **Clang Static Analyzer** engine in-process via its `clang-analyzer-*` checks — there is no separate `scan-build` pass. The full enforced matrix (build flags, the eight-corner embedded regression set) runs under `make check`.
+
+Two notes on the sanitizer gates. ASan and UBSan do not cover **reads of uninitialized memory**; that is what the MSan gate is for. MSan is scoped to `unit_test/embedded` because it requires every linked object to be instrumented, and against a stock libstdc++ the Boost-based suites abort inside Boost's own static initialization before reaching library code. It runs at `-O0` deliberately: at `-O1` and above the optimizer folds an undefined read away before instrumentation observes it, so a deliberately planted uninitialized read is reported at `-O0` and missed at `-O1`. Raising that optimization level would leave the gate green and blind.
 
 ## Project Structure
 
