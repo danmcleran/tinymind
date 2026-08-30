@@ -421,6 +421,41 @@ check-clang-integration :
 	   || { echo "CHECK-CLANG-INTEGRATION FAIL: unit_test/integration"; exit 1; }
 	@echo "check-clang-integration: golden bytes match with $(CLANG_CXX)"
 
+# Every example under clang, discovered rather than listed so a new example is
+# covered the day it is added instead of the day someone remembers to add it
+# here. This is a regression guard, not a bug finder: examples/maze and
+# examples/dqn_maze had been failing to build under clang unnoticed (an unused
+# parameter under -Werror, the same class as the library-header issue in #168)
+# precisely because the clang gates covered the unit-test suites and the twelve
+# integration exemplars but nothing else.
+#
+# Builds each example's default target, then its `release` target where one
+# exists -- examples/perf_matrix has no `release`, it builds per-ISA variants
+# instead, so the interface is probed rather than assumed. Both levels are
+# built because -O3 can surface diagnostics a debug build does not.
+#
+# No -maxdepth on the find: not every example sits one level down.
+# examples/pytorch/xor and examples/pytorch_quant/xor are nested a level
+# deeper, and capping the depth silently skipped both -- the same
+# under-coverage this target exists to prevent.
+check-clang-examples :
+	@command -v $(CLANG_CXX) >/dev/null 2>&1 || \
+	  { echo "ERROR: $(CLANG_CXX) not found. sudo apt install clang"; exit 1; }
+	@n=0; \
+	for m in $$(find examples -mindepth 2 -name Makefile | sort); do \
+		d=$$(dirname $$m); \
+		echo "=== check-clang-examples: $$d ==="; \
+		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
+		  $(MAKE) CC="$(CLANG_CXX)" >/dev/null ) \
+		  || { echo "CHECK-CLANG-EXAMPLES FAIL (default): $$d"; exit 1; }; \
+		if grep -qE '^release[ 	]*:' $$m; then \
+			( cd $$d && $(MAKE) CC="$(CLANG_CXX)" release >/dev/null ) \
+			  || { echo "CHECK-CLANG-EXAMPLES FAIL (release): $$d"; exit 1; }; \
+		fi; \
+		n=$$((n+1)); \
+	done; \
+	echo "check-clang-examples: $$n examples build with $(CLANG_CXX)"
+
 # MemorySanitizer over the embedded smoke corners.
 #
 # MSan closes a gap ASan and UBSan structurally cannot: reads of uninitialized
@@ -456,7 +491,8 @@ check-msan :
 analyze : misra tidy cppcheck header-selfcheck warnings-strict
 
 .PHONY : sanitize cppcheck misra tidy analyze coverage-check header-selfcheck warnings-strict \
-         check-clang check-clang-avx2 check-clang-integration check-msan
+         check-clang check-clang-avx2 check-clang-integration check-clang-examples \
+         check-msan
 
 # Recursively clean every unit test, example, and app (each subdir Makefile has
 # its own clean target), plus the coverage artifacts.
