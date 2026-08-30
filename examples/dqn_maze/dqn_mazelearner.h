@@ -132,7 +132,7 @@ struct DQNMazeEnvironment : public tinymind::QLearningEnvironment<state_t, actio
         *pInputs = input;
     }
 
-    size_t getNextStateForStateActionPair(const StateType state, const ActionType action) const
+    size_t getNextStateForStateActionPair(const StateType, const ActionType action) const
     {
         return action;
     }

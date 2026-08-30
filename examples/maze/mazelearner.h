@@ -102,7 +102,7 @@ struct MazeEnvironment : public tinymind::QLearningEnvironment<state_t, action_t
         return this->mGoalState;
     }
 
-    size_t getNextStateForStateActionPair(const StateType state, const ActionType action) const
+    size_t getNextStateForStateActionPair(const StateType, const ActionType action) const
     {
         return action;
     }
