@@ -381,6 +381,33 @@ jobs:
           BOOST_HOME: /usr
         run: make check-clang-integration
 
+  clang-arm-crosscompile:
+    name: Clang cross-compile (Cortex-M)
+    runs-on: ubuntu-latest
+    needs: changes
+    # HARD GATE. The GCC arm-crosscompile job proves the headers assemble for a
+    # Cortex-M with arm-none-eabi-g++; this does the same with Clang, since the
+    # LLVM embedded toolchain for Arm is a real deployment path and every
+    # finding from adding Clang so far has been at an edge rather than in the
+    # core -- the cross-compile edge was the last one uncovered.
+    #
+    # No extra toolchain to install: Clang cross-compiles by construction. It
+    # does need target C++ headers, and borrows them from the arm-none-eabi GCC
+    # this workflow already installs, queried from that compiler rather than
+    # hardcoded so the paths do not rot across versions.
+    # Name is pinned in branch protection.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: needs.changes.outputs.code == 'true'
+      - name: Install Clang + arm-none-eabi headers
+        if: needs.changes.outputs.code == 'true'
+        uses: ./.github/actions/apt-install
+        with:
+          packages: clang gcc-arm-none-eabi
+      - name: Assemble every Cortex-M corner with clang++
+        if: needs.changes.outputs.code == 'true'
+        run: make -C unit_test/embedded arm_crosscompile_clang
+
   clang-examples:
     name: Clang build (all examples)
     runs-on: ubuntu-latest

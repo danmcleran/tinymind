@@ -184,6 +184,53 @@ arm_crosscompile:
 	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M33) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
 	@echo "arm_crosscompile: all Cortex-M corners assemble clean"
 
+# Same Cortex-M corners, cross-compiled with Clang instead of GCC.
+#
+# arm_crosscompile proves the headers assemble for a Cortex-M with
+# arm-none-eabi-g++. Clang is now a first-class host toolchain here, and the
+# LLVM embedded toolchain for Arm is a real deployment path, so the target
+# profile deserves the same second-compiler treatment the host already gets.
+# Every finding from adding Clang so far has been at an edge rather than in the
+# core, and the cross-compile edge was the last one left uncovered.
+#
+# Clang is a cross-compiler by construction -- one binary, every target -- so
+# this needs no separate toolchain install. What it does need is a C++ library
+# for the target, and it borrows the arm-none-eabi GCC one already required by
+# arm_crosscompile: ARM_CLANG_INC asks that GCC for its own include search path
+# and feeds it back as -isystem. Querying the installed compiler rather than
+# hardcoding paths keeps this working across toolchain versions, where the
+# 13.2.1 in the path would otherwise rot.
+#
+# -fno-exceptions -fno-rtti matches how this code is actually deployed and
+# avoids depending on target unwind tables that bare-metal Clang does not
+# supply by default. Compile-only, like the GCC target: no link, no startup.
+ARM_CLANG      ?= clang++
+ARM_CLANG_INC   = $(shell $(ARM_CXX) -E -x c++ - -v </dev/null 2>&1 | \
+                    sed -n '/\#include <...>/,/End of search/p' | \
+                    grep '^ /' | sed 's/^ /-isystem /' | tr '\n' ' ')
+ARM_CLANG_BASE  = --target=arm-none-eabi $(ARM_STD) $(ARM_WARN) \
+                  -ffreestanding -fno-exceptions -fno-rtti
+
+.PHONY: arm_crosscompile_clang
+arm_crosscompile_clang:
+	@command -v $(ARM_CLANG) >/dev/null 2>&1 || { echo "ERROR: $(ARM_CLANG) not found. sudo apt install clang"; exit 1; }
+	@command -v $(ARM_CXX) >/dev/null 2>&1 || { echo "ERROR: $(ARM_CXX) not found -- its target C++ headers are required. sudo apt install gcc-arm-none-eabi"; exit 1; }
+	@echo "[arm-clang] cortex-m0plus soft-float: freestanding"
+	$(ARM_CLANG) $(ARM_CLANG_BASE) $(ARM_M0) $(ARM_CLANG_INC) -c $(SOURCES) $(INCLUDES) -o /dev/null
+	@echo "[arm-clang] cortex-m0plus soft-float: quant freestanding (deployable int8 shape)"
+	$(ARM_CLANG) $(ARM_CLANG_BASE) $(ARM_M0) $(ARM_CLANG_INC) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
+	@echo "[arm-clang] cortex-m4 hard-float: float forward-pass (no stdlib)"
+	$(ARM_CLANG) $(ARM_CLANG_BASE) $(ARM_M4) $(ARM_CLANG_INC) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_FLOAT=1 -o /dev/null
+	@echo "[arm-clang] cortex-m4 hard-float: quant freestanding"
+	$(ARM_CLANG) $(ARM_CLANG_BASE) $(ARM_M4) $(ARM_CLANG_INC) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
+	@echo "[arm-clang] cortex-m4 hard-float: fp16 storage tier"
+	$(ARM_CLANG) $(ARM_CLANG_BASE) $(ARM_M4) $(ARM_CLANG_INC) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_FP16=1 -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
+	@echo "[arm-clang] cortex-m33 hard-float: freestanding"
+	$(ARM_CLANG) $(ARM_CLANG_BASE) $(ARM_M33) $(ARM_CLANG_INC) -c $(SOURCES) $(INCLUDES) -o /dev/null
+	@echo "[arm-clang] cortex-m33 hard-float: quant freestanding"
+	$(ARM_CLANG) $(ARM_CLANG_BASE) $(ARM_M33) $(ARM_CLANG_INC) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
+	@echo "arm_crosscompile_clang: all Cortex-M corners assemble clean with $(ARM_CLANG)"
+
 # -----------------------------------------------------------------------------
 # Heap-free guarantee (build-only). HARD gate.
 #
