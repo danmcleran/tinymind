@@ -39,6 +39,18 @@
  * Notes:
  *  - For GCC/Clang pass the warning name as a quoted string (e.g. "-Wdeprecated-declarations").
  *  - For MSVC pass the numeric warning code (e.g. 4100, 4996).
+ *
+ * Compiler-specific warning names:
+ *   Not every -W name exists in both GCC and Clang. Naming one the other
+ *   compiler does not know is itself a warning (-Wunknown-warning-option on
+ *   Clang, -Wpragmas on GCC), which becomes an error under -Werror. Use the
+ *   _GCC_ONLY / _CLANG_ONLY forms for those:
+ *
+ *     TINYMIND_DISABLE_WARNING_GCC_ONLY("-Wdangling-reference")  // GCC 13+
+ *     TINYMIND_DISABLE_WARNING_CLANG_ONLY("-Wtautological-compare")
+ *
+ *   Both expand to nothing on the compiler that does not own the name, and on
+ *   MSVC / unknown compilers.
  */
 
 #if defined(_MSC_VER)
@@ -48,6 +60,9 @@
 	#define TINYMIND_DISABLE_WARNING_MSVC(code) TINYMIND_PRAGMA(warning(disable: code))
 	/* GCC/Clang style no-op on MSVC */
 	#define TINYMIND_DISABLE_WARNING_GCC_CLANG(warning)
+	/* Compiler-specific GCC/Clang warning names: no-ops on MSVC */
+	#define TINYMIND_DISABLE_WARNING_GCC_ONLY(warning)
+	#define TINYMIND_DISABLE_WARNING_CLANG_ONLY(warning)
 	/* Generic helper maps to MSVC form on MSVC */
 	#define TINYMIND_DISABLE_WARNING(w) TINYMIND_DISABLE_WARNING_MSVC(w)
 #elif defined(__clang__) || defined(__GNUC__)
@@ -59,6 +74,17 @@
 	#define TINYMIND_DISABLE_WARNING_MSVC(code)
 	/* Generic helper maps to GCC/Clang form on GCC/Clang */
 	#define TINYMIND_DISABLE_WARNING(w) TINYMIND_DISABLE_WARNING_GCC_CLANG(w)
+	/*
+	 * Warning names owned by only one of the two compilers. Clang also
+	 * defines __GNUC__, so it must be tested first.
+	 */
+	#if defined(__clang__)
+		#define TINYMIND_DISABLE_WARNING_GCC_ONLY(warning)
+		#define TINYMIND_DISABLE_WARNING_CLANG_ONLY(warning) TINYMIND_DISABLE_WARNING_GCC_CLANG(warning)
+	#else
+		#define TINYMIND_DISABLE_WARNING_GCC_ONLY(warning) TINYMIND_DISABLE_WARNING_GCC_CLANG(warning)
+		#define TINYMIND_DISABLE_WARNING_CLANG_ONLY(warning)
+	#endif
 #else
 	/* Unknown compiler: define no-ops so code using these macros stays portable */
 	#define TINYMIND_PRAGMA(x)
@@ -66,5 +92,7 @@
 	#define TINYMIND_DISABLE_WARNING_POP
 	#define TINYMIND_DISABLE_WARNING_MSVC(code)
 	#define TINYMIND_DISABLE_WARNING_GCC_CLANG(warning)
+	#define TINYMIND_DISABLE_WARNING_GCC_ONLY(warning)
+	#define TINYMIND_DISABLE_WARNING_CLANG_ONLY(warning)
 	#define TINYMIND_DISABLE_WARNING(w)
 #endif

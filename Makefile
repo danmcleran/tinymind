@@ -340,9 +340,73 @@ warnings-strict :
 	grep -oE '\[-W[a-z-]+\]' strict-warnings.txt 2>/dev/null | sort | uniq -c | sort -rn || true; \
 	echo "warnings-strict: $$n advisory finding(s) (full list in strict-warnings.txt)"
 
+# Clang conformance build. TinyMind is header-only: users compile these headers
+# with their own toolchain, so a GCC-only CI lets non-conforming constructs
+# reach them unflagged. Clang earns its slot on two behaviours GCC does not
+# reproduce -- it diagnoses template member bodies eagerly rather than deferring
+# to instantiation, and it owns -W names GCC lacks (and vice versa, which is
+# what TINYMIND_DISABLE_WARNING_GCC_ONLY / _CLANG_ONLY in include/compiler.h
+# exist to express). Sub-Makefiles assign CC=g++, and a command-line override
+# beats a makefile assignment and propagates through MAKEFLAGS, so passing
+# CC here is enough -- no sub-Makefile edits needed.
+#
+# unit_test/qlearn is deliberately absent from CLANG_SUITES. Built with clang it
+# does not terminate: test_dqn_qlearn_iterate's inner
+#   while (dqnQLearner.getState() != ...getGoalState())
+# has no iteration cap, so it exits only once the DQN's greedy policy happens to
+# reach the goal state. Under g++ the whole suite finishes in ~0.02s; under
+# clang that loop spins at 100% CPU indefinitely (observed >60 min). The hang
+# reproduces on master with no changes from this branch, so it is a pre-existing
+# latent defect that clang merely exposes -- ASan+UBSan report nothing on the
+# path taken. Re-add this suite once the loop carries a bound.
+#
+# unit_test/integration is also absent: it is a golden-byte suite that shells
+# out to already-built example binaries (examples/*/output/<name> --golden)
+# rather than compiling anything itself, so running it here only reports
+# whether `make check` happened to leave those artifacts behind -- exit 127 on
+# a clean tree. Covering the exemplars under clang means building the examples
+# with clang first, which is a larger change than this target is scoped for.
+CLANG_CXX    ?= clang++
+CLANG_SUITES  = unit_test/nn unit_test/qformat \
+                unit_test/lookuptable unit_test/quantization unit_test/dual \
+                unit_test/kan unit_test/pinn unit_test/ltc unit_test/cfc
+
+check-clang :
+	@command -v $(CLANG_CXX) >/dev/null 2>&1 || \
+	  { echo "ERROR: $(CLANG_CXX) not found. sudo apt install clang"; exit 1; }
+	@echo "=== check-clang: unit_test/embedded (all gate corners) ==="
+	@( cd unit_test/embedded && $(MAKE) clean >/dev/null 2>&1 && \
+	   $(MAKE) CC="$(CLANG_CXX)" && $(MAKE) CC="$(CLANG_CXX)" run ) \
+	   || { echo "CHECK-CLANG FAIL: unit_test/embedded"; exit 1; }
+	@for d in $(CLANG_SUITES); do \
+		echo "=== check-clang: $$d ==="; \
+		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
+		  $(MAKE) CC="$(CLANG_CXX)" && $(MAKE) CC="$(CLANG_CXX)" run ) \
+		  || { echo "CHECK-CLANG FAIL: $$d"; exit 1; }; \
+	done
+	@echo "check-clang: every suite builds and passes with $(CLANG_CXX)"
+
+# Same bar with the AVX2 backend compiled in and executing. The scalar
+# check-clang never reaches the hand-written intrinsics in cpp/include/simd/,
+# and intrinsic availability + target-attribute handling is exactly where the
+# two compilers diverge. All GitHub-hosted x64 runners have AVX2.
+CLANG_AVX2_CC ?= $(CLANG_CXX) -mavx2 -DTINYMIND_ENABLE_SIMD_AVX2=1
+
+check-clang-avx2 :
+	@command -v $(CLANG_CXX) >/dev/null 2>&1 || \
+	  { echo "ERROR: $(CLANG_CXX) not found. sudo apt install clang"; exit 1; }
+	@for d in $(TSAN_SUITES); do \
+		echo "=== check-clang-avx2: $$d ==="; \
+		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
+		  $(MAKE) CC="$(CLANG_AVX2_CC)" && $(MAKE) CC="$(CLANG_AVX2_CC)" run ) \
+		  || { echo "CHECK-CLANG-AVX2 FAIL: $$d"; exit 1; }; \
+	done
+	@echo "check-clang-avx2: AVX2 intrinsics build and pass with $(CLANG_CXX)"
+
 analyze : misra tidy cppcheck header-selfcheck warnings-strict
 
-.PHONY : sanitize cppcheck misra tidy analyze coverage-check header-selfcheck warnings-strict
+.PHONY : sanitize cppcheck misra tidy analyze coverage-check header-selfcheck warnings-strict \
+         check-clang check-clang-avx2
 
 # Recursively clean every unit test, example, and app (each subdir Makefile has
 # its own clean target), plus the coverage artifacts.

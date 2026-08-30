@@ -55,7 +55,7 @@ The paths out of the maze:
 
 #define BOOST_TEST_MODULE test module name
 TINYMIND_DISABLE_WARNING_PUSH
-TINYMIND_DISABLE_WARNING("-Wdangling-reference")
+TINYMIND_DISABLE_WARNING_GCC_ONLY("-Wdangling-reference")
 #include <boost/test/included/unit_test.hpp>
 TINYMIND_DISABLE_WARNING_POP
 

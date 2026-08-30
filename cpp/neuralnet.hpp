@@ -851,15 +851,15 @@ namespace tinymind {
         {
         }
         
-        void setAccelerationRate(const ValueType& value)
+        void setAccelerationRate(const ValueType&)
         {
         }
         
-        void setLearningRate(const ValueType& value)
+        void setLearningRate(const ValueType&)
         {
         }
         
-        void setMomentumRate(const ValueType& value)
+        void setMomentumRate(const ValueType&)
         {
         }
 
@@ -902,11 +902,11 @@ namespace tinymind {
             return this->mWeight;
         }
 
-        void setDeltaWeight(const ValueType& value)
+        void setDeltaWeight(const ValueType&)
         {
         }
 
-        void setGradient(const ValueType& value)
+        void setGradient(const ValueType&)
         {
         }
         
