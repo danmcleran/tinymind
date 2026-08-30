@@ -194,3 +194,116 @@ Swapping the layer value type from `float` to Q8.8 roughly quarters the Conv / D
 | Full Q8.8 | 2,048 bytes | 4x | 1x |
 | Packed binary (1-bit) | 128 bytes | **64x** | **16x** |
 | Packed ternary (2-bit) | 256 bytes | **32x** | **8x** |
+
+## GCC vs Clang Code Size
+
+Both toolchains are built and tested in CI (see the Quality Gates table in the
+README). This section records how much **code** each one generates for the same
+sources, measured as the `.text` section via `size --format=sysv` — not total
+file size, which for the unit tests is dominated by debug information and would
+say more about DWARF encoding than about code generation.
+
+Measured with **GCC 13.3.0** and **Clang 18.1.3** on x86-64 Linux. Examples are
+built with their `release` target (`-O3`); unit tests use their default build.
+Each row compares like with like, since both compilers run through the same
+Makefile.
+
+**These are host binaries and are not a deployable footprint.** The unit-test
+figures include Boost.Test, libstdc++ and the C runtime, which is why they run
+to megabytes. For what TinyMind actually costs on a target, see the instance
+sizes above, plus the `heapfree` and `stack_usage` gates and the
+`arm_crosscompile` build in `unit_test/embedded`.
+
+### Totals
+
+| Group | Binaries | GCC `.text` | Clang `.text` | Delta |
+|---|---|---|---|---|
+| Unit tests | 19 | 11,265,573 | 11,121,350 | -1.3% |
+| Examples | 40 | 1,107,842 | 1,197,749 | +8.1% |
+| **All** | **59** | **12,373,415** | **12,319,099** | **-0.4%** |
+
+In aggregate the two are within half a percent of each other, and the split is
+close to even — Clang emits less code for 31 of the 59 binaries
+and more for 28. The aggregate hides a very wide per-binary spread, from
+-49.0% to +134.8%, so neither compiler is
+uniformly better on size and there is no basis for picking one on that alone.
+
+The pattern in the outliers is inlining appetite. The examples where Clang is
+much larger are the deeply-templated int8 pipelines — `mobilenetv2_int8`,
+`kws_cortex_m`, `anfis_mackey_glass` — where it inlines layer bodies GCC keeps
+as calls. Where the hot code is a smaller loop nest, Clang often comes out
+well ahead. If you are size-constrained on a target, measure your own shape
+rather than generalizing from either column.
+
+### Unit tests
+
+| Binary | GCC `.text` | Clang `.text` | Delta |
+|---|---|---|---|
+| `nn/nn_unit_test` | 2,522,071 | 2,439,936 | -3.3% |
+| `ltc/ltc_unit_test` | 754,225 | 736,124 | -2.4% |
+| `cfc/cfc_unit_test` | 750,895 | 735,836 | -2.0% |
+| `qlearn/qlearn_unit_test` | 847,773 | 832,132 | -1.8% |
+| `kan/kan_unit_test` | 822,383 | 808,832 | -1.6% |
+| `integration/integration_unit_test` | 730,349 | 718,322 | -1.6% |
+| `lookuptable/lookuptable_unit_test` | 807,335 | 796,464 | -1.3% |
+| `quantization/quantization_unit_test` | 1,495,525 | 1,481,395 | -0.9% |
+| `dual/dual_unit_test` | 849,081 | 842,216 | -0.8% |
+| `qformat/qformat_unit_test` | 934,341 | 928,441 | -0.6% |
+| `embedded/embedded_smoke_int16_accum_freestanding` | 62,497 | 62,199 | -0.5% |
+| `embedded/embedded_smoke_freestanding` | 23,223 | 23,127 | -0.4% |
+| `embedded/embedded_smoke_no_fpu` | 23,223 | 23,127 | -0.4% |
+| `embedded/embedded_smoke_simd_disabled` | 60,573 | 60,487 | -0.1% |
+| `embedded/embedded_smoke_quant_freestanding` | 60,573 | 60,487 | -0.1% |
+| `embedded/embedded_smoke_hosted` | 26,889 | 26,935 | +0.2% |
+| `embedded/embedded_smoke_no_stdlib` | 26,889 | 26,935 | +0.2% |
+| `embedded/embedded_smoke_fp16_freestanding` | 65,811 | 65,927 | +0.2% |
+| `pinn/pinn_unit_test` | 401,917 | 452,428 | +12.6% |
+
+### Examples
+
+| Example | GCC `.text` | Clang `.text` | Delta |
+|---|---|---|---|
+| `maze` | 20,391 | 10,404 | -49.0% |
+| `lstm_sinusoid_float` | 47,820 | 28,648 | -40.1% |
+| `gbdt_tabular_int8` | 5,529 | 3,551 | -35.8% |
+| `import_demo` | 32,059 | 21,083 | -34.2% |
+| `qcfc_liquid_int8` | 20,649 | 13,772 | -33.3% |
+| `dqn_maze` | 38,775 | 27,624 | -28.8% |
+| `lstm_sinusoid` | 20,140 | 15,776 | -21.7% |
+| `mixed_precision_mlp_int8_qformat` | 23,901 | 18,849 | -21.1% |
+| `tiny_generate_int8` | 43,005 | 38,580 | -10.3% |
+| `air_quality` | 23,725 | 21,452 | -9.6% |
+| `har_activity` | 30,282 | 27,696 | -8.5% |
+| `state_space_int8` | 16,016 | 15,143 | -5.5% |
+| `elman_vowels` | 74,349 | 72,148 | -3.0% |
+| `cfc_sequence` | 19,549 | 19,025 | -2.7% |
+| `elman_temporal_xor` | 19,728 | 19,276 | -2.3% |
+| `seq2seq_softmax_int8` | 82,653 | 82,000 | -0.8% |
+| `transformer_encoder_int8` | 48,077 | 48,433 | +0.7% |
+| `seq2seq_int8` | 82,061 | 83,920 | +2.3% |
+| `moe_regimes_int8` | 6,243 | 6,631 | +6.2% |
+| `energy_efficiency` | 18,950 | 20,416 | +7.7% |
+| `iris` | 19,022 | 20,748 | +9.1% |
+| `xor` | 12,878 | 14,116 | +9.6% |
+| `gru_xor` | 21,923 | 24,084 | +9.9% |
+| `resnet_block_int8` | 17,389 | 19,777 | +13.7% |
+| `pinn_heat1d` | 63,966 | 73,912 | +15.5% |
+| `kws_cortex_m_int8` | 13,803 | 16,252 | +17.7% |
+| `anfis_mackey_glass_int8` | 18,852 | 22,596 | +19.9% |
+| `gas_sensor_drift` | 13,643 | 16,424 | +20.4% |
+| `optical_digits` | 17,605 | 21,640 | +22.9% |
+| `transformer_encoder_stack_softmax_int8` | 45,781 | 57,489 | +25.6% |
+| `resnet18_block_int8` | 28,749 | 39,601 | +37.7% |
+| `import_moe_demo` | 2,425 | 3,489 | +43.9% |
+| `predictive_maintenance` | 20,593 | 30,088 | +46.1% |
+| `transformer_encoder_stack_int8` | 44,757 | 65,729 | +46.9% |
+| `ltc_sequence` | 12,764 | 19,697 | +54.3% |
+| `kan_xor` | 13,414 | 21,012 | +56.6% |
+| `mixed_precision_kws` | 18,973 | 29,873 | +57.5% |
+| `anfis_mackey_glass` | 7,923 | 16,158 | +103.9% |
+| `kws_cortex_m` | 6,683 | 13,644 | +104.2% |
+| `mobilenetv2_int8` | 32,797 | 76,993 | +134.8% |
+
+Reproduce with `make check-clang` for the Clang side of the unit tests; the
+per-binary figures above come from building each directory under both compilers
+and reading `size --format=sysv`.
