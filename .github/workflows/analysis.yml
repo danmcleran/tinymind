@@ -381,6 +381,34 @@ jobs:
           BOOST_HOME: /usr
         run: make check-clang-integration
 
+  clang-examples:
+    name: Clang build (all examples)
+    runs-on: ubuntu-latest
+    needs: changes
+    # HARD GATE, and a regression guard rather than a bug finder. The other
+    # clang jobs cover the unit-test suites and the twelve integration
+    # exemplars; every other example was ungated, which is how examples/maze
+    # and examples/dqn_maze came to be failing the clang build unnoticed (an
+    # unused parameter under -Werror, fixed in #174). Nothing here is broken
+    # today -- this exists so the next one is caught the day it lands.
+    #
+    # The example list is discovered from the tree, not enumerated, so a new
+    # example is covered when it is added rather than when someone remembers
+    # to add it. Name is pinned in branch protection.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: needs.changes.outputs.code == 'true'
+      - name: Install Clang + Boost
+        if: needs.changes.outputs.code == 'true'
+        uses: ./.github/actions/apt-install
+        with:
+          packages: clang libboost-dev libboost-test-dev
+      - name: Build every example with clang++
+        if: needs.changes.outputs.code == 'true'
+        env:
+          BOOST_HOME: /usr
+        run: make check-clang-examples
+
   msan:
     name: MSan (uninitialized reads)
     runs-on: ubuntu-latest
