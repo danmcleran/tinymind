@@ -1,0 +1,76 @@
+# Line-ending policy.
+#
+# Git normalizes to LF in the repository; the working tree keeps whatever each
+# file's history calls for. Without this, the checked-in endings depend on
+# whichever tool last wrote the file -- an editor or script that rewrites a CRLF
+# file as LF turns a small change into a whole-file rewrite, burying the real
+# diff and poisoning git blame. That happened in #178, where a +33/-8 change to
+# nn_unit_test.cpp was recorded as 17,011 lines, and #179 undid it by hand.
+#
+# With these rules the same mistake is a no-op: the index holds LF either way,
+# so a tool that converts endings produces no diff, and checkout restores the
+# working-tree convention.
+
+* text=auto
+
+# Never normalized.
+*.png binary
+*.pdf binary
+*.golden -text
+
+# Files that are CRLF in the working tree -- the original core headers, the
+# first examples, the two oldest test suites, the UML sources and one dataset.
+# Everything added since is LF and needs no entry here. These stay CRLF on
+# checkout; the repository still stores LF.
+apps/activation/activationTableGenerator.cpp text eol=crlf
+cpp/activationFunctions.hpp text eol=crlf
+cpp/constants.hpp text eol=crlf
+cpp/error.hpp text eol=crlf
+cpp/fixedPointTransferFunctions.hpp text eol=crlf
+cpp/include/nnproperties.hpp text eol=crlf
+cpp/interpolate.hpp text eol=crlf
+cpp/limits.hpp text eol=crlf
+cpp/lookupTable.hpp text eol=crlf
+cpp/neuralnet.hpp text eol=crlf
+cpp/nninit.hpp text eol=crlf
+cpp/qformat.hpp text eol=crlf
+cpp/qlearn.hpp text eol=crlf
+cpp/random.hpp text eol=crlf
+cpp/range.hpp text eol=crlf
+cpp/signed.hpp text eol=crlf
+cpp/typeChooser.hpp text eol=crlf
+cpp/zeroTolerance.hpp text eol=crlf
+examples/dqn_maze/dqn_maze.cpp text eol=crlf
+examples/dqn_maze/dqn_mazelearner.cpp text eol=crlf
+examples/dqn_maze/dqn_mazelearner.h text eol=crlf
+examples/energy_efficiency/ENB2012_data.csv text eol=crlf
+examples/maze/maze.cpp text eol=crlf
+examples/maze/mazelearner.cpp text eol=crlf
+examples/maze/mazelearner.h text eol=crlf
+examples/pytorch/xor/xor.cpp text eol=crlf
+examples/xor/xor.cpp text eol=crlf
+fuzz/corpus/qcfc/82f6a3deb3de90bed4288f615dafa1f48877f722 text eol=crlf
+fuzz/corpus/qgru/1775cb22a2a06edfe2c9904f349338c79ef6983b text eol=crlf
+fuzz/corpus/qgru/68f9046753c3e3ea50792b68d81c1475f4822cf4 text eol=crlf
+fuzz/corpus/qgru/6ce6b0bd2699f7ba522ed0236ddefb8a72f6f329 text eol=crlf
+fuzz/corpus/qgru/791913ffcc6fbd0391c2dbc6d77af30d5e2b531a text eol=crlf
+fuzz/corpus/qgru/80f92ec583e6893bad69248e66ba342f43c756ac text eol=crlf
+fuzz/corpus/qgru/a8d1dcb3301f24a5ec56d6208180b5f73a0bd93a text eol=crlf
+fuzz/corpus/qgru/b8e286e0ed4ee1e9f3788e09ae40ae0e4beaf676 text eol=crlf
+fuzz/corpus/qgru/c23f242fc0c62370a2807cc837fc1717dac634dc text eol=crlf
+fuzz/corpus/qgru/c8e8f8b81a2deba84a5b60b702288ac5c2ab4a12 text eol=crlf
+fuzz/corpus/qgru/d7f348f225a700ad85aaeb8eb9db4b6840dffa9f text eol=crlf
+fuzz/corpus/qgru/e84875444353943305c538f142591a13b56d0288 text eol=crlf
+fuzz/corpus/qgru/f55526d2da448eced54ec43aab1908c0dd7d5b98 text eol=crlf
+fuzz/corpus/qgru/f7a596456c7a95647c0ac74886185d5b522506c9 text eol=crlf
+fuzz/corpus/qmha/141064f41493dcff096bc834dd247faaa88b5f73 text eol=crlf
+fuzz/corpus/qmha/e69b6cfb7a1d0b6caed3d0c36df6ec7cc125119b text eol=crlf
+fuzz/corpus/qmha/e7dab69230c331fbcb716a2971597bf5f0ccd343 text eol=crlf
+uml/nn/nn_class.puml text eol=crlf
+uml/nn/nn_ssd_init.puml text eol=crlf
+uml/nn/nn_ssd_train_pt1.puml text eol=crlf
+uml/qformat/qformat_class.puml text eol=crlf
+uml/qlearn/qlearn_class.puml text eol=crlf
+uml/qlearn/qlearn_seq.puml text eol=crlf
+unit_test/nn/nn_unit_test.cpp text eol=crlf
+unit_test/qlearn/qlearn_unit_test.cpp text eol=crlf
