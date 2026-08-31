@@ -33,14 +33,6 @@ on:
   schedule:
     - cron: "0 6 * * *"   # 06:00 UTC daily, an hour after the fuzz run
   workflow_dispatch:
-  # TEMPORARY -- remove before merge. workflow_dispatch only fires for
-  # workflows already on the default branch, so this is the only way to
-  # actually run this job before it lands. It is here to prove the libc++
-  # build, the teeth check and the suites all work, not to gate PRs.
-  pull_request:
-    paths:
-      - '.github/workflows/msan-nightly.yml'
-      - 'Makefile'
 
 permissions:
   contents: read
