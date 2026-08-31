@@ -71,6 +71,12 @@ jobs:
       # the compiling, and this supplies it with an instrumented libc++ to
       # link against. That is what keeps a cold build in minutes rather than
       # hours.
+      #
+      # libunwind is in the runtimes list because libc++abi defaults to
+      # LIBCXXABI_USE_LLVM_UNWINDER=ON and configuration fails outright without
+      # it. Building it here also means it is instrumented, which matters: an
+      # uninstrumented unwinder linked into an MSan binary is another source of
+      # phantom reports, the very problem this job exists to get away from.
       - name: Build libc++ with MemorySanitizer
         if: steps.libcxx-cache.outputs.cache-hit != 'true'
         run: |
@@ -81,11 +87,11 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
-            -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" \
+            -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
             -DLLVM_USE_SANITIZER=MemoryWithOrigins \
             -DCMAKE_INSTALL_PREFIX="$PWD/msan-libcxx"
-          ninja -C libcxx-build cxx cxxabi
-          ninja -C libcxx-build install-cxx install-cxxabi
+          ninja -C libcxx-build cxx cxxabi unwind
+          ninja -C libcxx-build install-cxx install-cxxabi install-unwind
           rm -rf llvm-project libcxx-build
 
       - name: Save MSan-instrumented libc++
