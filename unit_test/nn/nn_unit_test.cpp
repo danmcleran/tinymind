@@ -33,6 +33,7 @@ TINYMIND_DISABLE_WARNING_POP
 #include <cstdint>
 #include <string.h>
 
+#include "portable_test_random.hpp"
 #include "qformat.hpp"
 #include "neuralnet.hpp"
 #include "activationFunctions.hpp"
@@ -172,7 +173,9 @@ using namespace std;
 #define NUM_SAMPLES_AVG_ERROR 20
 #define STOP_ON_AVG_ERROR 0
 #define USE_WEIGHTS_INPUT_FILE 0 // the weights input file uses the initial values from a successful training run
+#ifndef RANDOM_SEED
 #define RANDOM_SEED 7U
+#endif
 
 template<typename ValueType>
 struct ValueHelper
@@ -203,7 +206,7 @@ struct UniformRealRandomNumberGenerator
 
     static ValueType generateRandomWeight()
     {
-        const double temp = distribution(generator);
+        const double temp = generator();
         const ValueType weight = WeightConverterPolicy::convertToDestinationType(temp);
 
         return weight;
@@ -211,18 +214,14 @@ struct UniformRealRandomNumberGenerator
 
     static void seed(unsigned int s)
     {
-        generator.seed(s);
+        generator.seed(static_cast<uint32_t>(s));
     }
 private:
-    static std::default_random_engine generator;
-    static std::uniform_real_distribution<double> distribution;
+    static PortableUniformReal generator;
 };
 
 template<typename ValueType>
-std::default_random_engine UniformRealRandomNumberGenerator<ValueType>::generator(RANDOM_SEED);
-
-template<typename ValueType>
-std::uniform_real_distribution<double> UniformRealRandomNumberGenerator<ValueType>::distribution(-1.0, 1.0);
+PortableUniformReal UniformRealRandomNumberGenerator<ValueType>::generator(-1.0, 1.0, RANDOM_SEED);
 
 template<typename ValueType, unsigned NUMBER_OF_INPUTS, unsigned NUMBER_OF_HIDDEN_LAYERS, unsigned NUMBER_OF_NEURONS_PER_HIDDEN_LAYER, unsigned NUMBER_OF_OUTPUTS>
 struct XavierUniformRandomNumberGenerator
@@ -1244,6 +1243,32 @@ BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_nor)
     FixedPointMultiLayerPerceptronNetworkType nn;
 
     testFixedPointNeuralNetwork_Nor(nn, path);
+}
+
+// Locks the frozen draw sequence. Every training test in this file is
+// calibrated against these exact numbers, so a change here silently re-tunes
+// all of them -- this makes that change fail loudly instead. The expected
+// values are libstdc++'s std::uniform_real_distribution<double>(-1, 1) over
+// std::default_random_engine seeded with RANDOM_SEED, captured when the
+// generator was made implementation-independent.
+BOOST_AUTO_TEST_CASE(test_case_portable_uniform_real_matches_frozen_sequence)
+{
+    static const double expected[8] = {
+        0.84152903393058454,
+        -0.57889815353756857,
+        0.065428608837350577,
+        0.5041060362322427,
+        0.085700543449050981,
+        0.27182920924978693,
+        -0.51599045256081322,
+        0.41580270676876796
+    };
+    PortableUniformReal generator(-1.0, 1.0, RANDOM_SEED);
+
+    for (size_t i = 0; i < 8; ++i)
+    {
+        BOOST_TEST(generator() == expected[i]);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(test_case_fixedpoint_nn_no_train_xor)
