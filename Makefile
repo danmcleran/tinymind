@@ -488,11 +488,60 @@ check-msan :
 	   || { echo "CHECK-MSAN FAIL: unit_test/embedded"; exit 1; }
 	@echo "check-msan: no uninitialized reads across the embedded gate corners"
 
+# The same sanitizer over the Boost suites, which check-msan cannot reach.
+#
+# check-msan is confined to unit_test/embedded because MSan requires every
+# linked object to be instrumented: against a stock libstdc++ the Boost suites
+# abort inside Boost.Test's own static initialization, and those reports are
+# artifacts of the uninstrumented runtime rather than findings. That is a real
+# gap, since the static-initialization-order UB fixed in #171 lived in exactly
+# such a suite.
+#
+# This target closes it by linking against a libc++ built with MSan. Building
+# that runtime takes 10-20 minutes, which is why this is driven by the nightly
+# .github/workflows/msan-nightly.yml rather than a PR gate; the suites
+# themselves run in seconds once it exists. Point MSAN_LIBCXX_PREFIX at an
+# install tree produced with -DLLVM_USE_SANITIZER=MemoryWithOrigins.
+#
+# Boost.Test needs no separate treatment: the suites include the header-only
+# <boost/test/included/unit_test.hpp>, so it is compiled into each translation
+# unit and instrumented with it. The C++ runtime was the only uninstrumented
+# piece.
+#
+# -O0 for the same reason as check-msan: at -O1 and above the optimizer folds
+# an undefined read away before instrumentation observes it, which would leave
+# the job green and blind.
+MSAN_LIBCXX_PREFIX ?=
+MSAN_LIBCXX_CC      = $(CLANG_CXX) -stdlib=libc++ -nostdinc++ \
+                      -isystem $(MSAN_LIBCXX_PREFIX)/include/c++/v1 \
+                      -L$(MSAN_LIBCXX_PREFIX)/lib \
+                      -Wl,-rpath,$(MSAN_LIBCXX_PREFIX)/lib \
+                      -fsanitize=memory -fsanitize-memory-track-origins=2 \
+                      -fno-omit-frame-pointer -O0 -g
+MSAN_LIBCXX_SUITES  = unit_test/nn unit_test/qformat unit_test/qlearn \
+                      unit_test/lookuptable unit_test/quantization \
+                      unit_test/dual unit_test/kan unit_test/pinn \
+                      unit_test/ltc unit_test/cfc
+
+check-msan-libcxx :
+	@test -n "$(MSAN_LIBCXX_PREFIX)" || \
+	  { echo "ERROR: set MSAN_LIBCXX_PREFIX to an MSan-instrumented libc++ install tree."; exit 1; }
+	@test -d "$(MSAN_LIBCXX_PREFIX)/include/c++/v1" || \
+	  { echo "ERROR: $(MSAN_LIBCXX_PREFIX)/include/c++/v1 not found -- not a libc++ install tree."; exit 1; }
+	@for d in $(MSAN_LIBCXX_SUITES); do \
+		echo "=== check-msan-libcxx: $$d ==="; \
+		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
+		  $(MAKE) CC="$(MSAN_LIBCXX_CC)" WARN="$(SAN_WARN)" && \
+		  $(MAKE) CC="$(MSAN_LIBCXX_CC)" WARN="$(SAN_WARN)" run ) \
+		  || { echo "CHECK-MSAN-LIBCXX FAIL: $$d"; exit 1; }; \
+	done
+	@echo "check-msan-libcxx: no uninitialized reads across the Boost suites"
+
 analyze : misra tidy cppcheck header-selfcheck warnings-strict
 
 .PHONY : sanitize cppcheck misra tidy analyze coverage-check header-selfcheck warnings-strict \
          check-clang check-clang-avx2 check-clang-integration check-clang-examples \
-         check-msan
+         check-msan check-msan-libcxx
 
 # Recursively clean every unit test, example, and app (each subdir Makefile has
 # its own clean target), plus the coverage artifacts.
