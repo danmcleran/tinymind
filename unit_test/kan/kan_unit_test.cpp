@@ -39,6 +39,7 @@ TINYMIND_DISABLE_WARNING_POP
 #include <numeric>
 #include <random>
 
+#include "portable_test_random.hpp"
 #include "qformat.hpp"
 #include "bspline.hpp"
 #include "kan.hpp"
@@ -384,9 +385,10 @@ struct DoubleRandomNumberGenerator
 {
     static double generateRandomWeight()
     {
-        static std::default_random_engine generator(RANDOM_SEED);
-        static std::uniform_real_distribution<double> distribution(-0.5, 0.5);
-        return distribution(generator);
+        // Implementation-independent sequence -- see
+        // unit_test/include/portable_test_random.hpp.
+        static PortableUniformReal generator(-0.5, 0.5, RANDOM_SEED);
+        return generator();
     }
 };
 
@@ -575,9 +577,10 @@ struct SinusoidRandomNumberGenerator
 {
     static double generateRandomWeight()
     {
-        static std::default_random_engine generator(RANDOM_SEED);
-        static std::uniform_real_distribution<double> distribution(-0.1, 0.1);
-        return distribution(generator);
+        // Implementation-independent sequence -- see
+        // unit_test/include/portable_test_random.hpp.
+        static PortableUniformReal generator(-0.1, 0.1, RANDOM_SEED);
+        return generator();
     }
 };
 

@@ -67,6 +67,7 @@ TINYMIND_DISABLE_WARNING_POP
 #include <vector>
 #include <iostream>
 
+#include "portable_test_random.hpp"
 #include "qformat.hpp"
 #include "qlearn.hpp"
 #include "fixedPointTransferFunctions.hpp"
@@ -93,7 +94,7 @@ struct UniformRealRandomNumberGenerator
 
     static ValueType generateRandomWeight()
     {
-        const double temp = distribution()(generator());
+        const double temp = generator()();
         const ValueType weight = WeightConverterPolicy::convertToDestinationType(temp);
 
         return weight;
@@ -111,16 +112,12 @@ private:
     // object before its lifetime begins is UB either way. Function-local
     // statics are initialized on first use, so both compilers now see a real
     // distribution and identical weights.
-    static std::default_random_engine& generator()
+    // Also implementation-independent: std::uniform_real_distribution's mapping
+    // is not specified, so the draw sequence differed between libstdc++ and
+    // libc++. See unit_test/include/portable_test_random.hpp.
+    static PortableUniformReal& generator()
     {
-        static std::default_random_engine instance(RANDOM_SEED);
-
-        return instance;
-    }
-
-    static std::uniform_real_distribution<double>& distribution()
-    {
-        static std::uniform_real_distribution<double> instance(-1.0, 1.0);
+        static PortableUniformReal instance(-1.0, 1.0, RANDOM_SEED);
 
         return instance;
     }
