@@ -488,11 +488,100 @@ check-msan :
 	   || { echo "CHECK-MSAN FAIL: unit_test/embedded"; exit 1; }
 	@echo "check-msan: no uninitialized reads across the embedded gate corners"
 
+# The same sanitizer over the Boost suites, which check-msan cannot reach.
+#
+# check-msan is confined to unit_test/embedded because MSan requires every
+# linked object to be instrumented: against a stock libstdc++ the Boost suites
+# abort inside Boost.Test's own static initialization, and those reports are
+# artifacts of the uninstrumented runtime rather than findings. That is a real
+# gap, since the static-initialization-order UB fixed in #171 lived in exactly
+# such a suite.
+#
+# This target closes it by linking against a libc++ built with MSan. Building
+# that runtime takes 10-20 minutes, which is why this is driven by the nightly
+# .github/workflows/msan-nightly.yml rather than a PR gate; the suites
+# themselves run in seconds once it exists. Point MSAN_LIBCXX_PREFIX at an
+# install tree produced with -DLLVM_USE_SANITIZER=MemoryWithOrigins.
+#
+# Boost.Test needs no separate treatment: the suites include the header-only
+# <boost/test/included/unit_test.hpp>, so it is compiled into each translation
+# unit and instrumented with it. The C++ runtime was the only uninstrumented
+# piece.
+#
+# -O0 for the same reason as check-msan: at -O1 and above the optimizer folds
+# an undefined read away before instrumentation observes it, which would leave
+# the job green and blind.
+#
+# What this target treats as failure needs stating, because it is not simply
+# "the suite exited non-zero". Swapping the C++ runtime changes the random
+# numbers: std::uniform_real_distribution is not required to produce the same
+# sequence across implementations, and libc++ and libstdc++ genuinely differ.
+# Training tests seeded from it therefore start from different weights and land
+# outside tolerances tuned on libstdc++ -- observed in
+# test_case_lstm_weight_serialization (0.0236 against a 0.02 bound) and
+# test_case_rmsprop_fixedpoint_xor (average error 25 against a bound of 4).
+# That is a property of the runtime swap, not a defect, and failing on it would
+# make this job permanently red for a reason it was never asking about.
+#
+# So the criterion is narrow and explicit:
+#   - any MemorySanitizer report            -> FAIL (this is the whole point)
+#   - Boost "failures are detected" in output -> noted, not fatal (runtime RNG)
+#   - any other non-zero exit               -> FAIL (crash, signal, build error)
+# A genuine crash is still caught; only numeric divergence is tolerated.
+#
+# Boost assertion failures are recognized from the log rather than from the
+# exit status. Boost.Test exits 201, but this runs it through a sub-make, and
+# make reports its own failure as 2 -- so matching on 201 silently never fires
+# and every divergence looked like a crash.
+MSAN_LIBCXX_PREFIX ?=
+MSAN_LIBCXX_CC      = $(CLANG_CXX) -stdlib=libc++ -nostdinc++ \
+                      -isystem $(MSAN_LIBCXX_PREFIX)/include/c++/v1 \
+                      -L$(MSAN_LIBCXX_PREFIX)/lib \
+                      -Wl,-rpath,$(MSAN_LIBCXX_PREFIX)/lib \
+                      -fsanitize=memory -fsanitize-memory-track-origins=2 \
+                      -fno-omit-frame-pointer -O0 -g
+MSAN_LIBCXX_SUITES  = unit_test/nn unit_test/qformat unit_test/qlearn \
+                      unit_test/lookuptable unit_test/quantization \
+                      unit_test/dual unit_test/kan unit_test/pinn \
+                      unit_test/ltc unit_test/cfc
+
+check-msan-libcxx :
+	@test -n "$(MSAN_LIBCXX_PREFIX)" || \
+	  { echo "ERROR: set MSAN_LIBCXX_PREFIX to an MSan-instrumented libc++ install tree."; exit 1; }
+	@test -d "$(MSAN_LIBCXX_PREFIX)/include/c++/v1" || \
+	  { echo "ERROR: $(MSAN_LIBCXX_PREFIX)/include/c++/v1 not found -- not a libc++ install tree."; exit 1; }
+	@rm -f msan-libcxx.log
+	@fail=0; diverged=""; \
+	for d in $(MSAN_LIBCXX_SUITES); do \
+		echo "=== check-msan-libcxx: $$d ==="; \
+		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
+		  $(MAKE) CC="$(MSAN_LIBCXX_CC)" WARN="$(SAN_WARN)" >/dev/null ) \
+		  || { echo "CHECK-MSAN-LIBCXX BUILD FAIL: $$d"; exit 1; }; \
+		( cd $$d && $(MAKE) CC="$(MSAN_LIBCXX_CC)" WARN="$(SAN_WARN)" run ) \
+		  >$$(basename $$d).msan.log 2>&1; rc=$$?; \
+		cat $$(basename $$d).msan.log; \
+		cat $$(basename $$d).msan.log >> msan-libcxx.log; \
+		if grep -q "MemorySanitizer" $$(basename $$d).msan.log; then \
+			echo "CHECK-MSAN-LIBCXX FAIL: $$d reported an uninitialized read"; fail=1; \
+		elif grep -q "failures are detected" $$(basename $$d).msan.log; then \
+			echo "note: $$d has Boost assertion failures but no MSan report (see libc++ RNG note)"; \
+			diverged="$$diverged $$d"; \
+		elif [ $$rc -ne 0 ]; then \
+			echo "CHECK-MSAN-LIBCXX FAIL: $$d exited $$rc (crash or signal, not a test assertion)"; fail=1; \
+		fi; \
+		rm -f $$(basename $$d).msan.log; \
+	done; \
+	if [ -n "$$diverged" ]; then \
+		echo "check-msan-libcxx: numeric divergence under libc++ in:$$diverged"; \
+	fi; \
+	test $$fail -eq 0 || exit 1; \
+	echo "check-msan-libcxx: no uninitialized reads across the Boost suites"
+
 analyze : misra tidy cppcheck header-selfcheck warnings-strict
 
 .PHONY : sanitize cppcheck misra tidy analyze coverage-check header-selfcheck warnings-strict \
          check-clang check-clang-avx2 check-clang-integration check-clang-examples \
-         check-msan
+         check-msan check-msan-libcxx
 
 # Recursively clean every unit test, example, and app (each subdir Makefile has
 # its own clean target), plus the coverage artifacts.
