@@ -524,10 +524,15 @@ check-msan :
 # make this job permanently red for a reason it was never asking about.
 #
 # So the criterion is narrow and explicit:
-#   - any MemorySanitizer report          -> FAIL (this is the whole point)
-#   - Boost's exit 201, test assertions   -> noted, not fatal (runtime RNG)
-#   - any other non-zero exit             -> FAIL (crash, signal, build error)
+#   - any MemorySanitizer report            -> FAIL (this is the whole point)
+#   - Boost "failures are detected" in output -> noted, not fatal (runtime RNG)
+#   - any other non-zero exit               -> FAIL (crash, signal, build error)
 # A genuine crash is still caught; only numeric divergence is tolerated.
+#
+# Boost assertion failures are recognized from the log rather than from the
+# exit status. Boost.Test exits 201, but this runs it through a sub-make, and
+# make reports its own failure as 2 -- so matching on 201 silently never fires
+# and every divergence looked like a crash.
 MSAN_LIBCXX_PREFIX ?=
 MSAN_LIBCXX_CC      = $(CLANG_CXX) -stdlib=libc++ -nostdinc++ \
                       -isystem $(MSAN_LIBCXX_PREFIX)/include/c++/v1 \
@@ -558,7 +563,7 @@ check-msan-libcxx :
 		cat $$(basename $$d).msan.log >> msan-libcxx.log; \
 		if grep -q "MemorySanitizer" $$(basename $$d).msan.log; then \
 			echo "CHECK-MSAN-LIBCXX FAIL: $$d reported an uninitialized read"; fail=1; \
-		elif [ $$rc -eq 201 ]; then \
+		elif grep -q "failures are detected" $$(basename $$d).msan.log; then \
 			echo "note: $$d has Boost assertion failures but no MSan report (see libc++ RNG note)"; \
 			diverged="$$diverged $$d"; \
 		elif [ $$rc -ne 0 ]; then \
