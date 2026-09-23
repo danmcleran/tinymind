@@ -35,9 +35,20 @@
 // toolwear*torque, temperature gap), and a two-dim one-hot for product variant
 // (L, M; H = [0,0]). The product features matter: the AI4I failure modes are
 // products of inputs, which a small ReLU MLP cannot synthesize from the raw
-// features alone -- adding them lifts precision from ~0.55 to ~0.80. Because
-// failures are only ~3.4% of the data, training draws 50/50 balanced
-// mini-samples from positive and negative pools.
+// features alone.
+//
+// Training target. AI4I labels a row a failure if any of five modes fired.
+// Three (HDF, PWF, OSF) are deterministic functions of the sensor readings.
+// The other two are not: TWF is a tool replaced at a random wear time between
+// 200 and 240 min, and RNF is a 0.1% random failure. No model can predict
+// them from the readings, and training on them as positives teaches the net to
+// alarm on high-wear samples. The net is therefore trained on the
+// predictable modes and scored against the full "Machine failure" label, so
+// the TWF/RNF rows it cannot see still count against recall.
+//
+// Failures are ~3.4% of the data. Training draws 20% of samples from the
+// positive pool: enough that the net learns the failure regions, without the
+// 50/50 split's price of a decision boundary pushed deep into healthy space.
 
 #include <algorithm>
 #include <cmath>
@@ -113,7 +124,8 @@ struct Sample
     double torqueNm;
     double toolWearMin;
     int    variant; // 0=H, 1=M, 2=L
-    int    label;   // 0/1
+    int    label;       // 0/1: "Machine failure" (any mode, the scored label)
+    int    predictable; // 0/1: HDF, PWF or OSF fired (the training target)
 };
 
 static inline ValueType toQ(double v)
@@ -137,6 +149,7 @@ static inline double fromQ(const ValueType& q)
 // Header: UDI,Product ID,Type,Air temperature [K],Process temperature [K],
 //         Rotational speed [rpm],Torque [Nm],Tool wear [min],
 //         Machine failure,TWF,HDF,PWF,OSF,RNF
+//          [8]           [9] [10][11][12][13]
 
 static bool loadCsv(const std::string& path, std::vector<Sample>& out)
 {
@@ -164,7 +177,7 @@ static bool loadCsv(const std::string& path, std::vector<Sample>& out)
             cells.push_back(cell);
         }
 
-        if (cells.size() < 9)
+        if (cells.size() < 13)
         {
             continue;
         }
@@ -178,6 +191,7 @@ static bool loadCsv(const std::string& path, std::vector<Sample>& out)
         s.torqueNm    = std::stod(cells[6]);
         s.toolWearMin = std::stod(cells[7]);
         s.label       = std::stoi(cells[8]);
+        s.predictable = (std::stoi(cells[10]) || std::stoi(cells[11]) || std::stoi(cells[12])) ? 1 : 0;
         out.push_back(s);
     }
 
@@ -186,7 +200,9 @@ static bool loadCsv(const std::string& path, std::vector<Sample>& out)
 
 // ---------------------------------------------------------------------------
 // Synthetic fallback: follows the documented AI4I 2020 generative and
-// failure-labelling rules. Used when ai4i2020.csv is not present.
+// failure-labelling rules, with the distributions matched to the real CSV
+// (variant mix, the -0.88 rpm/torque correlation, ~3.4% failures). Used when
+// ai4i2020.csv is not present.
 // ---------------------------------------------------------------------------
 
 static void synthesizeDataset(std::vector<Sample>& out, std::size_t n, std::mt19937& rng)
@@ -194,8 +210,8 @@ static void synthesizeDataset(std::vector<Sample>& out, std::size_t n, std::mt19
     std::normal_distribution<double> airNoise(0.0, 2.0);
     std::normal_distribution<double> procNoise(0.0, 1.0);
     std::normal_distribution<double> torqueDist(40.0, 10.0);
-    std::normal_distribution<double> rpmDist(1538.0, 180.0);
-    std::uniform_real_distribution<double> wearDist(0.0, 253.0);
+    std::normal_distribution<double> logRpmNoise(0.0, 0.0357);
+    std::uniform_real_distribution<double> replaceAt(200.0, 240.0);
     std::uniform_real_distribution<double> unit(0.0, 1.0);
 
     out.clear();
@@ -205,7 +221,7 @@ static void synthesizeDataset(std::vector<Sample>& out, std::size_t n, std::mt19
     {
         Sample s{};
         const double u = unit(rng);
-        s.variant = (u < 0.5) ? 2 : (u < 0.8) ? 1 : 0; // 50% L, 30% M, 20% H
+        s.variant = (u < 0.6) ? 2 : (u < 0.9) ? 1 : 0; // 60% L, 30% M, 10% H
 
         s.airTempK  = 300.0 + airNoise(rng);
         s.procTempK = s.airTempK + 10.0 + procNoise(rng);
@@ -215,15 +231,19 @@ static void synthesizeDataset(std::vector<Sample>& out, std::size_t n, std::mt19
         if (torque > 76.6) torque = 76.6;
         s.torqueNm = torque;
 
-        double rpm = rpmDist(rng);
+        // Speed falls as torque rises. Log-log fit of rpm on torque from the
+        // real CSV: rpm = 5862 * torque^-0.368, with lognormal noise.
+        double rpm = 5862.0 * std::pow(torque, -0.368) * std::exp(logRpmNoise(rng));
         if (rpm < 1168.0) rpm = 1168.0;
         if (rpm > 2886.0) rpm = 2886.0;
         s.rpm = rpm;
 
-        s.toolWearMin = wearDist(rng);
+        // The tool is replaced somewhere between 200 and 240 min, so wear is
+        // uniform over the life of a tool whose end point is itself random.
+        s.toolWearMin = unit(rng) * replaceAt(rng);
 
         // Failure-mode rules.
-        const bool twf  = (s.toolWearMin >= 200.0 && s.toolWearMin <= 240.0 && unit(rng) < 0.10);
+        const bool twf  = (s.toolWearMin >= 200.0 && s.toolWearMin <= 240.0 && unit(rng) < 0.05);
         const bool hdf  = (std::fabs(s.airTempK - s.procTempK) < 8.6 && s.rpm < 1380.0);
         const double P  = s.torqueNm * (s.rpm * 2.0 * M_PI / 60.0);
         const bool pwf  = (P < 3500.0 || P > 9000.0);
@@ -231,7 +251,8 @@ static void synthesizeDataset(std::vector<Sample>& out, std::size_t n, std::mt19
         const bool osf  = (s.toolWearMin * s.torqueNm > osfThresh);
         const bool rnf  = (unit(rng) < 0.001);
 
-        s.label = (twf || hdf || pwf || osf || rnf) ? 1 : 0;
+        s.predictable = (hdf || pwf || osf) ? 1 : 0;
+        s.label = (s.predictable || twf || rnf) ? 1 : 0;
         out.push_back(s);
     }
 }
@@ -246,7 +267,7 @@ static void synthesizeDataset(std::vector<Sample>& out, std::size_t n, std::mt19
 // tool-wear*torque, heat-dissipation on the air/process temperature gap. A small
 // ReLU MLP cannot synthesize those products from the raw features alone (it has
 // to approximate multiplication piecewise), so handing them to the network
-// directly is what lifts precision from ~0.55 to ~0.9.
+// directly lifts precision (0.59 -> 0.66 on the real CSV, 10-seed mean).
 static constexpr size_t NUM_NUMERIC = 8;
 
 // Build the numeric feature vector (pre-standardization) for one sample.
@@ -343,15 +364,15 @@ int main(int argc, char* argv[])
     FeatureStats st;
     fitStats(train, st);
 
-    // Split training samples by class for balanced sampling.
+    // Split training samples by the training target for weighted sampling.
     std::vector<size_t> pos, neg;
     for (size_t i = 0; i < train.size(); ++i)
     {
-        (train[i].label ? pos : neg).push_back(i);
+        (train[i].predictable ? pos : neg).push_back(i);
     }
 
     std::cout << "Train: " << train.size() << " (pos=" << pos.size()
-              << ", neg=" << neg.size() << ")  Test: " << test.size() << std::endl;
+              << ", neg=" << neg.size() << ", by training target)  Test: " << test.size() << std::endl;
 
     if (pos.empty())
     {
@@ -359,9 +380,9 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    // Training loop with 50/50 balanced sampling.
-    const unsigned iterations   = 80000U;
-    const unsigned reportEvery  =  2000U;
+    // Training loop: 20% of samples drawn from the positive pool.
+    const unsigned iterations   = 300000U;
+    const unsigned reportEvery  =   5000U;
     ValueType input[NUMBER_OF_INPUTS];
     ValueType target[NUMBER_OF_OUTPUTS];
     ValueType learned[NUMBER_OF_OUTPUTS];
@@ -369,7 +390,7 @@ int main(int argc, char* argv[])
 
     std::uniform_int_distribution<size_t> posPick(0, pos.size() - 1);
     std::uniform_int_distribution<size_t> negPick(0, neg.size() - 1);
-    std::bernoulli_distribution coin(0.5);
+    std::bernoulli_distribution coin(0.2);
 
     // Training-loss CSV (one row per report window) for plot.py.
     std::ofstream lossCsv("predictive_maintenance_loss.csv");
@@ -379,7 +400,7 @@ int main(int argc, char* argv[])
     {
         const Sample& s = coin(rng) ? train[pos[posPick(rng)]] : train[neg[negPick(rng)]];
         toInput(s, st, input);
-        target[0] = toQ(s.label ? 1.0 : 0.0);
+        target[0] = toQ(s.predictable ? 1.0 : 0.0);
 
         gNet.feedForward(input);
         const ValueType err = gNet.calculateError(target);
@@ -401,7 +422,7 @@ int main(int argc, char* argv[])
     }
     lossCsv.close();
 
-    // Evaluate on held-out test set.
+    // Evaluate on held-out test set against the full failure label.
     size_t tp = 0, fp = 0, tn = 0, fn = 0;
     for (const auto& s : test)
     {
