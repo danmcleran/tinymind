@@ -236,6 +236,13 @@ class KLDivergenceObserver:
         hist, _ = np.histogram(cat, bins=bins, range=(0.0, self.absmax))
         best_kl = math.inf
         best_T = target
+        # Mirrors KLDivergenceObserver::findBestThresholdBin in
+        # cpp/include/qcalibration.hpp. Q is built from the *unfolded*
+        # histogram: building it from the tail-folded P makes Q == P at
+        # T == target and pins every result to absmax / 16. Empty bins are
+        # epsilon-smoothed so a bin where P has mass and Q has none is
+        # penalized rather than skipped (skipping drives the sum negative).
+        eps = 1e-4
         for T in range(target, bins + 1):
             P = hist[:T].astype(np.float64).copy()
             outliers = float(hist[T:].sum())
@@ -247,20 +254,19 @@ class KLDivergenceObserver:
                 end = min(end, T)
                 if end <= start:
                     continue
-                seg = P[start:end]
-                nz = (hist[start:end] > 0)
+                seg = hist[start:end].astype(np.float64)
+                nz = (P[start:end] > 0)
                 if not nz.any():
                     continue
                 avg = seg.sum() / float(nz.sum())
                 Q[start:end] = np.where(nz, avg, 0.0)
-            ps = P.sum()
-            qs = Q.sum()
-            if ps <= 0.0 or qs <= 0.0:
+            if not (P > 0.0).any() or not (Q > 0.0).any():
                 continue
-            p_norm = P / ps
-            q_norm = Q / qs
-            mask = (p_norm > 0.0) & (q_norm > 0.0)
-            kl = float(np.sum(p_norm[mask] * np.log(p_norm[mask] / q_norm[mask])))
+            P = np.where(P > 0.0, P, eps)
+            Q = np.where(Q > 0.0, Q, eps)
+            p_norm = P / P.sum()
+            q_norm = Q / Q.sum()
+            kl = float(np.sum(p_norm * np.log(p_norm / q_norm)))
             if kl < best_kl:
                 best_kl = kl
                 best_T = T

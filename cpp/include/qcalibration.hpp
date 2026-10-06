@@ -1066,6 +1066,15 @@ namespace tinymind {
          * Sweep candidate thresholds, return the bin-unit threshold that
          * minimizes the KL divergence. The float clip-threshold returned
          * by computeThreshold() is `(best_bin / kNumBins) * absmax`.
+         *
+         * P is the reference: the first T bins with the clipped tail folded
+         * into bin T-1. Q is the int8 view, built from the *unfolded* first
+         * T bins. Building Q from P would make Q == P at T == kTargetBins
+         * (one source bin per target bin), score that candidate at exactly
+         * zero divergence, and pin every result to absmax / 16. Empty bins
+         * are epsilon-smoothed before the divergence so a bin where P has
+         * mass and Q has none is penalized rather than skipped; skipping it
+         * drops probability mass and can drive the sum negative.
          */
         std::size_t findBestThresholdBin() const
         {
@@ -1104,16 +1113,17 @@ namespace tinymind {
                     std::size_t nonzero = 0;
                     for (std::size_t i = start; i < end; ++i)
                     {
-                        sum += P[i];
-                        if (histogram[i] > 0u) ++nonzero;
+                        sum += static_cast<double>(histogram[i]);
+                        if (P[i] > 0.0) ++nonzero;
                     }
                     if (nonzero == 0 || sum == 0.0) continue;
                     const double avg = sum / static_cast<double>(nonzero);
                     for (std::size_t i = start; i < end; ++i)
                     {
-                        if (histogram[i] > 0u) Q[i] = avg;
+                        if (P[i] > 0.0) Q[i] = avg;
                     }
                 }
+                if (!smoothDistribution(P) || !smoothDistribution(Q)) continue;
                 double P_sum = 0.0;
                 double Q_sum = 0.0;
                 for (std::size_t i = 0; i < T; ++i)
@@ -1121,16 +1131,12 @@ namespace tinymind {
                     P_sum += P[i];
                     Q_sum += Q[i];
                 }
-                if (P_sum <= 0.0 || Q_sum <= 0.0) continue;
                 double kl = 0.0;
                 for (std::size_t i = 0; i < T; ++i)
                 {
                     const double p = P[i] / P_sum;
                     const double q = Q[i] / Q_sum;
-                    if (p > 0.0 && q > 0.0)
-                    {
-                        kl += p * std::log(p / q);
-                    }
+                    kl += p * std::log(p / q);
                 }
                 if (best_kl < 0.0 || kl < best_kl)
                 {
@@ -1139,6 +1145,29 @@ namespace tinymind {
                 }
             }
             return best_bin;
+        }
+
+        /**
+         * Give every empty bin a small epsilon so the divergence is finite
+         * and every bin contributes. Returns false for an all-empty
+         * distribution, which has nothing to compare.
+         */
+        static bool smoothDistribution(std::vector<double>& d)
+        {
+            static constexpr double kEpsilon = 1e-4;
+            bool any = false;
+            for (std::size_t i = 0; i < d.size(); ++i)
+            {
+                if (d[i] > 0.0)
+                {
+                    any = true;
+                }
+                else
+                {
+                    d[i] = kEpsilon;
+                }
+            }
+            return any;
         }
 
         /**

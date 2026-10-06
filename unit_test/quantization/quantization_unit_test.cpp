@@ -1902,6 +1902,47 @@ BOOST_AUTO_TEST_CASE(kl_divergence_observer_finds_clip_threshold)
     BOOST_TEST(threshold < obs.absmax * 0.5f);
 }
 
+BOOST_AUTO_TEST_CASE(kl_divergence_observer_does_not_pin_to_smallest_candidate)
+{
+    // Laplace(b=1) built from its quantile function, so the data is
+    // deterministic without an RNG. Two sweep defects guard this case:
+    //   * building the int8 view from the tail-folded reference makes it
+    //     identical to the reference at the smallest candidate
+    //     (absmax / 16, about 0.62 here), scoring that candidate at exactly
+    //     zero divergence -- it clips over half the samples;
+    //   * skipping bins where the reference has mass and the int8 view has
+    //     none drops probability mass and produces negative "divergences",
+    //     so the sweep returns an arbitrary threshold (on this data the
+    //     defective sweep clipped 246 of 20000 samples).
+    // A correct sweep lands near the tail and clips only a few samples.
+    constexpr int kN = 20000;
+    std::vector<float> data;
+    data.reserve(kN);
+    for (int i = 0; i < kN; ++i)
+    {
+        const double u = (static_cast<double>(i) + 0.5) / static_cast<double>(kN) - 0.5;
+        const double mag = -std::log(1.0 - 2.0 * std::abs(u));
+        data.push_back(static_cast<float>((u < 0.0) ? -mag : mag));
+    }
+    KLDivergenceObserver obs;
+    obs.observeAbsRange(data.data(), data.size());
+    obs.observeHistogram(data.data(), data.size());
+    const float threshold = obs.computeThreshold();
+
+    const float smallestCandidate = obs.absmax *
+        (static_cast<float>(KLDivergenceObserver::kTargetBins) /
+         static_cast<float>(KLDivergenceObserver::kNumBins));
+    BOOST_TEST(threshold > 4.0f * smallestCandidate);
+    BOOST_TEST(threshold <= obs.absmax);
+
+    std::size_t clipped = 0;
+    for (const float x : data)
+    {
+        if (std::abs(x) > threshold) ++clipped;
+    }
+    BOOST_TEST(clipped < static_cast<std::size_t>(kN / 1000));
+}
+
 BOOST_AUTO_TEST_CASE(kl_divergence_observer_empty_returns_zero)
 {
     KLDivergenceObserver obs;
