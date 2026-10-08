@@ -145,6 +145,8 @@ simd_prereq_regressions:
 	@! $(CC) $(WARN) -c $(SOURCES) -o /dev/null $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_AVX_VNNI=1 2>/dev/null
 	@echo "[prereq] AVX512_VNNI=1 without AVX512F must fail"
 	@! $(CC) $(WARN) -c $(SOURCES) -o /dev/null $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_AVX512_VNNI=1 2>/dev/null
+	@echo "[prereq] ARM_DSP=1 on a target without __ARM_FEATURE_DSP must fail"
+	@$(CC) $(WARN) -c $(SOURCES) -o /dev/null $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_ARM_DSP=1 2>&1 | grep -q "requires a core with the Arm DSP extension"
 	@echo "[prereq] all prerequisite checks behaved as expected"
 
 # -----------------------------------------------------------------------------
@@ -182,6 +184,12 @@ arm_crosscompile:
 	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M33) -c $(SOURCES) $(INCLUDES) -o /dev/null
 	@echo "[arm] cortex-m33 hard-float: quant freestanding"
 	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M33) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
+	@echo "[arm] cortex-m4 hard-float: quant + SIMD_ARM_DSP (SMLAD backend)"
+	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M4) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_ARM_DSP=1 -o /dev/null
+	@echo "[arm] cortex-m33 hard-float: quant + SIMD_ARM_DSP (SMLAD backend)"
+	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M33) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_ARM_DSP=1 -o /dev/null
+	@echo "[arm] cortex-m0plus: SIMD_ARM_DSP must be refused (no DSP extension)"
+	@$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M0) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_ARM_DSP=1 -o /dev/null 2>&1 | grep -q "requires a core with the Arm DSP extension"
 	@echo "arm_crosscompile: all Cortex-M corners assemble clean"
 
 # Same Cortex-M corners, cross-compiled with Clang instead of GCC.
@@ -199,15 +207,22 @@ arm_crosscompile:
 # arm_crosscompile: ARM_CLANG_INC asks that GCC for its own include search path
 # and feeds it back as -isystem. Querying the installed compiler rather than
 # hardcoding paths keeps this working across toolchain versions, where the
-# 13.2.1 in the path would otherwise rot.
+# 13.2.1 in the path would otherwise rot. Only the library dirs are borrowed:
+# GCC's own include/ and include-fixed/ hold compiler builtin headers
+# (arm_acle.h, arm_mve.h, stdint-gcc.h) written against GCC's builtins, and
+# placed ahead of Clang's resource dir they shadow Clang's versions -- GCC's
+# arm_acle.h does not even parse under Clang.
 #
 # -fno-exceptions -fno-rtti matches how this code is actually deployed and
 # avoids depending on target unwind tables that bare-metal Clang does not
 # supply by default. Compile-only, like the GCC target: no link, no startup.
 ARM_CLANG      ?= clang++
-ARM_CLANG_INC   = $(shell $(ARM_CXX) -E -x c++ - -v </dev/null 2>&1 | \
+ARM_GCC_SEARCH  = $(shell $(ARM_CXX) -E -x c++ - -v </dev/null 2>&1 | \
                     sed -n '/\#include <...>/,/End of search/p' | \
-                    grep '^ /' | sed 's/^ /-isystem /' | tr '\n' ' ')
+                    grep '^ /' | tr '\n' ' ')
+ARM_GCC_PRIVATE = $(shell $(ARM_CXX) -print-file-name=include) \
+                  $(shell $(ARM_CXX) -print-file-name=include-fixed)
+ARM_CLANG_INC   = $(patsubst %,-isystem %,$(filter-out $(ARM_GCC_PRIVATE),$(ARM_GCC_SEARCH)))
 ARM_CLANG_BASE  = --target=arm-none-eabi $(ARM_STD) $(ARM_WARN) \
                   -ffreestanding -fno-exceptions -fno-rtti
 
@@ -229,7 +244,64 @@ arm_crosscompile_clang:
 	$(ARM_CLANG) $(ARM_CLANG_BASE) $(ARM_M33) $(ARM_CLANG_INC) -c $(SOURCES) $(INCLUDES) -o /dev/null
 	@echo "[arm-clang] cortex-m33 hard-float: quant freestanding"
 	$(ARM_CLANG) $(ARM_CLANG_BASE) $(ARM_M33) $(ARM_CLANG_INC) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
+	@echo "[arm-clang] cortex-m4 hard-float: quant + SIMD_ARM_DSP (SMLAD backend)"
+	$(ARM_CLANG) $(ARM_CLANG_BASE) $(ARM_M4) $(ARM_CLANG_INC) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_ARM_DSP=1 -o /dev/null
+	@echo "[arm-clang] cortex-m33 hard-float: quant + SIMD_ARM_DSP (SMLAD backend)"
+	$(ARM_CLANG) $(ARM_CLANG_BASE) $(ARM_M33) $(ARM_CLANG_INC) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_ARM_DSP=1 -o /dev/null
 	@echo "arm_crosscompile_clang: all Cortex-M corners assemble clean with $(ARM_CLANG)"
+
+# -----------------------------------------------------------------------------
+# SMLAD backend executed on an emulated Cortex-M4. HARD gate.
+#
+# TINYMIND_ENABLE_SIMD_ARM_DSP is the one SIMD backend no CI host can run: its
+# instructions (SMLAD / SXTB16 / SSUB16) are AArch32-only, so the hosted
+# suites never touch it and arm_crosscompile only proves it assembles. This
+# links arm_dsp/arm_dsp_qemu_test.cpp into a bare-metal image for QEMU's
+# mps2-an386 machine (a Cortex-M4) and runs it under semihosting. The test
+# sweeps every length 0..80, every x/w byte misalignment and the int8
+# extremes against the scalar reference, then checks QPointwiseConv2D and
+# QDense end to end; QEMU's exit status is the test's.
+#
+# Three images, because the kernel has three code shapes: GCC (inline-asm
+# SXTB16 ROR #8, unaligned LDR), Clang with -munaligned-access (folded rotate,
+# LDR) and Clang at its bare-metal default (strict alignment, so every word
+# load splits into LDRBs). Each image must also contain an SMLAD -- a build
+# that silently fell back to scalar would otherwise pass while testing
+# nothing. QEMU is functionally exact, not cycle-accurate: this proves
+# bit-exactness, never speed; speed is measured on hardware.
+QEMU_ARM        ?= qemu-system-arm
+ARM_OBJDUMP     ?= arm-none-eabi-objdump
+ARM_DSP_DIR      = arm_dsp
+ARM_DSP_SRC      = $(ARM_DSP_DIR)/arm_dsp_qemu_test.cpp $(ARM_DSP_DIR)/startup_mps2.cpp
+ARM_DSP_DEFS     = -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_ARM_DSP=1
+ARM_DSP_CFLAGS   = $(ARM_STD) $(ARM_WARN) -O2 -ffreestanding -fno-exceptions -fno-rtti \
+                   $(INCLUDES) -I$(ARM_DSP_DIR) $(ARM_DSP_DEFS)
+ARM_DSP_LDFLAGS  = $(ARM_M4) -nostdlib -T $(ARM_DSP_DIR)/mps2_an386.ld -Wl,-z,noexecstack -lgcc
+QEMU_ARM_FLAGS   = -M mps2-an386 -nographic -monitor none -serial none \
+                   -semihosting-config enable=on,target=native
+
+.PHONY: arm_dsp_qemu
+arm_dsp_qemu:
+	@command -v $(ARM_CXX) >/dev/null 2>&1 || { echo "ERROR: $(ARM_CXX) not found. sudo apt install gcc-arm-none-eabi"; exit 1; }
+	@command -v $(ARM_CLANG) >/dev/null 2>&1 || { echo "ERROR: $(ARM_CLANG) not found. sudo apt install clang"; exit 1; }
+	@command -v $(QEMU_ARM) >/dev/null 2>&1 || { echo "ERROR: $(QEMU_ARM) not found. sudo apt install qemu-system-arm"; exit 1; }
+	$(MKDIR)
+	$(ARM_CXX) $(ARM_DSP_CFLAGS) $(ARM_M4) $(ARM_DSP_SRC) $(ARM_DSP_LDFLAGS) -o ./output/arm_dsp_gcc.elf
+	@for mode in unaligned strict; do \
+	  align=$$( [ $$mode = unaligned ] && echo -munaligned-access ); \
+	  for src in arm_dsp_qemu_test startup_mps2; do \
+	    $(ARM_CLANG) --target=arm-none-eabi $(ARM_M4) $(ARM_CLANG_INC) $(ARM_DSP_CFLAGS) $$align \
+	      -c $(ARM_DSP_DIR)/$$src.cpp -o ./output/arm_dsp_clang_$${mode}_$$src.o || exit 1; \
+	  done; \
+	  $(ARM_CXX) ./output/arm_dsp_clang_$${mode}_*.o $(ARM_DSP_LDFLAGS) -o ./output/arm_dsp_clang_$$mode.elf || exit 1; \
+	done
+	@for img in gcc clang_unaligned clang_strict; do \
+	  elf=./output/arm_dsp_$$img.elf; \
+	  $(ARM_OBJDUMP) -d $$elf | grep -q -w smlad || { echo "ARM_DSP GATE FAIL ($$img): no SMLAD in image -- backend not compiled in"; exit 1; }; \
+	  echo "[qemu mps2-an386] $$img"; \
+	  timeout 120 $(QEMU_ARM) $(QEMU_ARM_FLAGS) -kernel $$elf || { echo "ARM_DSP GATE FAIL ($$img)"; exit 1; }; \
+	done
+	@echo "arm_dsp_qemu: SMLAD backend bit-exact with scalar on emulated Cortex-M4 (gcc, clang, clang strict-align)"
 
 # -----------------------------------------------------------------------------
 # Heap-free guarantee (build-only). HARD gate.

@@ -152,11 +152,11 @@ Composability between the previously orphaned `QValue` (Q-format) and `QAffineTe
 
 ### SIMD Performance Backend (optional, `TINYMIND_ENABLE_SIMD_*=1`)
 
-ISA-capability-gated SIMD specializations on the inner reduction loop of `QDense`, `QConv2D`, `QConv2DPerChannel`. Every gate defaults to `0`; with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the pre-SIMD build.
+ISA-capability-gated SIMD specializations on the inner reduction loop of `QDense`, `QConv2D`, `QConv2DPerChannel`, `QPointwiseConv2D`, `QPointwiseConv2DPerChannel`. Every gate defaults to `0`; with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the pre-SIMD build.
 
-- **Gates** -- `TINYMIND_ENABLE_SIMD_NEON`, `_NEON_DOTPROD`, `_NEON_FP16`, `_SVE`, `_SVE2`, `_HELIUM_MVE_I`, `_HELIUM_MVE_F`, `_AVX2`, `_AVX_VNNI`, `_AVX512F`, `_AVX512_VNNI`, plus the orthogonal `TINYMIND_ENABLE_OPENMP`
-- **Prerequisite chain** -- each `simd_*.hpp` opens with a `static_assert` enforcing Arm's dependency table: `DOTPROD` requires `NEON`; `SVE`/`SVE2`/FP16-vector require `NEON`; `AVX_VNNI` requires `AVX2`; `AVX512_VNNI` requires `AVX512F`; the two Helium gates are M-profile only and mutually exclusive with `NEON`/`SVE`. Misconfiguration fails at compile time
-- **Dispatch** -- public entry point `tinymind::simd::int8DotWithZeroPoint` in `cpp/include/simd/simd_dispatch.hpp`. Backend precedence on x86: `AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 > scalar`; on Arm: `NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > scalar`. `activeBackendName()` reports the resolved choice
+- **Gates** -- `TINYMIND_ENABLE_SIMD_NEON`, `_NEON_DOTPROD`, `_NEON_FP16`, `_SVE`, `_SVE2`, `_HELIUM_MVE_I`, `_HELIUM_MVE_F`, `_ARM_DSP`, `_AVX2`, `_AVX_VNNI`, `_AVX512F`, `_AVX512_VNNI`, plus the orthogonal `TINYMIND_ENABLE_OPENMP`
+- **Prerequisite chain** -- each `simd_*.hpp` opens with a `static_assert` enforcing Arm's dependency table: `DOTPROD` requires `NEON`; `SVE`/`SVE2`/FP16-vector require `NEON`; `AVX_VNNI` requires `AVX2`; `AVX512_VNNI` requires `AVX512F`; the two Helium gates are M-profile only and mutually exclusive with `NEON`/`SVE`; `ARM_DSP` requires a target that defines `__ARM_FEATURE_DSP` (refused on Cortex-M0/M0+/M3/M23). Misconfiguration fails at compile time
+- **Dispatch** -- public entry point `tinymind::simd::int8DotWithZeroPoint` in `cpp/include/simd/simd_dispatch.hpp`. Backend precedence on x86: `AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 > scalar`; on Arm: `NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > ARM_DSP > scalar`. `activeBackendName()` reports the resolved choice
 - **Bit-exactness** -- every integer backend is bit-exact with the scalar reference. AVX2 avoids `PMADDUBSW` (saturates); AVX-VNNI / AVX-512-VNNI use the uint8-shift trick so `VPDPBUSD` reduces exactly. Float SIMD reductions are not bit-exact -- invariant applies to integer paths only
 - **Threading** -- `cpp/include/threading.hpp` exposes `TINYMIND_PARALLEL_FOR_OUTER` (expands to `#pragma omp parallel for` when `TINYMIND_ENABLE_OPENMP=1`, nothing otherwise). Wired on the output-filter loop of `QConv2D` / `QConv2DPerChannel`. Orthogonal to every SIMD gate; caller passes `-fopenmp`
 - **No runtime CPU dispatch** -- library compiles for one ISA per build; fat-binary dispatch is the caller's problem. No `__builtin_cpu_supports` / `getauxval` in library headers; the build system maps `-march=` flags to `TINYMIND_ENABLE_SIMD_*=1`
@@ -985,6 +985,7 @@ TinyMind compiles cleanly on freestanding embedded targets that lack an FPU, a h
 | `TINYMIND_ENABLE_SIMD_NEON_FP16` | Arm NEON FEAT_FP16 vector arithmetic; requires `_NEON` |
 | `TINYMIND_ENABLE_SIMD_SVE` / `_SVE2` | Arm Scalable Vector Extension; requires `_NEON` |
 | `TINYMIND_ENABLE_SIMD_HELIUM_MVE_I` / `_MVE_F` | M-profile Helium MVE (integer/float). Mutually exclusive with `_NEON`/`_SVE` |
+| `TINYMIND_ENABLE_SIMD_ARM_DSP` | Arm DSP extension (`SMLAD`/`SXTB16`) int8 dot product for Cortex-M4/M7/M33/M35P. Requires a target defining `__ARM_FEATURE_DSP`; with Clang bare-metal also pass `-munaligned-access` |
 | `TINYMIND_ENABLE_SIMD_AVX2` | x86 AVX2 |
 | `TINYMIND_ENABLE_SIMD_AVX_VNNI` | AVX-VNNI (`VPDPBUSD`); requires `_AVX2` |
 | `TINYMIND_ENABLE_SIMD_AVX512F` | x86 AVX-512 Foundation |
@@ -1095,6 +1096,7 @@ tinymind/
         simd_neon.hpp, simd_neon_dotprod.hpp, simd_neon_fp16.hpp
         simd_sve.hpp, simd_sve2.hpp
         simd_helium_mve_i.hpp, simd_helium_mve_f.hpp
+        simd_arm_dsp.hpp        # Cortex-M4/M7/M33 SMLAD (DSP extension)
         simd_avx2.hpp, simd_avx_vnni.hpp
         simd_avx512f.hpp, simd_avx512_vnni.hpp
       bench/                    # Benchmark harness

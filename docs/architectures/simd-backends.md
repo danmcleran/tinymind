@@ -35,6 +35,7 @@ All default `0`. Set both the gate and the matching `-march=` flag.
 | `TINYMIND_ENABLE_SIMD_SVE2` | SVE2 | Adds the int8 dot-product instructions Arm's server-class cores ship |
 | `TINYMIND_ENABLE_SIMD_HELIUM_MVE_I` | Armv8.1-M Helium MVE-I | M-profile integer vector (Cortex-M55 / M85). Mutually exclusive with NEON / SVE |
 | `TINYMIND_ENABLE_SIMD_HELIUM_MVE_F` | Armv8.1-M Helium MVE-F | M-profile float vector. Same exclusivity rule |
+| `TINYMIND_ENABLE_SIMD_ARM_DSP` | AArch32 DSP extension | Cortex-M4 / M7 / M33 / M35P. `SMLAD` does two int16 MACs per cycle; four int8 values per word load, widened with `SXTB16`. Requires `__ARM_FEATURE_DSP`. Clang bare-metal defaults to strict alignment, so pass `-munaligned-access` or word loads split into byte loads |
 | `TINYMIND_ENABLE_SIMD_AVX2` | x86 AVX2 | 256-bit baseline. Avoids `PMADDUBSW` (saturates on pair-sum) |
 | `TINYMIND_ENABLE_SIMD_AVX_VNNI` | AVX2 + AVX-VNNI | Tiger Lake / Alder Lake / Raptor Lake — `VPDPBUSD` over 256-bit vectors |
 | `TINYMIND_ENABLE_SIMD_AVX512F` | AVX-512 Foundation | 512-bit baseline |
@@ -51,6 +52,7 @@ Each `cpp/include/simd/simd_*.hpp` header opens with a `static_assert` enforcing
 - `AVX_VNNI` requires `AVX2`
 - `AVX512_VNNI` requires `AVX512F`
 - `HELIUM_MVE_I` and `HELIUM_MVE_F` are M-profile only — mutually exclusive with `NEON` and `SVE`
+- `ARM_DSP` requires a target with the DSP extension: the header `#error`s unless the toolchain defines `__ARM_FEATURE_DSP`, so enabling it for a Cortex-M0+ or an AArch64 build fails at compile time rather than at link time on a missing intrinsic
 
 Misconfiguration like `DOTPROD=1, NEON=0` fails at compile time with a readable message. The `simd_prereq_regressions` make target in `unit_test/embedded/Makefile` locks the regression by checking that misconfigured builds fail.
 
@@ -59,7 +61,7 @@ Misconfiguration like `DOTPROD=1, NEON=0` fails at compile time with a readable 
 The public entry point is `tinymind::simd::int8DotWithZeroPoint` in [`cpp/include/simd/simd_dispatch.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/include/simd/simd_dispatch.hpp), plus a templated `dotProductWithZeroPoint<Input, Weight, Accum>` that specializes on `int8_t / int8_t / int32_t`. When multiple gates are enabled in the same build, dispatch resolves to the strongest:
 
 - **x86:** `AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 > scalar`
-- **Arm:** `NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > scalar`
+- **Arm:** `NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > ARM_DSP > scalar` (every Helium core also has the DSP extension, and MVE's 16-lane reduction beats SMLAD's two lanes)
 
 `tinymind::simd::activeBackendName()` returns the resolved choice as a `const char*` for benchmark reports.
 

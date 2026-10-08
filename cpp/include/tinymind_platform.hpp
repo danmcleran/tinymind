@@ -126,7 +126,13 @@
  *                                       Independent of MVE-I per Arm
  *                                       Helium docs (a core may
  *                                       implement either alone).
- * TINYMIND_ENABLE_SIMD_AVX2          - x86 AVX2 + SSSE3 baseline
+ * TINYMIND_ENABLE_SIMD_ARM_DSP       - AArch32 DSP extension (SMLAD /
+ *                                       SXTB16 packed int16 MACs) on
+ *                                       Cortex-M4 / M7 / M33 / M35P /
+ *                                       M55 / M85. Requires the target to
+ *                                       define __ARM_FEATURE_DSP; absent
+ *                                       on M0 / M0+ / M3 / M23.
+ * TINYMIND_ENABLE_SIMD_AVX2         - x86 AVX2 + SSSE3 baseline
  *                                       (PMADDUBSW path).
  * TINYMIND_ENABLE_SIMD_AVX_VNNI      - 256-bit AVX-VNNI (VPDPBUSD on
  *                                       Alder Lake+). Requires
@@ -203,6 +209,10 @@
 
 #ifndef TINYMIND_ENABLE_SIMD_HELIUM_MVE_F
 #define TINYMIND_ENABLE_SIMD_HELIUM_MVE_F 0
+#endif
+
+#ifndef TINYMIND_ENABLE_SIMD_ARM_DSP
+#define TINYMIND_ENABLE_SIMD_ARM_DSP 0
 #endif
 
 #ifndef TINYMIND_ENABLE_SIMD_AVX2
