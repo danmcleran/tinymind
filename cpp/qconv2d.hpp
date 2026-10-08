@@ -109,6 +109,14 @@ namespace tinymind {
 
         void forward(const InputType* input, OutputType* output) const
         {
+            // Snapshot the fields into locals. Every output store is an int8_t write,
+            // which may alias *this, so member reads inside the loops would be
+            // reloaded -- and the requantizer's shift re-decoded -- once per output.
+            const WeightType* const layerWeights = weights;
+            const AccumulatorType* const layerBiases = biases;
+            const InputType inputZeroPoint = input_zero_point;
+            const Requantizer<AccumulatorType, OutputType> rq = requantizer;
+
             for (std::size_t oh = 0; oh < OutputHeight; ++oh)
             {
                 const std::size_t ihStart = oh * StrideH_;
@@ -122,8 +130,8 @@ namespace tinymind {
                     for (std::size_t f = 0; f < NumFilters_; ++f)
                     {
                         const std::size_t weightOffset = f * WeightsPerFilter;
-                        AccumulatorType acc = (biases != nullptr)
-                            ? biases[f]
+                        AccumulatorType acc = (layerBiases != nullptr)
+                            ? layerBiases[f]
                             : static_cast<AccumulatorType>(0);
 
                         for (std::size_t kh = 0; kh < KH_; ++kh)
@@ -140,12 +148,12 @@ namespace tinymind {
                                 acc += simd::dotProductWithZeroPoint<
                                     InputType, WeightType, AccumulatorType>(
                                     input + inPixelOffset,
-                                    weights + weightOffset + kPixelOffset,
-                                    InChannels_, input_zero_point);
+                                    layerWeights + weightOffset + kPixelOffset,
+                                    InChannels_, inputZeroPoint);
                             }
                         }
 
-                        output[outPixelOffset + f] = requantizer.apply(acc);
+                        output[outPixelOffset + f] = rq.apply(acc);
                     }
                 }
             }
@@ -219,6 +227,14 @@ namespace tinymind {
 
         void forward(const InputType* input, OutputType* output) const
         {
+            // Snapshot the fields into locals. Every output store is an int8_t write,
+            // which may alias *this, so member reads inside the loops would be
+            // reloaded -- and the requantizer's shift re-decoded -- once per output.
+            const WeightType* const layerWeights = weights;
+            const AccumulatorType* const layerBiases = biases;
+            const InputType inputZeroPoint = input_zero_point;
+            const Requantizer<AccumulatorType, OutputType>* const rqs = requantizers;
+
             for (std::size_t oh = 0; oh < OutputHeight; ++oh)
             {
                 const std::size_t ihStart = oh * StrideH_;
@@ -232,8 +248,8 @@ namespace tinymind {
                     for (std::size_t f = 0; f < NumFilters_; ++f)
                     {
                         const std::size_t weightOffset = f * WeightsPerFilter;
-                        AccumulatorType acc = (biases != nullptr)
-                            ? biases[f]
+                        AccumulatorType acc = (layerBiases != nullptr)
+                            ? layerBiases[f]
                             : static_cast<AccumulatorType>(0);
 
                         for (std::size_t kh = 0; kh < KH_; ++kh)
@@ -250,12 +266,12 @@ namespace tinymind {
                                 acc += simd::dotProductWithZeroPoint<
                                     InputType, WeightType, AccumulatorType>(
                                     input + inPixelOffset,
-                                    weights + weightOffset + kPixelOffset,
-                                    InChannels_, input_zero_point);
+                                    layerWeights + weightOffset + kPixelOffset,
+                                    InChannels_, inputZeroPoint);
                             }
                         }
 
-                        output[outPixelOffset + f] = requantizers[f].apply(acc);
+                        output[outPixelOffset + f] = rqs[f].apply(acc);
                     }
                 }
             }

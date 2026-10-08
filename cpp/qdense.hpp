@@ -85,18 +85,26 @@ namespace tinymind {
 
         void forward(const InputType* input, OutputType* output) const
         {
+            // Snapshot the fields into locals. Every output store is an int8_t write,
+            // which may alias *this, so member reads inside the loops would be
+            // reloaded -- and the requantizer's shift re-decoded -- once per output.
+            const WeightType* const layerWeights = weights;
+            const AccumulatorType* const layerBiases = biases;
+            const InputType inputZeroPoint = input_zero_point;
+            const Requantizer<AccumulatorType, OutputType> rq = requantizer;
+
             for (std::size_t o = 0; o < NumOutputs_; ++o)
             {
-                AccumulatorType acc = (biases != nullptr)
-                    ? biases[o]
+                AccumulatorType acc = (layerBiases != nullptr)
+                    ? layerBiases[o]
                     : static_cast<AccumulatorType>(0);
 
-                const WeightType* w_row = weights + o * NumInputs_;
+                const WeightType* w_row = layerWeights + o * NumInputs_;
                 acc += simd::dotProductWithZeroPoint<InputType, WeightType,
                                                      AccumulatorType>(
-                    input, w_row, NumInputs_, input_zero_point);
+                    input, w_row, NumInputs_, inputZeroPoint);
 
-                output[o] = requantizer.apply(acc);
+                output[o] = rq.apply(acc);
             }
         }
     };

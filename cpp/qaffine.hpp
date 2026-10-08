@@ -58,18 +58,26 @@ namespace tinymind {
      * by gemmlowp and TFLite reference kernels: given a Q0.31 multiplier
      * and an int32 input, it returns the high 32 bits of the doubled
      * product, with rounding to nearest.
+     *
+     * gemmlowp writes this with a sign-dependent nudge (2^30 for a
+     * non-negative product, 1 - 2^30 for a negative one) followed by a
+     * division that truncates toward zero. For a negative product,
+     * truncation is a floor after adding 2^31 - 1, and the two offsets sum
+     * to 2^30 -- so both signs reduce to floor((a * b + 2^30) / 2^31), one
+     * add and one arithmetic shift with no branch on the sign. Same result
+     * bit for bit (unit_test/quantization locks it against the gemmlowp
+     * form, ties included); on Cortex-M4 it drops the negative-product
+     * path that cost a branch and a second 64-bit add per requantize.
+     * |a * b| <= 2^62, so the add cannot overflow int64, and the result
+     * fits int32 except for INT32_MIN * INT32_MIN, which saturates.
      */
     inline int32_t saturatingRoundingDoublingHighMul(int32_t a, int32_t b)
     {
         const bool overflow = (a == static_cast<int32_t>(0x80000000)) &&
                               (b == static_cast<int32_t>(0x80000000));
-        const int64_t a64 = static_cast<int64_t>(a);
-        const int64_t b64 = static_cast<int64_t>(b);
-        const int64_t ab = a64 * b64;
-        const int32_t nudge = (ab >= 0)
-            ? static_cast<int32_t>(1 << 30)
-            : static_cast<int32_t>(1 - (1 << 30));
-        const int32_t high = static_cast<int32_t>((ab + nudge) / (static_cast<int64_t>(1) << 31));
+        const int64_t ab = static_cast<int64_t>(a) * static_cast<int64_t>(b);
+        const int32_t high = static_cast<int32_t>(
+            (ab + (static_cast<int64_t>(1) << 30)) >> 31);
         return overflow ? static_cast<int32_t>(0x7FFFFFFF) : high;
     }
 

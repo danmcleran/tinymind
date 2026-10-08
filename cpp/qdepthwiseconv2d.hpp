@@ -104,6 +104,14 @@ namespace tinymind {
 
         void forward(const InputType* input, OutputType* output) const
         {
+            // Snapshot the fields into locals. Every output store is an int8_t write,
+            // which may alias *this, so member reads inside the loops would be
+            // reloaded -- and the requantizer's shift re-decoded -- once per output.
+            const WeightType* const layerWeights = weights;
+            const AccumulatorType* const layerBiases = biases;
+            const InputType inputZeroPoint = input_zero_point;
+            const Requantizer<AccumulatorType, OutputType>* const rqs = requantizers;
+
             for (std::size_t oh = 0; oh < OutputHeight; ++oh)
             {
                 const std::size_t ihStart = oh * StrideH_;
@@ -116,8 +124,8 @@ namespace tinymind {
                     for (std::size_t c = 0; c < Channels_; ++c)
                     {
                         const std::size_t weightOffset = c * WeightsPerChannel;
-                        AccumulatorType acc = (biases != nullptr)
-                            ? biases[c]
+                        AccumulatorType acc = (layerBiases != nullptr)
+                            ? layerBiases[c]
                             : static_cast<AccumulatorType>(0);
 
                         for (std::size_t kh = 0; kh < KH_; ++kh)
@@ -130,15 +138,15 @@ namespace tinymind {
                                     (ih * W_ + iw) * Channels_ + c;
                                 const AccumulatorType x =
                                     static_cast<AccumulatorType>(input[inIdx]) -
-                                    static_cast<AccumulatorType>(input_zero_point);
+                                    static_cast<AccumulatorType>(inputZeroPoint);
                                 const AccumulatorType w =
                                     static_cast<AccumulatorType>(
-                                        weights[weightOffset + kh * KW_ + kw]);
+                                        layerWeights[weightOffset + kh * KW_ + kw]);
                                 acc += w * x;
                             }
                         }
 
-                        output[outPixelOffset + c] = requantizers[c].apply(acc);
+                        output[outPixelOffset + c] = rqs[c].apply(acc);
                     }
                 }
             }

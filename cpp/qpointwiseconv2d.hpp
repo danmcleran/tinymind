@@ -94,6 +94,14 @@ namespace tinymind {
 
         void forward(const InputType* input, OutputType* output) const
         {
+            // Snapshot the fields into locals. Every output store is an int8_t write,
+            // which may alias *this, so member reads inside the loops would be
+            // reloaded -- and the requantizer's shift re-decoded -- once per output.
+            const WeightType* const layerWeights = weights;
+            const AccumulatorType* const layerBiases = biases;
+            const InputType inputZeroPoint = input_zero_point;
+            const Requantizer<AccumulatorType, OutputType> rq = requantizer;
+
             for (std::size_t h = 0; h < H_; ++h)
             {
                 for (std::size_t w = 0; w < W_; ++w)
@@ -104,21 +112,21 @@ namespace tinymind {
                     for (std::size_t f = 0; f < NumFilters_; ++f)
                     {
                         const std::size_t weightOffset = f * WeightsPerFilter;
-                        AccumulatorType acc = (biases != nullptr)
-                            ? biases[f]
+                        AccumulatorType acc = (layerBiases != nullptr)
+                            ? layerBiases[f]
                             : static_cast<AccumulatorType>(0);
 
                         for (std::size_t ci = 0; ci < InChannels_; ++ci)
                         {
                             const AccumulatorType x =
                                 static_cast<AccumulatorType>(input[inPixelOffset + ci]) -
-                                static_cast<AccumulatorType>(input_zero_point);
+                                static_cast<AccumulatorType>(inputZeroPoint);
                             const AccumulatorType wv =
-                                static_cast<AccumulatorType>(weights[weightOffset + ci]);
+                                static_cast<AccumulatorType>(layerWeights[weightOffset + ci]);
                             acc += wv * x;
                         }
 
-                        output[outPixelOffset + f] = requantizer.apply(acc);
+                        output[outPixelOffset + f] = rq.apply(acc);
                     }
                 }
             }
@@ -173,6 +181,14 @@ namespace tinymind {
 
         void forward(const InputType* input, OutputType* output) const
         {
+            // Snapshot the fields into locals. Every output store is an int8_t write,
+            // which may alias *this, so member reads inside the loops would be
+            // reloaded -- and the requantizer's shift re-decoded -- once per output.
+            const WeightType* const layerWeights = weights;
+            const AccumulatorType* const layerBiases = biases;
+            const InputType inputZeroPoint = input_zero_point;
+            const Requantizer<AccumulatorType, OutputType>* const rqs = requantizers;
+
             for (std::size_t h = 0; h < H_; ++h)
             {
                 for (std::size_t w = 0; w < W_; ++w)
@@ -183,21 +199,21 @@ namespace tinymind {
                     for (std::size_t f = 0; f < NumFilters_; ++f)
                     {
                         const std::size_t weightOffset = f * WeightsPerFilter;
-                        AccumulatorType acc = (biases != nullptr)
-                            ? biases[f]
+                        AccumulatorType acc = (layerBiases != nullptr)
+                            ? layerBiases[f]
                             : static_cast<AccumulatorType>(0);
 
                         for (std::size_t ci = 0; ci < InChannels_; ++ci)
                         {
                             const AccumulatorType x =
                                 static_cast<AccumulatorType>(input[inPixelOffset + ci]) -
-                                static_cast<AccumulatorType>(input_zero_point);
+                                static_cast<AccumulatorType>(inputZeroPoint);
                             const AccumulatorType wv =
-                                static_cast<AccumulatorType>(weights[weightOffset + ci]);
+                                static_cast<AccumulatorType>(layerWeights[weightOffset + ci]);
                             acc += wv * x;
                         }
 
-                        output[outPixelOffset + f] = requantizers[f].apply(acc);
+                        output[outPixelOffset + f] = rqs[f].apply(acc);
                     }
                 }
             }
