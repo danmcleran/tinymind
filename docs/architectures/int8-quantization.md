@@ -292,7 +292,7 @@ A side-by-side comparison runs in [`examples/kws_cortex_m_int8/`](https://github
 
 ## SIMD acceleration
 
-ISA-capability-gated SIMD specializations live inside the inner reduction loop of `QDense`, `QConv2D`, and `QConv2DPerChannel`. Every gate defaults to `0`; with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the scalar reference. Backend precedence: x86 `AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 > scalar`; Arm `NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > scalar`. The orthogonal `TINYMIND_ENABLE_OPENMP=1` gate adds outer-loop parallelism on the output-filter axis. See [SIMD Backends]({{ site.baseurl }}/architectures/simd-backends) for the gate matrix, prerequisite chain, bit-exactness invariant, and the `examples/perf_matrix/` bench harness.
+ISA-capability-gated SIMD specializations live inside the inner reduction loop of `QDense`, `QConv2D`, `QConv2DPerChannel`, and both `QPointwiseConv2D` variants. Every gate defaults to `0`; with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the scalar reference. Backend precedence: x86 `AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 > scalar`; Arm `NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > ARM_DSP > scalar`. The orthogonal `TINYMIND_ENABLE_OPENMP=1` gate adds outer-loop parallelism on the output-filter axis. See [SIMD Backends]({{ site.baseurl }}/architectures/simd-backends) for the gate matrix, prerequisite chain, bit-exactness invariant, and the `examples/perf_matrix/` bench harness.
 
 ## Mixed precision and fp16 storage
 

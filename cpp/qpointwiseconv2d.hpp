@@ -24,6 +24,7 @@
 
 #include "include/tinymind_platform.hpp"
 #include "qaffine.hpp"
+#include "include/simd/simd_dispatch.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -49,6 +50,11 @@
  *   biases   [NumFilters]       int32 with effective scale
  *                                input_scale * weight_scale
  *   output   NHWC               [H][W][NumFilters]
+ *
+ * The InChannels reduction is contiguous in both the input pixel and the
+ * weight row, so it goes through simd::dotProductWithZeroPoint and picks
+ * up whichever TINYMIND_ENABLE_SIMD_* backend is enabled (scalar, and
+ * byte-identical to the plain loop, when none is).
  *
  * Pure integer at runtime; freestanding-safe.
  */
@@ -116,15 +122,11 @@ namespace tinymind {
                             ? layerBiases[f]
                             : static_cast<AccumulatorType>(0);
 
-                        for (std::size_t ci = 0; ci < InChannels_; ++ci)
-                        {
-                            const AccumulatorType x =
-                                static_cast<AccumulatorType>(input[inPixelOffset + ci]) -
-                                static_cast<AccumulatorType>(inputZeroPoint);
-                            const AccumulatorType wv =
-                                static_cast<AccumulatorType>(layerWeights[weightOffset + ci]);
-                            acc += wv * x;
-                        }
+                        acc += simd::dotProductWithZeroPoint<
+                            InputType, WeightType, AccumulatorType>(
+                            input + inPixelOffset,
+                            layerWeights + weightOffset,
+                            InChannels_, inputZeroPoint);
 
                         output[outPixelOffset + f] = rq.apply(acc);
                     }
@@ -203,15 +205,11 @@ namespace tinymind {
                             ? layerBiases[f]
                             : static_cast<AccumulatorType>(0);
 
-                        for (std::size_t ci = 0; ci < InChannels_; ++ci)
-                        {
-                            const AccumulatorType x =
-                                static_cast<AccumulatorType>(input[inPixelOffset + ci]) -
-                                static_cast<AccumulatorType>(inputZeroPoint);
-                            const AccumulatorType wv =
-                                static_cast<AccumulatorType>(layerWeights[weightOffset + ci]);
-                            acc += wv * x;
-                        }
+                        acc += simd::dotProductWithZeroPoint<
+                            InputType, WeightType, AccumulatorType>(
+                            input + inPixelOffset,
+                            layerWeights + weightOffset,
+                            InChannels_, inputZeroPoint);
 
                         output[outPixelOffset + f] = rqs[f].apply(acc);
                     }

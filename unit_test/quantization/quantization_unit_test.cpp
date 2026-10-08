@@ -5644,7 +5644,7 @@ BOOST_AUTO_TEST_CASE(simd_active_backend_name_reports_a_known_value)
     BOOST_TEST(name != nullptr);
     static const char* const kKnown[] = {
         "scalar", "avx2", "avx_vnni", "avx512f", "avx512_vnni",
-        "neon", "neon_dotprod", "sve", "helium_mve_i"
+        "neon", "neon_dotprod", "sve", "helium_mve_i", "arm_dsp"
     };
     bool found = false;
     for (size_t i = 0; i < sizeof(kKnown) / sizeof(kKnown[0]); ++i)

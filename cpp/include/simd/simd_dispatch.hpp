@@ -42,7 +42,11 @@
  *
  * Backend precedence, highest to lowest:
  *   AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 >
- *   NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > scalar
+ *   NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > ARM_DSP > scalar
+ *
+ * ARM_DSP sits below Helium because every Helium core also has the DSP
+ * extension and MVE's 16-lane VMLADAVA beats SMLAD's two lanes; a build
+ * that enables both gets Helium.
  *
  * SVE2 has no int8-specific instruction beyond SVE's SDOT; the gate is
  * a forward-compatibility marker for future SVE2-only primitives, so
@@ -61,6 +65,7 @@
 #include "simd_sve2.hpp"
 #include "simd_helium_mve_i.hpp"
 #include "simd_helium_mve_f.hpp"
+#include "simd_arm_dsp.hpp"
 #include "simd_avx2.hpp"
 #include "simd_avx_vnni.hpp"
 #include "simd_avx512f.hpp"
@@ -108,6 +113,8 @@ namespace tinymind { namespace simd {
         return sve::int8DotWithZeroPoint(x, w, n, zp);
 #elif TINYMIND_ENABLE_SIMD_HELIUM_MVE_I
         return helium_mve_i::int8DotWithZeroPoint(x, w, n, zp);
+#elif TINYMIND_ENABLE_SIMD_ARM_DSP
+        return arm_dsp::int8DotWithZeroPoint(x, w, n, zp);
 #else
         return int8DotWithZeroPointScalar(x, w, n, zp);
 #endif
@@ -166,6 +173,8 @@ namespace tinymind { namespace simd {
         return "sve";
 #elif TINYMIND_ENABLE_SIMD_HELIUM_MVE_I
         return "helium_mve_i";
+#elif TINYMIND_ENABLE_SIMD_ARM_DSP
+        return "arm_dsp";
 #else
         return "scalar";
 #endif

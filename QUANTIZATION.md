@@ -275,6 +275,7 @@ Gates are CPU-agnostic but **not fully independent of each other.** Per Arm intr
 | `SIMD_BF16`, `SIMD_I8MM` | `SIMD_NEON` (or `SIMD_SVE`) |
 | `SIMD_HELIUM_MVE_I` | M-profile only — mutually exclusive with `SIMD_NEON` / `SIMD_SVE` |
 | `SIMD_HELIUM_MVE_F` | M-profile only — independent of `SIMD_HELIUM_MVE_I` per Arm Helium docs |
+| `SIMD_ARM_DSP` (`SMLAD`/`SXTB16`) | AArch32 DSP extension — target must define `__ARM_FEATURE_DSP` (Cortex-M4 / M7 / M33 / M35P / M55 / M85; absent on M0 / M0+ / M3 / M23) |
 | `SIMD_AVX_VNNI` (`VPDPBUSD`) | `SIMD_AVX2` (Alder Lake+ ships VNNI without AVX-512) |
 | `SIMD_AVX512F` | (x86 baseline AVX assumed) |
 | `SIMD_AVX512_VNNI` | `SIMD_AVX512F` |
@@ -293,6 +294,7 @@ Specialize inner loops behind capability-named feature gates. Library otherwise 
   - `simd_sve2.hpp` — SVE2 superset. Gate `TINYMIND_ENABLE_SIMD_SVE2=1`. Requires `SIMD_SVE`.
   - `simd_helium_mve_i.hpp` — Armv8.1-M MVE-I (integer). Gate `TINYMIND_ENABLE_SIMD_HELIUM_MVE_I=1`. Mutually exclusive with NEON / SVE (M-profile only).
   - `simd_helium_mve_f.hpp` — Armv8.1-M MVE-F (float). Gate `TINYMIND_ENABLE_SIMD_HELIUM_MVE_F=1`. Independent of MVE-I (a core can implement either alone).
+  - `simd_arm_dsp.hpp` — AArch32 DSP extension (`SMLAD` / `SXTB16` / `SSUB16`). Gate `TINYMIND_ENABLE_SIMD_ARM_DSP=1`. `#error`s unless the target defines `__ARM_FEATURE_DSP`. Executed for bit-exactness on QEMU `mps2-an386` by `make -C unit_test/embedded arm_dsp_qemu`.
   - `simd_avx2.hpp` — x86 `PMADDUBSW` fallback path. Gate `TINYMIND_ENABLE_SIMD_AVX2=1`.
   - `simd_avx_vnni.hpp` — `VPDPBUSD` (Alder Lake+ / Sapphire Rapids on the AVX-VNNI side). Gate `TINYMIND_ENABLE_SIMD_AVX_VNNI=1`. Requires `SIMD_AVX2`.
   - `simd_avx512f.hpp` — AVX-512 foundation. Gate `TINYMIND_ENABLE_SIMD_AVX512F=1`.
@@ -423,8 +425,8 @@ Total: roughly 8–12 PRs depending on splitting. Phase 9 alone unblocks usefuln
 CPU complex and SIMD capability are orthogonal — the rows below describe *typical* configurations, not guarantees. Arm publishes thousands of distinct RTL configurations per core (Cortex-A55 alone has >3000), and NEON / Crypto / FPU are often optional components. The library never assumes a capability from a CPU name; caller sets the matching `TINYMIND_ENABLE_SIMD_*` gates per their actual silicon, and the headers' `static_assert`s enforce Arm's architectural prerequisite chain.
 
 - **M0+ / freestanding:** Phases 9–13 land new ops but every runtime header stays freestanding-clean. All Phase 14 `SIMD_*` gates default off; scalar fallback is the path. Phase 15 tooling host-only.
-- **M4F / M7:** scalar by default; optional Phase 9 fp16 storage. No SIMD gate applies (Helium MVE is Armv8.1-M+).
-- **M55 / M85 / M52 (Armv8.1-M):** opt-in `TINYMIND_ENABLE_SIMD_HELIUM_MVE_I=1` and/or `TINYMIND_ENABLE_SIMD_HELIUM_MVE_F=1` *if* the part is built with the matching MVE flavor. Arm permits MVE-I without MVE-F; both gates are independently selectable. M55 / M85 / M52 configured without MVE fall back to the M4F/M7 story.
+- **M4F / M7 / M33:** scalar by default; optional Phase 9 fp16 storage. Opt-in `TINYMIND_ENABLE_SIMD_ARM_DSP=1` for `SMLAD` int8 reductions on parts with the DSP extension (standard on M4 / M7, optional on M33). Helium MVE is Armv8.1-M+.
+- **M55 / M85 / M52 (Armv8.1-M):** opt-in `TINYMIND_ENABLE_SIMD_HELIUM_MVE_I=1` and/or `TINYMIND_ENABLE_SIMD_HELIUM_MVE_F=1` *if* the part is built with the matching MVE flavor. Arm permits MVE-I without MVE-F; both gates are independently selectable. M55 / M85 / M52 configured without MVE fall back to the M4F/M7 story (`SIMD_ARM_DSP`).
 - **Cortex-R82 (Armv8-R 64-bit):** opt-in `TINYMIND_ENABLE_SIMD_NEON` and `TINYMIND_ENABLE_SIMD_NEON_DOTPROD` *if* the part was built with NEON. Per Arm, R82's NEON unit is optional at synthesis time. R82 configured without NEON runs the scalar path; real-time determinism story preserved either way.
 - **Cortex-A55 and other Armv8.2-A application cores:** Arm's A55 product page lists NEON, Crypto, and the FPU as *optional* components in the RTL. The common high-throughput config is `TINYMIND_ENABLE_SIMD_NEON=1` + `TINYMIND_ENABLE_SIMD_NEON_DOTPROD=1` + optional `TINYMIND_ENABLE_SIMD_NEON_FP16=1` + optional `TINYMIND_ENABLE_OPENMP=1`. A55 configurations that omit NEON exist; caller sets gates accordingly.
 - **Cortex-A510 / Cortex-A715 / Neoverse V1 / Neoverse V2 / Neoverse N2:** add `TINYMIND_ENABLE_SIMD_SVE=1` (or `SVE2=1`) for vector-length-agnostic loops, on top of NEON / dotprod where present. Neoverse V2 / N2 ship SVE2; V1 ships SVE(1).
