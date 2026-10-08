@@ -228,6 +228,89 @@ BOOST_AUTO_TEST_CASE(saturating_high_mul_int_min_squared_saturates)
     BOOST_TEST(saturatingRoundingDoublingHighMul(imin, imin) == static_cast<int32_t>(0x7FFFFFFF));
 }
 
+BOOST_AUTO_TEST_CASE(saturating_high_mul_matches_gemmlowp_form)
+{
+    // saturatingRoundingDoublingHighMul is written as one add and an
+    // arithmetic shift. This is gemmlowp's original: a sign-dependent nudge
+    // and a division that truncates toward zero. Every requantized int8
+    // byte (and every integration golden) depends on the two agreeing, so
+    // lock them together on the inputs where a rounding slip would show:
+    // products sitting exactly on a half (k * 2^31 +/- 2^30, and one either
+    // side), the int32 extremes, and a random sweep.
+    const auto gemmlowp = [](int32_t a, int32_t b) -> int32_t
+    {
+        const int32_t imin = static_cast<int32_t>(0x80000000);
+        if ((a == imin) && (b == imin))
+        {
+            return static_cast<int32_t>(0x7FFFFFFF);
+        }
+        const int64_t ab = static_cast<int64_t>(a) * static_cast<int64_t>(b);
+        const int32_t nudge = (ab >= 0) ? (1 << 30) : (1 - (1 << 30));
+        return static_cast<int32_t>((ab + nudge) / (static_cast<int64_t>(1) << 31));
+    };
+
+    std::size_t mismatches = 0;
+    std::size_t cases = 0;
+    const auto check = [&](int32_t a, int32_t b)
+    {
+        ++cases;
+        if (saturatingRoundingDoublingHighMul(a, b) != gemmlowp(a, b))
+        {
+            ++mismatches;
+        }
+    };
+
+    static const int32_t kEdges[] =
+    {
+        INT32_MIN, INT32_MIN + 1, -(1 << 30) - 1, -(1 << 30), -(1 << 30) + 1,
+        -3, -2, -1, 0, 1, 2, 3,
+        (1 << 30) - 1, 1 << 30, (1 << 30) + 1, INT32_MAX - 1, INT32_MAX
+    };
+    for (const int32_t a : kEdges)
+    {
+        for (const int32_t b : kEdges)
+        {
+            check(a, b);
+        }
+    }
+
+    // Ties: b = 2 makes the product 2a, so a = k * 2^30 +/- 2^29 lands the
+    // product on k * 2^31 +/- 2^30 -- exactly half a unit in the result.
+    static const int32_t kOffsets[] =
+    {
+        -(1 << 29) - 1, -(1 << 29), -(1 << 29) + 1,
+        (1 << 29) - 1, 1 << 29, (1 << 29) + 1
+    };
+    for (int32_t k = -1; k <= 1; ++k)
+    {
+        for (const int32_t off : kOffsets)
+        {
+            check(k * (1 << 30) + off, 2);
+            check(2, k * (1 << 30) + off);
+        }
+    }
+    // b = 1 << 30 makes the product a * 2^30: odd a is a tie, for every a.
+    for (int32_t a = -5000; a <= 5000; ++a)
+    {
+        check(a, 1 << 30);
+        check(a, -(1 << 30));
+    }
+
+    uint32_t s = 0x9E3779B9u;
+    for (int i = 0; i < 1000000; ++i)
+    {
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        const int32_t a = static_cast<int32_t>(s);
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        const int32_t b = static_cast<int32_t>(s);
+        check(a, b);
+        check(a >> (i & 31), b);
+    }
+
+    BOOST_TEST(cases > 2000000u);
+    BOOST_TEST(mismatches == 0u);
+}
+
 BOOST_AUTO_TEST_CASE(rounding_divide_by_pot_noop_for_zero_or_negative)
 {
     BOOST_TEST(roundingDivideByPOT(1234, 0) == 1234);
