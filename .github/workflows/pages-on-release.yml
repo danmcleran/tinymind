@@ -1,0 +1,24 @@
+name: Rebuild Pages on release
+
+# The Releases page on the Pages site is generated from GitHub Releases at
+# build time, but the Pages build only runs on pushes to master: publishing or
+# editing a release pushes nothing. This dispatches that build on master.
+# Dispatching (rather than building here) matters: a release event runs with
+# the tag as its ref, and the github-pages environment only deploys master.
+
+on:
+  release:
+    types: [published, edited, deleted]
+
+permissions: {}
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch Pages build on master
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --repo "${{ github.repository }}" --ref master

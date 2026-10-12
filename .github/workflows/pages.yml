@@ -50,6 +50,14 @@ jobs:
           cp graphify-out/graph.json docs/assets/knowledge-graph/graph.json
           echo "Published graph: $(wc -c < docs/assets/knowledge-graph/graph.html) bytes html, $(wc -c < docs/assets/knowledge-graph/graph.json) bytes json"
 
+      # Generate the Releases page from GitHub Releases, the single source of
+      # truth for release notes, so the site never carries a hand-maintained
+      # copy that drifts. Fails the build rather than publish an empty page.
+      - name: Render releases page
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python tools/render_releases_page.py "${{ github.repository }}" docs/releases.md
+
       - name: Setup Ruby
         uses: ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0
         with:
