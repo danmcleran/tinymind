@@ -114,6 +114,9 @@ graphify-out/2026-*/
 
 # CI-published graph data copy (regenerated during Pages build)
 docs/assets/knowledge-graph/graph.json
+# Releases page, generated from GitHub Releases during the Pages build
+# (python tools/render_releases_page.py to preview locally)
+docs/releases.md
 examples/seq2seq_softmax_int8/output/
 examples/state_space_int8/output/
 examples/gbdt_tabular_int8/output/
