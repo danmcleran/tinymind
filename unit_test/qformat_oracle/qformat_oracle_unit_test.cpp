@@ -72,16 +72,11 @@ namespace
 
     enum KnownDefect
     {
-        // QFormatMaxValue() is (max fixed part) << frac with the fractional bits
-        // left clear, e.g. 127.0 rather than 127.99609375 for Q8.8, so
-        // MinMaxSaturatePolicy clamps one fixed-part step early.
-        SaturationMaxExcludesFraction = 0,
-
         // The free operators taking an int (q + n, q - n, q * n, q / n, q < n,
         // q > n, q <= n, q >= n) and the member q *= n, q /= n build the int as
         // QValue(n, 0), so an int outside the fixed part's range wraps first:
         // for Q8.8, 1.0 < 200 is false because 200 becomes -56.
-        IntOperandWrapsToFixedWidth,
+        IntOperandWrapsToFixedWidth = 0,
 
         // The member q += n, q -= n, q == n and q != n bind an int to the
         // FullWidthValueType (raw) overloads, so n counts in LSBs, while the
@@ -89,32 +84,13 @@ namespace
         // q += 1 adds one LSB, and q == 1 is not !(q < 1) && !(q > 1).
         MemberIntOperandIsRaw,
 
-        // ++ and -- step by the unit 2^frac held in FullWidthFieldType and
-        // passed as a FullWidthValueType. When 1.0 is not representable (a
-        // signed format with one fixed bit that fills its word, e.g. Q1.15)
-        // the unit converts to -1.0, so under MinMaxSaturatePolicy ++ moves
-        // the value down and -- moves it up.
-        UnitStepWrapsWhenOneIsUnrepresentable,
-
-        // MinMaxSaturatePolicy's addition guard computes maxValue - target in
-        // T. For an unsigned word of at least int's width there is no promotion,
-        // so an addend above maxValue underflows the guard and the sum wraps
-        // instead of saturating: UQ8.16 0 += -2 (raw) gives 16777214. An
-        // addend above maxValue arises from a raw += and, while
-        // SaturationMaxExcludesFraction stands, from any in-range operand above
-        // the clipped bound.
-        UnsignedSaturatingAddWrapsAboveMax,
-
         NumberOfKnownDefects
     };
 
     const char* const KnownDefectNames[NumberOfKnownDefects] =
     {
-        "SaturationMaxExcludesFraction",
         "IntOperandWrapsToFixedWidth",
         "MemberIntOperandIsRaw",
-        "UnitStepWrapsWhenOneIsUnrepresentable",
-        "UnsignedSaturatingAddWrapsAboveMax",
     };
 
     typedef unsigned DefectMask;
@@ -240,12 +216,6 @@ namespace
 
         Wide maxValue() const
         {
-            if (has(SaturationMaxExcludesFraction))
-            {
-                const Wide maxFixedPart = f.isSigned ? (powerOfTwo(f.fixedBits - 1) - 1) : (powerOfTwo(f.fixedBits) - 1);
-                return maxFixedPart * powerOfTwo(f.fractionalBits);
-            }
-
             return trueMax(f);
         }
 
@@ -284,12 +254,6 @@ namespace
 
             if (t > 0)
             {
-                if (has(UnsignedSaturatingAddWrapsAboveMax) && !f.isSigned && (f.storageBits >= 32))
-                {
-                    const Wide headroom = wrapTo(hi - t, f.storageBits, false);
-                    return (o > headroom) ? hi : wrap(o + t);
-                }
-
                 return (o > (hi - t)) ? hi : (o + t);
             }
             else if (t < 0)
@@ -377,11 +341,6 @@ namespace
             return powerOfTwo(f.fractionalBits);
         }
 
-        // The step ++ and -- add or subtract.
-        Wide unitStep() const
-        {
-            return has(UnitStepWrapsWhenOneIsUnrepresentable) ? wrapTo(one(), f.storageBits, f.isSigned) : one();
-        }
 
         // An int operand of the whole-number operators.
         Wide intOperand(const Wide n) const
@@ -798,15 +757,16 @@ namespace
     }
 
     // Values where fixed-point arithmetic tends to break: zero, one LSB, one,
-    // one half, the bounds and their neighbours, and the clipped bound
-    // (max fixed part with no fraction).
+    // one half, the bounds and their neighbours, and the largest whole number
+    // (the saturation bound before it gained its fractional bits, and still a
+    // fixed-part boundary).
     std::vector<Wide> edgeValues(const Format& f)
     {
         const Wide one = powerOfTwo(f.fractionalBits);
         const Wide half = one / 2;
         const Wide lo = trueMin(f);
         const Wide hi = trueMax(f);
-        const Wide clipped = Model(f, 1u << SaturationMaxExcludesFraction).maxValue();
+        const Wide clipped = (f.isSigned ? (powerOfTwo(f.fixedBits - 1) - 1) : (powerOfTwo(f.fixedBits) - 1)) * one;
         const Wide candidates[] =
         {
             0, 1, 2, 3, -1, -2, -3,
@@ -904,12 +864,12 @@ namespace
 
         check(t, f, "fixedPart", in, ops.fixedPart(a), [&](const Model& m) { return floorDiv(a, m.one()); });
         check(t, f, "fractionalPart", in, ops.fractionalPart(a), [&](const Model& m) { return floorMod(a, m.one()); });
-        check(t, f, "preIncrement", in, ops.preIncrement(a), [&](const Model& m) { return m.add(a, m.unitStep()); });
-        check(t, f, "preDecrement", in, ops.preDecrement(a), [&](const Model& m) { return m.sub(a, m.unitStep()); });
+        check(t, f, "preIncrement", in, ops.preIncrement(a), [&](const Model& m) { return m.add(a, m.one()); });
+        check(t, f, "preDecrement", in, ops.preDecrement(a), [&](const Model& m) { return m.sub(a, m.one()); });
         check(t, f, "postIncrementResult", in, ops.postIncrementResult(a), [&](const Model&) { return a; });
-        check(t, f, "postIncrementAfter", in, ops.postIncrementAfter(a), [&](const Model& m) { return m.add(a, m.unitStep()); });
+        check(t, f, "postIncrementAfter", in, ops.postIncrementAfter(a), [&](const Model& m) { return m.add(a, m.one()); });
         check(t, f, "postDecrementResult", in, ops.postDecrementResult(a), [&](const Model&) { return a; });
-        check(t, f, "postDecrementAfter", in, ops.postDecrementAfter(a), [&](const Model& m) { return m.sub(a, m.unitStep()); });
+        check(t, f, "postDecrementAfter", in, ops.postDecrementAfter(a), [&](const Model& m) { return m.sub(a, m.one()); });
     }
 
     void checkInt(Tally& t, const Format& f, const Ops& ops, const Wide a, const Wide n)
