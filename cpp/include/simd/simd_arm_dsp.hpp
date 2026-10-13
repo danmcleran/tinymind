@@ -37,10 +37,20 @@
  * Cortex-M4. Four int8 values are fetched with one 32-bit load and
  * widened with SXTB16, which sign-extends bytes 0 and 2 into two int16
  * lanes; rotating the word by 8 first selects bytes 1 and 3. The input
- * zero point is subtracted in the int16 lanes with SSUB16 (x - zp lies
- * in [-255, 255], so no lane can wrap). Weights and inputs are unpacked
+ * zero point is folded into the widening of x with SXTAB16, which adds
+ * a packed (-zp, -zp) pair while it sign-extends (x - zp lies in
+ * [-255, 255], so no lane can wrap). Weights and inputs are unpacked
  * with the same lane selection, so the byte pairing is independent of
  * load endianness. A scalar loop handles the n % 4 tail.
+ *
+ * The block loop is unrolled with a pragma rather than left to the
+ * optimizer. Layers call this with a compile-time length, and at -O2 GCC
+ * otherwise keeps the loop rolled inside the layer's output loop, where
+ * the requantizer's hoisted constants leave it too few registers: the
+ * loaded words were spilled to the stack on every iteration, and the
+ * cost swung by up to 1.7x with unrelated surrounding code. Unrolled, the
+ * loop needs no loop-carried pointers and the -O2 build matches -O3. The
+ * pragma is skipped at -Os/-Oz, where Clang would otherwise honor it.
  *
  * Bit-exact with the scalar reference: every product and partial sum is
  * the same int32 quantity, only the order of the additions differs.
@@ -91,15 +101,33 @@ namespace tinymind { namespace simd { namespace arm_dsp {
 #endif
     }
 
+    // SXTAB16 of the word rotated right by 8: a + (bytes 1 and 3 sign-extended),
+    // lane by lane. Same GCC/Clang split as sxtb16Ror8.
+    inline int16x2_t sxtab16Ror8(int16x2_t a, int8x4_t v)
+    {
+#if defined(__clang__)
+        const uint32_t u = static_cast<uint32_t>(v);
+        return __sxtab16(a, static_cast<int8x4_t>((u >> 8) | (u << 24)));
+#else
+        int16x2_t r;
+        __asm__("sxtab16 %0, %1, %2, ror #8" : "=r"(r) : "r"(a), "r"(v));
+        return r;
+#endif
+    }
+
     inline int32_t int8DotWithZeroPoint(const int8_t* x, const int8_t* w,
                                         std::size_t n, int8_t zp)
     {
-        // zp replicated into both int16 lanes, as SSUB16 expects.
-        const uint32_t zp16 = static_cast<uint16_t>(static_cast<int16_t>(zp));
-        const int16x2_t zpPair = static_cast<int16x2_t>(zp16 | (zp16 << 16));
+        // -zp replicated into both int16 lanes. SXTAB16 adds it while it
+        // sign-extends, so x - zp costs no extra instruction.
+        const uint32_t nzp16 = static_cast<uint16_t>(static_cast<int16_t>(-static_cast<int16_t>(zp)));
+        const int16x2_t negZpPair = static_cast<int16x2_t>(nzp16 | (nzp16 << 16));
 
         int32_t acc = 0;
 
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 16
+#endif
         for (std::size_t blocks = n >> 2; blocks != 0; --blocks)
         {
             const int8x4_t xv = load4(x);
@@ -107,13 +135,8 @@ namespace tinymind { namespace simd { namespace arm_dsp {
             x += 4;
             w += 4;
 
-            const int16x2_t xEven = __ssub16(__sxtb16(xv), zpPair);
-            const int16x2_t xOdd  = __ssub16(sxtb16Ror8(xv), zpPair);
-            const int16x2_t wEven = __sxtb16(wv);
-            const int16x2_t wOdd  = sxtb16Ror8(wv);
-
-            acc = __smlad(wEven, xEven, acc);
-            acc = __smlad(wOdd,  xOdd,  acc);
+            acc = __smlad(__sxtb16(wv), __sxtab16(negZpPair, xv), acc);
+            acc = __smlad(sxtb16Ror8(wv), sxtab16Ror8(negZpPair, xv), acc);
         }
 
         for (std::size_t i = 0; i < (n & 3u); ++i)
