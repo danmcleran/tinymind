@@ -108,28 +108,43 @@ namespace tinymind {
             const InputType inputZeroPoint = input_zero_point;
             const Requantizer<AccumulatorType, OutputType> rq = requantizer;
 
-            for (std::size_t h = 0; h < H_; ++h)
+            if (H_ * W_ == 1)
             {
-                for (std::size_t w = 0; w < W_; ++w)
+                // A single pixel (a dense layer): nothing to amortize across
+                // pixels, and holding the requantizer across the loop only
+                // takes registers from the dot product.
+                for (std::size_t f = 0; f < NumFilters_; ++f)
                 {
-                    const std::size_t inPixelOffset  = (h * W_ + w) * InChannels_;
-                    const std::size_t outPixelOffset = (h * W_ + w) * NumFilters_;
+                    const AccumulatorType bias = (layerBiases != nullptr)
+                        ? layerBiases[f]
+                        : static_cast<AccumulatorType>(0);
+                    const AccumulatorType acc = bias +
+                        simd::dotProductWithZeroPoint<InputType, WeightType, AccumulatorType>(
+                            input, layerWeights + f * WeightsPerFilter, InChannels_,
+                            inputZeroPoint);
+                    output[f] = rq.apply(acc);
+                }
+                return;
+            }
 
-                    for (std::size_t f = 0; f < NumFilters_; ++f)
-                    {
-                        const std::size_t weightOffset = f * WeightsPerFilter;
-                        AccumulatorType acc = (layerBiases != nullptr)
-                            ? layerBiases[f]
-                            : static_cast<AccumulatorType>(0);
+            // Filter-outer: one filter's weight row, bias and requantizer stay
+            // loaded while it sweeps every pixel, instead of being re-fetched
+            // for each output. Same products and sums, so bit-exact with the
+            // pixel-outer order.
+            for (std::size_t f = 0; f < NumFilters_; ++f)
+            {
+                const WeightType* const filterWeights = layerWeights + f * WeightsPerFilter;
+                const AccumulatorType bias = (layerBiases != nullptr)
+                    ? layerBiases[f]
+                    : static_cast<AccumulatorType>(0);
 
-                        acc += simd::dotProductWithZeroPoint<
-                            InputType, WeightType, AccumulatorType>(
-                            input + inPixelOffset,
-                            layerWeights + weightOffset,
-                            InChannels_, inputZeroPoint);
+                for (std::size_t p = 0; p < H_ * W_; ++p)
+                {
+                    const AccumulatorType acc = bias +
+                        simd::dotProductWithZeroPoint<InputType, WeightType, AccumulatorType>(
+                            input + p * InChannels_, filterWeights, InChannels_, inputZeroPoint);
 
-                        output[outPixelOffset + f] = rq.apply(acc);
-                    }
+                    output[p * NumFilters_ + f] = rq.apply(acc);
                 }
             }
         }
@@ -191,28 +206,44 @@ namespace tinymind {
             const InputType inputZeroPoint = input_zero_point;
             const Requantizer<AccumulatorType, OutputType>* const rqs = requantizers;
 
-            for (std::size_t h = 0; h < H_; ++h)
+            if (H_ * W_ == 1)
             {
-                for (std::size_t w = 0; w < W_; ++w)
+                // A single pixel (a dense layer): nothing to amortize across
+                // pixels, and holding the requantizer across the loop only
+                // takes registers from the dot product.
+                for (std::size_t f = 0; f < NumFilters_; ++f)
                 {
-                    const std::size_t inPixelOffset  = (h * W_ + w) * InChannels_;
-                    const std::size_t outPixelOffset = (h * W_ + w) * NumFilters_;
+                    const AccumulatorType bias = (layerBiases != nullptr)
+                        ? layerBiases[f]
+                        : static_cast<AccumulatorType>(0);
+                    const AccumulatorType acc = bias +
+                        simd::dotProductWithZeroPoint<InputType, WeightType, AccumulatorType>(
+                            input, layerWeights + f * WeightsPerFilter, InChannels_,
+                            inputZeroPoint);
+                    output[f] = rqs[f].apply(acc);
+                }
+                return;
+            }
 
-                    for (std::size_t f = 0; f < NumFilters_; ++f)
-                    {
-                        const std::size_t weightOffset = f * WeightsPerFilter;
-                        AccumulatorType acc = (layerBiases != nullptr)
-                            ? layerBiases[f]
-                            : static_cast<AccumulatorType>(0);
+            // Filter-outer: one filter's weight row, bias and requantizer stay
+            // loaded while it sweeps every pixel, instead of being re-fetched
+            // for each output. Same products and sums, so bit-exact with the
+            // pixel-outer order.
+            for (std::size_t f = 0; f < NumFilters_; ++f)
+            {
+                const WeightType* const filterWeights = layerWeights + f * WeightsPerFilter;
+                const AccumulatorType bias = (layerBiases != nullptr)
+                    ? layerBiases[f]
+                    : static_cast<AccumulatorType>(0);
+                const Requantizer<AccumulatorType, OutputType> rq = rqs[f];
 
-                        acc += simd::dotProductWithZeroPoint<
-                            InputType, WeightType, AccumulatorType>(
-                            input + inPixelOffset,
-                            layerWeights + weightOffset,
-                            InChannels_, inputZeroPoint);
+                for (std::size_t p = 0; p < H_ * W_; ++p)
+                {
+                    const AccumulatorType acc = bias +
+                        simd::dotProductWithZeroPoint<InputType, WeightType, AccumulatorType>(
+                            input + p * InChannels_, filterWeights, InChannels_, inputZeroPoint);
 
-                        output[outPixelOffset + f] = rqs[f].apply(acc);
-                    }
+                    output[p * NumFilters_ + f] = rq.apply(acc);
                 }
             }
         }
