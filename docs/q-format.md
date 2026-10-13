@@ -155,7 +155,7 @@ Running 10 test cases..
 
 ## Addition
 
-We can add both other QValues of the same type as well as integers which have the same underlying representation of the full value.
+We can add other QValues of the same type, and whole numbers through the free operators.
 
 ```cpp
 BOOST_AUTO_TEST_CASE(test_case_addition)
@@ -165,9 +165,6 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     UnsignedQ8_8Type uQ2(1, 1);
     UnsignedQ8_8Type uQ3;
 ...
-    uQ0 += 0;
-    BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0) == uQ0.getValue());
-
     uQ0 += uQ0;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0) == uQ0.getValue());
 
@@ -175,7 +172,15 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(1) == uQ0.getValue());
 ```
 
-QValues can be added to each other as well as to integer constants.
+An `int` operand always means a whole number, exactly: `q + 1` adds 1.0, `q * 300` multiplies by 300 and `q < 200` compares against 200.0, with the result wrapped or saturated by the QValue's policy. `q += n`, `q -= n`, `q == n` and `q != n` do not compile for an `int` (or any non-QValue) `n`, because it is ambiguous whether `n` counts whole numbers or raw LSBs. Say which instead:
+
+```cpp
+q.addInteger(1);              // add 1.0  (same as q = q + 1)
+q += SignedQ8_8Type(1, 0);    // add 1.0
+q += SignedQ8_8Type(1);       // add one raw LSB
+q == SignedQ8_8Type(0, 0);    // compare with 0.0
+q.getValue() == 0x100;        // compare the raw word
+```
 
 ## Subtraction
 

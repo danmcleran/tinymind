@@ -120,7 +120,8 @@ int main(const int argc, char *argv[])
         tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkProperties(testNeuralNet, results, &output[0], &learnedValues[0]);
         results << error << std::endl;
 
-        avgError += abs(error.getValue());
+        // Accumulate |error| in raw LSBs; the average divides it back down.
+        avgError += ValueType(static_cast<ValueType::FullWidthFieldType>(abs(error.getValue())));
         if ((i + 1) % NUM_SAMPLES_AVG_ERROR == 0)
         {
             avgError = avgError / ValueType(NUM_SAMPLES_AVG_ERROR, 0);

@@ -423,6 +423,23 @@ namespace tinymind {
         }
     };
 
+    // Holds an int operand scaled by 2^frac, and the product of a value and an
+    // int, exactly: 64 bits for words of up to 32 bits (|n| * 2^31 < 2^63),
+    // 128 for 64-bit words.
+    template<bool WordIsAtMost32Bits>
+    struct IntegerOperandTypeChooser
+    {
+        typedef int64_t Type;
+    };
+
+#ifdef __SIZEOF_INT128__
+    template<>
+    struct IntegerOperandTypeChooser<false>
+    {
+        typedef __int128_t Type;
+    };
+#endif // __SIZEOF_INT128__
+
     template<unsigned NumBits, bool IsSigned>
     struct MultiplicationResultFullWidthFieldTypeChooser
     {
@@ -587,6 +604,28 @@ namespace tinymind {
             return normalize(static_cast<FullWidthValueType>(word));
         }
 
+        typedef typename IntegerOperandTypeChooser<(8 * sizeof(FullWidthValueType)) <= 32>::Type IntegerOperandType;
+        typedef QValueSaturatePolicy<IntegerOperandType>                                             IntegerOperandSaturatePolicy;
+
+        // An int operand of the whole-number operators, scaled to raw units.
+        static IntegerOperandType scaledInteger(const int n)
+        {
+            return static_cast<IntegerOperandType>(n) * (static_cast<IntegerOperandType>(1) << NumberOfFractionalBits);
+        }
+
+        // Applies op to this value and an exact integer operand in a type wide
+        // enough for both, then lets the policy wrap or saturate the exact
+        // result. The operand used to be built as QValue(n, 0), which wrapped
+        // an int outside the fixed part's range first (Q8.8: 200 became -56).
+        FullWidthValueType applyInteger(const IntegerOperandType operand, const OperatorType_e op) const
+        {
+            const IntegerOperandType result = IntegerOperandSaturatePolicy::saturate(static_cast<IntegerOperandType>(mValue), operand,
+                                                                                     static_cast<IntegerOperandType>(QFormatMinValue()),
+                                                                                     static_cast<IntegerOperandType>(QFormatMaxValue()), op);
+
+            return normalize(static_cast<FullWidthValueType>(result));
+        }
+
         // ++ and -- add or subtract 1.0. A signed format with one fixed bit
         // cannot hold 1.0, and when it also fills its word (Q1.15, Q1.31) the
         // step 2^frac converts to -1.0 in the signed word, so a saturating ++
@@ -652,10 +691,45 @@ namespace tinymind {
             return *this;
         }
 
-        QValue& operator+=(const FullWidthValueType& value)
+        // An integer (or any other non-QValue) operand is deleted for +=, -=,
+        // == and !=. These members used to read an int as raw LSBs while q + n,
+        // q < n and the other free operators read it as a whole number, so
+        // q += 1 added one LSB but q + 1 added 1.0. The caller now says which:
+        // q.addInteger(n) / q += QValue(n, 0) / q == QValue(n, 0) for a whole
+        // number, q += QValue(raw) / q.getValue() == raw for raw LSBs.
+        template<typename T>
+        QValue& operator+=(const T&) = delete;
+
+        template<typename T>
+        QValue& operator-=(const T&) = delete;
+
+        template<typename T>
+        bool operator==(const T&) const = delete;
+
+        template<typename T>
+        bool operator!=(const T&) const = delete;
+
+        // q + n and q - n with n a whole number, exact for every int.
+        QValue& addInteger(const int n)
         {
-            mValue = normalize(SaturatePolicy::saturate(mValue, value, QFormatMinValue(), QFormatMaxValue(), AdditionOp));
+            mValue = applyInteger(scaledInteger(n), AdditionOp);
             return *this;
+        }
+
+        QValue& subtractInteger(const int n)
+        {
+            mValue = applyInteger(scaledInteger(n), SubtractionOp);
+            return *this;
+        }
+
+        // Negative, zero or positive as this value is below, equal to or above
+        // the whole number n; exact for every int.
+        int compareInteger(const int n) const
+        {
+            const IntegerOperandType value = static_cast<IntegerOperandType>(mValue);
+            const IntegerOperandType other = scaledInteger(n);
+
+            return (value < other) ? -1 : ((value > other) ? 1 : 0);
         }
 
         QValue& operator++()
@@ -674,12 +748,6 @@ namespace tinymind {
         QValue& operator-=(const QValue& other)
         {
             mValue = normalize(SaturatePolicy::saturate(mValue, other.mValue, QFormatMinValue(), QFormatMaxValue(), SubtractionOp));
-            return *this;
-        }
-
-        QValue& operator-=(const FullWidthValueType& value)
-        {
-            mValue = normalize(SaturatePolicy::saturate(mValue, value, QFormatMinValue(), QFormatMaxValue(), SubtractionOp));
             return *this;
         }
 
@@ -723,12 +791,10 @@ namespace tinymind {
             return *this;
         }
 
+        // Multiply by a whole number, exact for every int.
         QValue& operator*=(const int multiplicand)
         {
-            const QValue other(static_cast<FixedPartFieldType>(multiplicand), 0);
-
-            (*this) *= other;
-
+            mValue = applyInteger(static_cast<IntegerOperandType>(multiplicand), MultiplicationOp);
             return *this;
         }
 
@@ -757,12 +823,12 @@ namespace tinymind {
             return *this;
         }
 
+        // Divide by a whole number (truncating towards zero), exact for every
+        // int. Zero saturates under MinMaxSaturatePolicy and is undefined under
+        // WrapPolicy, as for a QValue divisor.
         QValue& operator/=(const int divisor)
         {
-            const QValue other(static_cast<FixedPartFieldType>(divisor), 0);
-
-            (*this) /= other;
-
+            mValue = applyInteger(static_cast<IntegerOperandType>(divisor), DivisionOp);
             return *this;
         }
 
@@ -771,19 +837,9 @@ namespace tinymind {
             return (mValue == other.mValue);
         }
 
-        bool operator==(const FullWidthValueType& value) const
-        {
-            return (mValue == value);
-        }
-
         bool operator!=(const QValue& other) const
         {
             return (mValue != other.mValue);
-        }
-
-        bool operator!=(const FullWidthValueType& value) const
-        {
-            return (mValue != value);
         }
 
         void * operator new(size_t, void *p)
@@ -859,9 +915,8 @@ namespace tinymind {
     QValueType operator+(const QValueType& left, const int right)
     {
         QValueType result(left);
-        QValueType other(right, 0);
 
-        result += other;
+        result.addInteger(right);
         return result;
     }
 
@@ -878,9 +933,8 @@ namespace tinymind {
     QValueType operator-(const QValueType& left, const int right)
     {
         QValueType result(left);
-        QValueType other(right, 0);
 
-        result -= other;
+        result.subtractInteger(right);
         return result;
     }
 
@@ -897,9 +951,8 @@ namespace tinymind {
     QValueType operator*(const QValueType& left, const int right)
     {
         QValueType result(left);
-        QValueType other(static_cast<typename QValueType::FixedPartFieldType>(right), 0);
 
-        result *= other;
+        result *= right;
         return result;
     }
 
@@ -915,10 +968,9 @@ namespace tinymind {
     template<typename QValueType>
     QValueType operator/(const QValueType& left, const int right)
     {
-        const QValueType other(static_cast<typename QValueType::FixedPartFieldType>(right), 0);
         QValueType result(left);
 
-        result /= other;
+        result /= right;
 
         return result;
     }
@@ -932,9 +984,7 @@ namespace tinymind {
     template<typename QValueType>
     bool operator>(const QValueType& left, const int right)
     {
-        const QValueType other(static_cast<typename QValueType::FixedPartFieldType>(right), 0);
-
-        return (left.getValue() > other.getValue());
+        return (left.compareInteger(right) > 0);
     }
 
     template<typename QValueType>
@@ -946,9 +996,7 @@ namespace tinymind {
     template<typename QValueType>
     bool operator>=(const QValueType& left, const int right)
     {
-        const QValueType other(static_cast<typename QValueType::FixedPartFieldType>(right), 0);
-
-        return (left.getValue() >= other.getValue());
+        return (left.compareInteger(right) >= 0);
     }
 
     template<typename QValueType>
@@ -960,9 +1008,7 @@ namespace tinymind {
     template<typename QValueType>
     bool operator<(const QValueType& left, const int right)
     {
-        const QValueType other(static_cast<typename QValueType::FixedPartFieldType>(right), 0);
-
-        return (left.getValue() < other.getValue());
+        return (left.compareInteger(right) < 0);
     }
 
     template<typename QValueType>
@@ -974,8 +1020,6 @@ namespace tinymind {
     template<typename QValueType>
     bool operator<=(const QValueType& left, const int right)
     {
-        const QValueType other(static_cast<typename QValueType::FixedPartFieldType>(right), 0);
-
-        return (left.getValue() <= other.getValue());
+        return (left.compareInteger(right) <= 0);
     }
 }

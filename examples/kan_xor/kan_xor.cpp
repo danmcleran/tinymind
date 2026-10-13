@@ -105,7 +105,8 @@ int main(const int argc, char *argv[])
 
         results << error << std::endl;
 
-        avgError += abs(error.getValue());
+        // Accumulate |error| in raw LSBs; the average divides it back down.
+        avgError += ValueType(static_cast<ValueType::FullWidthFieldType>(abs(error.getValue())));
         {
             double e = static_cast<double>(error.getValue()) / fracScale;
             errSumD += (e < 0.0) ? -e : e;

@@ -70,34 +70,24 @@ namespace
 
     // === Known defects =======================================================
 
+    // Every defect this oracle has found so far is fixed, so the list is
+    // empty. When a new one is found and its fix deferred, add an enumerator
+    // here (before NumberOfKnownDefects), its name to KnownDefectNames, and a
+    // `has(...)` branch in Model that reproduces the current behaviour
+    // exactly; the ratchet then tolerates exactly that behaviour until the
+    // fix lands.
     enum KnownDefect
     {
-        // The free operators taking an int (q + n, q - n, q * n, q / n, q < n,
-        // q > n, q <= n, q >= n) and the member q *= n, q /= n build the int as
-        // QValue(n, 0), so an int outside the fixed part's range wraps first:
-        // for Q8.8, 1.0 < 200 is false because 200 becomes -56.
-        IntOperandWrapsToFixedWidth = 0,
-
-        // The member q += n, q -= n, q == n and q != n bind an int to the
-        // FullWidthValueType (raw) overloads, so n counts in LSBs, while the
-        // free operators above read n as a whole number: q + 1 adds 1.0 but
-        // q += 1 adds one LSB, and q == 1 is not !(q < 1) && !(q > 1).
-        MemberIntOperandIsRaw,
-
         NumberOfKnownDefects
     };
 
-    const char* const KnownDefectNames[NumberOfKnownDefects] =
-    {
-        "IntOperandWrapsToFixedWidth",
-        "MemberIntOperandIsRaw",
-    };
+    const std::vector<const char*> KnownDefectNames;
 
     typedef unsigned DefectMask;
 
     const char* skippedInputs()
     {
-        return "WrapPolicy division by zero (q / 0, q /= 0, and an int divisor that wraps to 0) is undefined behaviour and is not exercised";
+        return "WrapPolicy division by zero (q / 0, q /= 0) is undefined behaviour and is not exercised";
     }
 
     // === Exact reference arithmetic ==========================================
@@ -342,10 +332,10 @@ namespace
         }
 
 
-        // An int operand of the whole-number operators.
+        // An int operand of the whole-number operators: exact.
         Wide intOperand(const Wide n) const
         {
-            return has(IntOperandWrapsToFixedWidth) ? wrapTo(n, f.fixedBits, f.isSigned) : n;
+            return n;
         }
 
         Wide addInt(const Wide a, const Wide n) const
@@ -376,22 +366,6 @@ namespace
             return finish(a / divisor);
         }
 
-        // An int bound to a member raw overload converts to FullWidthValueType.
-        Wide rawOperand(const Wide n) const
-        {
-            return wrapTo(n, f.storageBits, f.isSigned);
-        }
-
-        Wide addAssignInt(const Wide a, const Wide n) const
-        {
-            return has(MemberIntOperandIsRaw) ? add(a, rawOperand(n)) : addInt(a, n);
-        }
-
-        Wide subAssignInt(const Wide a, const Wide n) const
-        {
-            return has(MemberIntOperandIsRaw) ? sub(a, rawOperand(n)) : subInt(a, n);
-        }
-
         Wide compareMask(const Wide a, const Wide b) const
         {
             return (a == b ? 1 : 0) | (a != b ? 2 : 0) | (a < b ? 4 : 0) |
@@ -402,14 +376,6 @@ namespace
         Wide compareInt(const Wide a, const Wide n) const
         {
             return compareMask(a, intOperand(n) * one()) & 60;
-        }
-
-        // ==, != against an int (bits 0..1 of compareMask).
-        Wide equalInt(const Wide a, const Wide n) const
-        {
-            const Wide other = has(MemberIntOperandIsRaw) ? rawOperand(n) : (n * one());
-
-            return compareMask(a, other) & 3;
         }
 
         Wide fromParts(const Wide fixedPart, const Wide fractionalPart) const
@@ -428,11 +394,11 @@ namespace
         unsigned long long checks;
         unsigned long long explained;
         unsigned long long unknown;
-        unsigned long long hits[NumberOfKnownDefects];
-        std::string firstHit[NumberOfKnownDefects];
+        std::vector<unsigned long long> hits;
+        std::vector<std::string> firstHit;
         std::vector<std::string> unknownExamples;
 
-        Tally() : checks(0), explained(0), unknown(0), hits()
+        Tally() : checks(0), explained(0), unknown(0), hits(NumberOfKnownDefects, 0), firstHit(NumberOfKnownDefects)
         {
         }
 
@@ -578,9 +544,6 @@ namespace
         Wide (*mulInt)(Wide, int);
         Wide (*divInt)(Wide, int);
         Wide (*compareInt)(Wide, int);
-        Wide (*equalInt)(Wide, int);
-        Wide (*addAssignInt)(Wide, int);
-        Wide (*subAssignInt)(Wide, int);
         Wide (*mulAssignInt)(Wide, int);
         Wide (*divAssignInt)(Wide, int);
     };
@@ -684,15 +647,6 @@ namespace
             return (x < n ? 4 : 0) | (x > n ? 8 : 0) | (x <= n ? 16 : 0) | (x >= n ? 32 : 0);
         }
 
-        static Wide equalInt(const Wide a, const int n)
-        {
-            const Q x = make(a);
-
-            return (x == n ? 1 : 0) | (x != n ? 2 : 0);
-        }
-
-        static Wide addAssignInt(const Wide a, const int n) { Q q = make(a); q += n; return value(q); }
-        static Wide subAssignInt(const Wide a, const int n) { Q q = make(a); q -= n; return value(q); }
         static Wide mulAssignInt(const Wide a, const int n) { Q q = make(a); q *= n; return value(q); }
         static Wide divAssignInt(const Wide a, const int n) { Q q = make(a); q /= n; return value(q); }
 
@@ -705,8 +659,8 @@ namespace
                 &add, &sub, &mul, &div, &compare,
                 &preIncrement, &preDecrement,
                 &postIncrementResult, &postIncrementAfter, &postDecrementResult, &postDecrementAfter,
-                &addInt, &subInt, &mulInt, &divInt, &compareInt, &equalInt,
-                &addAssignInt, &subAssignInt, &mulAssignInt, &divAssignInt,
+                &addInt, &subInt, &mulInt, &divInt, &compareInt,
+                &mulAssignInt, &divAssignInt,
             };
             return o;
         }
@@ -882,13 +836,9 @@ namespace
         check(t, f, "mulInt", in, ops.mulInt(a, i), [&](const Model& m) { return m.mulInt(a, n); });
         check(t, f, "mulAssignInt", in, ops.mulAssignInt(a, i), [&](const Model& m) { return m.mulInt(a, n); });
         check(t, f, "compareInt", in, ops.compareInt(a, i), [&](const Model& m) { return m.compareInt(a, n); });
-        check(t, f, "equalInt", in, ops.equalInt(a, i), [&](const Model& m) { return m.equalInt(a, n); });
-        check(t, f, "addAssignInt", in, ops.addAssignInt(a, i), [&](const Model& m) { return m.addAssignInt(a, n); });
-        check(t, f, "subAssignInt", in, ops.subAssignInt(a, i), [&](const Model& m) { return m.subAssignInt(a, n); });
 
-        // The int divisor QValue actually uses is the wrapped one; zero is
-        // undefined behaviour under WrapPolicy.
-        const bool divisorIsZero = (wrapTo(n, f.fixedBits, f.isSigned) == 0);
+        // A zero divisor is undefined behaviour under WrapPolicy.
+        const bool divisorIsZero = (n == 0);
 
         if (!divisorIsZero || f.saturate)
         {
