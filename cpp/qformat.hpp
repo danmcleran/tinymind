@@ -151,11 +151,11 @@ namespace tinymind {
                     // A quotient by zero has no wrapped value, and the integer
                     // division was undefined behaviour (a trap on most hosts,
                     // an implementation-defined result on Cortex-M). It gives
-                    // the same bound MinMaxSaturatePolicy does: the maximum for
-                    // a positive numerator, else the minimum.
+                    // what MinMaxSaturatePolicy does: the bound for the
+                    // numerator's sign, and 0 for 0 / 0.
                     if (target == 0)
                     {
-                        result = (origValue > 0) ? maxValue : minValue;
+                        result = (origValue > 0) ? maxValue : ((origValue < 0) ? minValue : static_cast<T>(0));
                     }
                     else
                     {
@@ -260,8 +260,8 @@ namespace tinymind {
                     }
                     break;
                 case DivisionOp:
-                    if (target == 0) { // Handle division by zero first
-                        result = (origValue > 0) ? maxValue : minValue;
+                    if (target == 0) { // Handle division by zero first: the bound for the numerator's sign, 0 for 0 / 0
+                        result = (origValue > 0) ? maxValue : ((origValue < 0) ? minValue : static_cast<T>(0));
                     }
                     else if ((origValue / target) > maxValue)
                     {
@@ -833,8 +833,9 @@ namespace tinymind {
         }
 
         // Divide by a whole number (truncating towards zero), exact for every
-        // int. A zero divisor gives the maximum for a positive value, else the
-        // minimum, under either policy, as for a QValue divisor.
+        // int. A zero divisor gives the maximum for a positive value, the
+        // minimum for a negative one and 0 for 0, under either policy, as for
+        // a QValue divisor.
         QValue& operator/=(const int divisor)
         {
             mValue = applyInteger(static_cast<IntegerOperandType>(divisor), DivisionOp);

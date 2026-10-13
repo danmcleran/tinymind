@@ -62,11 +62,12 @@ static int32_t sat_mul_i32(int32_t o, int32_t t, int32_t lo, int32_t hi)
     return result;
 }
 
-// DivisionOp branch (qformat.hpp): divisor==0 handled first.
+// DivisionOp branch (qformat.hpp): divisor==0 handled first (the bound for
+// the numerator's sign, 0 for 0 / 0).
 static int32_t sat_div_i32(int32_t o, int32_t t, int32_t lo, int32_t hi)
 {
     int32_t result = 0;
-    if (t == 0)            { result = (o > 0) ? hi : lo; }
+    if (t == 0)            { result = (o > 0) ? hi : ((o < 0) ? lo : 0); }
     else if ((o / t) > hi) { result = hi; }
     else if ((o / t) < lo) { result = lo; }
     else                   { result = o / t; }
@@ -74,11 +75,12 @@ static int32_t sat_div_i32(int32_t o, int32_t t, int32_t lo, int32_t hi)
 }
 
 // WrapPolicy<T>::saturate DivisionOp branch (qformat.hpp): divisor==0 gives
-// the bound for the numerator's sign, as MinMaxSaturatePolicy does.
+// the bound for the numerator's sign and 0 for 0 / 0, as MinMaxSaturatePolicy
+// does.
 static int32_t wrap_div_i32(int32_t o, int32_t t, int32_t lo, int32_t hi)
 {
     int32_t result = 0;
-    if (t == 0) { result = (o > 0) ? hi : lo; }
+    if (t == 0) { result = (o > 0) ? hi : ((o < 0) ? lo : 0); }
     else        { result = o / t; }
     return result;
 }
@@ -257,7 +259,7 @@ extern "C" void prove_saturate_div_q8_8()
     int32_t o, t, lo, hi;
     __CPROVER_assume(o >= Q8_8_MIN && o <= Q8_8_MAX);
     __CPROVER_assume(t >= Q8_8_MIN && t <= Q8_8_MAX);
-    __CPROVER_assume(lo <= hi);
+    __CPROVER_assume(lo <= 0 && 0 <= hi); // a QValue range always contains 0, which 0 / 0 returns
 
     const int32_t r = sat_div_i32(o, t, lo, hi);
 
@@ -276,7 +278,8 @@ extern "C" void prove_wrap_div_q8_8()
 
     const int32_t r = wrap_div_i32(o * 256, t, Q8_8_MIN, Q8_8_MAX);
 
-    __CPROVER_assert((t != 0) || (r == ((o > 0) ? Q8_8_MAX : Q8_8_MIN)), "division by zero gives the bound for the numerator's sign");
+    __CPROVER_assert((t != 0) || (r == ((o > 0) ? Q8_8_MAX : ((o < 0) ? Q8_8_MIN : 0))),
+                     "division by zero gives the bound for the numerator's sign, and 0 for 0 / 0");
 }
 
 extern "C" void prove_round_up_q8_8()

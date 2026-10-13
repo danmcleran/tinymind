@@ -330,14 +330,19 @@ namespace
             return finish(roundedProduct(a, b));
         }
 
-        // Quotient truncated towards zero, as integer division does. A zero
-        // divisor gives the maximum for a positive numerator, else the minimum,
-        // under both policies.
+        // A zero divisor under both policies: the bound for the numerator's
+        // sign, and 0 for 0 / 0.
+        Wide divByZero(const Wide a) const
+        {
+            return (a > 0) ? maxValue() : ((a < 0) ? minValue() : 0);
+        }
+
+        // Quotient truncated towards zero, as integer division does.
         Wide div(const Wide a, const Wide b) const
         {
             if (b == 0)
             {
-                return (a > 0) ? maxValue() : minValue();
+                return divByZero(a);
             }
 
             return finish((a * powerOfTwo(f.fractionalBits)) / b);
@@ -377,7 +382,7 @@ namespace
 
             if (divisor == 0)
             {
-                return (a > 0) ? maxValue() : minValue();
+                return divByZero(a);
             }
 
             return finish(a / divisor);
