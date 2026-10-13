@@ -85,6 +85,13 @@ namespace tinymind { namespace simd {
                                               int8_t zp)
     {
         int32_t acc = 0;
+        // Layers call this with compile-time lengths. Without the hint, GCC
+        // -O2 keeps the loop rolled inside the layer's output loop, where it
+        // pays loop overhead per element; unrolled it matches -O3. Skipped
+        // under -Os/-Oz, where Clang would otherwise honor it.
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 16
+#endif
         for (std::size_t i = 0; i < n; ++i)
         {
             acc += static_cast<int32_t>(w[i]) *
