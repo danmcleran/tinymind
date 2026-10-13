@@ -25,6 +25,8 @@
 #include <iostream>
 #include <cstdint>
 #include <limits>
+#include <cstring>
+#include <new>
 
 #include "qformat.hpp"
 #include "compiler.h"
@@ -1223,6 +1225,233 @@ BOOST_AUTO_TEST_CASE(test_case_division_by_zero_saturates)
     // minValue branch, which for unsigned is 0.
     UnsignedQ8_8SatPolicyType uZeroDiv = uZero / uDenom;
     BOOST_TEST(uZeroDiv.getValue() == UnsignedQ8_8SatPolicyType::QFormatMinValue());
+}
+
+// Formats narrower than their storage word (issue #187): Q8.16 lives in an
+// int32_t, Q4.8 in an int16_t. Every write path must leave the bits above the
+// format's width consistent with its sign, whatever the storage held before.
+// Each value is therefore placement-constructed over storage pre-filled with
+// 0x00 and again with 0xFF: before the fix the 0x00 fill read negatives back
+// as large positives, and the 0xFF fill happened to hide it.
+typedef tinymind::QValue<8, 16, true> SignedQ8_16Type;
+typedef tinymind::QValue<4, 8, true> SignedQ4_8Type;
+typedef tinymind::QValue<4, 8, false> UnsignedQ4_8Type;
+typedef tinymind::QValue<4, 8, true, tinymind::TruncatePolicy, tinymind::MinMaxSaturatePolicy> SignedQ4_8SatPolicyType;
+
+namespace
+{
+    const unsigned char StorageFills[] = {0x00, 0xFF};
+
+    template<typename QValueType>
+    struct PoisonedStorage
+    {
+        alignas(QValueType) unsigned char bytes[sizeof(QValueType)];
+
+        explicit PoisonedStorage(const unsigned char fill)
+        {
+            std::memset(bytes, fill, sizeof(bytes));
+        }
+
+        QValueType* fromParts(const typename QValueType::FixedPartFieldType fixedPart, const typename QValueType::FractionalPartFieldType fractionalPart)
+        {
+            return new (bytes) QValueType(fixedPart, fractionalPart);
+        }
+
+        QValueType* defaultConstructed()
+        {
+            return new (bytes) QValueType;
+        }
+    };
+}
+
+BOOST_AUTO_TEST_CASE(test_case_narrow_format_parts_constructor)
+{
+    for (const unsigned char fill : StorageFills)
+    {
+        PoisonedStorage<SignedQ8_16Type> storage(fill);
+        const SignedQ8_16Type minusOne = *storage.fromParts(-1, 0);
+        const SignedQ8_16Type zero(0, 0);
+        const SignedQ8_16Type half(0, 0x8000);
+
+        BOOST_TEST(minusOne.getValue() == -65536);
+        BOOST_TEST(minusOne.getFixedPart() == -1);
+        BOOST_TEST(minusOne.getFractionalPart() == 0u);
+        BOOST_TEST((minusOne < zero));
+        BOOST_TEST((zero > minusOne));
+        BOOST_TEST((minusOne != zero));
+        BOOST_TEST((minusOne + half).getValue() == -32768);
+        BOOST_TEST((minusOne - half).getValue() == -98304);
+
+        // -1.5 is fixed part -2 (the floor) plus 0.5.
+        PoisonedStorage<SignedQ8_16Type> storage2(fill);
+        const SignedQ8_16Type minusOneAndHalf = *storage2.fromParts(-2, 0x8000);
+        BOOST_TEST(minusOneAndHalf.getValue() == -98304);
+        BOOST_TEST(minusOneAndHalf.getFixedPart() == -2);
+        BOOST_TEST(minusOneAndHalf.getFractionalPart() == 0x8000u);
+
+        PoisonedStorage<SignedQ4_8Type> storage3(fill);
+        const SignedQ4_8Type minQ4_8 = *storage3.fromParts(-8, 0);
+        BOOST_TEST(minQ4_8.getValue() == -2048);
+        BOOST_TEST(minQ4_8.getFixedPart() == -8);
+
+        PoisonedStorage<UnsignedQ4_8Type> storage4(fill);
+        const UnsignedQ4_8Type maxUQ4_8 = *storage4.fromParts(15, 0xFF);
+        BOOST_TEST(maxUQ4_8.getValue() == 4095u);
+        BOOST_TEST(maxUQ4_8.getFixedPart() == 15u);
+        BOOST_TEST(maxUQ4_8.getFractionalPart() == 0xFFu);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_narrow_format_default_constructor_and_set_value)
+{
+    for (const unsigned char fill : StorageFills)
+    {
+        PoisonedStorage<SignedQ8_16Type> storage(fill);
+        SignedQ8_16Type* value = storage.defaultConstructed();
+        BOOST_TEST(value->getValue() == 0);
+
+        value->setValue(-1, 0);
+        BOOST_TEST(value->getValue() == -65536);
+        BOOST_TEST(value->getFixedPart() == -1);
+
+        // A full-width write with the format's sign bit set but the upper
+        // byte clear is the same 24-bit pattern as -1.0, and must read back
+        // as -1.0 rather than +255.0.
+        value->setValue(static_cast<SignedQ8_16Type::FullWidthValueType>(0x00FF0000));
+        BOOST_TEST(value->getValue() == -65536);
+
+        *value = static_cast<SignedQ8_16Type::FullWidthValueType>(0x00FF8000);
+        BOOST_TEST(value->getValue() == -32768);
+
+        const SignedQ8_16Type fromRaw(static_cast<SignedQ8_16Type::FullWidthFieldType>(0x00FF0000));
+        BOOST_TEST(fromRaw.getValue() == -65536);
+
+        PoisonedStorage<UnsignedQ4_8Type> storage2(fill);
+        UnsignedQ4_8Type* unsignedValue = storage2.defaultConstructed();
+        BOOST_TEST(unsignedValue->getValue() == 0u);
+        unsignedValue->setValue(15, 0xFF);
+        BOOST_TEST(unsignedValue->getValue() == 4095u);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_narrow_format_convert_from_other_qvalue_type)
+{
+    const SignedQ8_8Type minusOne(-1, 0);           // -256 in Q8.8
+    const SignedQ8_8Type minusOneAndHalf(-2, 0x80); // -384 in Q8.8
+
+    for (const unsigned char fill : StorageFills)
+    {
+        PoisonedStorage<SignedQ4_8Type> storage(fill);
+        SignedQ4_8Type* value = storage.fromParts(0, 0);
+
+        value->convertFromOtherQValueType(minusOne);
+        BOOST_TEST(value->getValue() == -256);
+
+        value->convertFromOtherQValueType(minusOneAndHalf);
+        BOOST_TEST(value->getValue() == -384);
+        BOOST_TEST(value->getFixedPart() == -2);
+        BOOST_TEST(value->getFractionalPart() == 0x80u);
+
+        // Widening the fractional part: Q8.8 -1.5 into Q8.16.
+        PoisonedStorage<SignedQ8_16Type> storage2(fill);
+        SignedQ8_16Type* wide = storage2.fromParts(0, 0);
+        wide->convertFromOtherQValueType(minusOneAndHalf);
+        BOOST_TEST(wide->getValue() == -98304);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_narrow_format_multiply_divide)
+{
+    for (const unsigned char fill : StorageFills)
+    {
+        PoisonedStorage<SignedQ8_16Type> storage(fill);
+        const SignedQ8_16Type minusOne = *storage.fromParts(-1, 0);
+        const SignedQ8_16Type oneAndHalf(1, 0x8000);
+
+        BOOST_TEST((minusOne * oneAndHalf).getValue() == -98304);
+        BOOST_TEST((minusOne / oneAndHalf).getValue() == -43690); // -0.6666 truncated
+        BOOST_TEST((oneAndHalf * minusOne).getValue() == -98304);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_narrow_format_wraps_at_format_width)
+{
+    // WrapPolicy must wrap at the format's width, not the storage word's.
+    // Before the fix, Q8.16 max + 1 LSB read back as +128.0 (0x800000) while
+    // its fixed part read -128: the two views of one value disagreed.
+    const SignedQ8_16Type maxQ8_16(static_cast<SignedQ8_16Type::FullWidthValueType>(0x7FFFFF));
+    const SignedQ8_16Type lsb(static_cast<SignedQ8_16Type::FullWidthValueType>(1));
+    const SignedQ8_16Type wrapped = maxQ8_16 + lsb;
+    BOOST_TEST(wrapped.getValue() == -8388608);
+    BOOST_TEST(wrapped.getFixedPart() == -128);
+    BOOST_TEST((wrapped < maxQ8_16));
+    BOOST_TEST((wrapped - lsb).getValue() == 0x7FFFFF);
+
+    SignedQ8_16Type incremented(maxQ8_16);
+    ++incremented;
+    BOOST_TEST(incremented.getValue() == -8323073); // 127.99998 + 1.0 wraps to -127.00002
+
+    // Q4.8: 7.0 * 2.0 = 14.0 does not fit in [-8, 8) and wraps to -2.0.
+    const SignedQ4_8Type seven(7, 0);
+    const SignedQ4_8Type two(2, 0);
+    BOOST_TEST((seven * two).getValue() == -512);
+
+    const UnsignedQ4_8Type maxUQ4_8(15, 0xFF);
+    const UnsignedQ4_8Type uLsb(static_cast<UnsignedQ4_8Type::FullWidthValueType>(1));
+    BOOST_TEST((maxUQ4_8 + uLsb).getValue() == 0u);
+    BOOST_TEST((UnsignedQ4_8Type(0, 0) - uLsb).getValue() == 4095u);
+
+    // Saturation keeps a narrow format inside its bounds as before.
+    const SignedQ4_8SatPolicyType satSeven(7, 0);
+    const SignedQ4_8SatPolicyType satTwo(2, 0);
+    BOOST_TEST((satSeven + satTwo).getValue() == SignedQ4_8SatPolicyType::QFormatMaxValue());
+}
+
+BOOST_AUTO_TEST_CASE(test_case_parts_round_trip_exhaustive)
+{
+    // Every representable value must split into (fixed, fractional) parts that
+    // rebuild the same value, for a narrow format (every 12-bit pattern) and a
+    // word-filling one (every Q8.8 pattern, guarding the existing layout).
+    for (int raw = -2048; raw < 2048; ++raw)
+    {
+        const SignedQ4_8Type value(static_cast<SignedQ4_8Type::FullWidthValueType>(raw));
+        BOOST_TEST_REQUIRE(value.getValue() == raw);
+        BOOST_TEST_REQUIRE(value.getFixedPart() == (raw >> 8));
+        BOOST_TEST_REQUIRE(static_cast<int>(value.getFractionalPart()) == (raw & 0xFF));
+        const SignedQ4_8Type rebuilt(value.getFixedPart(), value.getFractionalPart());
+        BOOST_TEST_REQUIRE(rebuilt.getValue() == raw);
+    }
+
+    for (int raw = -32768; raw < 32768; ++raw)
+    {
+        const SignedQ8_8Type value(static_cast<SignedQ8_8Type::FullWidthValueType>(raw));
+        BOOST_TEST_REQUIRE(value.getFixedPart() == (raw >> 8));
+        BOOST_TEST_REQUIRE(static_cast<int>(value.getFractionalPart()) == (raw & 0xFF));
+        const SignedQ8_8Type rebuilt(value.getFixedPart(), value.getFractionalPart());
+        BOOST_TEST_REQUIRE(rebuilt.getValue() == raw);
+    }
+
+    for (unsigned raw = 0; raw < 4096; ++raw)
+    {
+        const UnsignedQ4_8Type value(static_cast<UnsignedQ4_8Type::FullWidthValueType>(raw));
+        const UnsignedQ4_8Type rebuilt(value.getFixedPart(), value.getFractionalPart());
+        BOOST_TEST_REQUIRE(rebuilt.getValue() == raw);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_case_sign_extender_mask_covers_wide_intermediate)
+{
+    // The mask must set every bit above the sign bit of the 64-bit
+    // intermediate. It used to be computed through size_t and lost its upper
+    // 32 bits on 32-bit size_t targets; embedded_smoke_test pins the same
+    // check on the Cortex-M cross-compile.
+    typedef SignedQ8_16Type::MultiplicationResultFullWidthValueType WideType;
+    typedef tinymind::SignExtender<WideType, 8, 16, true> ExtenderType;
+    static_assert(ExtenderType::SignExtensionBits == static_cast<WideType>(~static_cast<WideType>(0xFFFFFF)), "SignExtender mask truncated");
+
+    WideType value = static_cast<WideType>(0x00FF0000); // -1.0 as a raw 24-bit pattern
+    ExtenderType::signExtend(value);
+    BOOST_TEST(value == static_cast<WideType>(-65536));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
