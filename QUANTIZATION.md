@@ -294,7 +294,7 @@ Specialize inner loops behind capability-named feature gates. Library otherwise 
   - `simd_sve2.hpp` — SVE2 superset. Gate `TINYMIND_ENABLE_SIMD_SVE2=1`. Requires `SIMD_SVE`.
   - `simd_helium_mve_i.hpp` — Armv8.1-M MVE-I (integer). Gate `TINYMIND_ENABLE_SIMD_HELIUM_MVE_I=1`. Mutually exclusive with NEON / SVE (M-profile only).
   - `simd_helium_mve_f.hpp` — Armv8.1-M MVE-F (float). Gate `TINYMIND_ENABLE_SIMD_HELIUM_MVE_F=1`. Independent of MVE-I (a core can implement either alone).
-  - `simd_arm_dsp.hpp` — AArch32 DSP extension (`SMLAD` / `SXTB16` / `SSUB16`). Gate `TINYMIND_ENABLE_SIMD_ARM_DSP=1`. `#error`s unless the target defines `__ARM_FEATURE_DSP`. Executed for bit-exactness on QEMU `mps2-an386` by `make -C unit_test/embedded arm_dsp_qemu`.
+  - `simd_arm_dsp.hpp` — AArch32 DSP extension (`SMLAD` / `SXTB16` / `SXTAB16`; zero point folded into `SXTAB16`, block loop pragma-unrolled so `-O2` matches `-O3`). Gate `TINYMIND_ENABLE_SIMD_ARM_DSP=1`. `#error`s unless the target defines `__ARM_FEATURE_DSP`. Executed for bit-exactness on QEMU `mps2-an386` by `make -C unit_test/embedded arm_dsp_qemu`.
   - `simd_avx2.hpp` — x86 `PMADDUBSW` fallback path. Gate `TINYMIND_ENABLE_SIMD_AVX2=1`.
   - `simd_avx_vnni.hpp` — `VPDPBUSD` (Alder Lake+ / Sapphire Rapids on the AVX-VNNI side). Gate `TINYMIND_ENABLE_SIMD_AVX_VNNI=1`. Requires `SIMD_AVX2`.
   - `simd_avx512f.hpp` — AVX-512 foundation. Gate `TINYMIND_ENABLE_SIMD_AVX512F=1`.
