@@ -5731,6 +5731,145 @@ BOOST_AUTO_TEST_CASE(qconv2d_window_strategies_match_per_tap_reference)
     qconv_window_test::checkShape<9, 9, 16, 3, 3, 2, 2, 5, false>();
 }
 
+namespace dwpw_reference_test {
+
+    inline Requantizer<int32_t, int8_t> makeRq(std::size_t i)
+    {
+        Requantizer<int32_t, int8_t> rq;
+        rq.multiplier = (static_cast<int32_t>(1) << 29) + static_cast<int32_t>(i) * 999983;
+        rq.shift = 5 + static_cast<int32_t>(i % 4);
+        rq.zero_point = static_cast<int8_t>(static_cast<int>(i % 5) - 2);
+        rq.qmin = -128;
+        rq.qmax = 127;
+        return rq;
+    }
+
+    // QDepthwiseConv2D against a direct per-pixel, per-tap reference.
+    template<std::size_t H, std::size_t W, std::size_t C, std::size_t KH, std::size_t KW,
+             std::size_t SH, std::size_t SW>
+    void checkDepthwise(int8_t zp, bool withBias)
+    {
+        typedef QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, H, W, C, KH, KW, SH, SW> Layer;
+
+        static int8_t x[Layer::InputSize];
+        static int8_t w[Layer::TotalWeights];
+        static int8_t y[Layer::OutputSize];
+        int32_t b[C];
+        Requantizer<int32_t, int8_t> rq[C];
+
+        simd_test::fillSawtooth(x, Layer::InputSize, 11);
+        simd_test::fillSawtooth(w, Layer::TotalWeights, 37);
+        for (std::size_t c = 0; c < C; ++c)
+        {
+            b[c] = static_cast<int32_t>(c) * 31 - 57;
+            rq[c] = makeRq(c);
+        }
+
+        Layer layer;
+        layer.weights = w;
+        layer.biases = withBias ? b : nullptr;
+        layer.input_zero_point = zp;
+        layer.requantizers = rq;
+        layer.forward(x, y);
+
+        for (std::size_t oh = 0; oh < Layer::OutputHeight; ++oh)
+        {
+            for (std::size_t ow = 0; ow < Layer::OutputWidth; ++ow)
+            {
+                for (std::size_t c = 0; c < C; ++c)
+                {
+                    int32_t acc = withBias ? b[c] : 0;
+                    for (std::size_t kh = 0; kh < KH; ++kh)
+                    {
+                        for (std::size_t kw = 0; kw < KW; ++kw)
+                        {
+                            const std::size_t in = ((oh * SH + kh) * W + (ow * SW + kw)) * C + c;
+                            acc += static_cast<int32_t>(w[(c * KH + kh) * KW + kw]) *
+                                   (static_cast<int32_t>(x[in]) - static_cast<int32_t>(zp));
+                        }
+                    }
+                    const std::size_t out = (oh * Layer::OutputWidth + ow) * C + c;
+                    BOOST_TEST(static_cast<int>(y[out]) == static_cast<int>(rq[c].apply(acc)));
+                }
+            }
+        }
+    }
+
+    // QPointwiseConv2D and QPointwiseConv2DPerChannel against a direct reference.
+    template<std::size_t H, std::size_t W, std::size_t Cin, std::size_t F>
+    void checkPointwise(int8_t zp, bool withBias)
+    {
+        typedef QPointwiseConv2D<int8_t, int8_t, int32_t, int8_t, H, W, Cin, F> TensorLayer;
+        typedef QPointwiseConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, H, W, Cin, F> ChannelLayer;
+
+        static int8_t x[H * W * Cin];
+        static int8_t w[F * Cin];
+        static int8_t yTensor[H * W * F];
+        static int8_t yChannel[H * W * F];
+        int32_t b[F];
+        Requantizer<int32_t, int8_t> rq[F];
+
+        simd_test::fillSawtooth(x, H * W * Cin, 17);
+        simd_test::fillSawtooth(w, F * Cin, 23);
+        for (std::size_t f = 0; f < F; ++f)
+        {
+            b[f] = static_cast<int32_t>(f) * 19 - 44;
+            rq[f] = makeRq(f);
+        }
+
+        TensorLayer tensorLayer;
+        tensorLayer.weights = w;
+        tensorLayer.biases = withBias ? b : nullptr;
+        tensorLayer.input_zero_point = zp;
+        tensorLayer.requantizer = rq[0];
+        tensorLayer.forward(x, yTensor);
+
+        ChannelLayer channelLayer;
+        channelLayer.weights = w;
+        channelLayer.biases = withBias ? b : nullptr;
+        channelLayer.input_zero_point = zp;
+        channelLayer.requantizers = rq;
+        channelLayer.forward(x, yChannel);
+
+        for (std::size_t p = 0; p < H * W; ++p)
+        {
+            for (std::size_t f = 0; f < F; ++f)
+            {
+                int32_t acc = withBias ? b[f] : 0;
+                for (std::size_t i = 0; i < Cin; ++i)
+                {
+                    acc += static_cast<int32_t>(w[f * Cin + i]) *
+                           (static_cast<int32_t>(x[p * Cin + i]) - static_cast<int32_t>(zp));
+                }
+                BOOST_TEST(static_cast<int>(yTensor[p * F + f]) ==
+                           static_cast<int>(rq[0].apply(acc)));
+                BOOST_TEST(static_cast<int>(yChannel[p * F + f]) ==
+                           static_cast<int>(rq[f].apply(acc)));
+            }
+        }
+    }
+
+} // namespace dwpw_reference_test
+
+BOOST_AUTO_TEST_CASE(qdepthwise_and_pointwise_match_direct_reference)
+{
+    using namespace dwpw_reference_test;
+    static const int8_t kZeroPoints[] = {-128, -7, 0, 127};
+    for (const int8_t zp : kZeroPoints)
+    {
+        for (int bias = 0; bias < 2; ++bias)
+        {
+            const bool withBias = (bias == 1);
+            checkDepthwise<9, 9, 8, 3, 3, 1, 1>(zp, withBias);
+            checkDepthwise<11, 10, 3, 5, 5, 2, 2>(zp, withBias);
+            checkDepthwise<4, 6, 1, 1, 3, 1, 2>(zp, withBias);
+            checkPointwise<7, 7, 8, 16>(zp, withBias);   // multi-pixel, filter-outer
+            checkPointwise<3, 5, 3, 4>(zp, withBias);    // Cin not a multiple of 4
+            checkPointwise<1, 1, 64, 32>(zp, withBias);  // single pixel (dense) path
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(simd_active_backend_name_reports_a_known_value)
 {
     // The dispatch reports which backend it resolved to. The exact value

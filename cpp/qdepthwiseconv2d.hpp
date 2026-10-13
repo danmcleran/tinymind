@@ -112,41 +112,53 @@ namespace tinymind {
             const InputType inputZeroPoint = input_zero_point;
             const Requantizer<AccumulatorType, OutputType>* const rqs = requantizers;
 
-            for (std::size_t oh = 0; oh < OutputHeight; ++oh)
+            // Channel-outer: one channel's kernel taps and requantizer stay in
+            // locals while it sweeps every output pixel. The input zero point
+            // is folded into the bias once per channel, since
+            //   sum(w * (x - zp)) == sum(w * x) - zp * sum(w),
+            // so the tap loop is a plain multiply-accumulate. Integer-exact,
+            // so bit-exact with the per-pixel, per-tap form.
+            for (std::size_t c = 0; c < Channels_; ++c)
             {
-                const std::size_t ihStart = oh * StrideH_;
-                for (std::size_t ow = 0; ow < OutputWidth; ++ow)
+                AccumulatorType taps[WeightsPerChannel];
+                AccumulatorType weightSum = static_cast<AccumulatorType>(0);
+                for (std::size_t k = 0; k < WeightsPerChannel; ++k)
                 {
-                    const std::size_t iwStart = ow * StrideW_;
-                    const std::size_t outPixelOffset =
-                        (oh * OutputWidth + ow) * Channels_;
+                    taps[k] = static_cast<AccumulatorType>(layerWeights[c * WeightsPerChannel + k]);
+                    weightSum += taps[k];
+                }
 
-                    for (std::size_t c = 0; c < Channels_; ++c)
+                const AccumulatorType bias = ((layerBiases != nullptr)
+                    ? layerBiases[c]
+                    : static_cast<AccumulatorType>(0)) -
+                    static_cast<AccumulatorType>(inputZeroPoint) * weightSum;
+                const Requantizer<AccumulatorType, OutputType> rq = rqs[c];
+
+                for (std::size_t oh = 0; oh < OutputHeight; ++oh)
+                {
+                    for (std::size_t ow = 0; ow < OutputWidth; ++ow)
                     {
-                        const std::size_t weightOffset = c * WeightsPerChannel;
-                        AccumulatorType acc = (layerBiases != nullptr)
-                            ? layerBiases[c]
-                            : static_cast<AccumulatorType>(0);
+                        const InputType* const window =
+                            input + ((oh * StrideH_) * W_ + ow * StrideW_) * Channels_ + c;
 
+                        AccumulatorType acc = bias;
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
                         for (std::size_t kh = 0; kh < KH_; ++kh)
                         {
-                            const std::size_t ih = ihStart + kh;
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
                             for (std::size_t kw = 0; kw < KW_; ++kw)
                             {
-                                const std::size_t iw = iwStart + kw;
-                                const std::size_t inIdx =
-                                    (ih * W_ + iw) * Channels_ + c;
-                                const AccumulatorType x =
-                                    static_cast<AccumulatorType>(input[inIdx]) -
-                                    static_cast<AccumulatorType>(inputZeroPoint);
-                                const AccumulatorType w =
-                                    static_cast<AccumulatorType>(
-                                        layerWeights[weightOffset + kh * KW_ + kw]);
-                                acc += w * x;
+                                acc += taps[kh * KW_ + kw] *
+                                       static_cast<AccumulatorType>(
+                                           window[(kh * W_ + kw) * Channels_]);
                             }
                         }
 
-                        output[outPixelOffset + c] = rqs[c].apply(acc);
+                        output[(oh * OutputWidth + ow) * Channels_ + c] = rq.apply(acc);
                     }
                 }
             }
