@@ -8,7 +8,7 @@ counter, as the median of 33 warm inferences (spread < 0.1%).
 
 Write-up: https://danmcleran.github.io/tinymind/benchmarks.html
 
-Versions: TinyMind (this repo; results below at `d21024d`) · TFLM @ `18811372` (2026-10-12) with its pinned CMSIS-NN ·
+Versions: TinyMind (this repo; results below at `93885bc`) · TFLM @ `18811372` (2026-10-12) with its pinned CMSIS-NN ·
 emlearn 0.23.2 · TensorFlow 2.21 (converter only) · scikit-learn 1.9.1.
 
 This folder lives outside `examples/` on purpose. The top-level build and `check-clang-examples` build
@@ -38,8 +38,8 @@ it.
 
 ## Results
 
-The tables below come from `results/raw_O2.txt` and `results/raw_O3.txt`, measured at TinyMind `d21024d`
-(after #192, #195, #198 and #199; see finding 3 for what changed since the first run).
+The tables below come from `results/raw_O2.txt` and `results/raw_O3.txt`, measured at TinyMind `93885bc`
+(after #192, #195, #198, #199, #202 and #204; see finding 3 for what changed since the first run).
 
 ## MLP 64-32-16-10, sklearn digits (360 test samples)
 
@@ -64,8 +64,8 @@ The tables below come from `results/raw_O2.txt` and `results/raw_O3.txt`, measur
 
 | Framework | O2 cycles | O3 cycles | O3 us @100MHz | flash O2 / O3 (B) | RAM (B) | int8 bit-exact |
 |---|---:|---:|---:|---:|---:|---|
-| TinyMind int8 (scalar) | 411,419 | 381,463 | 3,815 | 3,248 / 4,988 | 5,088 | yes |
-| TinyMind int8 (+SMLAD) | 352,124 | 329,792 | 3,298 | 3,060 / 4,948 | 5,064 | yes |
+| TinyMind int8 (scalar) | 359,821 | 321,940 | 3,219 | 3,824 / 5,440 | 5,288 | yes |
+| TinyMind int8 (+SMLAD) | 317,736 | 260,213 | 2,602 | 3,652 / 5,520 | 5,272 | yes |
 | TFLM int8 (CMSIS-NN) | 573,396 | 576,368 | 5,764 | 84,488 / 91,640 | 6,288 | yes |
 | TFLM int8 (reference) | 2,459,339 | 2,435,580 | 24,356 | 41,088 / 46,192 | 5,668 | yes |
 | TFLM float32 | 2,136,067 | 2,159,717 | 21,597 | 84,324 / 91,604 | 15,128 | n/a (float) |
@@ -74,12 +74,12 @@ The tables below come from `results/raw_O2.txt` and `results/raw_O3.txt`, measur
 
 | Layer | TinyMind scalar O2 | TinyMind scalar O3 | TinyMind +SMLAD O2 | TinyMind +SMLAD O3 | TFLM CMSIS-NN O2 | TFLM CMSIS-NN O3 |
 |---|---:|---:|---:|---:|---:|---:|
-| conv3x3 | 283,199 | 279,608 | 234,893 | 259,857 | 434,553 | 435,412 |
-| maxpool | 14,480 | 10,157 | 14,480 | 10,161 | 35,807 | 36,697 |
-| dwconv3x3 | 30,820 | 30,678 | 30,802 | 30,683 | 39,208 | 40,918 |
-| pwconv | 65,712 | 55,519 | 51,217 | 44,169 | 53,212 | 53,866 |
-| avgpool | 7,220 | 2,281 | 7,220 | 2,281 | 8,875 | 7,917 |
-| fc | 1,440 | 1,419 | 1,125 | 1,131 | 2,097 | 2,041 |
+| conv3x3 | 259,094 | 219,295 | 216,997 | 176,522 | 434,553 | 435,412 |
+| maxpool | 10,157 | 10,154 | 10,157 | 10,161 | 35,807 | 36,697 |
+| dwconv3x3 | 30,815 | 30,687 | 30,815 | 30,545 | 39,208 | 40,918 |
+| pwconv | 64,194 | 55,527 | 51,215 | 44,169 | 53,212 | 53,866 |
+| avgpool | 2,267 | 2,282 | 2,267 | 2,282 | 8,875 | 7,917 |
+| fc | 1,434 | 1,434 | 1,127 | 1,127 | 2,097 | 2,041 |
 
 
 TFLM setup (`AllocateTensors`) costs 133k–163k cycles (1.3–1.6 ms) once at boot. TinyMind has no setup step.
@@ -91,12 +91,12 @@ TFLM setup (`AllocateTensors`) costs 133k–163k cycles (1.3–1.6 ms) once at b
    35/3600 MLP outputs: its fully-connected kernel uses single rounding, while TFLM, CMSIS-NN and TinyMind
    use double rounding.
 2. **TinyMind+SMLAD is faster than TFLM+CMSIS-NN on every layer, at both levels:** MLP 11.2k vs 14.0k cycles
-   at `-O3` (−20%); KWS 330k vs 576k at `-O3` (−43%) and 352k vs 573k at `-O2` (−39%). The portable scalar
-   build still runs KWS 34% faster than CMSIS-NN (381k); on the MLP it (21.5k) sits between CMSIS-NN and
-   TFLM's reference kernels (31.4k). The `-O2`/`-O3` gap is under 10% for every TinyMind build; `-O3`
-   remains the recommended flag.
+   at `-O3` (−20%); KWS 260k vs 576k at `-O3` (−55%) and 318k vs 573k at `-O2` (−45%). The portable scalar
+   build still runs KWS 44% faster than CMSIS-NN (322k); on the MLP it (21.5k) sits between CMSIS-NN and
+   TFLM's reference kernels (31.4k). The MLP is within 1% across `-O2`/`-O3`; the KWS model is 22% slower at
+   `-O2` (+SMLAD), almost all of it in the stem conv (217k vs 177k). Use `-O3`.
 3. **What changed since the first run** (all bit-exact, hashes unchanged): MLP+SMLAD `-O2` 24,591 → 11,093,
-   MLP scalar `-O3` 33,154 → 21,481, KWS+SMLAD `-O2` 831,570 → 352,124, KWS+SMLAD `-O3` 422,449 → 329,792.
+   MLP scalar `-O3` 33,154 → 21,481, KWS+SMLAD `-O2` 831,570 → 317,736, KWS+SMLAD `-O3` 422,449 → 260,213.
    - #192: the SMLAD inner loop stayed rolled at `-O2` inside each layer's output loop and spilled to the
      stack (2 SMLADs per iteration; the MLP measured 14.5k–24.6k cycles across builds with identical
      kernels). Now pragma-unrolled, with the zero point folded into `SXTAB16`.
@@ -107,15 +107,21 @@ TFLM setup (`AllocateTensors`) costs 133k–163k cycles (1.3–1.6 ms) once at b
      single-pixel/dense layers keep the per-output form), and depthwise runs channel-outer with the zero
      point folded into the bias. Depthwise 58k → 31k, pointwise 67k → 44k at `-O3`.
    - #199: the portable scalar dot product got the same unroll hint (scalar MLP 31k–33k → 21.5k).
-4. **Per layer (KWS):** TinyMind wins every layer. The Cin=1 3×3 stem is now 79% of the model's time
-   (260k at `-O3`, already 60% of CMSIS-NN's 435k) and is the next target.
-5. **Code + weights: 10–30× smaller.** TinyMind is 5.1–5.4 KB (MLP) and 3.1–5.0 KB (KWS) including weights. TFLM is
+   - #202: the conv patch path gathers a whole tile of windows (up to `TINYMIND_CONV_TILE_MAX_BYTES`,
+     default 256 B; a whole output row for this stem) and sweeps it filter-outer, so each filter's
+     weights, bias and requantizer are loaded once per tile instead of once per pixel. Stem 260k → 177k
+     at `-O3`, for about 0.2 KB more peak stack.
+   - #204: the pooling window loops got the same unroll hint. At `-O2`, max-pool 14.5k → 10.2k and the
+     global average pool 7.2k → 2.3k, now level with `-O3`.
+4. **Per layer (KWS):** TinyMind wins every layer. The Cin=1 3×3 stem is still about two thirds of the
+   model's time (177k at `-O3`, 41% of CMSIS-NN's 435k); requantizing its outputs is the next target.
+5. **Code + weights: 10–30× smaller.** TinyMind is 5.1–5.4 KB (MLP) and 3.7–5.5 KB (KWS) including weights. TFLM is
    26–41 KB (MLP) and 41–92 KB (KWS): the interpreter, the flatbuffer parser and every CMSIS-NN type
    variant that the kernel dispatch references (s4/s16 conv, ...) all get linked. emlearn is 14 KB, almost
    all of it float weights.
-6. **RAM:** MLP: TinyMind ~130 B vs TFLM 2.2–2.6 KB. KWS: TinyMind 5.1 KB vs TFLM 5.7–6.3 KB. TinyMind keeps
+6. **RAM:** MLP: TinyMind ~130 B vs TFLM 2.2–2.6 KB. KWS: TinyMind 5.3 KB vs TFLM 5.7–6.3 KB. TinyMind keeps
    every intermediate buffer static (no reuse); TFLM's arena planner reuses buffers but carries
-   interpreter state. A ping-pong buffer pair would bring the TinyMind KWS model to about 3.8 KB.
+   interpreter state. A ping-pong buffer pair (2,592 B + 784 B instead of 4,432 B) would save about 1 KB.
 7. **Float:** TFLM float32 (27.9k) beats emlearn (40.5k) on the MLP; emlearn walks its weights
    column-strided, but its code is tiny. TFLM float KWS is 2.1M cycles because this CMSIS-NN build has its
    float kernels disabled and falls back to the reference float kernels.

@@ -53,13 +53,13 @@ image=tm_kws
 name=tinymind_int8/kws
 setup_rc=0
 setup_cycles=21
-infer_min=411419
-infer_med=411419
-infer_max=411419
+infer_min=359821
+infer_med=359821
+infer_max=359821
 n_test=8
 hash=0x6B1854D3
 hash_match=1
-stack_bytes=364
+stack_bytes=564
 static_ram=4976
 arena_used=0
 # end bench
@@ -69,13 +69,13 @@ image=tm_kws_dsp
 name=tinymind_int8+dsp/kws
 setup_rc=0
 setup_cycles=21
-infer_min=352124
-infer_med=352124
-infer_max=352124
+infer_min=317736
+infer_med=317736
+infer_max=317736
 n_test=8
 hash=0x6B1854D3
 hash_match=1
-stack_bytes=340
+stack_bytes=548
 static_ram=4976
 arena_used=0
 # end bench
@@ -237,44 +237,44 @@ image=tm_kws_prof
 # begin bench
 name=tinymind_int8/kws
 setup_rc=0
-setup_cycles=18
-infer_min=403323
-infer_med=403323
-infer_max=403323
+setup_cycles=21
+infer_min=369002
+infer_med=369002
+infer_max=369002
 n_test=8
 hash=0x6B1854D3
 hash_match=1
-stack_bytes=460
+stack_bytes=608
 static_ram=9408
 arena_used=0
-layer.0.conv3x3=283199
-layer.1.maxpool=14480
-layer.2.dwconv3x3=30820
-layer.3.pwconv=65712
-layer.4.avgpool=7220
-layer.5.fc=1440
+layer.0.conv3x3=259094
+layer.1.maxpool=10157
+layer.2.dwconv3x3=30815
+layer.3.pwconv=64194
+layer.4.avgpool=2267
+layer.5.fc=1434
 # end bench
 level=O2
 image=tm_kws_dsp_prof
 # begin bench
 name=tinymind_int8+dsp/kws
 setup_rc=0
-setup_cycles=18
-infer_min=340917
-infer_med=340917
-infer_max=340917
+setup_cycles=21
+infer_min=312171
+infer_med=312171
+infer_max=312171
 n_test=8
 hash=0x6B1854D3
 hash_match=1
-stack_bytes=404
+stack_bytes=580
 static_ram=9408
 arena_used=0
-layer.0.conv3x3=234893
-layer.1.maxpool=14480
-layer.2.dwconv3x3=30802
-layer.3.pwconv=51217
-layer.4.avgpool=7220
-layer.5.fc=1125
+layer.0.conv3x3=216997
+layer.1.maxpool=10157
+layer.2.dwconv3x3=30815
+layer.3.pwconv=51215
+layer.4.avgpool=2267
+layer.5.fc=1127
 # end bench
 level=O2
 image=tflm_cmsis_mlp_int8_prof
@@ -321,8 +321,8 @@ layer.5.FULLY_CONNECTED=2097
 size image=baseline flash=2268 ram=132
 size image=tm_mlp flash=30796 ram=256
 size image=tm_mlp_dsp flash=30864 ram=256
-size image=tm_kws flash=8716 ram=4976
-size image=tm_kws_dsp flash=8528 ram=4976
+size image=tm_kws flash=9292 ram=4976
+size image=tm_kws_dsp flash=9120 ram=4976
 size image=tflm_cmsis_mlp_int8 flash=62404 ram=2004
 size image=tflm_ref_mlp_int8 flash=51332 ram=1908
 size image=tflm_cmsis_mlp_f32 flash=138016 ram=1524
