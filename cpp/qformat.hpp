@@ -220,7 +220,10 @@ namespace tinymind {
     struct SignExtender
     {
         static const T SignBitMask = (static_cast<T>(1) << (NumberOfFixedBits + NumberOfFractionalBits - 1));
-        static const T SignExtensionBits = static_cast<T>((~(static_cast<size_t>(SignBitMask) - 1)) ^ static_cast<size_t>(SignBitMask));
+        // Every bit above the sign bit. Computed in T: going through size_t
+        // truncated the mask to 32 bits on targets with a 32-bit size_t, so a
+        // 64-bit intermediate was only sign-extended up to bit 31.
+        static const T SignExtensionBits = static_cast<T>(~(SignBitMask | (SignBitMask - 1)));
 
         static void signExtend(T& value)
         {
@@ -237,6 +240,49 @@ namespace tinymind {
         static void signExtend(T& value)
         {
             (void)value; // Suppress unused parameter warning
+        }
+    };
+
+    // Reduce a storage word to the value it represents at NumBits wide:
+    // sign-extended from bit NumBits-1 for signed formats, masked for unsigned.
+    // A format narrower than its word (e.g. Q8.16 in an int32_t) must keep the
+    // bits above its width consistent with its sign, or a negative value reads
+    // back as a large positive one. ValueType is the storage type, FieldType
+    // its unsigned counterpart. A format that fills its word is already
+    // canonical, so that case is a no-op.
+    template<typename ValueType, typename FieldType, unsigned NumBits, bool IsSigned, bool FillsWord = (NumBits == (8 * sizeof(ValueType)))>
+    struct FormatWidthNormalizer
+    {
+        static ValueType normalize(const ValueType value)
+        {
+            const FieldType mask = static_cast<FieldType>((static_cast<FieldType>(1) << NumBits) - 1);
+            const FieldType signBit = static_cast<FieldType>(static_cast<FieldType>(1) << (NumBits - 1));
+            const FieldType low = static_cast<FieldType>(static_cast<FieldType>(value) & mask);
+
+            // (low ^ signBit) lies in [0, 2^NumBits), which ValueType holds
+            // because NumBits is narrower than the word; subtracting signBit
+            // then yields the signed value with no shift of a negative number.
+            return static_cast<ValueType>(static_cast<ValueType>(low ^ signBit) - static_cast<ValueType>(signBit));
+        }
+    };
+
+    template<typename ValueType, typename FieldType, unsigned NumBits>
+    struct FormatWidthNormalizer<ValueType, FieldType, NumBits, false, false>
+    {
+        static ValueType normalize(const ValueType value)
+        {
+            const FieldType mask = static_cast<FieldType>((static_cast<FieldType>(1) << NumBits) - 1);
+
+            return static_cast<ValueType>(static_cast<FieldType>(value) & mask);
+        }
+    };
+
+    template<typename ValueType, typename FieldType, unsigned NumBits, bool IsSigned>
+    struct FormatWidthNormalizer<ValueType, FieldType, NumBits, IsSigned, true>
+    {
+        static ValueType normalize(const ValueType value)
+        {
+            return value;
         }
     };
 
@@ -445,69 +491,89 @@ namespace tinymind {
         static const FractionalPartFieldType MinFractionalPartValue = QValueMinCalculator<NumFixedBits, NumFractionalBits, QValueIsSigned>::MinFractionalPartValue;
 
     private:
-        union
+        typedef FormatWidthNormalizer<FullWidthValueType, FullWidthFieldType, NumberOfFixedBits + NumberOfFractionalBits, IsSigned> ValueNormalizer;
+        typedef FormatWidthNormalizer<FullWidthValueType, FullWidthFieldType, NumberOfFixedBits, IsSigned>                          FixedPartNormalizer;
+
+        // The whole value, always kept canonical for the format's width (see
+        // FormatWidthNormalizer). The fixed and fractional parts are derived
+        // from it arithmetically rather than through a bit-field union, so a
+        // part-wise write can never leave the bits above the format's width
+        // stale, and nothing reads an inactive union member.
+        FullWidthValueType mValue;
+
+        static FullWidthValueType normalize(const FullWidthValueType value)
         {
-            struct
-            {
-                FractionalPartFieldType mFractionalPart : NumberOfFractionalBits;
-                FixedPartFieldType mFixedPart : NumberOfFixedBits;
-            } values_t;
-            FullWidthValueType mValue;
-        } values_u;
+            return ValueNormalizer::normalize(value);
+        }
+
+        static FullWidthFieldType fractionalPartMask()
+        {
+            return static_cast<FullWidthFieldType>((static_cast<FullWidthFieldType>(1) << NumberOfFractionalBits) - 1);
+        }
+
+        // fixedPart * 2^frac + fractionalPart. Each part is first reduced to
+        // its own width (the truncation the old bit-field store performed), so
+        // the sum stays inside the format's range. Multiply, not left shift:
+        // the fixed part may be negative.
+        static FullWidthValueType fromParts(const FixedPartFieldType& fixedPart, const FractionalPartFieldType& fractionalPart)
+        {
+            const FullWidthValueType fixedValue = FixedPartNormalizer::normalize(static_cast<FullWidthValueType>(fixedPart));
+            const FullWidthValueType fractionalValue = static_cast<FullWidthValueType>(static_cast<FullWidthFieldType>(fractionalPart) & fractionalPartMask());
+            const FullWidthValueType scale = static_cast<FullWidthValueType>(static_cast<FullWidthValueType>(1) << NumberOfFractionalBits);
+
+            return static_cast<FullWidthValueType>((fixedValue * scale) + fractionalValue);
+        }
 
     public:
-        QValue()
+        QValue() : mValue(0)
         {
-            this->values_u.values_t.mFixedPart = 0;
-            this->values_u.values_t.mFractionalPart = 0;
         }
 
         QValue(const QValue& other)
         {
-            this->values_u.mValue = other.values_u.mValue;
+            this->mValue = other.mValue;
         }
 
         QValue(const FullWidthFieldType& value)
         {
-            this->values_u.mValue = static_cast<FullWidthValueType>(value);
+            this->mValue = normalize(static_cast<FullWidthValueType>(value));
         }
 
         QValue(const FixedPartFieldType& fixedPart, const FractionalPartFieldType& fractionalPart)
         {
-            this->values_u.values_t.mFixedPart = fixedPart;
-            this->values_u.values_t.mFractionalPart = fractionalPart;
+            this->mValue = fromParts(fixedPart, fractionalPart);
         }
 
         QValue& operator=(const QValue& other)
         {
-            values_u.mValue = other.values_u.mValue;
+            mValue = other.mValue;
 
             return *this;
         }
 
         QValue& operator=(const FullWidthValueType& value)
         {
-            values_u.mValue = value;
+            mValue = normalize(value);
 
             return *this;
         }
 
         QValue& operator+=(const QValue& other)
         {
-            values_u.mValue = SaturatePolicy::saturate(values_u.mValue, other.values_u.mValue, QFormatMinValue(), QFormatMaxValue(), AdditionOp);
+            mValue = normalize(SaturatePolicy::saturate(mValue, other.mValue, QFormatMinValue(), QFormatMaxValue(), AdditionOp));
             return *this;
         }
 
         QValue& operator+=(const FullWidthValueType& value)
         {
-            values_u.mValue = SaturatePolicy::saturate(values_u.mValue, value, QFormatMinValue(), QFormatMaxValue(), AdditionOp);
+            mValue = normalize(SaturatePolicy::saturate(mValue, value, QFormatMinValue(), QFormatMaxValue(), AdditionOp));
             return *this;
         }
 
         QValue& operator++()
         {
             FullWidthFieldType oneUnit = (FullWidthFieldType(1) << NumberOfFractionalBits);
-            values_u.mValue = SaturatePolicy::saturate(values_u.mValue, oneUnit, QFormatMinValue(), QFormatMaxValue(), AdditionOp);
+            mValue = normalize(SaturatePolicy::saturate(mValue, oneUnit, QFormatMinValue(), QFormatMaxValue(), AdditionOp));
             return *this;
         }
 
@@ -520,20 +586,20 @@ namespace tinymind {
 
         QValue& operator-=(const QValue& other)
         {
-            values_u.mValue = SaturatePolicy::saturate(values_u.mValue, other.values_u.mValue, QFormatMinValue(), QFormatMaxValue(), SubtractionOp);
+            mValue = normalize(SaturatePolicy::saturate(mValue, other.mValue, QFormatMinValue(), QFormatMaxValue(), SubtractionOp));
             return *this;
         }
 
         QValue& operator-=(const FullWidthValueType& value)
         {
-            values_u.mValue = SaturatePolicy::saturate(values_u.mValue, value, QFormatMinValue(), QFormatMaxValue(), SubtractionOp);
+            mValue = normalize(SaturatePolicy::saturate(mValue, value, QFormatMinValue(), QFormatMaxValue(), SubtractionOp));
             return *this;
         }
 
         QValue& operator--()
         {
             FullWidthFieldType oneUnit = (FullWidthFieldType(1) << NumberOfFractionalBits);
-            values_u.mValue = SaturatePolicy::saturate(values_u.mValue, oneUnit, QFormatMinValue(), QFormatMaxValue(), SubtractionOp);
+            mValue = normalize(SaturatePolicy::saturate(mValue, oneUnit, QFormatMinValue(), QFormatMaxValue(), SubtractionOp));
             return *this;
         }
 
@@ -559,15 +625,15 @@ namespace tinymind {
             MultiplicationResultFullWidthValueType min = static_cast<MultiplicationResultFullWidthValueType>(QFormatMinValue()) * scale;
             MultiplicationResultFullWidthValueType max = static_cast<MultiplicationResultFullWidthValueType>(QFormatMaxValue()) * scale;
 
-            left = static_cast<MultiplicationResultFullWidthValueType>(values_u.mValue);
-            right = static_cast<MultiplicationResultFullWidthValueType>(other.values_u.mValue);
+            left = static_cast<MultiplicationResultFullWidthValueType>(mValue);
+            right = static_cast<MultiplicationResultFullWidthValueType>(other.mValue);
             SignExtender<MultiplicationResultFullWidthValueType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
             SignExtender<MultiplicationResultFullWidthValueType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(right);
 
             result = MultiplicationSaturatePolicy::saturate(left, right, min, max, MultiplicationOp);
             result = RoundingPolicy::round(result);
 
-            values_u.mValue = static_cast<FullWidthValueType>(result);
+            mValue = normalize(static_cast<FullWidthValueType>(result));
             return *this;
         }
 
@@ -589,8 +655,8 @@ namespace tinymind {
             FullWidthValueType min = QFormatMinValue();
             FullWidthValueType max = QFormatMaxValue();
 
-            left = static_cast<DivisionResultFullWidthValueType>(values_u.mValue);
-            right = other.values_u.mValue;
+            left = static_cast<DivisionResultFullWidthValueType>(mValue);
+            right = other.mValue;
 
             SignExtender<DivisionResultFullWidthValueType, NumberOfFixedBits, NumberOfFractionalBits, IsSigned>::signExtend(left);
             // Scale the dividend up by 2^frac. Multiply, not left shift: `left`
@@ -601,7 +667,7 @@ namespace tinymind {
 
             result = DivisionSaturatePolicy::saturate(left, right, min, max, DivisionOp);
 
-            values_u.mValue = static_cast<FullWidthValueType>(result);
+            mValue = normalize(static_cast<FullWidthValueType>(result));
             return *this;
         }
 
@@ -616,22 +682,22 @@ namespace tinymind {
 
         bool operator==(const QValue& other) const
         {
-            return (values_u.mValue == other.values_u.mValue);
+            return (mValue == other.mValue);
         }
 
         bool operator==(const FullWidthValueType& value) const
         {
-            return (values_u.mValue == value);
+            return (mValue == value);
         }
 
         bool operator!=(const QValue& other) const
         {
-            return (values_u.mValue != other.values_u.mValue);
+            return (mValue != other.mValue);
         }
 
         bool operator!=(const FullWidthValueType& value) const
         {
-            return (values_u.mValue != value);
+            return (mValue != value);
         }
 
         void * operator new(size_t, void *p)
@@ -654,34 +720,36 @@ namespace tinymind {
                                         FractionalPartFieldType,
                                         OtherQValueType::NumberOfFractionalBits,
                                         NumberOfFractionalBits>::ShiftPolicyType ShiftPolicyType;
-            values_u.values_t.mFixedPart = static_cast<FixedPartFieldType>(other.getFixedPart());
-            values_u.values_t.mFractionalPart = ShiftPolicyType::shift(other.getFractionalPart());
+            mValue = fromParts(static_cast<FixedPartFieldType>(other.getFixedPart()), ShiftPolicyType::shift(other.getFractionalPart()));
         }
 
+        // Floor of the value: the word shifted right by frac (as unsigned, so
+        // no shift of a negative number), sign-extended at the fixed width.
         FixedPartFieldType getFixedPart() const
         {
-            return values_u.values_t.mFixedPart;
+            const FullWidthValueType shifted = static_cast<FullWidthValueType>(static_cast<FullWidthFieldType>(mValue) >> NumberOfFractionalBits);
+
+            return static_cast<FixedPartFieldType>(FixedPartNormalizer::normalize(shifted));
         }
 
         FractionalPartFieldType getFractionalPart() const
         {
-            return values_u.values_t.mFractionalPart;
+            return static_cast<FractionalPartFieldType>(static_cast<FullWidthFieldType>(mValue) & fractionalPartMask());
         }
 
         FullWidthValueType getValue() const
         {
-            return static_cast<FullWidthValueType>(values_u.mValue);
+            return static_cast<FullWidthValueType>(mValue);
         }
 
         void setValue(const FullWidthValueType& value)
         {
-            values_u.mValue = value;
+            mValue = normalize(value);
         }
 
         void setValue(const FixedPartFieldType& fixedPart, const FractionalPartFieldType& fractionalPart)
         {
-            values_u.values_t.mFixedPart = fixedPart;
-            values_u.values_t.mFractionalPart = fractionalPart;
+            mValue = fromParts(fixedPart, fractionalPart);
         }
 
         static_assert(((8 * sizeof(FullWidthFieldType)) >= (NumberOfFixedBits + NumberOfFractionalBits)), "Incorrect type choice for ValueType.");

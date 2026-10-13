@@ -24,7 +24,10 @@ FUNCS = prove_saturate_add_sub_int16 \
         prove_saturate_mul_q8_8 \
         prove_saturate_div_q8_8 \
         prove_round_up_q8_8 \
-        prove_truncate_q8_8
+        prove_truncate_q8_8 \
+        prove_normalize_q8_16 \
+        prove_from_parts_q8_16 \
+        prove_parts_round_trip_q8_16
 
 prove :
 	@command -v $(CBMC) >/dev/null 2>&1 || { echo "ERROR: cbmc not found. sudo apt install cbmc"; exit 1; }

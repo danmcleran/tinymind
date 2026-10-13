@@ -267,6 +267,33 @@ Q88 exerciseValueConverter()
     return ConverterType::convertToDestinationType(Q88(1, 0));
 }
 
+// A format narrower than its storage word (24 bits in an int32_t here) must
+// keep the bits above its width sign-consistent, or a negative value reads
+// back as a large positive one (issue #187). Built in every embedded corner,
+// including the arm_crosscompile targets, where size_t is 32 bits: the
+// SignExtender mask used to be computed through size_t and lost its upper
+// 32 bits there, which the static_assert below pins on the real target.
+typedef tinymind::QValue<8, 16, true> NarrowQ8_16;
+typedef tinymind::SignExtender<NarrowQ8_16::MultiplicationResultFullWidthValueType, 8, 16, true> NarrowQ8_16Extender;
+static_assert(NarrowQ8_16Extender::SignExtensionBits == static_cast<NarrowQ8_16::MultiplicationResultFullWidthValueType>(~static_cast<NarrowQ8_16::MultiplicationResultFullWidthValueType>(0xFFFFFF)),
+              "SignExtender must set every bit above the sign bit of the wide intermediate.");
+
+bool exerciseNarrowFormat()
+{
+    const NarrowQ8_16 minusOne(-1, 0);
+    const NarrowQ8_16 zero(0, 0);
+    const NarrowQ8_16 half(0, 0x8000);
+    const NarrowQ8_16 oneAndHalf(1, 0x8000);
+
+    bool ok = (minusOne.getValue() == -65536);
+    ok = ok && (minusOne < zero);
+    ok = ok && ((minusOne + half).getValue() == -32768);
+    ok = ok && ((minusOne * oneAndHalf).getValue() == -98304);
+    ok = ok && (minusOne.getFixedPart() == -1) && (minusOne.getFractionalPart() == 0);
+
+    return ok;
+}
+
 #if TINYMIND_ENABLE_QUANTIZATION
 // Quantized inference pipeline. Must compile with FLOAT=0, STD=0 (no
 // calibration helpers; the deployable inference target carries only
@@ -1058,6 +1085,7 @@ int main()
 
     ok = ok && exerciseDual();
     ok = ok && exerciseAnfis();
+    ok = ok && exerciseNarrowFormat();
 
 #if TINYMIND_ENABLE_QUANTIZATION
     ok = ok && exerciseQuantPipeline();
