@@ -171,7 +171,17 @@ namespace tinymind {
                 case AdditionOp:
                     if (target > 0)
                     {
-                        if (origValue > (maxValue - target))
+                        // For an unsigned T at least as wide as int there is no
+                        // promotion, so maxValue - target wraps when the addend
+                        // exceeds the bound and the sum wrapped instead of
+                        // clamping. Such an addend always overflows, since an
+                        // unsigned origValue is never negative. (A signed
+                        // maxValue - target cannot overflow, and a negative
+                        // origValue can still absorb a large addend, so the
+                        // shortcut is unsigned-only.)
+                        const bool isUnsigned = (static_cast<T>(-1) > static_cast<T>(0));
+
+                        if ((isUnsigned && (target > maxValue)) || (origValue > (maxValue - target)))
                         {
                             result = maxValue; // Saturate to maximum
                         }
@@ -577,6 +587,31 @@ namespace tinymind {
             return normalize(static_cast<FullWidthValueType>(word));
         }
 
+        // ++ and -- add or subtract 1.0. A signed format with one fixed bit
+        // cannot hold 1.0, and when it also fills its word (Q1.15, Q1.31) the
+        // step 2^frac converts to -1.0 in the signed word, so a saturating ++
+        // moved the value down. Those formats step in the wider multiplication
+        // type, where 1.0 always fits; every other format keeps the word-width
+        // path.
+        FullWidthValueType stepByOne(const OperatorType_e op) const
+        {
+            if (IsSigned && (NumberOfFixedBits == 1))
+            {
+                typedef MultiplicationResultFullWidthValueType WideType;
+
+                const WideType one = static_cast<WideType>(static_cast<WideType>(1) << NumberOfFractionalBits);
+                const WideType result = MultiplicationSaturatePolicy::saturate(static_cast<WideType>(mValue), one,
+                                                                               static_cast<WideType>(QFormatMinValue()),
+                                                                               static_cast<WideType>(QFormatMaxValue()), op);
+
+                return normalize(static_cast<FullWidthValueType>(result));
+            }
+
+            const FullWidthValueType one = static_cast<FullWidthValueType>(static_cast<FullWidthFieldType>(1) << NumberOfFractionalBits);
+
+            return normalize(SaturatePolicy::saturate(mValue, one, QFormatMinValue(), QFormatMaxValue(), op));
+        }
+
     public:
         QValue() : mValue(0)
         {
@@ -625,8 +660,7 @@ namespace tinymind {
 
         QValue& operator++()
         {
-            FullWidthFieldType oneUnit = (FullWidthFieldType(1) << NumberOfFractionalBits);
-            mValue = normalize(SaturatePolicy::saturate(mValue, oneUnit, QFormatMinValue(), QFormatMaxValue(), AdditionOp));
+            mValue = stepByOne(AdditionOp);
             return *this;
         }
 
@@ -651,8 +685,7 @@ namespace tinymind {
 
         QValue& operator--()
         {
-            FullWidthFieldType oneUnit = (FullWidthFieldType(1) << NumberOfFractionalBits);
-            mValue = normalize(SaturatePolicy::saturate(mValue, oneUnit, QFormatMinValue(), QFormatMaxValue(), SubtractionOp));
+            mValue = stepByOne(SubtractionOp);
             return *this;
         }
 

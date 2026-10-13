@@ -31,7 +31,8 @@ static const int32_t ACC_BOUND = 32767 * 32767;
 // then the chosen branch narrows back to int16_t on assignment -- modeled here
 // with int parameters and an int16_t result.
 
-// AdditionOp branch (qformat.hpp).
+// AdditionOp branch (qformat.hpp). T = int16_t is signed, so the policy's
+// unsigned-only "target > maxValue" shortcut is inactive here.
 static int16_t sat_add_i16(int o, int t, int lo, int hi)
 {
     int16_t result = 0;

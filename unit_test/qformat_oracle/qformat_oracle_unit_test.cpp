@@ -84,20 +84,6 @@ namespace
         // q += 1 adds one LSB, and q == 1 is not !(q < 1) && !(q > 1).
         MemberIntOperandIsRaw,
 
-        // ++ and -- step by the unit 2^frac held in FullWidthFieldType and
-        // passed as a FullWidthValueType. When 1.0 is not representable (a
-        // signed format with one fixed bit that fills its word, e.g. Q1.15)
-        // the unit converts to -1.0, so under MinMaxSaturatePolicy ++ moves
-        // the value down and -- moves it up.
-        UnitStepWrapsWhenOneIsUnrepresentable,
-
-        // MinMaxSaturatePolicy's addition guard computes maxValue - target in
-        // T. For an unsigned word of at least int's width there is no promotion,
-        // so an addend above maxValue underflows the guard and the sum wraps
-        // instead of saturating: UQ8.16 0 += -2 (raw) gives 16777214. Only a
-        // raw += can supply such an addend.
-        UnsignedSaturatingAddWrapsAboveMax,
-
         NumberOfKnownDefects
     };
 
@@ -105,8 +91,6 @@ namespace
     {
         "IntOperandWrapsToFixedWidth",
         "MemberIntOperandIsRaw",
-        "UnitStepWrapsWhenOneIsUnrepresentable",
-        "UnsignedSaturatingAddWrapsAboveMax",
     };
 
     typedef unsigned DefectMask;
@@ -270,12 +254,6 @@ namespace
 
             if (t > 0)
             {
-                if (has(UnsignedSaturatingAddWrapsAboveMax) && !f.isSigned && (f.storageBits >= 32))
-                {
-                    const Wide headroom = wrapTo(hi - t, f.storageBits, false);
-                    return (o > headroom) ? hi : wrap(o + t);
-                }
-
                 return (o > (hi - t)) ? hi : (o + t);
             }
             else if (t < 0)
@@ -363,11 +341,6 @@ namespace
             return powerOfTwo(f.fractionalBits);
         }
 
-        // The step ++ and -- add or subtract.
-        Wide unitStep() const
-        {
-            return has(UnitStepWrapsWhenOneIsUnrepresentable) ? wrapTo(one(), f.storageBits, f.isSigned) : one();
-        }
 
         // An int operand of the whole-number operators.
         Wide intOperand(const Wide n) const
@@ -891,12 +864,12 @@ namespace
 
         check(t, f, "fixedPart", in, ops.fixedPart(a), [&](const Model& m) { return floorDiv(a, m.one()); });
         check(t, f, "fractionalPart", in, ops.fractionalPart(a), [&](const Model& m) { return floorMod(a, m.one()); });
-        check(t, f, "preIncrement", in, ops.preIncrement(a), [&](const Model& m) { return m.add(a, m.unitStep()); });
-        check(t, f, "preDecrement", in, ops.preDecrement(a), [&](const Model& m) { return m.sub(a, m.unitStep()); });
+        check(t, f, "preIncrement", in, ops.preIncrement(a), [&](const Model& m) { return m.add(a, m.one()); });
+        check(t, f, "preDecrement", in, ops.preDecrement(a), [&](const Model& m) { return m.sub(a, m.one()); });
         check(t, f, "postIncrementResult", in, ops.postIncrementResult(a), [&](const Model&) { return a; });
-        check(t, f, "postIncrementAfter", in, ops.postIncrementAfter(a), [&](const Model& m) { return m.add(a, m.unitStep()); });
+        check(t, f, "postIncrementAfter", in, ops.postIncrementAfter(a), [&](const Model& m) { return m.add(a, m.one()); });
         check(t, f, "postDecrementResult", in, ops.postDecrementResult(a), [&](const Model&) { return a; });
-        check(t, f, "postDecrementAfter", in, ops.postDecrementAfter(a), [&](const Model& m) { return m.sub(a, m.unitStep()); });
+        check(t, f, "postDecrementAfter", in, ops.postDecrementAfter(a), [&](const Model& m) { return m.sub(a, m.one()); });
     }
 
     void checkInt(Tally& t, const Format& f, const Ops& ops, const Wide a, const Wide n)
