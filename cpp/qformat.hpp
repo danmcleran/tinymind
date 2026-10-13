@@ -500,11 +500,16 @@ namespace tinymind {
             return minFixedPart << NumFractionalBits;
         }
 
-        // Get max value for fixed-point Q-format
+        // Get max value for fixed-point Q-format: the largest fixed part with
+        // every fractional bit set (127.99609375 for Q8.8). Leaving the
+        // fraction clear made MinMaxSaturatePolicy clamp a whole fixed-part
+        // step early and the bridges clip below the format's range.
         static FullWidthFieldType getMaxValue()
         {
-            FullWidthFieldType maxFixedPart = QValueMaxCalculator<NumFixedBits, NumFractionalBits, IsSigned>::MaxFixedPartValue;
-            return maxFixedPart << NumFractionalBits;
+            const FullWidthFieldType maxFixedPart = QValueMaxCalculator<NumFixedBits, NumFractionalBits, IsSigned>::MaxFixedPartValue;
+            const FullWidthFieldType fractionalBits = static_cast<FullWidthFieldType>((static_cast<FullWidthFieldType>(1) << NumFractionalBits) - 1);
+
+            return static_cast<FullWidthFieldType>(static_cast<FullWidthFieldType>(maxFixedPart << NumFractionalBits) | fractionalBits);
         }
     };
     
