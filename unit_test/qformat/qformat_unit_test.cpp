@@ -1353,7 +1353,7 @@ BOOST_AUTO_TEST_CASE(test_case_ambiguous_integer_operands_are_deleted)
 BOOST_AUTO_TEST_CASE(test_case_division_by_zero_saturates)
 {
     // MinMaxSaturatePolicy must clamp division by zero rather than trapping.
-    // Positive numerator -> max; negative numerator -> min; zero numerator -> min.
+    // Positive numerator -> max; negative numerator -> min; 0 / 0 -> 0.
     SignedQ8_8SatPolicyType pos(2, 0); // +2.0
     SignedQ8_8SatPolicyType neg(-3, 0); // -3.0
     SignedQ8_8SatPolicyType zero(0, 0);
@@ -1366,7 +1366,8 @@ BOOST_AUTO_TEST_CASE(test_case_division_by_zero_saturates)
     BOOST_TEST(negDiv.getValue() == SignedQ8_8SatPolicyType::QFormatMinValue());
 
     SignedQ8_8SatPolicyType zeroDiv = zero / denom;
-    BOOST_TEST(zeroDiv.getValue() == SignedQ8_8SatPolicyType::QFormatMinValue());
+    BOOST_TEST(zeroDiv.getValue() == 0);
+    BOOST_TEST((zero / 0).getValue() == 0);
 
     // Same behavior for an unsigned type (no negative numerators possible).
     UnsignedQ8_8SatPolicyType uPos(5, 0);
@@ -1376,8 +1377,7 @@ BOOST_AUTO_TEST_CASE(test_case_division_by_zero_saturates)
     UnsignedQ8_8SatPolicyType uPosDiv = uPos / uDenom;
     BOOST_TEST(uPosDiv.getValue() == UnsignedQ8_8SatPolicyType::QFormatMaxValue());
 
-    // Zero / zero on unsigned type: numerator is not > 0, so falls into the
-    // minValue branch, which for unsigned is 0.
+    // Zero / zero on an unsigned type is 0 too.
     UnsignedQ8_8SatPolicyType uZeroDiv = uZero / uDenom;
     BOOST_TEST(uZeroDiv.getValue() == UnsignedQ8_8SatPolicyType::QFormatMinValue());
 }
@@ -1385,8 +1385,9 @@ BOOST_AUTO_TEST_CASE(test_case_division_by_zero_saturates)
 BOOST_AUTO_TEST_CASE(test_case_wrap_division_by_zero_is_defined)
 {
     // WrapPolicy division by zero was undefined behaviour (SIGFPE on x86).
-    // It now gives the same bound as MinMaxSaturatePolicy: the maximum for a
-    // positive numerator, else the minimum. Every divide path is covered: a
+    // It now gives what MinMaxSaturatePolicy does: the maximum for a positive
+    // numerator, the minimum for a negative one, 0 for 0 / 0. Every divide
+    // path is covered: a
     // QValue divisor, an int divisor, compound and free forms, and a 64-bit
     // word, whose quotient is computed in __int128.
     const SignedQ8_8Type pos(2, 0);
@@ -1395,7 +1396,8 @@ BOOST_AUTO_TEST_CASE(test_case_wrap_division_by_zero_is_defined)
 
     BOOST_TEST((pos / zero).getValue() == SignedQ8_8Type::QFormatMaxValue());
     BOOST_TEST((neg / zero).getValue() == SignedQ8_8Type::QFormatMinValue());
-    BOOST_TEST((zero / zero).getValue() == SignedQ8_8Type::QFormatMinValue());
+    BOOST_TEST((zero / zero).getValue() == 0);
+    BOOST_TEST((zero / 0).getValue() == 0);
     BOOST_TEST((pos / 0).getValue() == SignedQ8_8Type::QFormatMaxValue());
     BOOST_TEST((neg / 0).getValue() == SignedQ8_8Type::QFormatMinValue());
 
@@ -1422,6 +1424,7 @@ BOOST_AUTO_TEST_CASE(test_case_wrap_division_by_zero_is_defined)
     typedef tinymind::WrapPolicy<int32_t> PolicyType;
     BOOST_TEST(PolicyType::saturate(5, 0, -100, 100, tinymind::DivisionOp) == 100);
     BOOST_TEST(PolicyType::saturate(-5, 0, -100, 100, tinymind::DivisionOp) == -100);
+    BOOST_TEST(PolicyType::saturate(0, 0, -100, 100, tinymind::DivisionOp) == 0);
     BOOST_TEST(PolicyType::saturate(9, 2, -100, 100, tinymind::DivisionOp) == 4);
 }
 

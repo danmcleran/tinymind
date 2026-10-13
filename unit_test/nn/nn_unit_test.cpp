@@ -4413,6 +4413,7 @@ BOOST_AUTO_TEST_CASE(test_case_qformat_minmax_saturate_policy)
     // Division: by-zero (sign-dependent), plus overflow / underflow.
     BOOST_TEST(Policy::saturate(5, 0, lo, hi, tinymind::DivisionOp) == hi);
     BOOST_TEST(Policy::saturate(-5, 0, lo, hi, tinymind::DivisionOp) == lo);
+    BOOST_TEST(Policy::saturate(0, 0, lo, hi, tinymind::DivisionOp) == 0);
     BOOST_TEST(Policy::saturate(1000, 2, lo, hi, tinymind::DivisionOp) == hi);
     BOOST_TEST(Policy::saturate(-1000, 2, lo, hi, tinymind::DivisionOp) == lo);
 }
