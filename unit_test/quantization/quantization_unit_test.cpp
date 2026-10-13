@@ -311,6 +311,128 @@ BOOST_AUTO_TEST_CASE(saturating_high_mul_matches_gemmlowp_form)
     BOOST_TEST(mismatches == 0u);
 }
 
+BOOST_AUTO_TEST_CASE(fused_requantize_matches_two_step_rounding)
+{
+    // Requantizer::apply takes roundingHighMulDivideByPOT (one 64-bit
+    // rounding) whenever multiplier >= 0 and shift >= 2. It must equal
+    // gemmlowp's two roundings -- the high multiply with its sign-dependent
+    // nudge, then the remainder/threshold divide -- bit for bit, ties
+    // included, or every requantized byte and integration golden moves.
+    const auto twoStep = [](int32_t x, int32_t m, int32_t e) -> int32_t
+    {
+        const int32_t imin = static_cast<int32_t>(0x80000000);
+        int32_t h;
+        if ((x == imin) && (m == imin))
+        {
+            h = static_cast<int32_t>(0x7FFFFFFF);
+        }
+        else
+        {
+            const int64_t ab = static_cast<int64_t>(x) * static_cast<int64_t>(m);
+            const int32_t nudge = (ab >= 0) ? (1 << 30) : (1 - (1 << 30));
+            h = static_cast<int32_t>((ab + nudge) / (static_cast<int64_t>(1) << 31));
+        }
+        if (e <= 0)
+        {
+            return h;
+        }
+        const int32_t mask = static_cast<int32_t>((static_cast<uint32_t>(1) << e) - 1u);
+        const int32_t threshold = (mask >> 1) + ((h < 0) ? 1 : 0);
+        return (h >> e) + (((h & mask) > threshold) ? 1 : 0);
+    };
+
+    std::size_t mismatches = 0;
+    std::size_t cases = 0;
+    const auto check = [&](int32_t x, int32_t m, int32_t e)
+    {
+        ++cases;
+        if (tinymind::roundingHighMulDivideByPOT(x, m, e) != twoStep(x, m, e))
+        {
+            ++mismatches;
+        }
+    };
+
+    static const int32_t kX[] =
+    {
+        INT32_MIN, INT32_MIN + 1, -(1 << 30) - 1, -(1 << 30), -(1 << 30) + 1,
+        -65536, -3, -2, -1, 0, 1, 2, 3, 65535,
+        (1 << 30) - 1, 1 << 30, INT32_MAX - 1, INT32_MAX
+    };
+    static const int32_t kM[] =
+    {
+        0, 1, 2, 3, 1 << 29, 1 << 30, (1 << 30) + 1, INT32_MAX - 1, INT32_MAX
+    };
+    for (int32_t e = 2; e <= 31; ++e)
+    {
+        for (const int32_t x : kX)
+        {
+            for (const int32_t m : kM)
+            {
+                check(x, m, e);
+            }
+        }
+        // m = 2^30 halves x exactly, so both roundings hit ties: odd x is a
+        // tie in the high multiply, and small e puts the divide on halves.
+        for (int32_t x = -3000; x <= 3000; ++x)
+        {
+            check(x, 1 << 30, e);
+            check(x, 1 << 29, e);
+        }
+    }
+
+    uint32_t s = 0x2545F491u;
+    for (int i = 0; i < 1000000; ++i)
+    {
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        const int32_t x = static_cast<int32_t>(s);
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        const int32_t m = static_cast<int32_t>(s & 0x7FFFFFFFu);
+        const int32_t e = 2 + static_cast<int32_t>(s % 30u);
+        check(x, m, e);
+        check(x >> (i & 31), m >> ((i >> 5) & 31), e);
+    }
+
+    // Whole apply() over every shift and both multiplier signs: the fast
+    // path and the general path must agree with the two-step reference.
+    for (int i = 0; i < 200000; ++i)
+    {
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        Requantizer<int32_t, int8_t> rq;
+        rq.multiplier = static_cast<int32_t>(s);
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        rq.shift = static_cast<int32_t>(s % 40u) - 8;
+        rq.zero_point = static_cast<int8_t>(s >> 8);
+        int8_t lo = static_cast<int8_t>(s >> 16);
+        int8_t hi = static_cast<int8_t>(s >> 24);
+        if (lo > hi)
+        {
+            const int8_t t = lo;
+            lo = hi;
+            hi = t;
+        }
+        rq.qmin = lo;
+        rq.qmax = hi;
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        int32_t acc = static_cast<int32_t>(s) >> (i & 15);
+        if (rq.shift < 0)
+        {
+            acc >>= (1 - rq.shift);   // keep the left shift in int32 range
+        }
+        const int32_t ls = (rq.shift < 0) ? -rq.shift : 0;
+        int32_t v = twoStep(acc * (static_cast<int32_t>(1) << ls), rq.multiplier,
+                            (rq.shift > 0) ? rq.shift : 0) + rq.zero_point;
+        v = (v < lo) ? lo : ((v > hi) ? hi : v);
+        ++cases;
+        if (static_cast<int32_t>(rq.apply(acc)) != v)
+        {
+            ++mismatches;
+        }
+    }
+
+    BOOST_TEST(cases > 2000000u);
+    BOOST_TEST(mismatches == 0u);
+}
+
 BOOST_AUTO_TEST_CASE(rounding_divide_by_pot_noop_for_zero_or_negative)
 {
     BOOST_TEST(roundingDivideByPOT(1234, 0) == 1234);

@@ -92,7 +92,7 @@ struct Requantizer
 
 Note that `scale` is compiled out under `TINYMIND_ENABLE_FLOAT=0` — the freestanding inference binary holds only the integer `zero_point` plus the `(multiplier, shift)` from each layer's `Requantizer`.
 
-The two helpers `saturatingRoundingDoublingHighMul` and `roundingDivideByPOT` follow the gemmlowp / TFLite reference semantics bit-for-bit; tests in `unit_test/quantization/` lock that down.
+The two helpers `saturatingRoundingDoublingHighMul` and `roundingDivideByPOT` follow the gemmlowp / TFLite reference semantics bit-for-bit; tests in `unit_test/quantization/` lock that down. For the common case of `multiplier >= 0` and `shift >= 2` (a scale ratio below 0.25, which covers typical conv and dense layers), `Requantizer::apply` computes both roundings as one: `roundingHighMulDivideByPOT` adds a sign-dependent constant to the 64-bit product and shifts its high word. That is an `SMLAL` and an `ASR` on Cortex-M4, and the result is bit-identical to the two-step form, ties included.
 
 ## Layer Family
 
