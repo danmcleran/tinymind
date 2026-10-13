@@ -1212,6 +1212,38 @@ BOOST_AUTO_TEST_CASE(test_case_saturation_max_includes_fraction)
     BOOST_TEST((c + b).getValue() == 0x7FFF);   // 128.0 does not fit: clamped to the max
 }
 
+BOOST_AUTO_TEST_CASE(test_case_saturating_unit_step_without_representable_one)
+{
+    // Q1.15 cannot hold 1.0, and 2^15 converts to -1.0 in its int16_t word,
+    // so a saturating ++ used to move the value down and -- move it up.
+    typedef tinymind::QValue<1, 15, true, tinymind::TruncatePolicy, tinymind::MinMaxSaturatePolicy> SatQ1_15Type;
+
+    SatQ1_15Type half(0, 0x4000); // 0.5
+    ++half;                       // 1.5 does not fit: clamp to the max
+    BOOST_TEST(half.getValue() == 0x7FFF);
+
+    SatQ1_15Type minusHalf(static_cast<SatQ1_15Type::FullWidthValueType>(-0x4000)); // -0.5
+    --minusHalf;                                                                    // -1.5: clamp to the min
+    BOOST_TEST(minusHalf.getValue() == static_cast<SatQ1_15Type::FullWidthValueType>(-0x8000));
+
+    SatQ1_15Type almostZero(static_cast<SatQ1_15Type::FullWidthValueType>(-2)); // -2 LSB
+    almostZero++;                                                              // 1.0 - 2 LSB fits exactly
+    BOOST_TEST(almostZero.getValue() == 0x7FFE);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_unsigned_saturating_add_with_addend_above_max)
+{
+    // MinMaxSaturatePolicy's guard computed maxValue - target in T, which
+    // wraps for an unsigned word at least as wide as int when the addend
+    // exceeds the bound, so the sum wrapped instead of clamping. Only a raw
+    // addend into a narrow format can exceed the bound.
+    typedef tinymind::QValue<8, 16, false, tinymind::TruncatePolicy, tinymind::MinMaxSaturatePolicy> SatUQ8_16Type;
+
+    SatUQ8_16Type narrow(0, 0);
+    narrow += static_cast<SatUQ8_16Type::FullWidthValueType>(0xFFFFFFFE); // raw addend far above 0xFFFFFF
+    BOOST_TEST(narrow.getValue() == 0xFFFFFFu);
+}
+
 BOOST_AUTO_TEST_CASE(test_case_division_by_zero_saturates)
 {
     // MinMaxSaturatePolicy must clamp division by zero rather than trapping.
