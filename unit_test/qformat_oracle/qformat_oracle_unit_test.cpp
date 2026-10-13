@@ -72,16 +72,11 @@ namespace
 
     enum KnownDefect
     {
-        // QFormatMaxValue() is (max fixed part) << frac with the fractional bits
-        // left clear, e.g. 127.0 rather than 127.99609375 for Q8.8, so
-        // MinMaxSaturatePolicy clamps one fixed-part step early.
-        SaturationMaxExcludesFraction = 0,
-
         // The free operators taking an int (q + n, q - n, q * n, q / n, q < n,
         // q > n, q <= n, q >= n) and the member q *= n, q /= n build the int as
         // QValue(n, 0), so an int outside the fixed part's range wraps first:
         // for Q8.8, 1.0 < 200 is false because 200 becomes -56.
-        IntOperandWrapsToFixedWidth,
+        IntOperandWrapsToFixedWidth = 0,
 
         // The member q += n, q -= n, q == n and q != n bind an int to the
         // FullWidthValueType (raw) overloads, so n counts in LSBs, while the
@@ -99,10 +94,8 @@ namespace
         // MinMaxSaturatePolicy's addition guard computes maxValue - target in
         // T. For an unsigned word of at least int's width there is no promotion,
         // so an addend above maxValue underflows the guard and the sum wraps
-        // instead of saturating: UQ8.16 0 += -2 (raw) gives 16777214. An
-        // addend above maxValue arises from a raw += and, while
-        // SaturationMaxExcludesFraction stands, from any in-range operand above
-        // the clipped bound.
+        // instead of saturating: UQ8.16 0 += -2 (raw) gives 16777214. Only a
+        // raw += can supply such an addend.
         UnsignedSaturatingAddWrapsAboveMax,
 
         NumberOfKnownDefects
@@ -110,7 +103,6 @@ namespace
 
     const char* const KnownDefectNames[NumberOfKnownDefects] =
     {
-        "SaturationMaxExcludesFraction",
         "IntOperandWrapsToFixedWidth",
         "MemberIntOperandIsRaw",
         "UnitStepWrapsWhenOneIsUnrepresentable",
@@ -240,12 +232,6 @@ namespace
 
         Wide maxValue() const
         {
-            if (has(SaturationMaxExcludesFraction))
-            {
-                const Wide maxFixedPart = f.isSigned ? (powerOfTwo(f.fixedBits - 1) - 1) : (powerOfTwo(f.fixedBits) - 1);
-                return maxFixedPart * powerOfTwo(f.fractionalBits);
-            }
-
             return trueMax(f);
         }
 
@@ -798,15 +784,16 @@ namespace
     }
 
     // Values where fixed-point arithmetic tends to break: zero, one LSB, one,
-    // one half, the bounds and their neighbours, and the clipped bound
-    // (max fixed part with no fraction).
+    // one half, the bounds and their neighbours, and the largest whole number
+    // (the saturation bound before it gained its fractional bits, and still a
+    // fixed-part boundary).
     std::vector<Wide> edgeValues(const Format& f)
     {
         const Wide one = powerOfTwo(f.fractionalBits);
         const Wide half = one / 2;
         const Wide lo = trueMin(f);
         const Wide hi = trueMax(f);
-        const Wide clipped = Model(f, 1u << SaturationMaxExcludesFraction).maxValue();
+        const Wide clipped = (f.isSigned ? (powerOfTwo(f.fixedBits - 1) - 1) : (powerOfTwo(f.fixedBits) - 1)) * one;
         const Wide candidates[] =
         {
             0, 1, 2, 3, -1, -2, -3,
