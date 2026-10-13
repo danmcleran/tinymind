@@ -203,7 +203,7 @@ namespace tinymind {
                 sum += result;
             }
 
-            if (sum != 0)
+            if (sum != ValueType(0))
             {
                 for(size_t neuron = 0;neuron < numberOfNerons;++neuron)
                 {
