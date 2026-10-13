@@ -59,6 +59,63 @@
 
 namespace tinymind {
 
+    namespace detail {
+
+        /*
+         * Largest kernel window (KH * KW * InChannels bytes) that the conv
+         * layers copy into a contiguous on-stack patch. Under one kernel
+         * window the NHWC input is KH runs of KW * InChannels contiguous
+         * elements, so a window up to this size is gathered once per output
+         * pixel and reused by every filter as a single dot product. Bigger
+         * windows skip the copy (bounding the stack cost) and run one dot
+         * product per kernel row instead.
+         */
+        constexpr std::size_t kConvPatchMaxBytes = 64;
+
+        template<typename InputType, std::size_t W_, std::size_t InChannels_,
+                 std::size_t KH_, std::size_t KW_>
+        inline void gatherConvPatch(const InputType* window, InputType* patch)
+        {
+            constexpr std::size_t rowLength = KW_ * InChannels_;
+            for (std::size_t kh = 0; kh < KH_; ++kh)
+            {
+                const InputType* row = window + kh * W_ * InChannels_;
+                for (std::size_t i = 0; i < rowLength; ++i)
+                {
+                    patch[kh * rowLength + i] = row[i];
+                }
+            }
+        }
+
+        // Sum over one kernel window for one filter. Either a single dot
+        // product over the gathered patch, or one per kernel row read in
+        // place. Same int32 products either way; only the summation order
+        // differs, so the result is bit-exact with the per-pixel loop.
+        template<typename InputType, typename WeightType, typename AccumType,
+                 std::size_t W_, std::size_t InChannels_, std::size_t KH_, std::size_t KW_,
+                 bool UsePatch>
+        inline AccumType convWindowDot(const InputType* window, const InputType* patch,
+                                       const WeightType* filterWeights, InputType zeroPoint)
+        {
+            if (UsePatch)
+            {
+                return simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
+                    patch, filterWeights, KH_ * KW_ * InChannels_, zeroPoint);
+            }
+
+            constexpr std::size_t rowLength = KW_ * InChannels_;
+            AccumType acc = static_cast<AccumType>(0);
+            for (std::size_t kh = 0; kh < KH_; ++kh)
+            {
+                acc += simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
+                    window + kh * W_ * InChannels_, filterWeights + kh * rowLength,
+                    rowLength, zeroPoint);
+            }
+            return acc;
+        }
+
+    } // namespace detail
+
     template<
         typename InputStorage_,
         typename WeightStorage_,
@@ -94,6 +151,8 @@ namespace tinymind {
         static constexpr std::size_t InputSize    = H_ * W_ * InChannels_;
         static constexpr std::size_t WeightsPerFilter = KH_ * KW_ * InChannels_;
         static constexpr std::size_t TotalWeights     = NumFilters_ * WeightsPerFilter;
+        static constexpr bool UsePatch =
+            WeightsPerFilter * sizeof(InputStorage_) <= detail::kConvPatchMaxBytes;
 
         static_assert(H_ >= KH_, "Input height must be >= kernel height.");
         static_assert(W_ >= KW_, "Input width must be >= kernel width.");
@@ -126,32 +185,26 @@ namespace tinymind {
                     const std::size_t outPixelOffset =
                         (oh * OutputWidth + ow) * NumFilters_;
 
+                    const InputType* const window =
+                        input + (ihStart * W_ + iwStart) * InChannels_;
+                    alignas(alignof(InputType) > 4 ? alignof(InputType) : 4) InputType patch[UsePatch ? WeightsPerFilter : 1];
+                    if (UsePatch)
+                    {
+                        detail::gatherConvPatch<InputType, W_, InChannels_, KH_, KW_>(
+                            window, patch);
+                    }
+
                     TINYMIND_PARALLEL_FOR_OUTER
                     for (std::size_t f = 0; f < NumFilters_; ++f)
                     {
-                        const std::size_t weightOffset = f * WeightsPerFilter;
                         AccumulatorType acc = (layerBiases != nullptr)
                             ? layerBiases[f]
                             : static_cast<AccumulatorType>(0);
 
-                        for (std::size_t kh = 0; kh < KH_; ++kh)
-                        {
-                            const std::size_t ih = ihStart + kh;
-                            for (std::size_t kw = 0; kw < KW_; ++kw)
-                            {
-                                const std::size_t iw = iwStart + kw;
-                                const std::size_t inPixelOffset =
-                                    (ih * W_ + iw) * InChannels_;
-                                const std::size_t kPixelOffset =
-                                    (kh * KW_ + kw) * InChannels_;
-
-                                acc += simd::dotProductWithZeroPoint<
-                                    InputType, WeightType, AccumulatorType>(
-                                    input + inPixelOffset,
-                                    layerWeights + weightOffset + kPixelOffset,
-                                    InChannels_, inputZeroPoint);
-                            }
-                        }
+                        acc += detail::convWindowDot<InputType, WeightType, AccumulatorType,
+                                                     W_, InChannels_, KH_, KW_, UsePatch>(
+                            window, patch, layerWeights + f * WeightsPerFilter,
+                            inputZeroPoint);
 
                         output[outPixelOffset + f] = rq.apply(acc);
                     }
@@ -212,6 +265,8 @@ namespace tinymind {
         static constexpr std::size_t InputSize    = H_ * W_ * InChannels_;
         static constexpr std::size_t WeightsPerFilter = KH_ * KW_ * InChannels_;
         static constexpr std::size_t TotalWeights     = NumFilters_ * WeightsPerFilter;
+        static constexpr bool UsePatch =
+            WeightsPerFilter * sizeof(InputStorage_) <= detail::kConvPatchMaxBytes;
 
         static_assert(H_ >= KH_, "Input height must be >= kernel height.");
         static_assert(W_ >= KW_, "Input width must be >= kernel width.");
@@ -244,32 +299,26 @@ namespace tinymind {
                     const std::size_t outPixelOffset =
                         (oh * OutputWidth + ow) * NumFilters_;
 
+                    const InputType* const window =
+                        input + (ihStart * W_ + iwStart) * InChannels_;
+                    alignas(alignof(InputType) > 4 ? alignof(InputType) : 4) InputType patch[UsePatch ? WeightsPerFilter : 1];
+                    if (UsePatch)
+                    {
+                        detail::gatherConvPatch<InputType, W_, InChannels_, KH_, KW_>(
+                            window, patch);
+                    }
+
                     TINYMIND_PARALLEL_FOR_OUTER
                     for (std::size_t f = 0; f < NumFilters_; ++f)
                     {
-                        const std::size_t weightOffset = f * WeightsPerFilter;
                         AccumulatorType acc = (layerBiases != nullptr)
                             ? layerBiases[f]
                             : static_cast<AccumulatorType>(0);
 
-                        for (std::size_t kh = 0; kh < KH_; ++kh)
-                        {
-                            const std::size_t ih = ihStart + kh;
-                            for (std::size_t kw = 0; kw < KW_; ++kw)
-                            {
-                                const std::size_t iw = iwStart + kw;
-                                const std::size_t inPixelOffset =
-                                    (ih * W_ + iw) * InChannels_;
-                                const std::size_t kPixelOffset =
-                                    (kh * KW_ + kw) * InChannels_;
-
-                                acc += simd::dotProductWithZeroPoint<
-                                    InputType, WeightType, AccumulatorType>(
-                                    input + inPixelOffset,
-                                    layerWeights + weightOffset + kPixelOffset,
-                                    InChannels_, inputZeroPoint);
-                            }
-                        }
+                        acc += detail::convWindowDot<InputType, WeightType, AccumulatorType,
+                                                     W_, InChannels_, KH_, KW_, UsePatch>(
+                            window, patch, layerWeights + f * WeightsPerFilter,
+                            inputZeroPoint);
 
                         output[outPixelOffset + f] = rqs[f].apply(acc);
                     }
