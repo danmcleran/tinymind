@@ -203,6 +203,19 @@ sanitize :
 	done
 	@echo "sanitize: ASan+UBSan clean across all runtime suites and int8 examples"
 
+# Soak run of the QValue oracle under ASan+UBSan: a fresh random sample
+# (ORACLE_SEED) at ORACLE_SCALE times the per-PR random counts. The nightly
+# soak workflow runs this with a new seed each night; a failure reproduces
+# exactly with the seed and scale it prints. ORACLE_SEED=0 is the per-PR
+# sample. Not a PR gate.
+ORACLE_SEED  ?= 1
+ORACLE_SCALE ?= 100
+
+oracle-soak :
+	cd unit_test/qformat_oracle && $(MAKE) clean >/dev/null 2>&1 && \
+	  $(MAKE) CC="$(SAN_CC)" WARN="$(SAN_WARN)" >/dev/null && \
+	  $(SAN_ENV) TINYMIND_ORACLE_SEED=$(ORACLE_SEED) TINYMIND_ORACLE_SCALE=$(ORACLE_SCALE) ./output/qformat_oracle_unit_test
+
 # ASan+UBSan with the AVX2 SIMD backend active. The plain sanitize target runs
 # scalar-only, so the hand-written intrinsics in cpp/include/simd/ otherwise
 # never execute under a sanitizer: vector loads that overread a ragged tail or
@@ -589,7 +602,7 @@ analyze : misra tidy cppcheck header-selfcheck warnings-strict
 
 .PHONY : sanitize cppcheck misra tidy analyze coverage-check header-selfcheck warnings-strict \
          check-clang check-clang-avx2 check-clang-integration check-clang-examples \
-         check-msan check-msan-libcxx
+         check-msan check-msan-libcxx oracle-soak
 
 # Recursively clean every unit test, example, and app (each subdir Makefile has
 # its own clean target), plus the coverage artifacts.
