@@ -105,14 +105,23 @@ namespace tinymind {
                     const std::size_t outPixelOffset =
                         (oh * OutputWidth + ow) * Channels_;
 
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
                     for (std::size_t c = 0; c < Channels_; ++c)
                     {
                         const std::size_t firstInIdx =
                             (ihStart * W_ + iwStart) * Channels_ + c;
                         StorageType maxVal = input[firstInIdx];
 
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 4
+#endif
                         for (std::size_t kh = 0; kh < PoolH_; ++kh)
                         {
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 4
+#endif
                             for (std::size_t kw = 0; kw < PoolW_; ++kw)
                             {
                                 const std::size_t inIdx =
@@ -178,11 +187,20 @@ namespace tinymind {
                     const std::size_t outPixelOffset =
                         (oh * OutputWidth + ow) * Channels_;
 
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
                     for (std::size_t c = 0; c < Channels_; ++c)
                     {
                         AccumulatorType sum = static_cast<AccumulatorType>(0);
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 4
+#endif
                         for (std::size_t kh = 0; kh < PoolH_; ++kh)
                         {
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 4
+#endif
                             for (std::size_t kw = 0; kw < PoolW_; ++kw)
                             {
                                 const std::size_t inIdx =
@@ -236,8 +254,14 @@ namespace tinymind {
             for (std::size_t c = 0; c < Channels_; ++c)
             {
                 AccumulatorType sum = static_cast<AccumulatorType>(0);
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
                 for (std::size_t h = 0; h < H_; ++h)
                 {
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
                     for (std::size_t w = 0; w < W_; ++w)
                     {
                         sum += static_cast<AccumulatorType>(

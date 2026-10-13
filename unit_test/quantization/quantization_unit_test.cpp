@@ -5891,6 +5891,114 @@ BOOST_AUTO_TEST_CASE(qdepthwise_and_pointwise_match_direct_reference)
     }
 }
 
+namespace pool_reference_test {
+
+    inline int8_t sample(std::size_t i)
+    {
+        return static_cast<int8_t>(static_cast<int>((i * 2654435761u) >> 24) - 128);
+    }
+
+    inline int32_t roundHalfAway(int32_t sum, int32_t area)
+    {
+        return (sum >= 0) ? (sum + area / 2) / area : -((-sum + area / 2) / area);
+    }
+
+    // QMaxPool2D and QAvgPool2D against a direct per-window reference. The
+    // shapes exceed the layers' loop-unroll hints so the remainder paths run.
+    template<std::size_t H, std::size_t W, std::size_t C, std::size_t PH, std::size_t PW,
+             std::size_t SH, std::size_t SW>
+    void checkPools()
+    {
+        typedef QMaxPool2D<int8_t, H, W, C, PH, PW, SH, SW> MaxLayer;
+        typedef QAvgPool2D<int8_t, int32_t, H, W, C, PH, PW, SH, SW> AvgLayer;
+
+        static int8_t x[MaxLayer::InputSize];
+        static int8_t yMax[MaxLayer::OutputSize];
+        static int8_t yAvg[AvgLayer::OutputSize];
+        for (std::size_t i = 0; i < MaxLayer::InputSize; ++i)
+        {
+            x[i] = sample(i + 17 * C);
+        }
+
+        MaxLayer maxPool;
+        maxPool.forward(x, yMax);
+        AvgLayer avgPool;
+        avgPool.qmin = -100;
+        avgPool.qmax = 90;
+        avgPool.forward(x, yAvg);
+
+        bool ok = true;
+        for (std::size_t oh = 0; oh < MaxLayer::OutputHeight; ++oh)
+        {
+            for (std::size_t ow = 0; ow < MaxLayer::OutputWidth; ++ow)
+            {
+                for (std::size_t c = 0; c < C; ++c)
+                {
+                    int maxVal = -129;
+                    int32_t sum = 0;
+                    for (std::size_t kh = 0; kh < PH; ++kh)
+                    {
+                        for (std::size_t kw = 0; kw < PW; ++kw)
+                        {
+                            const int v = x[((oh * SH + kh) * W + (ow * SW + kw)) * C + c];
+                            maxVal = (v > maxVal) ? v : maxVal;
+                            sum += v;
+                        }
+                    }
+                    int32_t avg = roundHalfAway(sum, static_cast<int32_t>(PH * PW));
+                    avg = (avg < -100) ? -100 : ((avg > 90) ? 90 : avg);
+                    const std::size_t o = (oh * MaxLayer::OutputWidth + ow) * C + c;
+                    ok = ok && (static_cast<int>(yMax[o]) == maxVal);
+                    ok = ok && (static_cast<int32_t>(yAvg[o]) == avg);
+                }
+            }
+        }
+        BOOST_TEST(ok);
+    }
+
+    template<std::size_t H, std::size_t W, std::size_t C>
+    void checkGlobalAvg()
+    {
+        typedef QGlobalAvgPool2D<int8_t, int32_t, H, W, C> Layer;
+
+        static int8_t x[Layer::InputSize];
+        int8_t y[C];
+        for (std::size_t i = 0; i < Layer::InputSize; ++i)
+        {
+            x[i] = sample(i + 5 * H);
+        }
+
+        Layer gap;
+        gap.qmin = -128;
+        gap.qmax = 127;
+        gap.forward(x, y);
+
+        bool ok = true;
+        for (std::size_t c = 0; c < C; ++c)
+        {
+            int32_t sum = 0;
+            for (std::size_t p = 0; p < H * W; ++p)
+            {
+                sum += x[p * C + c];
+            }
+            ok = ok && (static_cast<int32_t>(y[c]) == roundHalfAway(sum, static_cast<int32_t>(H * W)));
+        }
+        BOOST_TEST(ok);
+    }
+
+} // namespace pool_reference_test
+
+BOOST_AUTO_TEST_CASE(qpool2d_match_direct_reference)
+{
+    using namespace pool_reference_test;
+    checkPools<18, 18, 8, 2, 2, 2, 2>();    // the KWS max-pool shape
+    checkPools<13, 9, 11, 5, 3, 2, 1>();    // pool and channels past the unroll hints
+    checkPools<7, 7, 3, 7, 7, 1, 1>();      // one window covering the whole input
+    checkGlobalAvg<7, 7, 16>();             // the KWS global-average shape
+    checkGlobalAvg<11, 10, 5>();            // rows and columns past the unroll hint
+    checkGlobalAvg<1, 1, 9>();
+}
+
 BOOST_AUTO_TEST_CASE(simd_active_backend_name_reports_a_known_value)
 {
     // The dispatch reports which backend it resolved to. The exact value
