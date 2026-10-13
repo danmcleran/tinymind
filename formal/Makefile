@@ -23,6 +23,7 @@ CBMC_FLAGS  = $(CBMC_CHECKS) --cpp11
 FUNCS = prove_saturate_add_sub_int16 \
         prove_saturate_mul_q8_8 \
         prove_saturate_div_q8_8 \
+        prove_wrap_div_q8_8 \
         prove_round_up_q8_8 \
         prove_truncate_q8_8 \
         prove_storage_q8_16 \

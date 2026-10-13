@@ -1382,6 +1382,49 @@ BOOST_AUTO_TEST_CASE(test_case_division_by_zero_saturates)
     BOOST_TEST(uZeroDiv.getValue() == UnsignedQ8_8SatPolicyType::QFormatMinValue());
 }
 
+BOOST_AUTO_TEST_CASE(test_case_wrap_division_by_zero_is_defined)
+{
+    // WrapPolicy division by zero was undefined behaviour (SIGFPE on x86).
+    // It now gives the same bound as MinMaxSaturatePolicy: the maximum for a
+    // positive numerator, else the minimum. Every divide path is covered: a
+    // QValue divisor, an int divisor, compound and free forms, and a 64-bit
+    // word, whose quotient is computed in __int128.
+    const SignedQ8_8Type pos(2, 0);
+    const SignedQ8_8Type neg(-3, 0);
+    const SignedQ8_8Type zero(0, 0);
+
+    BOOST_TEST((pos / zero).getValue() == SignedQ8_8Type::QFormatMaxValue());
+    BOOST_TEST((neg / zero).getValue() == SignedQ8_8Type::QFormatMinValue());
+    BOOST_TEST((zero / zero).getValue() == SignedQ8_8Type::QFormatMinValue());
+    BOOST_TEST((pos / 0).getValue() == SignedQ8_8Type::QFormatMaxValue());
+    BOOST_TEST((neg / 0).getValue() == SignedQ8_8Type::QFormatMinValue());
+
+    SignedQ8_8Type q(pos);
+    q /= zero;
+    BOOST_TEST(q.getValue() == SignedQ8_8Type::QFormatMaxValue());
+    q = neg;
+    q /= 0;
+    BOOST_TEST(q.getValue() == SignedQ8_8Type::QFormatMinValue());
+
+    const UnsignedQ8_8Type uPos(5, 0);
+    const UnsignedQ8_8Type uZero(0, 0);
+    BOOST_TEST((uPos / uZero).getValue() == UnsignedQ8_8Type::QFormatMaxValue());
+    BOOST_TEST((uZero / uZero).getValue() == 0);
+
+    const SignedQ32_32Type widePos(7, 0);
+    const SignedQ32_32Type wideNeg(-7, 0);
+    const SignedQ32_32Type wideZero(0, 0);
+    BOOST_TEST((widePos / wideZero).getValue() == SignedQ32_32Type::QFormatMaxValue());
+    BOOST_TEST((wideNeg / wideZero).getValue() == SignedQ32_32Type::QFormatMinValue());
+    BOOST_TEST((widePos / 0).getValue() == SignedQ32_32Type::QFormatMaxValue());
+
+    // The policy itself, which is public.
+    typedef tinymind::WrapPolicy<int32_t> PolicyType;
+    BOOST_TEST(PolicyType::saturate(5, 0, -100, 100, tinymind::DivisionOp) == 100);
+    BOOST_TEST(PolicyType::saturate(-5, 0, -100, 100, tinymind::DivisionOp) == -100);
+    BOOST_TEST(PolicyType::saturate(9, 2, -100, 100, tinymind::DivisionOp) == 4);
+}
+
 // Formats narrower than their storage word (issue #187): Q8.16 lives in an
 // int32_t, Q4.8 in an int16_t. Every write path must leave the bits above the
 // format's width consistent with its sign, whatever the storage held before.

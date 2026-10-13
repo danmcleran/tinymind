@@ -44,8 +44,8 @@
 // it can only shrink, and it is always an exact description of how QValue
 // departs from its intended arithmetic.
 //
-// Inputs that are undefined behaviour in QValue (WrapPolicy division by zero)
-// are skipped rather than modelled; they are listed in skippedInputs().
+// Inputs that are undefined behaviour in QValue would be skipped rather than
+// modelled and listed in skippedInputs(); there are none at present.
 //
 // Besides single operations, the oracle runs chains: one value carried
 // through a random sequence of compound assignments (including aliased ones
@@ -103,7 +103,7 @@ namespace
 
     const char* skippedInputs()
     {
-        return "WrapPolicy division by zero (q / 0, q /= 0) is undefined behaviour and is not exercised";
+        return "none";
     }
 
     // === Exact reference arithmetic ==========================================
@@ -330,8 +330,9 @@ namespace
             return finish(roundedProduct(a, b));
         }
 
-        // Quotient truncated towards zero, as integer division does. Divisor
-        // zero is only defined under MinMaxSaturatePolicy.
+        // Quotient truncated towards zero, as integer division does. A zero
+        // divisor gives the maximum for a positive numerator, else the minimum,
+        // under both policies.
         Wide div(const Wide a, const Wide b) const
         {
             if (b == 0)
@@ -931,11 +932,7 @@ namespace
         check(t, f, "sub", in, ops.sub(a, b), [&](const Model& m) { return m.sub(a, b); });
         check(t, f, "mul", in, ops.mul(a, b), [&](const Model& m) { return m.mul(a, b); });
         check(t, f, "compare", in, ops.compare(a, b), [&](const Model& m) { return m.compareMask(a, b); });
-
-        if ((b != 0) || f.saturate)
-        {
-            check(t, f, "div", in, ops.div(a, b), [&](const Model& m) { return m.div(a, b); });
-        }
+        check(t, f, "div", in, ops.div(a, b), [&](const Model& m) { return m.div(a, b); });
     }
 
     void checkValue(Tally& t, const Format& f, const Ops& ops, const Wide a)
@@ -962,15 +959,8 @@ namespace
         check(t, f, "mulInt", in, ops.mulInt(a, i), [&](const Model& m) { return m.mulInt(a, n); });
         check(t, f, "mulAssignInt", in, ops.mulAssignInt(a, i), [&](const Model& m) { return m.mulInt(a, n); });
         check(t, f, "compareInt", in, ops.compareInt(a, i), [&](const Model& m) { return m.compareInt(a, n); });
-
-        // A zero divisor is undefined behaviour under WrapPolicy.
-        const bool divisorIsZero = (n == 0);
-
-        if (!divisorIsZero || f.saturate)
-        {
-            check(t, f, "divInt", in, ops.divInt(a, i), [&](const Model& m) { return m.divInt(a, n); });
-            check(t, f, "divAssignInt", in, ops.divAssignInt(a, i), [&](const Model& m) { return m.divInt(a, n); });
-        }
+        check(t, f, "divInt", in, ops.divInt(a, i), [&](const Model& m) { return m.divInt(a, n); });
+        check(t, f, "divAssignInt", in, ops.divAssignInt(a, i), [&](const Model& m) { return m.divInt(a, n); });
     }
 
     void checkRepresentation(Tally& t, const Format& f, const Ops& ops, Rng& rng)
@@ -1067,15 +1057,8 @@ namespace
         for (unsigned step = 0; step < ChainLength; ++step)
         {
             const unsigned op = static_cast<unsigned>(rng.next() % 15);
-            Wide b = randomValue(f, rng);
-            Wide n = randomInt(rng);
-
-            // A zero divisor is undefined behaviour under WrapPolicy.
-            if (!f.saturate)
-            {
-                b = (b == 0) ? 1 : b;
-                n = (n == 0) ? 1 : n;
-            }
+            const Wide b = randomValue(f, rng);
+            const Wide n = randomInt(rng);
 
             const std::vector<Wide> binary = {a, b};
             const std::vector<Wide> withInt = {a, n};
@@ -1138,11 +1121,8 @@ namespace
                     check(t, f, "chain selfMul", unary, actual, [&](const Model& m) { return m.mul(a, a); });
                     break;
                 case 13:
-                    if ((a != 0) || f.saturate)
-                    {
-                        actual = ops.selfDiv(a);
-                        check(t, f, "chain selfDiv", unary, actual, [&](const Model& m) { return m.div(a, a); });
-                    }
+                    actual = ops.selfDiv(a);
+                    check(t, f, "chain selfDiv", unary, actual, [&](const Model& m) { return m.div(a, a); });
                     break;
                 default:
                     actual = ops.partsRoundTrip(a);
