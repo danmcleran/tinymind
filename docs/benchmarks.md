@@ -9,7 +9,7 @@ nav_order: 14
 TinyMind, TensorFlow Lite for Microcontrollers (TFLM, now LiteRT for Microcontrollers) and emlearn were run on the same microcontroller. Every framework executed the same two models, and the int8 frameworks used the same int8 weights. Everything was measured on the board; nothing was simulated.
 
 {: .note }
-Measured 2026-10-13. These are numbers from one board, one compiler and two models. They describe this setup, not every workload.
+Measured 2026-10-13 with the code in [`benchmarks/framework_comparison_f411`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/framework_comparison_f411). These are numbers from one board, one compiler and two models. They describe this setup, not every workload.
 
 ## Setup
 
@@ -43,22 +43,22 @@ Measured 2026-10-13. These are numbers from one board, one compiler and two mode
 
 | Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM | Accuracy |
 |---|---:|---:|---:|---:|---:|---:|
-| TinyMind int8 (scalar) | 31,330 | 33,152 | 332 µs | 4.4–4.8 KB | 148 B | 96.11% |
-| **TinyMind int8 (+SMLAD)** | 24,593 | **12,321** | **123 µs** | 4.5–5.6 KB | 124 B | 96.11% |
-| TFLM int8 (CMSIS-NN) | 14,048 | 14,011 | 140 µs | 36.7–40.6 KB | 2,600 B | 96.11% |
-| TFLM int8 (reference) | 32,075 | 31,317 | 313 µs | 25.7–29.5 KB | 2,152 B | 96.11% |
-| TFLM float32 | 27,883 | 28,063 | 281 µs | 43.2–47.3 KB | 1,824 B | 96.11% |
-| emlearn float32 | 40,528 | 40,525 | 405 µs | 14.4–14.7 KB | 892 B | 96.11% |
+| TinyMind int8 (scalar) | 31,301 | 33,154 | 332 µs | 4.4–4.8 KB | 148 B | 96.11% |
+| **TinyMind int8 (+SMLAD)** | 24,591 | **12,278** | **123 µs** | 4.5–5.6 KB | 124 B | 96.11% |
+| TFLM int8 (CMSIS-NN) | 14,075 | 14,030 | 140 µs | 36.7–40.6 KB | 2,600 B | 96.11% |
+| TFLM int8 (reference) | 32,084 | 31,411 | 314 µs | 25.7–29.6 KB | 2,152 B | 96.11% |
+| TFLM float32 | 27,902 | 28,059 | 281 µs | 43.2–47.3 KB | 1,824 B | 96.11% |
+| emlearn float32 | 40,527 | 40,529 | 405 µs | 14.4–14.7 KB | 892 B | 96.11% |
 
 ### KWS-style CNN
 
 | Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM |
 |---|---:|---:|---:|---:|---:|
-| TinyMind int8 (scalar) | 794,714 | 446,751 | 4.47 ms | 2.6–3.8 KB | 4,876 B |
-| **TinyMind int8 (+SMLAD)** | 831,631 | **422,004** | **4.22 ms** | 2.7–3.7 KB | 4,864 B |
-| TFLM int8 (CMSIS-NN) | 573,472 | 576,732 | 5.77 ms | 84.5–91.6 KB | 6,288 B |
-| TFLM int8 (reference) | 2,459,398 | 2,433,876 | 24.3 ms | 41.1–46.2 KB | 5,668 B |
-| TFLM float32 | 2,136,142 | 2,158,967 | 21.6 ms | 84.3–91.6 KB | 15,128 B |
+| TinyMind int8 (scalar) | 795,368 | 445,579 | 4.46 ms | 2.6–3.8 KB | 4,876 B |
+| **TinyMind int8 (+SMLAD)** | 831,570 | **422,449** | **4.22 ms** | 2.7–3.7 KB | 4,864 B |
+| TFLM int8 (CMSIS-NN) | 573,396 | 576,368 | 5.76 ms | 84.5–91.6 KB | 6,288 B |
+| TFLM int8 (reference) | 2,459,339 | 2,435,580 | 24.4 ms | 41.1–46.2 KB | 5,668 B |
+| TFLM float32 | 2,136,067 | 2,159,717 | 21.6 ms | 84.3–91.6 KB | 15,128 B |
 
 Code + weights ranges are `-O2` / `-O3`.
 
@@ -70,20 +70,20 @@ Each layer was timed separately, behind its own non-inlined call.
 
 | Layer | TinyMind +SMLAD `-O2` | TinyMind +SMLAD `-O3` | TFLM CMSIS-NN `-O2` | TFLM CMSIS-NN `-O3` |
 |---|---:|---:|---:|---:|
-| conv 3×3, 1→8 | 467,501 | **280,601** | 433,915 | 435,422 |
-| max-pool 2×2 | 15,675 | **9,260** | 35,797 | 36,696 |
-| depthwise 3×3 | 71,239 | 58,076 | 39,196 | **40,917** |
-| pointwise 8→16 | 76,537 | 78,422 | 53,214 | **53,875** |
-| average-pool | 5,835 | **2,458** | 8,861 | 7,916 |
-| dense 16→10 | 1,372 | **1,181** | 2,108 | 2,032 |
+| conv 3×3, 1→8 | 467,486 | **279,873** | 434,553 | 435,412 |
+| max-pool 2×2 | 14,477 | **10,158** | 35,807 | 36,697 |
+| depthwise 3×3 | 71,239 | 58,219 | 39,208 | **40,918** |
+| pointwise 8→16 | 76,690 | 78,425 | 53,212 | **53,866** |
+| average-pool | 7,221 | **2,282** | 8,875 | 7,917 |
+| dense 16→10 | 1,264 | **1,186** | 2,097 | 2,041 |
 
 ## What the numbers say
 
 **At `-O3`, TinyMind is faster and an order of magnitude smaller.** With the SMLAD backend, the MLP runs 12% faster than TFLM with CMSIS-NN and the CNN runs 27% faster. Code + weights are 3–6 KB against 37–92 KB, because there is no interpreter or flatbuffer parser, and no unused kernel variants get linked in.
 
-**At `-O2`, TinyMind loses the MLP.** TinyMind's kernels are templates compiled in your own translation unit, so the optimizer's choices are part of its performance. At `-O2`, GCC inlined the whole three-layer MLP into one function and the hot loops slowed down. Timed layer by layer, the same `-O2` kernels sum to 14.7k cycles instead of 24.6k. CMSIS-NN's hand-written kernels ship precompiled, so they barely move between levels. **Build TinyMind at `-O3`**, which is also what its own release Makefiles use.
+**At `-O2`, TinyMind loses the MLP, and its speed becomes unpredictable.** TinyMind's kernels are templates compiled in your own translation unit, so the optimizer's choices are part of its performance. In the disassembly, the `-O2` inner loop of the first MLP layer issues 2 SMLADs per iteration, stores each loaded word to the stack and reads it back, and reloads its loop bound from memory on every pass. At `-O3` the same loop is fully unrolled: 32 SMLADs and no stack traffic. How badly `-O2` degrades depends on register allocation, which shifts with the surrounding code. Across builds with identical kernels, the `-O2` MLP measured anywhere from 14.5k to 24.6k cycles, while `-O3` stayed within 1%. CMSIS-NN's hand-written kernels ship precompiled, so they barely move between levels. **Build TinyMind at `-O3`**, which is also what its own release Makefiles use.
 
-**Where TinyMind still trails.** Depthwise convolution (58k vs 41k cycles) and pointwise convolution (78k vs 54k) are slower than CMSIS-NN. The depthwise kernel is a scalar loop, and SMLAD brings no gain on the pointwise layer at `-O3`. These two kernels are the next optimization targets. TinyMind wins the single-input-channel 3×3 convolution, where CMSIS-NN's im2col path does poorly, and it is 3–4× faster on pooling.
+**Where TinyMind still trails.** Depthwise convolution (58k vs 41k cycles) and pointwise convolution (78k vs 54k) are slower than CMSIS-NN. The depthwise kernel is a scalar loop, and SMLAD brings no gain on the pointwise layer at `-O3`. These two kernels are the next optimization targets. TinyMind wins the single-input-channel 3×3 convolution (280k vs 435k cycles), where CMSIS-NN's im2col path does poorly, and it is 3–4× faster on pooling.
 
 **RAM is close on the CNN.** TinyMind keeps every intermediate activation buffer static. TFLM's arena planner reuses buffers but carries interpreter state. Alternating between two buffers would bring TinyMind's CNN to about 3.6 KB.
 
@@ -97,6 +97,19 @@ Each layer was timed separately, behind its own non-inlined call.
   - The per-operator profiler is compiled out of release builds, so a separate `release_with_logs` library is needed to profile.
   - A Keras `Flatten` with a dynamic batch dimension adds shape-computation operators unless the model is built with `batch_size=1`.
 - **TinyMind:** header-only, with nothing to build or link. It has no `.tflite` importer. The bridge that copied the TFLite int8 parameters into TinyMind layers was written for this benchmark. TinyMind ships [PyTorch and ONNX importers](https://github.com/danmcleran/tinymind/tree/master/apps).
+
+## Reproduce it
+
+Everything is in [`benchmarks/framework_comparison_f411`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/framework_comparison_f411): bare-metal board support, a timing harness, one backend per framework, the model generator, and the raw results behind these tables. With `arm-none-eabi-gcc`, `openocd` and a NUCLEO-F411RE attached:
+
+```
+cd benchmarks/framework_comparison_f411
+make deps            # Python venv + TFLM clone at the pinned revision + TFLM libraries
+make host-check      # TinyMind int8 outputs reproduce the expected hashes
+make LEVEL=O3 run    # build, flash and capture every image
+```
+
+The generated model headers are committed, so the firmware builds without TensorFlow; `make deps` is only needed for the TFLM and emlearn images.
 
 ## A note on host references
 

@@ -1,0 +1,332 @@
+level=O2
+image=baseline
+# begin bench
+name=baseline
+setup_rc=0
+setup_cycles=18
+infer_min=13
+infer_med=13
+infer_max=13
+n_test=1
+hash=0x811C9DC5
+stack_bytes=120
+static_ram=132
+arena_used=0
+# end bench
+level=O2
+image=tm_mlp
+# begin bench
+name=tinymind_int8/mlp
+setup_rc=0
+setup_cycles=21
+infer_min=31301
+infer_med=31301
+infer_max=31308
+n_test=360
+correct=346
+hash=0x85BDD037
+hash_match=1
+stack_bytes=120
+static_ram=256
+arena_used=0
+# end bench
+level=O2
+image=tm_mlp_dsp
+# begin bench
+name=tinymind_int8+dsp/mlp
+setup_rc=0
+setup_cycles=21
+infer_min=24591
+infer_med=24591
+infer_max=24601
+n_test=360
+correct=346
+hash=0x85BDD037
+hash_match=1
+stack_bytes=120
+static_ram=256
+arena_used=0
+# end bench
+level=O2
+image=tm_kws
+# begin bench
+name=tinymind_int8/kws
+setup_rc=0
+setup_cycles=21
+infer_min=795368
+infer_med=795368
+infer_max=795368
+n_test=8
+hash=0x6B1854D3
+hash_match=1
+stack_bytes=140
+static_ram=4976
+arena_used=0
+# end bench
+level=O2
+image=tm_kws_dsp
+# begin bench
+name=tinymind_int8+dsp/kws
+setup_rc=0
+setup_cycles=21
+infer_min=831570
+infer_med=831570
+infer_max=831570
+n_test=8
+hash=0x6B1854D3
+hash_match=1
+stack_bytes=140
+static_ram=4976
+arena_used=0
+# end bench
+level=O2
+image=tflm_cmsis_mlp_int8
+# begin bench
+name=tflm_int8+cmsis/mlp
+setup_rc=0
+setup_cycles=133932
+infer_min=14075
+infer_med=14075
+infer_max=14075
+n_test=360
+correct=346
+hash=0x85BDD037
+hash_match=1
+stack_bytes=808
+static_ram=2004
+arena_used=1348
+# end bench
+level=O2
+image=tflm_ref_mlp_int8
+# begin bench
+name=tflm_int8+ref/mlp
+setup_rc=0
+setup_cycles=132872
+infer_min=32072
+infer_med=32084
+infer_max=32098
+n_test=360
+correct=346
+hash=0x85BDD037
+hash_match=1
+stack_bytes=496
+static_ram=1908
+arena_used=1252
+# end bench
+level=O2
+image=tflm_cmsis_mlp_f32
+# begin bench
+name=tflm_f32+cmsis/mlp
+setup_rc=0
+setup_cycles=38712
+infer_min=27902
+infer_med=27902
+infer_max=27903
+n_test=360
+correct=346
+hash=0x17BD6E61
+stack_bytes=552
+static_ram=1524
+arena_used=1120
+# end bench
+level=O2
+image=tflm_cmsis_kws_int8
+# begin bench
+name=tflm_int8+cmsis/kws
+setup_rc=0
+setup_cycles=163289
+infer_min=573395
+infer_med=573396
+infer_max=573397
+n_test=8
+hash=0x6B1854D3
+hash_match=1
+stack_bytes=1272
+static_ram=5268
+arena_used=4788
+# end bench
+level=O2
+image=tflm_ref_kws_int8
+# begin bench
+name=tflm_int8+ref/kws
+setup_rc=0
+setup_cycles=155259
+infer_min=2459259
+infer_med=2459339
+infer_max=2459382
+n_test=8
+hash=0x6B1854D3
+hash_match=1
+stack_bytes=716
+static_ram=5204
+arena_used=4724
+# end bench
+level=O2
+image=tflm_cmsis_kws_f32
+# begin bench
+name=tflm_f32+cmsis/kws
+setup_rc=0
+setup_cycles=76171
+infer_min=2136067
+infer_med=2136067
+infer_max=2136068
+n_test=8
+hash=0x52310765
+stack_bytes=800
+static_ram=14580
+arena_used=14112
+# end bench
+level=O2
+image=eml_mlp
+# begin bench
+name=emlearn_f32/mlp
+setup_rc=0
+setup_cycles=18
+infer_min=40527
+infer_med=40527
+infer_max=40533
+n_test=360
+correct=346
+hash=0x17BD6E61
+stack_bytes=144
+static_ram=1000
+arena_used=0
+# end bench
+level=O2
+image=tm_mlp_prof
+# begin bench
+name=tinymind_int8/mlp
+setup_rc=0
+setup_cycles=24
+infer_min=31480
+infer_med=31480
+infer_max=31487
+n_test=360
+correct=346
+hash=0x85BDD037
+hash_match=1
+stack_bytes=220
+static_ram=304
+arena_used=0
+layer.0.fc0=22881
+layer.1.fc1=6110
+layer.2.fc2=2089
+# end bench
+level=O2
+image=tm_mlp_dsp_prof
+# begin bench
+name=tinymind_int8+dsp/mlp
+setup_rc=0
+setup_cycles=24
+infer_min=15249
+infer_med=15249
+infer_max=15255
+n_test=360
+correct=346
+hash=0x85BDD037
+hash_match=1
+stack_bytes=280
+static_ram=304
+arena_used=0
+layer.0.fc0=18127
+layer.1.fc1=3884
+layer.2.fc2=1265
+# end bench
+level=O2
+image=tm_kws_prof
+# begin bench
+name=tinymind_int8/kws
+setup_rc=0
+setup_cycles=24
+infer_min=676468
+infer_med=676471
+infer_max=676471
+n_test=8
+hash=0x6B1854D3
+hash_match=1
+stack_bytes=324
+static_ram=9408
+arena_used=0
+layer.0.conv3x3=467489
+layer.1.maxpool=14475
+layer.2.dwconv3x3=70908
+layer.3.pwconv=113467
+layer.4.avgpool=7220
+layer.5.fc=2073
+# end bench
+level=O2
+image=tm_kws_dsp_prof
+# begin bench
+name=tinymind_int8+dsp/kws
+setup_rc=0
+setup_cycles=21
+infer_min=639655
+infer_med=639655
+infer_max=639655
+n_test=8
+hash=0x6B1854D3
+hash_match=1
+stack_bytes=316
+static_ram=9408
+arena_used=0
+layer.0.conv3x3=467486
+layer.1.maxpool=14477
+layer.2.dwconv3x3=71239
+layer.3.pwconv=76690
+layer.4.avgpool=7221
+layer.5.fc=1264
+# end bench
+level=O2
+image=tflm_cmsis_mlp_int8_prof
+# begin bench
+name=tflm_int8+cmsis/mlp
+setup_rc=0
+setup_cycles=134952
+infer_min=14492
+infer_med=14492
+infer_max=14494
+n_test=360
+correct=346
+hash=0x85BDD037
+hash_match=1
+stack_bytes=960
+static_ram=2308
+arena_used=1348
+layer.0.FULLY_CONNECTED=8592
+layer.1.FULLY_CONNECTED=3421
+layer.2.FULLY_CONNECTED=2076
+# end bench
+level=O2
+image=tflm_cmsis_kws_int8_prof
+# begin bench
+name=tflm_int8+cmsis/kws
+setup_rc=0
+setup_cycles=165460
+infer_min=574398
+infer_med=574399
+infer_max=574399
+n_test=8
+hash=0x6B1854D3
+hash_match=1
+stack_bytes=1408
+static_ram=5572
+arena_used=4788
+layer.0.CONV_2D=434553
+layer.1.MAX_POOL_2D=35807
+layer.2.DEPTHWISE_CONV_2D=39208
+layer.3.CONV_2D=53212
+layer.4.AVERAGE_POOL_2D=8875
+layer.5.FULLY_CONNECTED=2097
+# end bench
+size image=baseline flash=2268 ram=132
+size image=tm_mlp flash=30068 ram=256
+size image=tm_mlp_dsp flash=30216 ram=256
+size image=tm_kws flash=8076 ram=4976
+size image=tm_kws_dsp flash=8208 ram=4976
+size image=tflm_cmsis_mlp_int8 flash=62404 ram=2004
+size image=tflm_ref_mlp_int8 flash=51332 ram=1908
+size image=tflm_cmsis_mlp_f32 flash=138016 ram=1524
+size image=tflm_cmsis_kws_int8 flash=89956 ram=5268
+size image=tflm_ref_kws_int8 flash=46556 ram=5204
+size image=tflm_cmsis_kws_f32 flash=99392 ram=14580
+size image=eml_mlp flash=109180 ram=1000
