@@ -1,0 +1,3 @@
+mlp: sklearn acc 0.9611 | keras acc 0.9611 | tflite f32 acc 0.9611 | tflite int8 acc 0.9611
+mlp: tflite f32 12996 B, int8 6504 B, int8 hash 0xD560B022, input q scale 0.003921568859368563 zp -128
+kws: tflite f32 5244 B, int8 5440 B, int8 hash 0x6B1854D3, f32/int8 argmax agree 1.000
