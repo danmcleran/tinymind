@@ -5635,6 +5635,102 @@ BOOST_AUTO_TEST_CASE(simd_qconv2d_bit_exact_vs_scalar_reference)
     }
 }
 
+namespace qconv_window_test {
+
+    // Runs QConv2D and QConv2DPerChannel of one shape on sawtooth data and
+    // checks every output against a direct per-pixel, per-tap reference.
+    // ExpectPatch pins which window strategy the shape takes: kernel
+    // windows of up to detail::kConvPatchMaxBytes are gathered into a
+    // contiguous patch, larger ones run one dot product per kernel row.
+    template<std::size_t H, std::size_t W, std::size_t IC, std::size_t KH, std::size_t KW,
+             std::size_t SH, std::size_t SW, std::size_t F, bool ExpectPatch>
+    void checkShape()
+    {
+        typedef QConv2D<int8_t, int8_t, int32_t, int8_t, H, W, IC, KH, KW, SH, SW, F> TensorConv;
+        typedef QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, H, W, IC, KH, KW, SH, SW, F>
+            ChannelConv;
+        static_assert(TensorConv::UsePatch == ExpectPatch, "unexpected window strategy");
+        static_assert(ChannelConv::UsePatch == ExpectPatch, "unexpected window strategy");
+
+        constexpr std::size_t OutH = TensorConv::OutputHeight;
+        constexpr std::size_t OutW = TensorConv::OutputWidth;
+        constexpr int8_t zp = static_cast<int8_t>(-5);
+
+        static int8_t x[H * W * IC];
+        static int8_t w[TensorConv::TotalWeights];
+        static int8_t yTensor[TensorConv::OutputSize];
+        static int8_t yChannel[ChannelConv::OutputSize];
+        int32_t b[F];
+        Requantizer<int32_t, int8_t> rq[F];
+
+        simd_test::fillSawtooth(x, H * W * IC, 13);
+        simd_test::fillSawtooth(w, TensorConv::TotalWeights, 29);
+        for (std::size_t f = 0; f < F; ++f)
+        {
+            b[f] = static_cast<int32_t>(f) * 23 - 41;
+            rq[f].multiplier = (static_cast<int32_t>(1) << 29) + static_cast<int32_t>(f) * 1000003;
+            rq[f].shift = 6 + static_cast<int32_t>(f % 3);
+            rq[f].zero_point = static_cast<int8_t>(f) - 2;
+            rq[f].qmin = -128;
+            rq[f].qmax = 127;
+        }
+
+        TensorConv tensorConv;
+        tensorConv.weights = w;
+        tensorConv.biases = b;
+        tensorConv.input_zero_point = zp;
+        tensorConv.requantizer = rq[0];
+        tensorConv.forward(x, yTensor);
+
+        ChannelConv channelConv;
+        channelConv.weights = w;
+        channelConv.biases = b;
+        channelConv.input_zero_point = zp;
+        channelConv.requantizers = rq;
+        channelConv.forward(x, yChannel);
+
+        for (std::size_t oh = 0; oh < OutH; ++oh)
+        {
+            for (std::size_t ow = 0; ow < OutW; ++ow)
+            {
+                for (std::size_t f = 0; f < F; ++f)
+                {
+                    int32_t acc = b[f];
+                    for (std::size_t kh = 0; kh < KH; ++kh)
+                    {
+                        for (std::size_t kw = 0; kw < KW; ++kw)
+                        {
+                            const std::size_t inOff = ((oh * SH + kh) * W + (ow * SW + kw)) * IC;
+                            const std::size_t wOff = ((f * KH + kh) * KW + kw) * IC;
+                            acc += simd_test::scalarDot(x + inOff, w + wOff, IC, zp);
+                        }
+                    }
+                    const std::size_t outIdx = (oh * OutW + ow) * F + f;
+                    BOOST_TEST(static_cast<int>(yTensor[outIdx]) ==
+                               static_cast<int>(rq[0].apply(acc)));
+                    BOOST_TEST(static_cast<int>(yChannel[outIdx]) ==
+                               static_cast<int>(rq[f].apply(acc)));
+                }
+            }
+        }
+    }
+
+} // namespace qconv_window_test
+
+BOOST_AUTO_TEST_CASE(qconv2d_window_strategies_match_per_tap_reference)
+{
+    // Patch path: single-channel 3x3 (the KWS stem), strided, non-square.
+    qconv_window_test::checkShape<10, 10, 1, 3, 3, 1, 1, 8, true>();
+    qconv_window_test::checkShape<9, 11, 3, 3, 3, 2, 2, 4, true>();
+    qconv_window_test::checkShape<6, 8, 2, 1, 5, 1, 1, 3, true>();
+    // Exactly kConvPatchMaxBytes (4x4x4 = 64) still gathers; 65 does not.
+    qconv_window_test::checkShape<7, 7, 4, 4, 4, 1, 1, 3, true>();
+    qconv_window_test::checkShape<6, 16, 1, 5, 13, 1, 1, 2, false>();
+    // Per-row path: wide channel counts, with and without stride.
+    qconv_window_test::checkShape<7, 7, 8, 3, 3, 1, 1, 6, false>();
+    qconv_window_test::checkShape<9, 9, 16, 3, 3, 2, 2, 5, false>();
+}
+
 BOOST_AUTO_TEST_CASE(simd_active_backend_name_reports_a_known_value)
 {
     // The dispatch reports which backend it resolved to. The exact value
