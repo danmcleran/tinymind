@@ -239,7 +239,7 @@ BOOST_TEST(Q0.getValue() == 0x100);
 
 QValue supports configurable overflow behavior via saturation policies. Two policies are provided:
 
-**WrapPolicy** (default) - Standard wrap-around behavior. No overflow checking is performed. This is the fastest option and matches how regular integer arithmetic works.
+**WrapPolicy** (default) - Standard wrap-around behavior. No overflow checking is performed. This is the fastest option and matches how regular integer arithmetic works. The one exception is division by zero, which has no wrapped value: it returns the maximum value for a positive numerator and the minimum otherwise, the same as `MinMaxSaturatePolicy`. (It used to be an integer division by zero, which is undefined behaviour and traps on most hosts.)
 
 **MinMaxSaturatePolicy** - Clamps results to the representable range `[minValue, maxValue]`. If an addition would overflow, the result is clamped to the maximum value. If a subtraction would underflow, the result is clamped to the minimum value. Division by zero returns the maximum or minimum value based on the sign of the numerator.
 

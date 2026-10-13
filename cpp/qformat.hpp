@@ -130,9 +130,6 @@ namespace tinymind {
     public:
         static T saturate(const T& origValue, const T& target, const T& minValue, const T& maxValue, const OperatorType_e opType)
         {
-            (void)minValue; // Suppress unused parameter warnings
-            (void)maxValue;
-
             typedef typename UnsignedCounterpart<T>::Type UnsignedType;
 
             T result{};
@@ -151,7 +148,19 @@ namespace tinymind {
                     result = origValue * target;
                     break;
                 case DivisionOp:
-                    result = origValue / target;
+                    // A quotient by zero has no wrapped value, and the integer
+                    // division was undefined behaviour (a trap on most hosts,
+                    // an implementation-defined result on Cortex-M). It gives
+                    // the same bound MinMaxSaturatePolicy does: the maximum for
+                    // a positive numerator, else the minimum.
+                    if (target == 0)
+                    {
+                        result = (origValue > 0) ? maxValue : minValue;
+                    }
+                    else
+                    {
+                        result = origValue / target;
+                    }
                     break;
             }
 
@@ -824,8 +833,8 @@ namespace tinymind {
         }
 
         // Divide by a whole number (truncating towards zero), exact for every
-        // int. Zero saturates under MinMaxSaturatePolicy and is undefined under
-        // WrapPolicy, as for a QValue divisor.
+        // int. A zero divisor gives the maximum for a positive value, else the
+        // minimum, under either policy, as for a QValue divisor.
         QValue& operator/=(const int divisor)
         {
             mValue = applyInteger(static_cast<IntegerOperandType>(divisor), DivisionOp);

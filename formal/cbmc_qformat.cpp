@@ -73,6 +73,16 @@ static int32_t sat_div_i32(int32_t o, int32_t t, int32_t lo, int32_t hi)
     return result;
 }
 
+// WrapPolicy<T>::saturate DivisionOp branch (qformat.hpp): divisor==0 gives
+// the bound for the numerator's sign, as MinMaxSaturatePolicy does.
+static int32_t wrap_div_i32(int32_t o, int32_t t, int32_t lo, int32_t hi)
+{
+    int32_t result = 0;
+    if (t == 0) { result = (o > 0) ? hi : lo; }
+    else        { result = o / t; }
+    return result;
+}
+
 // === Transcriptions of the rounding policies (8 fractional bits) =============
 // tinymind::RoundUpPolicy<T,Frac>::round
 static int32_t round_up_i32(int32_t value)
@@ -252,6 +262,21 @@ extern "C" void prove_saturate_div_q8_8()
     const int32_t r = sat_div_i32(o, t, lo, hi);
 
     __CPROVER_assert(r >= lo && r <= hi, "div saturation stays in [lo,hi]");
+}
+
+// QValue<8,8,true,*,WrapPolicy>::operator/=: the dividend is the Q8.8 word
+// scaled by 2^8 in the int32_t division type, the divisor is any Q8.8 word,
+// zero included. --div-by-zero-check and --signed-overflow-check make the
+// absence of undefined behaviour the proof obligation.
+extern "C" void prove_wrap_div_q8_8()
+{
+    int32_t o, t;
+    __CPROVER_assume(o >= Q8_8_MIN && o <= Q8_8_MAX);
+    __CPROVER_assume(t >= Q8_8_MIN && t <= Q8_8_MAX);
+
+    const int32_t r = wrap_div_i32(o * 256, t, Q8_8_MIN, Q8_8_MAX);
+
+    __CPROVER_assert((t != 0) || (r == ((o > 0) ? Q8_8_MAX : Q8_8_MIN)), "division by zero gives the bound for the numerator's sign");
 }
 
 extern "C" void prove_round_up_q8_8()
