@@ -28,7 +28,7 @@ on:
         default: ""
       scale:
         description: "Multiplier on the per-PR random counts"
-        default: "200"
+        default: "400"
 
 permissions:
   contents: read
@@ -48,7 +48,7 @@ jobs:
         env:
           BOOST_HOME: /usr
           SEED: ${{ github.event.inputs.seed || github.run_id }}
-          SCALE: ${{ github.event.inputs.scale || '200' }}
+          SCALE: ${{ github.event.inputs.scale || '400' }}
         run: |
           echo "Reproduce with: make oracle-soak ORACLE_SEED=$SEED ORACLE_SCALE=$SCALE"
           make oracle-soak ORACLE_SEED="$SEED" ORACLE_SCALE="$SCALE"
