@@ -46,10 +46,26 @@
 //
 // Inputs that are undefined behaviour in QValue (WrapPolicy division by zero)
 // are skipped rather than modelled; they are listed in skippedInputs().
+//
+// Besides single operations, the oracle runs chains: one value carried
+// through a random sequence of compound assignments (including aliased ones
+// such as q *= q), integer operands, steps and a parts round trip, each step
+// checked against the reference. Chains reach values that arithmetic
+// produces (rounded products, saturated bounds, repeated quotients) rather
+// than only values drawn directly.
+//
+// Soak mode. The default run uses fixed seeds, so every PR checks the same
+// inputs. Setting TINYMIND_ORACLE_SEED to a nonzero value draws a different
+// random sample, and TINYMIND_ORACLE_SCALE multiplies every random count; the
+// edge values and the reference are unchanged. The nightly soak job runs with
+// a fresh seed and a large scale. Every run prints its seed and scale, and
+// rerunning with the same two values reproduces it exactly.
 
+#include <cerrno>
 #include <climits>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -546,6 +562,15 @@ namespace
         Wide (*compareInt)(Wide, int);
         Wide (*mulAssignInt)(Wide, int);
         Wide (*divAssignInt)(Wide, int);
+        Wide (*addAssign)(Wide, Wide);
+        Wide (*subAssign)(Wide, Wide);
+        Wide (*mulAssign)(Wide, Wide);
+        Wide (*divAssign)(Wide, Wide);
+        Wide (*selfAdd)(Wide);
+        Wide (*selfSub)(Wide);
+        Wide (*selfMul)(Wide);
+        Wide (*selfDiv)(Wide);
+        Wide (*partsRoundTrip)(Wide);
     };
 
     template<typename Q>
@@ -649,6 +674,24 @@ namespace
 
         static Wide mulAssignInt(const Wide a, const int n) { Q q = make(a); q *= n; return value(q); }
         static Wide divAssignInt(const Wide a, const int n) { Q q = make(a); q /= n; return value(q); }
+        static Wide addAssign(const Wide a, const Wide b)   { Q q = make(a); q += make(b); return value(q); }
+        static Wide subAssign(const Wide a, const Wide b)   { Q q = make(a); q -= make(b); return value(q); }
+        static Wide mulAssign(const Wide a, const Wide b)   { Q q = make(a); q *= make(b); return value(q); }
+        static Wide divAssign(const Wide a, const Wide b)   { Q q = make(a); q /= make(b); return value(q); }
+
+        // The operand is the object itself, so a compound assignment that
+        // wrote its result before reading the operand would show up here.
+        static Wide selfAdd(const Wide a)                   { Q q = make(a); q += q; return value(q); }
+        static Wide selfSub(const Wide a)                   { Q q = make(a); q -= q; return value(q); }
+        static Wide selfMul(const Wide a)                   { Q q = make(a); q *= q; return value(q); }
+        static Wide selfDiv(const Wide a)                   { Q q = make(a); q /= q; return value(q); }
+
+        static Wide partsRoundTrip(const Wide a)
+        {
+            Q q = make(a);
+            q.setValue(q.getFixedPart(), q.getFractionalPart());
+            return value(q);
+        }
 
         static Ops ops()
         {
@@ -661,10 +704,68 @@ namespace
                 &postIncrementResult, &postIncrementAfter, &postDecrementResult, &postDecrementAfter,
                 &addInt, &subInt, &mulInt, &divInt, &compareInt,
                 &mulAssignInt, &divAssignInt,
+                &addAssign, &subAssign, &mulAssign, &divAssign,
+                &selfAdd, &selfSub, &selfMul, &selfDiv, &partsRoundTrip,
             };
             return o;
         }
     };
+
+    // === Run configuration ===================================================
+
+    struct RunConfig
+    {
+        uint64_t seed;  // 0: the fixed per-PR sample
+        unsigned scale; // multiplies every random count
+    };
+
+    // A whole-number environment variable, or `fallback` when it is unset or
+    // empty. Anything else that does not parse aborts the run: a soak that
+    // silently fell back to the default sample would pass while testing
+    // nothing new.
+    uint64_t environmentNumber(const char* name, const uint64_t fallback, const uint64_t maximum)
+    {
+        const char* text = std::getenv(name);
+
+        if ((text == nullptr) || (*text == '\0'))
+        {
+            return fallback;
+        }
+
+        char* end = nullptr;
+        errno = 0;
+        const unsigned long long value = std::strtoull(text, &end, 0);
+
+        if ((errno != 0) || (*end != '\0') || (*text == '-') || (value > maximum))
+        {
+            std::fprintf(stderr, "%s=\"%s\" is not a whole number in [0, %llu]\n", name, text, static_cast<unsigned long long>(maximum));
+            std::exit(2);
+        }
+
+        return value;
+    }
+
+    const RunConfig& runConfig()
+    {
+        static const RunConfig config =
+        {
+            environmentNumber("TINYMIND_ORACLE_SEED", 0, UINT64_MAX),
+            static_cast<unsigned>(environmentNumber("TINYMIND_ORACLE_SCALE", 1, 100000)),
+        };
+
+        if (config.scale == 0)
+        {
+            std::fprintf(stderr, "TINYMIND_ORACLE_SCALE must be at least 1\n");
+            std::exit(2);
+        }
+
+        return config;
+    }
+
+    unsigned scaled(const unsigned count)
+    {
+        return count * runConfig().scale;
+    }
 
     // === Input generation ====================================================
 
@@ -686,10 +787,14 @@ namespace
         }
     };
 
+    // Seed 0 leaves the per-format seeds as they have always been, so the
+    // default run keeps drawing the same sample.
     uint64_t seedFor(const Format& f)
     {
-        return 0x5EED0000ULL ^ (static_cast<uint64_t>(f.fixedBits) << 24) ^ (static_cast<uint64_t>(f.fractionalBits) << 16) ^
-               (f.isSigned ? 0x100ULL : 0) ^ (f.roundUp ? 0x10ULL : 0) ^ (f.saturate ? 0x1ULL : 0);
+        const uint64_t base = 0x5EED0000ULL ^ (static_cast<uint64_t>(f.fixedBits) << 24) ^ (static_cast<uint64_t>(f.fractionalBits) << 16) ^
+                              (f.isSigned ? 0x100ULL : 0) ^ (f.roundUp ? 0x10ULL : 0) ^ (f.saturate ? 0x1ULL : 0);
+
+        return base ^ (runConfig().seed * 0x9E3779B97F4A7C15ULL);
     }
 
     bool inRange(const Format& f, const Wide v)
@@ -790,12 +895,33 @@ namespace
         return values;
     }
 
+    // A random int operand: small, near a power of two, or anywhere in int.
+    Wide randomInt(Rng& rng)
+    {
+        switch (rng.next() % 3)
+        {
+            case 0:
+                return static_cast<Wide>(rng.next() % 2049) - 1024;
+            case 1:
+            {
+                const Wide magnitude = powerOfTwo(static_cast<unsigned>(rng.next() % 31)) + (static_cast<Wide>(rng.next() % 3) - 1);
+                return ((rng.next() & 1) != 0) ? magnitude : -magnitude;
+            }
+            default:
+                return wrapTo(static_cast<Wide>(rng.next()), 32, true);
+        }
+    }
+
     // === Engine ==============================================================
 
     const unsigned ExhaustiveWidth = 8;
     const unsigned RandomPairs = 3000;
     const unsigned RandomValues = 48;
     const unsigned RandomWords = 400;
+    const unsigned RandomIntPairs = 1000;
+    const unsigned RandomPartPairs = 4096; // soak only: the default run crosses fixed lists
+    const unsigned Chains = 100;
+    const unsigned ChainLength = 24;
 
     void checkPair(Tally& t, const Format& f, const Ops& ops, const Wide a, const Wide b)
     {
@@ -861,7 +987,7 @@ namespace
         addUnique(words, wrapTo(-powerOfTwo(f.width()), f.storageBits, false));
         addUnique(words, wrapTo(-1, f.storageBits, false));
 
-        for (unsigned i = 0; i < RandomWords; ++i)
+        for (unsigned i = 0; i < scaled(RandomWords); ++i)
         {
             words.push_back(wrapTo(static_cast<Wide>(rng.next()), f.storageBits, false));
         }
@@ -917,6 +1043,117 @@ namespace
                 check(t, f, "setParts", in, ops.setParts(fixedPart, fractionalPart), [&](const Model& m) { return m.fromParts(fixedPart, fractionalPart); });
             }
         }
+
+        // A soak adds independent random part pairs; crossing two scaled lists
+        // would grow with the square of the scale.
+        for (unsigned i = 0; i < (scaled(RandomPartPairs) - RandomPartPairs); ++i)
+        {
+            const Wide fixedPart = wrapTo(static_cast<Wide>(rng.next()), f.storageBits, f.isSigned);
+            const Wide fractionalPart = wrapTo(static_cast<Wide>(rng.next()), f.storageBits, false);
+            const std::vector<Wide> in = {fixedPart, fractionalPart};
+
+            check(t, f, "fromParts", in, ops.fromParts(fixedPart, fractionalPart), [&](const Model& m) { return m.fromParts(fixedPart, fractionalPart); });
+            check(t, f, "setParts", in, ops.setParts(fixedPart, fractionalPart), [&](const Model& m) { return m.fromParts(fixedPart, fractionalPart); });
+        }
+    }
+
+    // One value carried through a random sequence of operations. Each step
+    // starts from the value QValue actually produced, so a defect is reported
+    // at the step that causes it instead of cascading through the rest.
+    void checkChain(Tally& t, const Format& f, const Ops& ops, Rng& rng)
+    {
+        Wide a = randomValue(f, rng);
+
+        for (unsigned step = 0; step < ChainLength; ++step)
+        {
+            const unsigned op = static_cast<unsigned>(rng.next() % 15);
+            Wide b = randomValue(f, rng);
+            Wide n = randomInt(rng);
+
+            // A zero divisor is undefined behaviour under WrapPolicy.
+            if (!f.saturate)
+            {
+                b = (b == 0) ? 1 : b;
+                n = (n == 0) ? 1 : n;
+            }
+
+            const std::vector<Wide> binary = {a, b};
+            const std::vector<Wide> withInt = {a, n};
+            const std::vector<Wide> unary = {a};
+            const int i = static_cast<int>(n);
+            Wide actual = a;
+
+            switch (op)
+            {
+                case 0:
+                    actual = ops.addAssign(a, b);
+                    check(t, f, "chain addAssign", binary, actual, [&](const Model& m) { return m.add(a, b); });
+                    break;
+                case 1:
+                    actual = ops.subAssign(a, b);
+                    check(t, f, "chain subAssign", binary, actual, [&](const Model& m) { return m.sub(a, b); });
+                    break;
+                case 2:
+                    actual = ops.mulAssign(a, b);
+                    check(t, f, "chain mulAssign", binary, actual, [&](const Model& m) { return m.mul(a, b); });
+                    break;
+                case 3:
+                    actual = ops.divAssign(a, b);
+                    check(t, f, "chain divAssign", binary, actual, [&](const Model& m) { return m.div(a, b); });
+                    break;
+                case 4:
+                    actual = ops.addInt(a, i);
+                    check(t, f, "chain addInteger", withInt, actual, [&](const Model& m) { return m.addInt(a, n); });
+                    break;
+                case 5:
+                    actual = ops.subInt(a, i);
+                    check(t, f, "chain subtractInteger", withInt, actual, [&](const Model& m) { return m.subInt(a, n); });
+                    break;
+                case 6:
+                    actual = ops.mulAssignInt(a, i);
+                    check(t, f, "chain mulAssignInt", withInt, actual, [&](const Model& m) { return m.mulInt(a, n); });
+                    break;
+                case 7:
+                    actual = ops.divAssignInt(a, i);
+                    check(t, f, "chain divAssignInt", withInt, actual, [&](const Model& m) { return m.divInt(a, n); });
+                    break;
+                case 8:
+                    actual = ops.preIncrement(a);
+                    check(t, f, "chain preIncrement", unary, actual, [&](const Model& m) { return m.add(a, m.one()); });
+                    break;
+                case 9:
+                    actual = ops.preDecrement(a);
+                    check(t, f, "chain preDecrement", unary, actual, [&](const Model& m) { return m.sub(a, m.one()); });
+                    break;
+                case 10:
+                    actual = ops.selfAdd(a);
+                    check(t, f, "chain selfAdd", unary, actual, [&](const Model& m) { return m.add(a, a); });
+                    break;
+                case 11:
+                    actual = ops.selfSub(a);
+                    check(t, f, "chain selfSub", unary, actual, [&](const Model& m) { return m.sub(a, a); });
+                    break;
+                case 12:
+                    actual = ops.selfMul(a);
+                    check(t, f, "chain selfMul", unary, actual, [&](const Model& m) { return m.mul(a, a); });
+                    break;
+                case 13:
+                    if ((a != 0) || f.saturate)
+                    {
+                        actual = ops.selfDiv(a);
+                        check(t, f, "chain selfDiv", unary, actual, [&](const Model& m) { return m.div(a, a); });
+                    }
+                    break;
+                default:
+                    actual = ops.partsRoundTrip(a);
+                    check(t, f, "chain partsRoundTrip", unary, actual, [&](const Model&) { return a; });
+                    break;
+            }
+
+            // An out-of-range result has already failed its check; carry on
+            // from a valid value so the rest of the chain still means something.
+            a = inRange(f, actual) ? actual : 0;
+        }
     }
 
     void runEngine(const Format& f, const Ops& ops, Tally& tally)
@@ -947,7 +1184,7 @@ namespace
             values = edgeValues(f);
             const std::vector<Wide> edges = values;
 
-            for (unsigned i = 0; i < RandomValues; ++i)
+            for (unsigned i = 0; i < scaled(RandomValues); ++i)
             {
                 values.push_back(randomValue(f, rng));
             }
@@ -960,7 +1197,7 @@ namespace
                 }
             }
 
-            for (unsigned i = 0; i < RandomPairs; ++i)
+            for (unsigned i = 0; i < scaled(RandomPairs); ++i)
             {
                 // Sequenced: argument evaluation order is unspecified, and
                 // both compilers must draw the same pairs.
@@ -980,6 +1217,19 @@ namespace
             {
                 checkInt(tally, f, ops, a, n);
             }
+        }
+
+        // The int list above is fixed; these pairs reach the rest of int.
+        for (unsigned i = 0; i < scaled(RandomIntPairs); ++i)
+        {
+            const Wide a = randomValue(f, rng);
+            const Wide n = randomInt(rng);
+            checkInt(tally, f, ops, a, n);
+        }
+
+        for (unsigned i = 0; i < scaled(Chains); ++i)
+        {
+            checkChain(tally, f, ops, rng);
         }
     }
 
@@ -1008,7 +1258,7 @@ namespace
         Rng rng(seedFor(src) ^ (seedFor(dst) << 1));
         std::vector<Wide> values = edgeValues(src);
 
-        for (unsigned i = 0; i < RandomPairs; ++i)
+        for (unsigned i = 0; i < scaled(RandomPairs); ++i)
         {
             values.push_back(randomValue(src, rng));
         }
@@ -1052,7 +1302,8 @@ namespace
             examples += "\n  " + example;
         }
 
-        BOOST_CHECK_MESSAGE(tally.unknown == 0, family << ": " << tally.unknown << " results match neither the intended arithmetic nor any known defect:" << examples);
+        BOOST_CHECK_MESSAGE(tally.unknown == 0, family << ": " << tally.unknown << " results match neither the intended arithmetic nor any known defect"
+                            << " (reproduce with TINYMIND_ORACLE_SEED=" << runConfig().seed << " TINYMIND_ORACLE_SCALE=" << runConfig().scale << "):" << examples);
 
         gTotal.merge(tally);
     }
@@ -1157,7 +1408,8 @@ BOOST_AUTO_TEST_CASE(test_case_oracle_conversions)
 // run skips the families that produce the hits.
 BOOST_AUTO_TEST_CASE(test_case_known_defects_still_reproduce)
 {
-    std::printf("oracle total: %llu checks. Skipped: %s.\n", gTotal.checks, skippedInputs());
+    std::printf("oracle total: %llu checks (TINYMIND_ORACLE_SEED=%llu TINYMIND_ORACLE_SCALE=%u). Skipped: %s.\n",
+                gTotal.checks, static_cast<unsigned long long>(runConfig().seed), runConfig().scale, skippedInputs());
 
     for (unsigned d = 0; d < NumberOfKnownDefects; ++d)
     {

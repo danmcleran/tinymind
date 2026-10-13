@@ -1,0 +1,54 @@
+name: QValue oracle soak (nightly)
+
+# Soak run of the QValue differential oracle, NOT a PR gate.
+#
+# The per-PR oracle (unit_test/qformat_oracle, run by `make sanitize` and
+# `make check-clang`) checks every input pair for formats of 8 bits or fewer,
+# but for wider formats it checks edge values plus a fixed random sample: the
+# same ~16M checks on every PR. That keeps PRs deterministic, and it also
+# means the sample never grows. Q32.32 alone has 2^128 operand pairs.
+#
+# This job draws a new sample every night (TINYMIND_ORACLE_SEED = the run id)
+# at ORACLE_SCALE times the per-PR random counts, under ASan+UBSan, against
+# the same exact reference. A defect that only shows up at rare inputs, which
+# the fixed per-PR sample misses, gets a fresh chance to be hit each night.
+#
+# A failure prints the seed and scale. Reproduce it locally with
+#   make oracle-soak ORACLE_SEED=<seed> ORACLE_SCALE=<scale>
+# and once the input is known, add it to the oracle's edge values or a
+# qformat unit test so the per-PR gate guards the fix.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # 07:00 UTC daily, after the fuzz and MSan runs
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Oracle seed (blank: the run id)"
+        default: ""
+      scale:
+        description: "Multiplier on the per-PR random counts"
+        default: "200"
+
+permissions:
+  contents: read
+
+jobs:
+  oracle-soak:
+    name: QValue oracle soak (ASan + UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Install Boost
+        uses: ./.github/actions/apt-install
+        with:
+          packages: libboost-dev libboost-test-dev
+      - name: Soak the oracle with a fresh seed
+        env:
+          BOOST_HOME: /usr
+          SEED: ${{ github.event.inputs.seed || github.run_id }}
+          SCALE: ${{ github.event.inputs.scale || '200' }}
+        run: |
+          echo "Reproduce with: make oracle-soak ORACLE_SEED=$SEED ORACLE_SCALE=$SCALE"
+          make oracle-soak ORACLE_SEED="$SEED" ORACLE_SCALE="$SCALE"
