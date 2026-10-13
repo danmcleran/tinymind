@@ -27,6 +27,8 @@
 #include <limits>
 #include <cstring>
 #include <new>
+#include <type_traits>
+#include <utility>
 
 #include "qformat.hpp"
 #include "compiler.h"
@@ -102,6 +104,56 @@ static_assert((std::numeric_limits<uint32_t>::max() == std::numeric_limits<typen
 static_assert((std::numeric_limits<uint32_t>::max() == std::numeric_limits<typename UnsignedQ24_8Type::FractionalPartFieldType>::max()), "Invalid type.");
 static_assert((std::numeric_limits<int32_t>::max() == std::numeric_limits<typename SignedQ24_8Type::FixedPartFieldType>::max()), "Invalid type.");
 static_assert((std::numeric_limits<uint32_t>::max() == std::numeric_limits<typename SignedQ24_8Type::FractionalPartFieldType>::max()), "Invalid type.");
+
+// A raw value of the same QValue type as `like`. An int operand to += and -=
+// is deleted (it was raw LSBs there but a whole number for q + n), so the
+// raw-LSB arithmetic these tests exercise says so explicitly.
+template<typename QValueType>
+QValueType rawLike(const QValueType&, const long long raw)
+{
+    return QValueType(static_cast<typename QValueType::FullWidthFieldType>(raw));
+}
+
+// Compile-time detectors for the deleted integer overloads.
+template<typename Q, typename T, typename = void>
+struct CanAddAssign : std::false_type
+{
+};
+
+template<typename Q, typename T>
+struct CanAddAssign<Q, T, decltype(void(std::declval<Q&>() += std::declval<T>()))> : std::true_type
+{
+};
+
+template<typename Q, typename T, typename = void>
+struct CanSubtractAssign : std::false_type
+{
+};
+
+template<typename Q, typename T>
+struct CanSubtractAssign<Q, T, decltype(void(std::declval<Q&>() -= std::declval<T>()))> : std::true_type
+{
+};
+
+template<typename Q, typename T, typename = void>
+struct CanCompareEqual : std::false_type
+{
+};
+
+template<typename Q, typename T>
+struct CanCompareEqual<Q, T, decltype(void(std::declval<const Q&>() == std::declval<T>()))> : std::true_type
+{
+};
+
+template<typename Q, typename T, typename = void>
+struct CanCompareNotEqual : std::false_type
+{
+};
+
+template<typename Q, typename T>
+struct CanCompareNotEqual<Q, T, decltype(void(std::declval<const Q&>() != std::declval<T>()))> : std::true_type
+{
+};
 
 #define BOOST_TEST_MODULE test module name
 TINYMIND_DISABLE_WARNING_PUSH
@@ -232,7 +284,7 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     SignedQ24_40Type Q18(-1, 0);
     SignedQ24_40Type Q19(1, 0);
 
-    uQ5 += 0;
+    uQ5 += rawLike(uQ5, 0);
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0) == uQ5.getValue());
 
     uQ5 += uQ5;
@@ -241,13 +293,13 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     uQ5 += uQ6;
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(1) == uQ5.getValue());
 
-    uQ5 += 1;
+    uQ5 += rawLike(uQ5, 1);
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(2) == uQ5.getValue());
 
     uQ5 += uQ7;
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0x100000003ULL) == uQ5.getValue());
 
-    Q14 += 0;
+    Q14 += rawLike(Q14, 0);
     BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0) == Q14.getValue());
 
     Q14 += Q14;
@@ -265,7 +317,7 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     Q14 = Q15 + Q16;
     BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0) == Q14.getValue());
 
-    Q17 += 0;
+    Q17 += rawLike(Q17, 0);
     BOOST_TEST(static_cast<SignedQ24_40Type::FullWidthValueType>(0) == Q17.getValue());
 
     Q17 += Q17;
@@ -281,7 +333,7 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     BOOST_TEST(Q17.getValue() == Q19.getValue());
 #endif // __SIZEOF_INT128__
 
-    uQ0 += 0;
+    uQ0 += rawLike(uQ0, 0);
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0) == uQ0.getValue());
 
     uQ0 += uQ0;
@@ -290,7 +342,7 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     uQ0 += uQ1;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(1) == uQ0.getValue());
 
-    uQ0 += 1;
+    uQ0 += rawLike(uQ0, 1);
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(2) == uQ0.getValue());
 
     uQ0 += uQ2;
@@ -299,7 +351,7 @@ BOOST_AUTO_TEST_CASE(test_case_addition)
     uQ3 = uQ1 + uQ2;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0x102) == uQ3.getValue());
 
-    Q0 += 0;
+    Q0 += rawLike(Q0, 0);
     BOOST_TEST(static_cast<SignedQ8_8Type::FullWidthValueType>(0) == Q0.getValue());
 
     Q0 += Q0;
@@ -409,22 +461,22 @@ BOOST_AUTO_TEST_CASE(test_case_subtraction)
     uQ6 = uQ4 - uQ5;
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0x100000000ULL) == uQ6.getValue());
 
-    uQ6 -= 1;
+    uQ6 -= rawLike(uQ6, 1);
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0xFFFFFFFFULL) == uQ6.getValue());
 
-    uQ6 -= 1;
+    uQ6 -= rawLike(uQ6, 1);
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0xFFFFFFFEULL) == uQ6.getValue());
 
-    uQ6 -= 0;
+    uQ6 -= rawLike(uQ6, 0);
     BOOST_TEST(static_cast<UnsignedQ32_32Type::FullWidthValueType>(0xFFFFFFFEULL) == uQ6.getValue());
 
-    Q15 -= 0;
+    Q15 -= rawLike(Q15, 0);
     BOOST_TEST(static_cast<SignedQ32_32Type::FullWidthValueType>(0xFFFFFFFF00000000ULL) == Q15.getValue());
 
     Q14 -= Q15;
     BOOST_TEST(Q16.getValue() == Q14.getValue());
 
-    Q18 -= 0;
+    Q18 -= rawLike(Q18, 0);
     BOOST_TEST(static_cast<SignedQ24_40Type::FullWidthValueType>(0) == Q18.getValue());
 
     Q18 -= Q19;
@@ -437,19 +489,19 @@ BOOST_AUTO_TEST_CASE(test_case_subtraction)
     uQ3 = uQ3 - uQ2;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0x1) == uQ3.getValue());
 
-    uQ0 -= 0;
+    uQ0 -= rawLike(uQ0, 0);
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0x101) == uQ0.getValue());
 
     uQ0 -= uQ1;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0x100) == uQ0.getValue());
 
-    uQ0 -= 1;
+    uQ0 -= rawLike(uQ0, 1);
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0xFF) == uQ0.getValue());
 
     uQ0 -= uQ2;
     BOOST_TEST(static_cast<UnsignedQ8_8Type::FullWidthValueType>(0) == uQ0.getValue());
 
-    Q0 -= 0;
+    Q0 -= rawLike(Q0, 0);
     BOOST_TEST(static_cast<SignedQ8_8Type::FullWidthValueType>(0x100) == Q0.getValue());
 
     Q0 -= Q1;
@@ -1235,13 +1287,67 @@ BOOST_AUTO_TEST_CASE(test_case_unsigned_saturating_add_with_addend_above_max)
 {
     // MinMaxSaturatePolicy's guard computed maxValue - target in T, which
     // wraps for an unsigned word at least as wide as int when the addend
-    // exceeds the bound, so the sum wrapped instead of clamping. Only a raw
-    // addend into a narrow format can exceed the bound.
-    typedef tinymind::QValue<8, 16, false, tinymind::TruncatePolicy, tinymind::MinMaxSaturatePolicy> SatUQ8_16Type;
+    // exceeds the bound, so the sum wrapped instead of clamping. QValue no
+    // longer takes a raw integer addend, but the policy is public, so it is
+    // checked directly with UQ8.16's bounds.
+    typedef tinymind::MinMaxSaturatePolicy<uint32_t> PolicyType;
 
-    SatUQ8_16Type narrow(0, 0);
-    narrow += static_cast<SatUQ8_16Type::FullWidthValueType>(0xFFFFFFFE); // raw addend far above 0xFFFFFF
-    BOOST_TEST(narrow.getValue() == 0xFFFFFFu);
+    BOOST_TEST(PolicyType::saturate(0u, 0xFFFFFFFEu, 0u, 0xFFFFFFu, tinymind::AdditionOp) == 0xFFFFFFu);
+    BOOST_TEST(PolicyType::saturate(5u, 0xFFFFFFu, 0u, 0xFFFFFFu, tinymind::AdditionOp) == 0xFFFFFFu);
+    BOOST_TEST(PolicyType::saturate(5u, 7u, 0u, 0xFFFFFFu, tinymind::AdditionOp) == 12u);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_int_operand_is_an_exact_whole_number)
+{
+    // An int operand used to be built as QValue(n, 0), wrapping an int outside
+    // the fixed part's range first: for Q8.8, 200 became -56.
+    const SignedQ8_8Type one(1, 0);
+    BOOST_TEST((one < 200));
+    BOOST_TEST(!(one > 200));
+    BOOST_TEST((one > -200));
+    BOOST_TEST(((one <= 1) && (one >= 1) && !(one < 1) && !(one > 1)));
+
+    const SignedQ8_8SatPolicyType satOne(1, 0);
+    BOOST_TEST((satOne + 200).getValue() == SignedQ8_8SatPolicyType::QFormatMaxValue()); // 201.0 clamps
+    BOOST_TEST((satOne - 200).getValue() == SignedQ8_8SatPolicyType::QFormatMinValue()); // -199.0 clamps
+    BOOST_TEST((satOne * 300).getValue() == SignedQ8_8SatPolicyType::QFormatMaxValue()); // 300.0 clamps
+
+    SignedQ8_8SatPolicyType ten(10, 0);
+    ten /= 300; // 0.0333 truncates to 8 LSBs (0.03125); the old path divided by 300 wrapped to 44
+    BOOST_TEST(ten.getValue() == 8);
+    BOOST_TEST((SignedQ8_8SatPolicyType(100, 0) / 256).getValue() == 100); // 0.390625, not 100 / 0
+
+    // Wrap arithmetic on an exact operand: 1.0 + 256.0 wraps to 1.0 in Q8.8.
+    BOOST_TEST((one + 256).getValue() == 256);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_ambiguous_integer_operands_are_deleted)
+{
+    // q += n, q -= n, q == n and q != n read n as raw LSBs while q + n and
+    // q < n read it as a whole number. The members are deleted for any
+    // non-QValue operand, so callers must say which they mean; QValue operands
+    // are unaffected.
+    static_assert(!CanAddAssign<SignedQ8_8Type, int>::value, "q += int must not compile");
+    static_assert(!CanSubtractAssign<SignedQ8_8Type, int>::value, "q -= int must not compile");
+    static_assert(!CanCompareEqual<SignedQ8_8Type, int>::value, "q == int must not compile");
+    static_assert(!CanCompareNotEqual<SignedQ8_8Type, int>::value, "q != int must not compile");
+    static_assert(!CanAddAssign<SignedQ16_16Type, SignedQ16_16Type::FullWidthValueType>::value, "q += raw word must not compile");
+    static_assert(!CanCompareEqual<SignedQ16_16Type, SignedQ16_16Type::FullWidthValueType>::value, "q == raw word must not compile");
+    static_assert(!CanAddAssign<SignedQ8_8Type, double>::value, "q += double must not compile");
+
+    static_assert(CanAddAssign<SignedQ8_8Type, SignedQ8_8Type>::value, "q += QValue must compile");
+    static_assert(CanSubtractAssign<SignedQ8_8Type, SignedQ8_8Type>::value, "q -= QValue must compile");
+    static_assert(CanCompareEqual<SignedQ8_8Type, SignedQ8_8Type>::value, "q == QValue must compile");
+    static_assert(CanCompareNotEqual<SignedQ8_8Type, SignedQ8_8Type>::value, "q != QValue must compile");
+
+    SignedQ8_8Type q(1, 0);
+    q.addInteger(2);
+    BOOST_TEST(q.getValue() == 3 * 256);
+    q.subtractInteger(5);
+    BOOST_TEST(q.getValue() == -2 * 256);
+    BOOST_TEST(q.compareInteger(-2) == 0);
+    BOOST_TEST(q.compareInteger(-1) < 0);
+    BOOST_TEST(q.compareInteger(-3) > 0);
 }
 
 BOOST_AUTO_TEST_CASE(test_case_division_by_zero_saturates)
