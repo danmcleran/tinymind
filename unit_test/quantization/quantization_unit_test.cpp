@@ -5658,8 +5658,16 @@ namespace qconv_window_test {
 
         static int8_t x[H * W * IC];
         static int8_t w[TensorConv::TotalWeights];
-        static int8_t yTensor[TensorConv::OutputSize];
-        static int8_t yChannel[ChannelConv::OutputSize];
+        // Guard bytes after each output catch writes past the last pixel.
+        constexpr std::size_t Guard = 64;
+        constexpr int8_t GuardByte = static_cast<int8_t>(0x5A);
+        static int8_t yTensor[TensorConv::OutputSize + Guard];
+        static int8_t yChannel[ChannelConv::OutputSize + Guard];
+        for (std::size_t i = 0; i < Guard; ++i)
+        {
+            yTensor[TensorConv::OutputSize + i] = GuardByte;
+            yChannel[ChannelConv::OutputSize + i] = GuardByte;
+        }
         int32_t b[F];
         Requantizer<int32_t, int8_t> rq[F];
 
@@ -5713,6 +5721,14 @@ namespace qconv_window_test {
                 }
             }
         }
+
+        for (std::size_t i = 0; i < Guard; ++i)
+        {
+            BOOST_TEST(static_cast<int>(yTensor[TensorConv::OutputSize + i]) ==
+                       static_cast<int>(GuardByte));
+            BOOST_TEST(static_cast<int>(yChannel[ChannelConv::OutputSize + i]) ==
+                       static_cast<int>(GuardByte));
+        }
     }
 
 } // namespace qconv_window_test
@@ -5723,6 +5739,11 @@ BOOST_AUTO_TEST_CASE(qconv2d_window_strategies_match_per_tap_reference)
     qconv_window_test::checkShape<10, 10, 1, 3, 3, 1, 1, 8, true>();
     qconv_window_test::checkShape<9, 11, 3, 3, 3, 2, 2, 4, true>();
     qconv_window_test::checkShape<6, 8, 2, 1, 5, 1, 1, 3, true>();
+    // Patch tiles: a 64-byte window fills a 4-pixel tile, so OW = 7 ends
+    // in a partial tile; a 27-byte window tiles 9 pixels, so OW = 19 ends
+    // in a single-pixel tile, here with stride 2 rows.
+    qconv_window_test::checkShape<10, 10, 4, 4, 4, 1, 1, 3, true>();
+    qconv_window_test::checkShape<41, 21, 3, 3, 3, 2, 1, 5, true>();
     // Exactly kConvPatchMaxBytes (4x4x4 = 64) still gathers; 65 does not.
     qconv_window_test::checkShape<7, 7, 4, 4, 4, 1, 1, 3, true>();
     qconv_window_test::checkShape<6, 16, 1, 5, 13, 1, 1, 2, false>();

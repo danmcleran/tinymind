@@ -65,12 +65,29 @@ namespace tinymind {
          * Largest kernel window (KH * KW * InChannels bytes) that the conv
          * layers copy into a contiguous on-stack patch. Under one kernel
          * window the NHWC input is KH runs of KW * InChannels contiguous
-         * elements, so a window up to this size is gathered once per output
-         * pixel and reused by every filter as a single dot product. Bigger
+         * elements, so a window up to this size is gathered into a patch
+         * and every filter runs a single dot product over it. Bigger
          * windows skip the copy (bounding the stack cost) and run one dot
          * product per kernel row instead.
          */
         constexpr std::size_t kConvPatchMaxBytes = 64;
+
+        /*
+         * Stack budget for a tile of gathered patches. The patch path gathers
+         * the windows of up to a whole output row at once, then sweeps the
+         * tile filter by filter so each filter's weights, bias and requantizer
+         * stay loaded across the tile instead of being re-fetched per output.
+         * A tile that spans the whole output row is fastest (every tile then
+         * has the same compile-time length); the default fits a whole row for
+         * small stems such as an 18-wide 3x3x1 layer in 12-byte slots. Define
+         * TINYMIND_CONV_TILE_MAX_BYTES lower on stack-tight parts: 64 keeps
+         * most of the -O3 gain, and 0 (one pixel per tile) is the smallest
+         * stack but slower than no tiling at all.
+         */
+#ifndef TINYMIND_CONV_TILE_MAX_BYTES
+#define TINYMIND_CONV_TILE_MAX_BYTES 256
+#endif
+        constexpr std::size_t kConvTileMaxBytes = TINYMIND_CONV_TILE_MAX_BYTES;
 
         template<typename InputType, std::size_t W_, std::size_t InChannels_,
                  std::size_t KH_, std::size_t KW_>
@@ -87,22 +104,72 @@ namespace tinymind {
             }
         }
 
-        // Sum over one kernel window for one filter. Either a single dot
-        // product over the gathered patch, or one per kernel row read in
-        // place. Same int32 products either way; only the summation order
-        // differs, so the result is bit-exact with the per-pixel loop.
-        template<typename InputType, typename WeightType, typename AccumType,
+        // Patch path: kernel windows of one output-row tile gathered into
+        // 4-byte-aligned slots, then a filter-outer sweep of the tile. Rqs
+        // holds one Requantizer per filter, or a single per-tensor one.
+        template<typename InputType, typename WeightType, typename AccumType, typename OutputType,
                  std::size_t W_, std::size_t InChannels_, std::size_t KH_, std::size_t KW_,
-                 bool UsePatch>
-        inline AccumType convWindowDot(const InputType* window, const InputType* patch,
-                                       const WeightType* filterWeights, InputType zeroPoint)
+                 std::size_t StrideH_, std::size_t StrideW_, std::size_t NumFilters_,
+                 std::size_t OutputHeight, std::size_t OutputWidth, bool PerChannel>
+        inline void convForwardPatchTiles(const InputType* input, OutputType* output,
+                                          const WeightType* weights, const AccumType* biases,
+                                          InputType zeroPoint,
+                                          const Requantizer<AccumType, OutputType>* rqs)
         {
-            if (UsePatch)
-            {
-                return simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
-                    patch, filterWeights, KH_ * KW_ * InChannels_, zeroPoint);
-            }
+            constexpr std::size_t windowLength = KH_ * KW_ * InChannels_;
+            constexpr std::size_t slot = (windowLength + 3u) & ~static_cast<std::size_t>(3u);
+            constexpr std::size_t tileCap = kConvTileMaxBytes / (slot * sizeof(InputType));
+            constexpr std::size_t tileMax =
+                (tileCap == 0) ? 1 : ((OutputWidth < tileCap) ? OutputWidth : tileCap);
 
+            alignas(alignof(InputType) > 4 ? alignof(InputType) : 4) InputType patches[tileMax * slot];
+
+            for (std::size_t oh = 0; oh < OutputHeight; ++oh)
+            {
+                for (std::size_t ow0 = 0; ow0 < OutputWidth; ow0 += tileMax)
+                {
+                    const std::size_t count =
+                        (OutputWidth - ow0 < tileMax) ? (OutputWidth - ow0) : tileMax;
+
+                    for (std::size_t t = 0; t < count; ++t)
+                    {
+                        const InputType* const window =
+                            input + ((oh * StrideH_) * W_ + (ow0 + t) * StrideW_) * InChannels_;
+                        gatherConvPatch<InputType, W_, InChannels_, KH_, KW_>(
+                            window, patches + t * slot);
+                    }
+
+                    OutputType* const tileOut = output + (oh * OutputWidth + ow0) * NumFilters_;
+
+                    TINYMIND_PARALLEL_FOR_OUTER
+                    for (std::size_t f = 0; f < NumFilters_; ++f)
+                    {
+                        const WeightType* const filterWeights = weights + f * windowLength;
+                        const AccumType bias = (biases != nullptr)
+                            ? biases[f]
+                            : static_cast<AccumType>(0);
+                        const Requantizer<AccumType, OutputType> rq = rqs[PerChannel ? f : 0];
+
+                        for (std::size_t t = 0; t < count; ++t)
+                        {
+                            const AccumType acc = bias +
+                                simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
+                                    patches + t * slot, filterWeights, windowLength, zeroPoint);
+                            tileOut[t * NumFilters_ + f] = rq.apply(acc);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Row path: one dot product per kernel row, read in place. Same int32
+        // products as the per-tap loop, only the summation order differs, so
+        // the result is bit-exact.
+        template<typename InputType, typename WeightType, typename AccumType,
+                 std::size_t W_, std::size_t InChannels_, std::size_t KH_, std::size_t KW_>
+        inline AccumType convRowsDot(const InputType* window, const WeightType* filterWeights,
+                                     InputType zeroPoint)
+        {
             constexpr std::size_t rowLength = KW_ * InChannels_;
             AccumType acc = static_cast<AccumType>(0);
             for (std::size_t kh = 0; kh < KH_; ++kh)
@@ -176,6 +243,15 @@ namespace tinymind {
             const InputType inputZeroPoint = input_zero_point;
             const Requantizer<AccumulatorType, OutputType> rq = requantizer;
 
+            if (UsePatch)
+            {
+                detail::convForwardPatchTiles<InputType, WeightType, AccumulatorType, OutputType,
+                                              W_, InChannels_, KH_, KW_, StrideH_, StrideW_,
+                                              NumFilters_, OutputHeight, OutputWidth, false>(
+                    input, output, layerWeights, layerBiases, inputZeroPoint, &rq);
+                return;
+            }
+
             for (std::size_t oh = 0; oh < OutputHeight; ++oh)
             {
                 const std::size_t ihStart = oh * StrideH_;
@@ -187,12 +263,6 @@ namespace tinymind {
 
                     const InputType* const window =
                         input + (ihStart * W_ + iwStart) * InChannels_;
-                    alignas(alignof(InputType) > 4 ? alignof(InputType) : 4) InputType patch[UsePatch ? WeightsPerFilter : 1];
-                    if (UsePatch)
-                    {
-                        detail::gatherConvPatch<InputType, W_, InChannels_, KH_, KW_>(
-                            window, patch);
-                    }
 
                     TINYMIND_PARALLEL_FOR_OUTER
                     for (std::size_t f = 0; f < NumFilters_; ++f)
@@ -201,10 +271,9 @@ namespace tinymind {
                             ? layerBiases[f]
                             : static_cast<AccumulatorType>(0);
 
-                        acc += detail::convWindowDot<InputType, WeightType, AccumulatorType,
-                                                     W_, InChannels_, KH_, KW_, UsePatch>(
-                            window, patch, layerWeights + f * WeightsPerFilter,
-                            inputZeroPoint);
+                        acc += detail::convRowsDot<InputType, WeightType, AccumulatorType,
+                                                   W_, InChannels_, KH_, KW_>(
+                            window, layerWeights + f * WeightsPerFilter, inputZeroPoint);
 
                         output[outPixelOffset + f] = rq.apply(acc);
                     }
@@ -290,6 +359,15 @@ namespace tinymind {
             const InputType inputZeroPoint = input_zero_point;
             const Requantizer<AccumulatorType, OutputType>* const rqs = requantizers;
 
+            if (UsePatch)
+            {
+                detail::convForwardPatchTiles<InputType, WeightType, AccumulatorType, OutputType,
+                                              W_, InChannels_, KH_, KW_, StrideH_, StrideW_,
+                                              NumFilters_, OutputHeight, OutputWidth, true>(
+                    input, output, layerWeights, layerBiases, inputZeroPoint, rqs);
+                return;
+            }
+
             for (std::size_t oh = 0; oh < OutputHeight; ++oh)
             {
                 const std::size_t ihStart = oh * StrideH_;
@@ -301,12 +379,6 @@ namespace tinymind {
 
                     const InputType* const window =
                         input + (ihStart * W_ + iwStart) * InChannels_;
-                    alignas(alignof(InputType) > 4 ? alignof(InputType) : 4) InputType patch[UsePatch ? WeightsPerFilter : 1];
-                    if (UsePatch)
-                    {
-                        detail::gatherConvPatch<InputType, W_, InChannels_, KH_, KW_>(
-                            window, patch);
-                    }
 
                     TINYMIND_PARALLEL_FOR_OUTER
                     for (std::size_t f = 0; f < NumFilters_; ++f)
@@ -315,10 +387,9 @@ namespace tinymind {
                             ? layerBiases[f]
                             : static_cast<AccumulatorType>(0);
 
-                        acc += detail::convWindowDot<InputType, WeightType, AccumulatorType,
-                                                     W_, InChannels_, KH_, KW_, UsePatch>(
-                            window, patch, layerWeights + f * WeightsPerFilter,
-                            inputZeroPoint);
+                        acc += detail::convRowsDot<InputType, WeightType, AccumulatorType,
+                                                   W_, InChannels_, KH_, KW_>(
+                            window, layerWeights + f * WeightsPerFilter, inputZeroPoint);
 
                         output[outPixelOffset + f] = rqs[f].apply(acc);
                     }
