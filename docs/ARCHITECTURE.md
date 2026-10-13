@@ -216,6 +216,10 @@ Every runnable example writes a header-row CSV to its `output/` directory and sh
 - **`apps/import_pytorch/`** — Phase 15 PyTorch → TinyMind int8 importer module (`tinymind_import.py`). Pure-numpy core: caller assembles a layer descriptor list from a `torch.state_dict`, picks a per-layer observer (`MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver`), calls `import_pytorch_model(...)`, gets a TinyMind-format `weights.hpp`. Conv2D-then-BatchNorm2D pairs auto-fuse via `fuse_layers` ahead of calibration.
 - **`apps/import_onnx/`** — Phase 15 QDQ-format ONNX → TinyMind int8 importer (`tinymind_import_onnx.py`). Targets canonical CNN classifier topology: `QLinearConv` / `QLinearMatMul` plus `Relu` / `Sigmoid` / `Tanh` / `Softmax`. The `onnx` package is imported lazily so the emitter half is usable without it.
 
+## Framework benchmarks (`benchmarks/`)
+
+- **`benchmarks/framework_comparison_f411/`** — on-target comparison against TensorFlow Lite for Microcontrollers (CMSIS-NN and reference kernels) and emlearn on a NUCLEO-F411RE (Cortex-M4F, 100 MHz). `gen/make_models.py` quantizes one float model per network with TFLite and lifts the exact int8 weights and requantizer multipliers into TinyMind per-channel layers, so the int8 outputs hash-match TFLM on the board. Bare-metal board support, a DWT timing harness and one backend per framework build into separate images; `make LEVEL=O2|O3 run` flashes and captures each. Arm-only, so it lives outside `examples/` and is not built in CI. Results and method: [`docs/benchmarks.md`](benchmarks.md).
+
 ## Benchmark harness (`cpp/include/bench/`)
 
 - **`platform.hpp`** — `bench::readCycleCounter()` (DWT CYCCNT on Cortex-M, `std::chrono` host fallback) and `bench::paintStack` / `bench::stackHighWater` for MCU stack watermarking. Enable the MCU path with `-DTINYMIND_BENCH_CORTEX_M`.
