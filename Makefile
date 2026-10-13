@@ -4,6 +4,7 @@ default :
 check :
 	cd unit_test/nn && make clean && make && make run && cd -
 	cd unit_test/qformat && make clean && make && make run && cd -
+	cd unit_test/qformat_oracle && make clean && make && make run && cd -
 	cd unit_test/qlearn && make clean && make && make run && cd -
 	cd unit_test/lookuptable && make clean && make && make run && cd -
 	cd unit_test/embedded && make clean && make && make run && make simd_prereq_regressions && cd -
@@ -185,8 +186,15 @@ ANALYZE_DEF = -DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_STD=1 \
 # explicitly so cppcheck analyzes each as a translation unit.
 ANALYZE_SRCS = $(shell find cpp -name '*.hpp') cpp/lookupTables.cpp
 
+# The QValue suites run under the sanitizers but stay out of COV_SUITES: the
+# oracle instantiates ~130 QValue formats, which would swamp the coverage
+# gate's function count with one-off template instances. They are the suites
+# that catch QValue undefined behaviour (signed overflow in WrapPolicy and in
+# fromParts was found this way), so they must run under UBSan in CI.
+SAN_EXTRA_SUITES = unit_test/qformat unit_test/qformat_oracle
+
 sanitize :
-	@for d in $(COV_SUITES) $(COV_EXAMPLES); do \
+	@for d in $(COV_SUITES) $(COV_EXAMPLES) $(SAN_EXTRA_SUITES); do \
 		echo "=== sanitize: $$d ==="; \
 		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
 		  $(MAKE) CC="$(SAN_CC)" WARN="$(SAN_WARN)" >/dev/null && \
@@ -357,7 +365,7 @@ warnings-strict :
 # a clean tree. Covering the exemplars under clang means building the examples
 # with clang first, which is a larger change than this target is scoped for.
 CLANG_CXX    ?= clang++
-CLANG_SUITES  = unit_test/nn unit_test/qformat unit_test/qlearn \
+CLANG_SUITES  = unit_test/nn unit_test/qformat unit_test/qformat_oracle unit_test/qlearn \
                 unit_test/lookuptable unit_test/quantization unit_test/dual \
                 unit_test/kan unit_test/pinn unit_test/ltc unit_test/cfc
 
@@ -540,7 +548,7 @@ MSAN_LIBCXX_CC      = $(CLANG_CXX) -stdlib=libc++ -nostdinc++ \
                       -Wl,-rpath,$(MSAN_LIBCXX_PREFIX)/lib \
                       -fsanitize=memory -fsanitize-memory-track-origins=2 \
                       -fno-omit-frame-pointer -O0 -g
-MSAN_LIBCXX_SUITES  = unit_test/nn unit_test/qformat unit_test/qlearn \
+MSAN_LIBCXX_SUITES  = unit_test/nn unit_test/qformat unit_test/qformat_oracle unit_test/qlearn \
                       unit_test/lookuptable unit_test/quantization \
                       unit_test/dual unit_test/kan unit_test/pinn \
                       unit_test/ltc unit_test/cfc

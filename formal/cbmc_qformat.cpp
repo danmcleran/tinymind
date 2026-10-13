@@ -90,103 +90,123 @@ static int32_t truncate_i32(int32_t value)
     return result;
 }
 
-// === Transcriptions of the narrow-format storage arithmetic (Q8.16) ==========
-// Q8.16 is 24 bits held in an int32_t (unsigned counterpart uint32_t), the
-// shape issue #187 was about: every write must leave bits 24..31 equal to the
-// sign bit. FullWidthValueType = int32_t, FullWidthFieldType = uint32_t.
-static const int32_t Q8_16_MIN = -(1 << 23);
-static const int32_t Q8_16_MAX = (1 << 23) - 1;
+// === Transcriptions of the QValue storage arithmetic (32-bit word) ==========
+// FullWidthValueType = int32_t, FullWidthFieldType = uint32_t; the format is
+// passed as (fixedBits, fracBits). Proved for Q8.16, the narrow shape issue
+// #187 was about (24 bits in the word, so bits 24..31 must track the sign), and
+// for Q1.31, where the format fills the word with one fixed bit and 2^31 is
+// not representable in the signed word -- the case a signed multiply in
+// fromParts overflowed on.
 
 // int32_t -> uint32_t as C++ [conv.integral] defines it: the value modulo 2^32.
 // The shipping code writes this as a plain static_cast, which is well-defined;
 // CBMC's --conversion-check flags every negative-to-unsigned cast regardless,
 // so the modular result is spelled out here to keep that check meaningful for
-// the unsigned-to-signed narrowings, which must stay in range.
+// the narrowings that must stay in range.
 static uint32_t as_u32(int32_t value)
 {
     return (value < 0) ? ((uint32_t)(value + 1 + INT32_MAX) + 0x80000000u) : (uint32_t)value;
 }
 
-// tinymind::FormatWidthNormalizer<ValueType, FieldType, NumBits, true>::normalize
-// for NumBits = 24 (value) and NumBits = 8 (fixed part).
+// uint32_t -> int32_t modulo 2^32, the conversion QValue relies on when it
+// reinterprets an unsigned word (modular on GCC and Clang, and defined so by
+// C++20). Spelled out for the same reason as as_u32.
+static int32_t as_i32(uint32_t value)
+{
+    return (value > (uint32_t)INT32_MAX) ? ((int32_t)(value - 0x80000000u) - INT32_MAX - 1) : (int32_t)value;
+}
+
+// tinymind::FormatWidthNormalizer<int32_t, uint32_t, numBits, true>::normalize
+// (the FillsWord specialization is the identity).
 static int32_t normalize_i32(int32_t value, unsigned numBits)
 {
+    if (numBits == 32)
+    {
+        return value;
+    }
+
     const uint32_t mask = (uint32_t)(((uint32_t)1 << numBits) - 1);
     const uint32_t signBit = (uint32_t)((uint32_t)1 << (numBits - 1));
     const uint32_t low = (uint32_t)(as_u32(value) & mask);
     return (int32_t)((int32_t)(low ^ signBit) - (int32_t)signBit);
 }
 
-// QValue::fractionalPartMask for 16 fractional bits.
-static uint32_t frac_mask_q8_16()
+// QValue::fractionalPartMask
+static uint32_t frac_mask(unsigned fracBits)
 {
-    return (uint32_t)(((uint32_t)1 << 16) - 1);
+    return (uint32_t)(((uint32_t)1 << fracBits) - 1);
 }
 
-// QValue::fromParts
-static int32_t from_parts_q8_16(int32_t fixedPart, uint32_t fractionalPart)
+// QValue::fromParts: each part reduced to its own width, joined in the
+// unsigned word, reinterpreted, normalized to the format's width.
+static int32_t from_parts(int32_t fixedPart, uint32_t fractionalPart, unsigned fixedBits, unsigned fracBits)
 {
-    const int32_t fixedValue = normalize_i32(fixedPart, 8);
-    const int32_t fractionalValue = (int32_t)(fractionalPart & frac_mask_q8_16());
-    const int32_t scale = (int32_t)((int32_t)1 << 16);
-    return (int32_t)((fixedValue * scale) + fractionalValue);
+    const uint32_t fixedWord = as_u32(normalize_i32(fixedPart, fixedBits));
+    const uint32_t fractionalWord = (uint32_t)(fractionalPart & frac_mask(fracBits));
+    const uint32_t word = (uint32_t)((uint32_t)(fixedWord << fracBits) | fractionalWord);
+    return normalize_i32(as_i32(word), fixedBits + fracBits);
 }
 
 // QValue::getFixedPart
-static int32_t fixed_part_q8_16(int32_t value)
+static int32_t fixed_part(int32_t value, unsigned fixedBits, unsigned fracBits)
 {
-    const int32_t shifted = (int32_t)(as_u32(value) >> 16);
-    return normalize_i32(shifted, 8);
+    const int32_t shifted = (int32_t)(as_u32(value) >> fracBits);
+    return normalize_i32(shifted, fixedBits);
 }
 
 // QValue::getFractionalPart
-static uint32_t frac_part_q8_16(int32_t value)
+static uint32_t frac_part(int32_t value, unsigned fracBits)
 {
-    return (uint32_t)(as_u32(value) & frac_mask_q8_16());
+    return (uint32_t)(as_u32(value) & frac_mask(fracBits));
+}
+
+// The three storage properties for one format: any word normalizes into
+// range, building from ANY parts (even out-of-range ones, which truncate as the
+// old bit-field store did) is overflow-free and canonical with in-range parts
+// reading back exactly, and every canonical value round-trips through its
+// parts.
+static void prove_storage(unsigned fixedBits, unsigned fracBits)
+{
+    const unsigned width = fixedBits + fracBits;
+    const int64_t lo = -((int64_t)1 << (width - 1));
+    const int64_t hi = ((int64_t)1 << (width - 1)) - 1;
+    const int32_t fixedLo = (int32_t)(-((int64_t)1 << (fixedBits - 1)));
+    const int32_t fixedHi = (int32_t)(((int64_t)1 << (fixedBits - 1)) - 1);
+
+    int32_t v;
+    const int32_t r = normalize_i32(v, width);
+    __CPROVER_assert(r >= lo && r <= hi, "normalized value is in the format's range");
+    __CPROVER_assert((width == 32) || ((as_u32(r) & (((uint32_t)1 << width) - 1)) == (as_u32(v) & (((uint32_t)1 << width) - 1))), "normalize keeps the format's bits");
+    __CPROVER_assert(normalize_i32(r, width) == r, "normalize is idempotent");
+
+    int32_t fixedPart;
+    uint32_t fractionalPart;
+    const int32_t built = from_parts(fixedPart, fractionalPart, fixedBits, fracBits);
+    __CPROVER_assert(built >= lo && built <= hi, "fromParts stays in the format's range");
+    __CPROVER_assert(normalize_i32(built, width) == built, "fromParts yields a canonical value");
+
+    if ((fixedPart >= fixedLo) && (fixedPart <= fixedHi) && (fractionalPart <= frac_mask(fracBits)))
+    {
+        __CPROVER_assert(fixed_part(built, fixedBits, fracBits) == fixedPart, "fixed part reads back");
+        __CPROVER_assert(frac_part(built, fracBits) == fractionalPart, "fractional part reads back");
+    }
+
+    int32_t canonical;
+    __CPROVER_assume(canonical >= lo && canonical <= hi);
+    const int32_t rebuilt = from_parts(fixed_part(canonical, fixedBits, fracBits), frac_part(canonical, fracBits), fixedBits, fracBits);
+    __CPROVER_assert(rebuilt == canonical, "parts round-trip to the same value");
 }
 
 // === Proof harnesses =========================================================
 
-// Any storage word normalizes to the in-range value with the same low 24 bits,
-// and normalizing is idempotent -- so a canonical value is never disturbed.
-extern "C" void prove_normalize_q8_16()
+extern "C" void prove_storage_q8_16()
 {
-    int32_t v;
-    const int32_t r = normalize_i32(v, 24);
-
-    __CPROVER_assert(r >= Q8_16_MIN && r <= Q8_16_MAX, "normalized value is in the Q8.16 range");
-    __CPROVER_assert((as_u32(r) & 0xFFFFFFu) == (as_u32(v) & 0xFFFFFFu), "normalize keeps the format's 24 bits");
-    __CPROVER_assert(normalize_i32(r, 24) == r, "normalize is idempotent");
+    prove_storage(8, 16);
 }
 
-// Building from ANY parts (even out-of-range ones, which truncate as the old
-// bit-field store did) is overflow-free and yields a canonical value; in-range
-// parts read back exactly.
-extern "C" void prove_from_parts_q8_16()
+extern "C" void prove_storage_q1_31()
 {
-    int32_t fixedPart;
-    uint32_t fractionalPart;
-    const int32_t r = from_parts_q8_16(fixedPart, fractionalPart);
-
-    __CPROVER_assert(r >= Q8_16_MIN && r <= Q8_16_MAX, "fromParts stays in the Q8.16 range");
-    __CPROVER_assert(normalize_i32(r, 24) == r, "fromParts yields a canonical value");
-
-    if ((fixedPart >= -128) && (fixedPart <= 127) && (fractionalPart <= 0xFFFFu))
-    {
-        __CPROVER_assert(fixed_part_q8_16(r) == fixedPart, "fixed part reads back");
-        __CPROVER_assert(frac_part_q8_16(r) == fractionalPart, "fractional part reads back");
-    }
-}
-
-// Every canonical value splits into parts that rebuild it exactly.
-extern "C" void prove_parts_round_trip_q8_16()
-{
-    int32_t v;
-    __CPROVER_assume(v >= Q8_16_MIN && v <= Q8_16_MAX);
-
-    const int32_t rebuilt = from_parts_q8_16(fixed_part_q8_16(v), frac_part_q8_16(v));
-
-    __CPROVER_assert(rebuilt == v, "parts round-trip to the same value");
+    prove_storage(1, 31);
 }
 
 extern "C" void prove_saturate_add_sub_int16()
