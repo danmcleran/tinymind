@@ -59,8 +59,10 @@ namespace tinymind {
         {
             T result(value);
 
-            //Round up
-            result = result + ((result & (1 << (NumberOfFractionalBits - 1))) << 1);
+            //Round up. The half-LSB mask is built in T: as an int it was
+            // undefined for NumberOfFractionalBits > 32 and, at exactly 32, the
+            // sign-extended INT_MIN mask picked up every bit above bit 31.
+            result = result + ((result & (static_cast<T>(1) << (NumberOfFractionalBits - 1))) << 1);
             result >>= NumberOfFractionalBits;
 
             return result;
@@ -81,6 +83,47 @@ namespace tinymind {
         }
     };
 
+    // The unsigned type of the same width as T. Wrap-around addition and
+    // subtraction are done in it because signed overflow is undefined while
+    // unsigned arithmetic is defined modulo 2^N.
+    template<typename T>
+    struct UnsignedCounterpart
+    {
+        typedef T Type;
+    };
+
+    template<>
+    struct UnsignedCounterpart<int8_t>
+    {
+        typedef uint8_t Type;
+    };
+
+    template<>
+    struct UnsignedCounterpart<int16_t>
+    {
+        typedef uint16_t Type;
+    };
+
+    template<>
+    struct UnsignedCounterpart<int32_t>
+    {
+        typedef uint32_t Type;
+    };
+
+    template<>
+    struct UnsignedCounterpart<int64_t>
+    {
+        typedef uint64_t Type;
+    };
+
+#ifdef __SIZEOF_INT128__
+    template<>
+    struct UnsignedCounterpart<__int128_t>
+    {
+        typedef __uint128_t Type;
+    };
+#endif // __SIZEOF_INT128__
+
     template<typename T>
     class WrapPolicy // No saturation - just return the value (wrap-around behavior)
     {
@@ -90,15 +133,19 @@ namespace tinymind {
             (void)minValue; // Suppress unused parameter warnings
             (void)maxValue;
 
+            typedef typename UnsignedCounterpart<T>::Type UnsignedType;
+
             T result{};
 
             switch (opType)
             {
                 case AdditionOp:
-                    result = origValue + target;
+                    // Wrap in the unsigned counterpart: for a word at least as
+                    // wide as int, origValue + target is signed overflow (UB).
+                    result = static_cast<T>(static_cast<UnsignedType>(origValue) + static_cast<UnsignedType>(target));
                     break;
                 case SubtractionOp:
-                    result = origValue - target;
+                    result = static_cast<T>(static_cast<UnsignedType>(origValue) - static_cast<UnsignedType>(target));
                     break;
                 case MultiplicationOp:
                     result = origValue * target;
@@ -512,16 +559,17 @@ namespace tinymind {
         }
 
         // fixedPart * 2^frac + fractionalPart. Each part is first reduced to
-        // its own width (the truncation the old bit-field store performed), so
-        // the sum stays inside the format's range. Multiply, not left shift:
-        // the fixed part may be negative.
+        // its own width (the truncation the old bit-field store performed),
+        // then the two are joined in the unsigned word: 2^frac itself is not
+        // representable in the signed word when the format has one fixed bit
+        // and fills it (Q1.15, Q1.31), so a signed multiply there overflows.
         static FullWidthValueType fromParts(const FixedPartFieldType& fixedPart, const FractionalPartFieldType& fractionalPart)
         {
-            const FullWidthValueType fixedValue = FixedPartNormalizer::normalize(static_cast<FullWidthValueType>(fixedPart));
-            const FullWidthValueType fractionalValue = static_cast<FullWidthValueType>(static_cast<FullWidthFieldType>(fractionalPart) & fractionalPartMask());
-            const FullWidthValueType scale = static_cast<FullWidthValueType>(static_cast<FullWidthValueType>(1) << NumberOfFractionalBits);
+            const FullWidthFieldType fixedBits = static_cast<FullWidthFieldType>(FixedPartNormalizer::normalize(static_cast<FullWidthValueType>(fixedPart)));
+            const FullWidthFieldType fractionalBits = static_cast<FullWidthFieldType>(static_cast<FullWidthFieldType>(fractionalPart) & fractionalPartMask());
+            const FullWidthFieldType word = static_cast<FullWidthFieldType>(static_cast<FullWidthFieldType>(fixedBits << NumberOfFractionalBits) | fractionalBits);
 
-            return static_cast<FullWidthValueType>((fixedValue * scale) + fractionalValue);
+            return normalize(static_cast<FullWidthValueType>(word));
         }
 
     public:
