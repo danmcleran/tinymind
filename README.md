@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-# TinyMind
+# tinymind
 
 [![Static & Dynamic Analysis](https://github.com/danmcleran/tinymind/actions/workflows/analysis.yml/badge.svg)](https://github.com/danmcleran/tinymind/actions/workflows/analysis.yml)
 [![CodeQL](https://github.com/danmcleran/tinymind/actions/workflows/codeql.yml/badge.svg)](https://github.com/danmcleran/tinymind/actions/workflows/codeql.yml)
