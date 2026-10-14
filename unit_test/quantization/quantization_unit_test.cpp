@@ -5691,7 +5691,7 @@ BOOST_AUTO_TEST_CASE(simd_int8_dot_bit_exact_across_lengths)
 {
     // Lengths span: short scalar-tail-only, vector-aligned, vector + 1,
     // long contiguous, and odd primes that hit every tail residue.
-    const std::size_t lengths[] = { 0, 1, 7, 15, 16, 17, 31, 32, 33,
+    const std::size_t lengths[] = { 0, 1, 7, 8, 9, 15, 16, 17, 31, 32, 33,
                                     63, 64, 65, 127, 128, 129, 257, 1024 };
     int8_t x[1024];
     int8_t w[1024];
