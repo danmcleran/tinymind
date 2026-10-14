@@ -61,6 +61,47 @@
 
 namespace tinymind {
 
+    namespace detail {
+
+        // One filter of a multi-pixel pointwise layer, swept over every
+        // pixel. The output loop is written out twice, once with the
+        // requantizer's FastRequantizer form and once with the Requantizer
+        // itself, chosen per filter; both live in this one function so that
+        // a model whose filters all take one form leaves nothing unexecuted.
+        template<typename InputType, typename WeightType, typename AccumType, typename OutputType,
+                 std::size_t Pixels_, std::size_t InChannels_, std::size_t NumFilters_>
+        inline void pointwiseFilterSweep(const InputType* input, const WeightType* filterWeights,
+                                         AccumType bias, InputType zeroPoint,
+                                         const Requantizer<AccumType, OutputType>& rq,
+                                         OutputType* out)
+        {
+            FastRequantizer<OutputType> fast;
+            if (fast.init(rq))
+            {
+                const FilterWeights<WeightType, InChannels_> w(filterWeights);
+                for (std::size_t p = 0; p < Pixels_; ++p)
+                {
+                    const AccumType acc = bias +
+                        simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
+                            input + p * InChannels_, w.data(), InChannels_, zeroPoint);
+                    out[p * NumFilters_] = fast.apply(acc);
+                }
+            }
+            else
+            {
+                const FilterWeights<WeightType, InChannels_> w(filterWeights);
+                for (std::size_t p = 0; p < Pixels_; ++p)
+                {
+                    const AccumType acc = bias +
+                        simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
+                            input + p * InChannels_, w.data(), InChannels_, zeroPoint);
+                    out[p * NumFilters_] = rq.apply(acc);
+                }
+            }
+        }
+
+    } // namespace detail
+
     template<
         typename InputStorage_,
         typename WeightStorage_,
@@ -138,14 +179,9 @@ namespace tinymind {
                     ? layerBiases[f]
                     : static_cast<AccumulatorType>(0);
 
-                for (std::size_t p = 0; p < H_ * W_; ++p)
-                {
-                    const AccumulatorType acc = bias +
-                        simd::dotProductWithZeroPoint<InputType, WeightType, AccumulatorType>(
-                            input + p * InChannels_, filterWeights, InChannels_, inputZeroPoint);
-
-                    output[p * NumFilters_ + f] = rq.apply(acc);
-                }
+                detail::pointwiseFilterSweep<InputType, WeightType, AccumulatorType, OutputType,
+                                             H_ * W_, InChannels_, NumFilters_>(
+                    input, filterWeights, bias, inputZeroPoint, rq, output + f);
             }
         }
     };
@@ -237,14 +273,9 @@ namespace tinymind {
                     : static_cast<AccumulatorType>(0);
                 const Requantizer<AccumulatorType, OutputType> rq = rqs[f];
 
-                for (std::size_t p = 0; p < H_ * W_; ++p)
-                {
-                    const AccumulatorType acc = bias +
-                        simd::dotProductWithZeroPoint<InputType, WeightType, AccumulatorType>(
-                            input + p * InChannels_, filterWeights, InChannels_, inputZeroPoint);
-
-                    output[p * NumFilters_ + f] = rq.apply(acc);
-                }
+                detail::pointwiseFilterSweep<InputType, WeightType, AccumulatorType, OutputType,
+                                             H_ * W_, InChannels_, NumFilters_>(
+                    input, filterWeights, bias, inputZeroPoint, rq, output + f);
             }
         }
     };
