@@ -11,6 +11,9 @@ Write-up: https://danmcleran.github.io/tinymind/benchmarks.html
 Versions: tinymind (this repo; results below at `b02e92d`) · TFLM @ `18811372` (2026-10-12) with its pinned CMSIS-NN ·
 emlearn 0.23.2 · TensorFlow 2.21 (converter only) · scikit-learn 1.9.1.
 
+A second board, a Cortex-M0+ NUCLEO-L031K6 with 32 KB of flash, runs the same comparison; see
+[Cortex-M0+: NUCLEO-L031K6](#cortex-m0-nucleo-l031k6).
+
 This folder lives outside `examples/` on purpose. The top-level build and `check-clang-examples` build
 every Makefile under `examples/` with the host compiler, and this one targets Arm only. CI does not build
 it.
@@ -173,6 +176,69 @@ Committed run: i7-11850H, g++ 13.3, at `a7de803`, ns per inference:
 * **Scalar max-pool at -O2 is 4.8× slower than at -O3** (373 vs 77 ns): GCC does not vectorize it at -O2
   with baseline x86-64 flags, but does once `-mavx2` is on. It is about 2% of KWS.
 
+## Cortex-M0+: NUCLEO-L031K6
+
+The same harness, backends and models on the smallest class of part: an STM32L031K6, Cortex-M0+ (ARMv6-M)
+at 32 MHz with one flash wait state and prefetch on, 32 KB flash, 8 KB SRAM, no FPU, no DSP extension,
+no hardware divide. `make BOARD=l031 LEVEL=O2|O3 run` → `results/raw_l031_<LEVEL>.txt`;
+`report.py l031` → `results/REPORT_l031.md`, which also has the per-layer tables.
+
+What differs from the F411 run:
+
+* **Timing:** the M0+ has no DWT cycle counter. `board/board_l031k6.cpp` runs SysTick at the core clock
+  over its full 24-bit range and counts wraps in its interrupt, so `board_cycles()` is a free-running 32-bit
+  cycle count like CYCCNT. A wrap that has happened but not yet been counted is caught by reading the
+  counter with interrupts masked and checking the pending SysTick bit. Checked on the board with a scratch
+  firmware: a busy loop measures exactly 3 cycles per iteration over 1M and 10M iterations (spanning
+  wraps), and with a 1024-cycle SysTick period, 2M back-to-back reads never go backwards across ~110k
+  wraps. With the pending-bit check removed, 29,631 of them do. An empty `be_invoke` measures 44 cycles.
+* **Test set:** 360 MLP samples are 23 KB as int8 and 92 KB as float, so the L031 images carry the first
+  32 (`gen/subset.py`, applied at build time). Accuracy below is over those 32. The expected tinymind hash
+  for that prefix is in `fw/backend.hpp` and checked by `make host-check`. KWS keeps all 8 samples.
+* **What does not fit:** no TFLM image links into 32 KB. `make BOARD=l031 fit` links each one with the same
+  flags against an unbounded memory map (`board/unbounded.ld`), so the table can say how much it would
+  need. Their RAM column is static RAM (tensor arena included) without stack, so it is a floor.
+* There are no `+SMLAD` images: ARMv6-M has no SMLAD, and the `ARM_DSP` gate refuses to build there.
+
+### MLP 64-32-16-10, sklearn digits (32 test samples)
+
+| Framework | O2 cycles | O3 cycles | O3 us @32MHz | flash O2 / O3 (B) | RAM (B) | acc | int8 bit-exact |
+|---|---:|---:|---:|---:|---:|---:|---|
+| tinymind int8 (scalar) | 35,637 | 35,963 | 1,124 | 5,488 / 5,784 | 200 | 96.88% | yes |
+| TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 39,160 / 43,444 | 1,872+ | - | - |
+| TFLM int8 (reference) | does not fit | does not fit | - | 33,944 / 38,292 | 1,776+ | - | - |
+| TFLM float32 | does not fit | does not fit | - | 45,700 / 49,984 | 1,392+ | - | - |
+| emlearn float32 | 712,272 | 707,113 | 22,097 | 18,720 / 18,988 | 972 | 96.88% | n/a (float) |
+
+
+### KWS CNN 20x20x1 -> conv3x3x8 -> maxpool -> dw3x3 -> pw16 -> avgpool -> fc10
+
+| Framework | O2 cycles | O3 cycles | O3 us @32MHz | flash O2 / O3 (B) | RAM (B) | int8 bit-exact |
+|---|---:|---:|---:|---:|---:|---|
+| tinymind int8 (scalar) | 818,262 | 746,112 | 23,316 | 6,016 / 8,452 | 5,488 | yes |
+| TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 83,000 / 90,468 | 5,136+ | - |
+| TFLM int8 (reference) | does not fit | does not fit | - | 51,072 / 57,052 | 5,072+ | - |
+| TFLM float32 | does not fit | does not fit | - | 82,852 / 90,304 | 14,448+ | - |
+
+Per layer at `-O3` (cycles): MLP fc0 25,625 / fc1 7,707 / fc2 2,830; KWS conv3x3 516,155, maxpool 24,921,
+dwconv3x3 73,079, pwconv 137,483, avgpool 5,756, fc 2,830.
+
+Findings:
+
+1. **Only tinymind fits.** TFLM's runtime plus model alone needs 33.9 KB (reference kernels, MLP, `-O2`)
+   to 90 KB, more than the part's 32 KB of flash before the harness or a single test input is added.
+   tinymind needs 5.5 KB for the MLP and 6.0 KB for the KWS CNN, both at `-O2`. Thumb-1 code is larger
+   than Thumb-2: TFLM's reference MLP grows from 25.7 KB on the M4 to 33.9 KB here (+32%); tinymind's MLP
+   from 5.3 KB to 5.5 KB.
+2. **Bit-exact on ARMv6-M.** Both tinymind int8 models hash-match the host and the F411 on the M0+, with no
+   alignment faults on a core that has no unaligned access.
+3. **int8 vs soft float.** On a part without an FPU, tinymind's int8 MLP runs in 35.6k cycles (1.1 ms) and
+   emlearn's float MLP in 712k (22 ms): 20x. Both get 31/32 of the subset right.
+4. **M0+ vs M4F, same code, cycles at `-O3`.** MLP 35,963 vs 20,486 (1.8x); KWS 746,112 vs 254,900
+   (2.9x), against tinymind's scalar build on the F411. At 32 MHz the KWS CNN takes 23 ms.
+   Requantization's 64-bit multiply is a libgcc call (`__aeabi_lmul`) on ARMv6-M, and the KWS stem is
+   69% of the network; both are where M0+ tuning would start.
+
 ## Integration friction observed
 
 * **emlearn:** `pip install emlearn`, `emlearn.convert(model).save()`, include one header. Minutes.
@@ -202,6 +268,11 @@ make host-bench                # x86 host timing per SIMD backend -> results/hos
 make LEVEL=O2 run              # build + flash + capture -> results/raw_O2.txt
 make LEVEL=O3 run              # -> results/raw_O3.txt
 .venv/bin/python -I report.py  # -> results/REPORT.md
+
+make BOARD=l031 tflm-libs      # TFLM libs for Cortex-M0+ (only `make fit` needs them)
+make BOARD=l031 LEVEL=O2 run   # NUCLEO-L031K6 -> results/raw_l031_O2.txt (runs `make fit` too)
+make BOARD=l031 LEVEL=O3 run
+.venv/bin/python -I report.py l031  # -> results/REPORT_l031.md
 ```
 
 `make models` regenerates `gen/out/` from scratch (needs the venv). `make probe` re-bisects the TFLM arena
@@ -209,17 +280,18 @@ sizes; update the `ARENA_*` values in the Makefile if they change.
 
 With a single ST-LINK attached, `run` finds it. With several, the Makefile refuses to guess and asks for
 `STLINK=<serial>` (`make stlink` lists the attached probes and their ports). Put `STLINK = <serial>` in an
-untracked `local.mk` to stop repeating it. openocd and the serial capture both follow that serial, so
+untracked `local.mk` to stop repeating it, or one `STLINK_f411` / `STLINK_l031` per board. openocd and the serial capture both follow that serial, so
 replugging, which renumbers `/dev/ttyACM*`, cannot point them at different boards.
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `board/` | Bare-metal F411 support: clock, USART2 on the ST-LINK VCP, DWT, stack painting, linker script |
+| `board/` | Bare-metal F411 and L031 support: clock, USART2 on the ST-LINK VCP, cycle counter (DWT / SysTick), stack painting, linker scripts (`sections.ld` shared, `unbounded.ld` for `make fit`) |
 | `fw/harness.cpp` | Times one backend and prints a `key=value` report |
 | `fw/be_*.c*` | One backend per framework: tinymind, TFLM, emlearn, empty baseline |
 | `gen/make_models.py` | Trains/quantizes the models and emits every framework's headers into `gen/out/` |
+| `gen/subset.py` | Cuts a test set down to its first N samples for the L031 build |
 | `host/tm_check.cpp` | Host-side tinymind hash check |
 | `host/tm_host_bench.cpp` | Host timing of tinymind, per x86 SIMD backend (`make host-bench`) |
-| `report.py` | `results/raw_*.txt` → `results/REPORT.md` |
+| `report.py` | `results/raw_<LEVEL>.txt` → `results/REPORT.md`; `report.py l031` → `results/REPORT_l031.md` |

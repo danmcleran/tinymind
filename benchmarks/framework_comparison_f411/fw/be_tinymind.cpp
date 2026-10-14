@@ -69,10 +69,12 @@ void be_load(int s)
     memcpy(gIn, X_I8 + s * N_IN, N_IN);
 }
 
+#if !(defined(PROFILE) && defined(MODEL_KWS) && defined(BENCH_SMALL_RAM))
 __attribute__((noinline)) void be_invoke(void)
 {
     FORWARD(gIn, gOut);
 }
+#endif
 
 int be_argmax(void)
 {
@@ -127,6 +129,13 @@ struct LayerTimer
     template<typename Layer, typename In, typename Out>
     void step(const char* tag, const Layer& layer, const In* in, Out* out)
     {
+#if defined(BENCH_SMALL_RAM)
+        if (cycles == nullptr)
+        {
+            runLayer(layer, in, out);
+            return;
+        }
+#endif
         const uint32_t a = board_cycles();
         runLayer(layer, in, out);
         const uint32_t elapsed = board_cycles() - a;
@@ -139,7 +148,42 @@ struct LayerTimer
     }
 };
 
+#if defined(MODEL_KWS) && defined(BENCH_SMALL_RAM)
+
+// Boards with little SRAM (the L031 has 8 KB) cannot hold forward()'s
+// per-layer statics and a second set for profiling. There the chain
+// ping-pongs two buffers, and be_invoke runs this same chain untimed so that
+// forward() and its statics are not linked at all.
+template<size_t A, size_t B>
+constexpr size_t maxOf()
+{
+    return A > B ? A : B;
+}
+
+void kwsChain(LayerTimer& timer)
+{
+    using namespace tm_kws;
+    alignas(4) static int8_t ping[maxOf<maxOf<C1Type::OutputSize, DwType::OutputSize>(), 16>()];
+    alignas(4) static int8_t pong[maxOf<P1Type::OutputSize, PwType::OutputSize>()];
+    timer.step("conv3x3", C1, gIn, ping);
+    timer.step("maxpool", P1, ping, pong);
+    timer.step("dwconv3x3", DW, pong, ping);
+    timer.step("pwconv", PW, ping, pong);
+    timer.step("avgpool", GAP, pong, ping);
+    timer.step("fc", D, ping, gOut);
+}
+
+#endif
+
 } // namespace
+
+#if defined(MODEL_KWS) && defined(BENCH_SMALL_RAM)
+extern "C" __attribute__((noinline)) void be_invoke(void)
+{
+    LayerTimer timer = {nullptr, nullptr, 0, 0};
+    kwsChain(timer);
+}
+#endif
 
 extern "C" int be_profile(uint32_t* c, const char** t, int max)
 {
@@ -151,6 +195,8 @@ extern "C" int be_profile(uint32_t* c, const char** t, int max)
     timer.step("fc0", L0, gIn, a0);
     timer.step("fc1", L1, a0, a1);
     timer.step("fc2", L2, a1, gOut);
+#elif defined(BENCH_SMALL_RAM)
+    kwsChain(timer);
 #else
     using namespace tm_kws;
     static int8_t c1[C1Type::OutputSize];

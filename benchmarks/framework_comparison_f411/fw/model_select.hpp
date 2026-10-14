@@ -29,7 +29,13 @@
 #  define N_IN      MLP_N_IN
 #  define N_OUT     MLP_N_OUT
 #  define LABELS    mlp_test_y
-#  define TM_HASH   TM_MLP_HASH
+#  if MLP_N_TEST == 360
+#    define TM_HASH TM_MLP_HASH
+#  elif MLP_N_TEST == 32
+#    define TM_HASH TM_MLP_HASH_32
+#  else
+#    error "no expected tinymind hash for this MLP test-set size (see fw/backend.hpp)"
+#  endif
 #  define X_I8      mlp_test_x_i8
 #  define X_F32     mlp_test_x_f32
 #  define MODEL_TAG "mlp"
