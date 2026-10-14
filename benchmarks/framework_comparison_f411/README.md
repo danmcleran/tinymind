@@ -28,7 +28,7 @@ it.
   (`gen/out/*_tinymind.hpp`). These are `const` aggregates in flash, so there is no setup step. Both
   runtimes run identical integer math, so their int8 outputs must hash-match on the board. They do, for
   every sample in every build. `make host-check` reproduces the expected hashes on the host.
-* emlearn gets the same scikit-learn float MLP. Its final softmax is patched to identity at build time so
+* emlearn gets the same scikit-learn float MLP (it has no int8 MLP). Its final softmax is patched to identity at build time so
   that every backend returns logits; the argmax is unchanged.
 * `LEVEL=O2|O3` sets the optimization level for every framework together. tinymind and emlearn translation
   units get `-O2`/`-O3`. TFLM links its own default release build (kernels `-O2`, core `-Os`) or a rebuild
@@ -208,8 +208,7 @@ What differs from the F411 run:
 | TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 39,160 / 43,444 | 1,872+ | - | - |
 | TFLM int8 (reference) | does not fit | does not fit | - | 33,944 / 38,292 | 1,776+ | - | - |
 | TFLM float32 | does not fit | does not fit | - | 45,700 / 49,984 | 1,392+ | - | - |
-| emlearn float32 | 712,272 | 707,113 | 22,097 | 18,720 / 18,988 | 972 | 96.88% | n/a (float) |
-
+| emlearn float32 (only MLP path; software float) | 712,272 | 707,113 | 22,097 | 18,720 / 18,988 | 972 | 96.88% | n/a (float) |
 
 ### KWS CNN 20x20x1 -> conv3x3x8 -> maxpool -> dw3x3 -> pw16 -> avgpool -> fc10
 
@@ -219,6 +218,27 @@ What differs from the F411 run:
 | TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 83,000 / 90,468 | 5,136+ | - |
 | TFLM int8 (reference) | does not fit | does not fit | - | 51,072 / 57,052 | 5,072+ | - |
 | TFLM float32 | does not fit | does not fit | - | 82,852 / 90,304 | 14,448+ | - |
+
+### Random forest, 10 trees, depth 6, sklearn digits, integer features (32 test samples)
+
+emlearn has no int8 MLP: its float net is its only working MLP path (`eml_net_forward_q16`, behind
+`use_fixedpoint=True`, is unimplemented stubs in 0.23.2). Trees are the model both libraries run in pure
+integer arithmetic, so `gen/make_trees.py` trains one scikit-learn `RandomForestClassifier` (majority vote)
+and emits it for both: tinymind as one `tinymind::QDecisionTree` per tree over a `QTreeNode<int8_t>` pool
+plus a vote loop (`qtree.hpp` has no forest helper), emlearn through `emlearn.convert()` with both of its
+methods: `inline` (one generated if/else function per tree, integer votes) and `loadable` (node data walked by
+`eml_trees_predict`, which tallies votes in float). Features are 2 x the pixel value; see friction below for
+why. Each backend's predictions hash-match its own host reference on the board.
+
+| Framework | O2 cycles | O3 cycles | O3 us @32MHz | flash O2 / O3 (B) | RAM (B) | acc | matches own host reference |
+|---|---:|---:|---:|---:|---:|---:|---|
+| tinymind int8 (QDecisionTree x10 + vote) | 2,581 | 2,524 | 79 | 12,800 / 12,912 | 80 | 96.88% | yes |
+| emlearn int16 (inline) | 917 | 841 | 26 | 6,032 / 8,256 | 184 | 96.88% | yes |
+| emlearn int16 (loadable) | 6,267 | 6,409 | 200 | 7,148 / 7,140 | 336 | 96.88% | yes |
+
+Cycles are the median over 33 inferences of different samples. A tree walk's length depends on the input,
+so the min-max spread is 7-10% (26% for `loadable`, whose float vote tally also varies), against < 0.1% for
+the networks.
 
 Per layer at `-O3` (cycles): MLP fc0 25,625 / fc1 7,707 / fc2 2,830; KWS conv3x3 516,155, maxpool 24,921,
 dwconv3x3 73,079, pwconv 137,483, avgpool 5,756, fc 2,830.
@@ -232,17 +252,33 @@ Findings:
    from 5.3 KB to 5.5 KB.
 2. **Bit-exact on ARMv6-M.** Both tinymind int8 models hash-match the host and the F411 on the M0+, with no
    alignment faults on a core that has no unaligned access.
-3. **int8 vs soft float.** On a part without an FPU, tinymind's int8 MLP runs in 35.6k cycles (1.1 ms) and
-   emlearn's float MLP in 712k (22 ms): 20x. Both get 31/32 of the subset right.
+3. **MLP: int8 vs software float.** On a part without an FPU, tinymind's int8 MLP runs in 35.6k cycles
+   (1.1 ms) and emlearn's float MLP in 712k (22 ms): 20x. That is not an int8-vs-int8 comparison, since
+   emlearn has no int8 MLP; it is what each library offers for this network on this part. Both get 31/32 of
+   the subset right.
 4. **M0+ vs M4F, same code, cycles at `-O3`.** MLP 35,963 vs 20,486 (1.8x); KWS 746,112 vs 254,900
    (2.9x), against tinymind's scalar build on the F411. At 32 MHz the KWS CNN takes 23 ms.
    Requantization's 64-bit multiply is a libgcc call (`__aeabi_lmul`) on ARMv6-M, and the KWS stem is
    69% of the network; both are where M0+ tuning would start.
+5. **Trees: emlearn's inline forest wins.** Integer against integer, emlearn's generated if/else trees take
+   841 cycles at `-O3` to tinymind's 2,524 (3.0x), in 6.0 KB of flash to 12.8 KB. An inline tree node is a
+   load of the feature, a compare against an immediate and a branch. A tinymind node is about 20 Thumb-1
+   instructions: four loads (feature, input, threshold, child), index arithmetic for the 12-byte node
+   stride, and the walk's cycle guard, plus a `memset` of the vote array per inference. `QTreeNode` also
+   stores every leaf as a full 12-byte node with an `int32_t` value, where emlearn keeps 8-byte decision
+   nodes only and deduplicates leaves. Against emlearn's data-driven `loadable` method, tinymind is 2.5x
+   faster, but that gap is mostly emlearn tallying votes in software float. Accuracy is identical on the
+   subset; over all 360 test samples, emlearn's predictions agree with the forest on 358 (see friction).
 
 ## Integration friction observed
 
 * **emlearn:** `pip install emlearn`, `emlearn.convert(model).save()`, include one header. Minutes.
-  MLPs and trees only, float only.
+  MLPs are float only; trees take `int16_t` features. Tree thresholds are cast to `int16_t` (truncated)
+  and the split is `x < t`, where scikit-learn's is `x <= t`. On raw digits pixels, a threshold of 3.5
+  becomes 3 and `x == 3` goes the wrong way: the forest above drops from 90.6% to 76.4% accuracy.
+  Doubling the features makes every threshold an integer, which recovers it, but a test value that lands
+  exactly on an even threshold still splits differently (2 of 360 test samples here). tinymind's
+  `x <= floor(t)` is exact for any threshold.
 * **TFLM:** `git clone` + `make ... microlite`, which downloads CMSIS, CMSIS-NN and flatbuffers. Converting
   needs full TensorFlow (~600 MB). Pitfalls hit here:
   - there is no pip `tflite-micro`
@@ -291,6 +327,7 @@ replugging, which renumbers `/dev/ttyACM*`, cannot point them at different board
 | `fw/harness.cpp` | Times one backend and prints a `key=value` report |
 | `fw/be_*.c*` | One backend per framework: tinymind, TFLM, emlearn, empty baseline |
 | `gen/make_models.py` | Trains/quantizes the models and emits every framework's headers into `gen/out/` |
+| `gen/make_trees.py` | Trains the random forest and emits it for tinymind and emlearn (`make models` runs it) |
 | `gen/subset.py` | Cuts a test set down to its first N samples for the L031 build |
 | `host/tm_check.cpp` | Host-side tinymind hash check |
 | `host/tm_host_bench.cpp` | Host timing of tinymind, per x86 SIMD backend (`make host-bench`) |

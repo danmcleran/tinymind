@@ -6,7 +6,7 @@
 | TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 39,160 / 43,444 | 1,872+ | - | - |
 | TFLM int8 (reference) | does not fit | does not fit | - | 33,944 / 38,292 | 1,776+ | - | - |
 | TFLM float32 | does not fit | does not fit | - | 45,700 / 49,984 | 1,392+ | - | - |
-| emlearn float32 | 712,272 | 707,113 | 22,097 | 18,720 / 18,988 | 972 | 96.88% | n/a (float) |
+| emlearn float32 (only MLP path; software float) | 712,272 | 707,113 | 22,097 | 18,720 / 18,988 | 972 | 96.88% | n/a (float) |
 
 ### Per-layer cycles (mlp, each layer timed separately)
 
@@ -35,4 +35,12 @@
 | pwconv | 137,957 | 137,483 |
 | avgpool | 5,854 | 5,756 |
 | fc | 2,830 | 2,830 |
+
+## Random forest, 10 trees, depth 6, sklearn digits, integer features (32 test samples)
+
+| Framework | O2 cycles | O3 cycles | O3 us @32MHz | flash O2 / O3 (B) | RAM (B) | acc | matches own host reference |
+|---|---:|---:|---:|---:|---:|---:|---|
+| tinymind int8 (QDecisionTree x10 + vote) | 2,581 | 2,524 | 79 | 12,800 / 12,912 | 80 | 96.88% | yes |
+| emlearn int16 (inline) | 917 | 841 | 26 | 6,032 / 8,256 | 184 | 96.88% | yes |
+| emlearn int16 (loadable) | 6,267 | 6,409 | 200 | 7,148 / 7,140 | 336 | 96.88% | yes |
 

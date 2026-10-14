@@ -38,7 +38,8 @@ BOARDS = {
 }
 BOARD = BOARDS[sys.argv[1] if len(sys.argv) > 1 else "f411"]
 LEVELS = ["O2", "O3"]
-TEST_SYMS = ("mlp_test_x_i8", "mlp_test_x_f32", "mlp_test_y", "kws_test_x_i8", "kws_test_x_f32")
+TEST_SYMS = ("mlp_test_x_i8", "mlp_test_x_f32", "mlp_test_y", "kws_test_x_i8", "kws_test_x_f32",
+             "rf_test_x_i8", "rf_test_y")
 
 
 def parse(level):
@@ -78,22 +79,33 @@ NICE = {
     "tflm_cmsis_kws_int8": "TFLM int8 (CMSIS-NN)", "tflm_ref_kws_int8": "TFLM int8 (reference)",
     "tflm_cmsis_mlp_f32": "TFLM float32", "tflm_cmsis_kws_f32": "TFLM float32",
     "eml_mlp": "emlearn float32",
+    "tm_rf": "tinymind int8 (QDecisionTree x10 + vote)",
+    "eml_rf_inline": "emlearn int16 (inline)", "eml_rf_loadable": "emlearn int16 (loadable)",
 }
+if BOARD["mhz"] == 32:
+    # No FPU on the L031: emlearn's MLP, its only MLP path, runs in software float.
+    NICE["eml_mlp"] = "emlearn float32 (only MLP path; software float)"
 ORDER = {
     "mlp": ["tm_mlp", "tm_mlp_dsp", "tflm_cmsis_mlp_int8", "tflm_ref_mlp_int8", "tflm_cmsis_mlp_f32", "eml_mlp"],
     "kws": ["tm_kws", "tm_kws_dsp", "tflm_cmsis_kws_int8", "tflm_ref_kws_int8", "tflm_cmsis_kws_f32"],
+    "rf": ["tm_rf", "eml_rf_inline", "eml_rf_loadable"],
 }
 
 data = {lv: parse(lv) for lv in LEVELS}
 out = []
 mhz = BOARD["mhz"]
 n_mlp = data["O2"][0]["tm_mlp"]["n_test"]
-for model, title in [("mlp", f"MLP 64-32-16-10, sklearn digits ({n_mlp} test samples)"),
-                     ("kws", "KWS CNN 20x20x1 -> conv3x3x8 -> maxpool -> dw3x3 -> pw16 -> avgpool -> fc10")]:
+models = [("mlp", f"MLP 64-32-16-10, sklearn digits ({n_mlp} test samples)"),
+          ("kws", "KWS CNN 20x20x1 -> conv3x3x8 -> maxpool -> dw3x3 -> pw16 -> avgpool -> fc10")]
+if "tm_rf" in data["O2"][0]:
+    n_rf = data["O2"][0]["tm_rf"]["n_test"]
+    models.append(("rf", f"Random forest, 10 trees, depth 6, sklearn digits, integer features ({n_rf} test samples)"))
+for model, title in models:
+    labeled = model in ("mlp", "rf")
     out.append(f"## {title}\n")
     out.append(f"| Framework | O2 cycles | O3 cycles | O3 us @{mhz}MHz | flash O2 / O3 (B) | RAM (B) | "
-               + ("acc | " if model == "mlp" else "") + "int8 bit-exact |")
-    out.append("|---|---:|---:|---:|---:|---:|" + ("---:|" if model == "mlp" else "") + "---|")
+               + ("acc | " if labeled else "") + ("matches own host reference |" if model == "rf" else "int8 bit-exact |"))
+    out.append("|---|---:|---:|---:|---:|---:|" + ("---:|" if labeled else "") + "---|")
     for img in ORDER[model]:
         if img not in data["O2"][1]:
             continue
@@ -104,7 +116,7 @@ for model, title in [("mlp", f"MLP 64-32-16-10, sklearn digits ({n_mlp} test sam
                 elf = BOARD["build"].format(lv=lv) + f"/fit/{img}.elf"
                 fl.append(sizes[img][0] - sizes["baseline"][0] - test_bytes(elf))
                 ram = max(ram, sizes[img][1] - sizes["baseline"][1])
-            acc = "- | " if model == "mlp" else ""
+            acc = "- | " if labeled else ""
             out.append(f"| {NICE[img]} | does not fit | does not fit | - | {fl[0]:,} / {fl[1]:,} | {ram:,}+ | {acc}- |")
             continue
         fl, ram = [], None
@@ -118,10 +130,12 @@ for model, title in [("mlp", f"MLP 64-32-16-10, sklearn digits ({n_mlp} test sam
             ram_lv = (int(r["static_ram"]) - int(b["static_ram"])) + (int(r["stack_bytes"]) - int(b["stack_bytes"]))
             ram = ram_lv if ram is None else max(ram, ram_lv)
         r3 = data["O3"][0][img]
-        acc = f"{int(r3['correct']) / int(r3['n_test']) * 100:.2f}% | " if model == "mlp" else ""
+        acc = f"{int(r3['correct']) / int(r3['n_test']) * 100:.2f}% | " if labeled else ""
         exact = "yes" if r3.get("hash_match") == "1" else ("n/a (float)" if "hash_match" not in r3 else "NO")
         out.append(f"| {NICE[img]} | {cyc[0]:,} | {cyc[1]:,} | {cyc[1] / mhz:,.0f} | {fl[0]:,} / {fl[1]:,} | {ram:,} | {acc}{exact} |")
     out.append("")
+    if model == "rf":
+        continue
     # per-layer
     out.append(f"### Per-layer cycles ({model}, each layer timed separately)\n")
     imgs, heads = zip(*[(i, h) for i, h in [(f"tm_{model}_prof", "tinymind scalar"),
