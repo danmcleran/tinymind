@@ -116,7 +116,9 @@ PROF_IMAGES = tm_mlp_prof tm_mlp_dsp_prof tm_kws_prof tm_kws_dsp_prof \
   tflm_cmsis_mlp_int8_prof tflm_cmsis_kws_int8_prof
 else
 # ARMv6-M has no SMLAD, so no +dsp images (the ARM_DSP gate #errors there).
-IMAGES = baseline tm_mlp tm_kws eml_mlp
+# tm_rf / eml_rf_*: integer random forest, the one model emlearn also runs
+# integer-only (it has no int8 MLP); see gen/make_trees.py.
+IMAGES = baseline tm_mlp tm_kws eml_mlp tm_rf eml_rf_inline eml_rf_loadable
 PROF_IMAGES = tm_mlp_prof tm_kws_prof
 # Images that do not fit the L031. `make BOARD=l031 fit` links them against an
 # unbounded memory map (board/unbounded.ld) to report what they would need.
@@ -139,10 +141,10 @@ $(B):
 	mkdir -p $@
 
 ifdef MLP_SUBSET
-$(B)/data/mlp_data.h: gen/out/mlp_data.h gen/subset.py
+$(B)/data/%_data.h: gen/out/%_data.h gen/subset.py
 	@mkdir -p $(@D)
 	python3 -I gen/subset.py $< $@ $(MLP_SUBSET)
-DATA_DEPS = $(B)/data/mlp_data.h
+DATA_DEPS = $(B)/data/mlp_data.h $(B)/data/rf_data.h
 endif
 
 # emlearn's generated MLP ends in softmax; patch it to identity so it returns
@@ -182,6 +184,20 @@ $(eval $(call tflm_rule,tflm_cmsis_mlp_f32,$(TFLM_CMSIS),-DMODEL_MLP -DDTYPE_F32
 $(eval $(call tflm_rule,tflm_cmsis_kws_int8,$(TFLM_CMSIS),-DMODEL_KWS,+cmsis))
 $(eval $(call tflm_rule,tflm_ref_kws_int8,$(TFLM_REF),-DMODEL_KWS,+ref))
 $(eval $(call tflm_rule,tflm_cmsis_kws_f32,$(TFLM_CMSIS),-DMODEL_KWS -DDTYPE_F32,+cmsis))
+
+$(B)/tm_rf.elf: fw/be_tinymind_rf.cpp $(HARNESS) | $(B) $(DATA_DEPS)
+	$(CXX) $(CXXFLAGS) $(INC) $(TM_INC) -o $@ $^ $(LD)
+
+# $(1)=image $(2)=extra defines
+define eml_rf_rule
+$(B)/$(1).o: fw/be_emlearn_rf.c | $$(B) $$(DATA_DEPS)
+	@test -n "$$(EML_INC)" || { echo "emlearn not found: run 'make deps' or pass EML_INC=<emlearn include dir>"; exit 1; }
+	$$(CC) $$(CFLAGS) $$(INC) -isystem $$(EML_INC) $(2) -c -o $$@ $$<
+$(B)/$(1).elf: $(B)/$(1).o $$(HARNESS) | $$(B)
+	$$(CXX) $$(CXXFLAGS) $$(INC) -o $$@ $$^ $$(LD)
+endef
+$(eval $(call eml_rf_rule,eml_rf_inline,))
+$(eval $(call eml_rf_rule,eml_rf_loadable,-DEML_RF_LOADABLE))
 
 $(B)/eml_mlp.o: fw/be_emlearn.c $(B)/mlp_emlearn_logits.h | $(B) $(DATA_DEPS)
 	@test -n "$(EML_INC)" || { echo "emlearn not found: run 'make deps' or pass EML_INC=<emlearn include dir>"; exit 1; }
@@ -289,6 +305,7 @@ host-bench: $(foreach l,$(HOST_LEVELS),$(foreach b,$(HOST_BACKENDS),$(HB)/tm_hos
 
 models:
 	$(PY) -I gen/make_models.py
+	$(PY) -I gen/make_trees.py
 
 TFLM_MAKE = $(MAKE) -C $(TFLM) -f tensorflow/lite/micro/tools/make/Makefile \
             TARGET=cortex_m_generic TARGET_ARCH=$(TFLM_ARCH) microlite

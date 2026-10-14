@@ -27,8 +27,10 @@
 #define KWS_DATA_INT8
 #include "mlp_data.h"
 #include "kws_data.h"
+#include "rf_data.h"
 #include "mlp_tinymind.hpp"
 #include "kws_tinymind.hpp"
+#include "rf_tinymind.hpp"
 #include "backend.hpp"
 
 #include <cstdio>
@@ -81,9 +83,24 @@ int main()
         kwsHash = fnv(kwsHash, out, KWS_N_OUT);
     }
 
+    uint32_t rfHash = 0x811C9DC5u;
+    uint32_t rfHash32 = 0;
+    for (int s = 0; s < RF_N_TEST; ++s)
+    {
+        if (s == 32)
+        {
+            rfHash32 = rfHash;
+        }
+        const int8_t cls = static_cast<int8_t>(tm_rf::predict(rf_test_x_i8 + s * RF_N_IN));
+        rfHash = fnv(rfHash, &cls, 1);
+    }
+
     std::printf("mlp hash 0x%08X (expect 0x%08X), accuracy %.4f\n",
                 mlpHash, TM_MLP_HASH, correct / static_cast<double>(MLP_N_TEST));
     std::printf("mlp hash over first 32 0x%08X (expect 0x%08X)\n", mlpHash32, TM_MLP_HASH_32);
     std::printf("kws hash 0x%08X (expect 0x%08X)\n", kwsHash, TM_KWS_HASH);
-    return (mlpHash == TM_MLP_HASH && mlpHash32 == TM_MLP_HASH_32 && kwsHash == TM_KWS_HASH) ? 0 : 1;
+    std::printf("rf hash 0x%08X (expect 0x%08X), first 32 0x%08X (expect 0x%08X)\n",
+                rfHash, RF_TM_HASH_360, rfHash32, RF_TM_HASH_32);
+    return (mlpHash == TM_MLP_HASH && mlpHash32 == TM_MLP_HASH_32 && kwsHash == TM_KWS_HASH
+            && rfHash == RF_TM_HASH_360 && rfHash32 == RF_TM_HASH_32) ? 0 : 1;
 }
