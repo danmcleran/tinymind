@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+# Thin CLI over the bitwuzla Python bindings so CBMC's --bitwuzla can call it.
+import sys, bitwuzla
+args = [a for a in sys.argv[1:] if not a.startswith('-')]
+tm = bitwuzla.TermManager()
+opts = bitwuzla.Options()
+opts.set(bitwuzla.Option.PRODUCE_MODELS, True)
+p = bitwuzla.Parser(tm, opts, 'smt2')
+if args:
+    p.parse(args[-1])
+else:
+    p.parse('<stdin>', sys.stdin.read(), True)
