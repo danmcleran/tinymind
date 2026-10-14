@@ -4,12 +4,12 @@ layout: default
 nav_order: 1
 ---
 
-<img src="{{ site.baseurl }}/assets/tinymind_logo.png" alt="TinyMind logo" width="160" style="display:block;margin:0 auto 1rem;">
+<img src="{{ site.baseurl }}/assets/tinymind_logo.png" alt="tinymind logo" width="160" style="display:block;margin:0 auto 1rem;">
 
 # Machine Learning for Embedded Systems
 {: .fs-9 }
 
-**TinyMind** is a header-only C++ template library for neural networks and machine learning, designed for embedded systems with no FPU, GPU, or OS requirements.
+**tinymind** is a header-only C++ template library for neural networks and machine learning, designed for embedded systems with no FPU, GPU, or OS requirements.
 {: .fs-6 .fw-300 }
 
 [Get Started]({{ site.baseurl }}/getting-started/xor-under-4kb){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
@@ -18,11 +18,11 @@ nav_order: 1
 
 ---
 
-## Why TinyMind?
+## Why tinymind?
 
-Most ML frameworks assume abundant resources: gigabytes of RAM, a GPU, an operating system, floating-point hardware. TinyMind assumes none of these. It targets the opposite end of the spectrum -- microcontrollers and embedded processors where every byte matters.
+Most ML frameworks assume abundant resources: gigabytes of RAM, a GPU, an operating system, floating-point hardware. tinymind assumes none of these. It targets the opposite end of the spectrum -- microcontrollers and embedded processors where every byte matters.
 
-| | TinyMind (Q8.8 MLP) | TF Lite Micro | PyTorch |
+| | tinymind (Q8.8 MLP) | TF Lite Micro | PyTorch |
 |---|---|---|---|
 | Minimum footprint | 144 bytes (inference) | ~50-100 KB | ~100 MB |
 | Trainable XOR network | 328 bytes | N/A (inference only) | ~100 MB |
@@ -31,13 +31,13 @@ Most ML frameworks assume abundant resources: gigabytes of RAM, a GPU, an operat
 | Runtime library | None (header-only) | ~50 KB interpreter | ~100 MB |
 | GPU required | No | No | Recommended |
 
-Because TinyMind is a header-only template library, there is no runtime library to link. The compiler generates code only for the specific network topology, value type, and activation functions you use. Unused features are never compiled.
+Because tinymind is a header-only template library, there is no runtime library to link. The compiler generates code only for the specific network topology, value type, and activation functions you use. Unused features are never compiled.
 
 Preprocessor capability gates control optional dependencies on the FPU, the C++ stdlib (`<cmath>` / `<type_traits>` / `namespace std`), file I/O, ostreams, `rand()`, the [int8 affine quantization]({{ site.baseurl }}/architectures/int8-quantization) layer family, the [fp16/bf16 storage tier]({{ site.baseurl }}/architectures/mixed-precision), the int16 cell-state variant of `QLSTMCell`, OpenMP outer-loop parallelism, and per-ISA [SIMD specializations]({{ site.baseurl }}/architectures/simd-backends) (NEON / NEON_DOTPROD / NEON_FP16 / SVE / SVE2 / Helium MVE_I / MVE_F / AVX2 / AVX_VNNI / AVX512F / AVX512_VNNI). All default off — a freestanding build pulls in only `<cstddef>` and `<cstdint>` with byte-identical output to the scalar reference. See the [README's Platform Feature Gates](https://github.com/danmcleran/tinymind#platform-feature-gates) section for the full matrix.
 
 ## What Fits Where?
 
-TinyMind networks are small enough to deploy on the most constrained microcontrollers:
+tinymind networks are small enough to deploy on the most constrained microcontrollers:
 
 | Target Device | Flash | RAM | What Fits |
 |---|---|---|---|
@@ -108,15 +108,15 @@ if (!TransferFunctionsType::isWithinZeroTolerance(error))
 
 See the [Neural Network in Under 4KB]({{ site.baseurl }}/getting-started/xor-under-4kb) tutorial for a complete walkthrough.
 
-## Train in PyTorch, Deploy in TinyMind
+## Train in PyTorch, Deploy in tinymind
 
 For many embedded applications, the optimal workflow is:
 
 1. **Train** with PyTorch on a workstation with GPU acceleration
 2. **Export** weights to a text file, converting to fixed-point Q-format -- or to int8 with per-tensor / per-channel `(scale, zero_point)` calibration
-3. **Deploy** in TinyMind C++ as a non-trainable network at 40-60% less memory, or as a pure-integer int8 pipeline with the [`Q*` layer family]({{ site.baseurl }}/architectures/int8-quantization)
+3. **Deploy** in tinymind C++ as a non-trainable network at 40-60% less memory, or as a pure-integer int8 pipeline with the [`Q*` layer family]({{ site.baseurl }}/architectures/int8-quantization)
 
-See [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) for the Q-format flow, [PyTorch → TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) for the from-scratch affine int8 walkthrough, and [PyTorch → TinyMind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer) for the production importer flow that consumes a `torch.state_dict` directly and runs calibration with `PercentileObserver` / `KLDivergenceObserver` + cross-layer equalization.
+See [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) for the Q-format flow, [PyTorch → tinymind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) for the from-scratch affine int8 walkthrough, and [PyTorch → tinymind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer) for the production importer flow that consumes a `torch.state_dict` directly and runs calibration with `PercentileObserver` / `KLDivergenceObserver` + cross-layer equalization.
 
 ## Activation Function Lookup Tables
 
@@ -124,4 +124,4 @@ Fixed-point activation functions (sigmoid, tanh, exp, log) and trigonometric fun
 
 ## Design Philosophy
 
-TinyMind is inspired by Andrei Alexandrescu's [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design). Neural networks are configured through policy classes as template parameters, allowing compile-time specialization that eliminates unused code and data. You only pay for what you use.
+tinymind is inspired by Andrei Alexandrescu's [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design). Neural networks are configured through policy classes as template parameters, allowing compile-time specialization that eliminates unused code and data. You only pay for what you use.

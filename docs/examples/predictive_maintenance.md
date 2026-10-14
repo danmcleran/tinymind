@@ -12,7 +12,7 @@ A binary machine-failure classifier trained on the [AI4I 2020 Predictive Mainten
 ## How it works
 
 - Q16.16 fixed-point MLP, 10&nbsp;&rarr;&nbsp;24&nbsp;&rarr;&nbsp;1, ReLU hidden layer and a single sigmoid output (threshold 0.5 for the failure decision).
-- Demonstrates the TinyMind `NeuralNet<>` feed-forward MLP trained and run end to end in `QValue` fixed-point — the train-and-deploy-on-an-MCU path applied to imbalanced binary classification.
+- Demonstrates the tinymind `NeuralNet<>` feed-forward MLP trained and run end to end in `QValue` fixed-point — the train-and-deploy-on-an-MCU path applied to imbalanced binary classification.
 - Inputs are the 5 process features (air temp, process temp, rpm, torque, tool wear), **3 physics-derived product features** (power ≈ rpm·torque, overstrain ≈ toolwear·torque, temperature gap), and a 2-dim one-hot for the product variant; all numeric inputs are z-score normalized then scaled by 1/3.
 - **Training target:** AI4I labels a row a failure if any of five modes fired. Three (heat dissipation, power, overstrain) are deterministic functions of the sensor readings. The other two are random by construction: tool-wear failure (TWF) is a tool replaced at a random time between 200 and 240 min, and RNF is a 0.1% random failure. The net is trained on the three predictable modes and scored against the full `Machine failure` label, so the random failures still count against recall.
 - **Sampling:** failures are ~3.4% of the data. Training draws 20% of its samples from the failure pool. A 50/50 split pushes the decision boundary deeper into healthy space: on the real CSV it raises false alarms by about half (439 vs 283 summed over 10 seeds).

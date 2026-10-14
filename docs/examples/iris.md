@@ -12,7 +12,7 @@ A three-way iris species classifier trained on the classic [UCI Iris dataset](ht
 ## How it works
 
 - Q16.16 fixed-point MLP, 4&nbsp;&rarr;&nbsp;8&nbsp;&rarr;&nbsp;3, ReLU hidden layer and 3 sigmoid outputs (one-hot, predicted class is the argmax).
-- The smallest end-to-end "train + deploy on an MCU" classification path in TinyMind — a `NeuralNet<>` feed-forward MLP trained and run entirely in `QValue` fixed-point.
+- The smallest end-to-end "train + deploy on an MCU" classification path in tinymind — a `NeuralNet<>` feed-forward MLP trained and run entirely in `QValue` fixed-point.
 - The 4 input features are z-score normalized using training-set statistics, then scaled by 1/3 to sit inside Q16.16's stable range; 30k iterations of uniform random sampling from the 80% training split.
 
 ## Build and run

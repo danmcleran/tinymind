@@ -7,7 +7,7 @@ has_children: true
 
 # Training & Deployment
 
-TinyMind supports both on-device training and a train-offline-deploy-lean workflow with PyTorch.
+tinymind supports both on-device training and a train-offline-deploy-lean workflow with PyTorch.
 
 | Topic | Description |
 |---|---|

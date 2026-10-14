@@ -7,7 +7,7 @@ layout: default
 
 # PyTorch Importer Demo
 
-An end-to-end demonstration of the Phase 15 PyTorch → TinyMind int8 importer path: a small MLP is calibrated with three observers plus a Cross-Layer Equalization pass, then run as a pure-integer int8 forward and checked against the float reference.
+An end-to-end demonstration of the Phase 15 PyTorch → tinymind int8 importer path: a small MLP is calibrated with three observers plus a Cross-Layer Equalization pass, then run as a pure-integer int8 forward and checked against the float reference.
 
 ## How it works
 

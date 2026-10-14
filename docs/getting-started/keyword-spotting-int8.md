@@ -49,7 +49,7 @@ The host runner generates synthetic float weights and converts them with the hel
 - `computePerChannelSymmetricScales` — per-channel scale fit for the depthwise weights
 - `buildRequantizer` — combines `(input_scale, weight_scale, output_scale, output_zero_point)` into the integer `(multiplier, shift)` pair the `Requantizer` consumes at runtime
 
-A real deployment would feed observed activation ranges from a representative dataset through `RangeObserver` + `computeAffineParamsAsymmetric` to fit per-tensor activation scales (see the [PyTorch -> TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) tutorial for that flow end-to-end). This runner uses fixed scales (`1/127` for activations, `0.1/127` for weights) since the demo's job is footprint and cycle counts, not classification accuracy.
+A real deployment would feed observed activation ranges from a representative dataset through `RangeObserver` + `computeAffineParamsAsymmetric` to fit per-tensor activation scales (see the [PyTorch -> tinymind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) tutorial for that flow end-to-end). This runner uses fixed scales (`1/127` for activations, `0.1/127` for weights) since the demo's job is footprint and cycle counts, not classification accuracy.
 
 ## Build and Run
 
@@ -99,4 +99,4 @@ For the most direct comparison, run both runners on the same host with the same 
 
 - [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) — the layer family, calibration helpers, and feature gate covered in depth.
 - [Keyword Spotting CNN]({{ site.baseurl }}/getting-started/keyword-spotting-cnn) — the float reference runner this one mirrors.
-- [PyTorch -> TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) — smaller end-to-end example that walks training, calibration, weight emission, and inference.
+- [PyTorch -> tinymind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) — smaller end-to-end example that walks training, calibration, weight emission, and inference.

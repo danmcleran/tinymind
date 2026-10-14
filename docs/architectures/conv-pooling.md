@@ -365,7 +365,7 @@ Total weight bytes: **8,976**. Peak activation: **10,368** bytes (first conv dom
 
 # Benchmark Harness (`cpp/include/bench/`)
 
-The `bench/` headers ship alongside the 2D layers so you can instrument any TinyMind pipeline with per-layer cycle counts and a RAM high-water mark without pulling in heavyweight dependencies.
+The `bench/` headers ship alongside the 2D layers so you can instrument any tinymind pipeline with per-layer cycle counts and a RAM high-water mark without pulling in heavyweight dependencies.
 
 **`bench/platform.hpp`**
 - `bench::readCycleCounter()` -- reads `DWT->CYCCNT` when built with `-DTINYMIND_BENCH_CORTEX_M`, falls back to `std::chrono::steady_clock` nanoseconds on the host.

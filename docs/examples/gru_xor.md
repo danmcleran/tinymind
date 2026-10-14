@@ -7,7 +7,7 @@ layout: default
 
 # GRU XOR
 
-Trains a Gated Recurrent Unit (GRU) network to learn XOR, exercising TinyMind's recurrent network type on a small, well-understood task instead of a feed-forward MLP.
+Trains a Gated Recurrent Unit (GRU) network to learn XOR, exercising tinymind's recurrent network type on a small, well-understood task instead of a feed-forward MLP.
 
 ## How it works
 

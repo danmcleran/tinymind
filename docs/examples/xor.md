@@ -32,7 +32,7 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 
 The curve plots the mean absolute error over the four XOR cases against training iteration. It descends smoothly from the symmetric-guess level (~0.5) and settles within ~1000 iterations. All four patterns are then classified correctly with clear margins (predictions ≈ 0.09 / 0.91); the residual ~0.09 is just the sigmoid output not fully saturating to 0/1 under the MSE objective.
 
-![XOR decision surface, Q16.16 fixed-point TinyMind inference]({{ site.baseurl }}/assets/plots/xor_q16_decision_surface.png)
+![XOR decision surface, Q16.16 fixed-point tinymind inference]({{ site.baseurl }}/assets/plots/xor_q16_decision_surface.png)
 
 Sweeping the trained network over the `[0,1]²` input grid shows predicted vs. actual directly: the heatmap is the network's `P(XOR=1)`, the black line is the 0.5 decision boundary, and the four corner markers are the ground-truth XOR targets (red = 1, blue = 0). Each corner sits firmly inside the matching colored region — the same predicted-vs-actual view as the [PyTorch Q-format]({{ site.baseurl }}/examples/pytorch_xor.html) and [PyTorch int8]({{ site.baseurl }}/examples/pytorch_quant_xor.html) XOR examples.
 
