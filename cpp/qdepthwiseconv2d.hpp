@@ -134,31 +134,68 @@ namespace tinymind {
                     static_cast<AccumulatorType>(inputZeroPoint) * weightSum;
                 const Requantizer<AccumulatorType, OutputType> rq = rqs[c];
 
-                for (std::size_t oh = 0; oh < OutputHeight; ++oh)
+                // The pixel loop is written out twice, once with the
+                // requantizer's FastRequantizer form and once with the
+                // Requantizer itself, chosen per channel.
+                detail::FastRequantizer<OutputType> fast;
+                if (fast.init(rq))
                 {
-                    for (std::size_t ow = 0; ow < OutputWidth; ++ow)
+                    for (std::size_t oh = 0; oh < OutputHeight; ++oh)
                     {
-                        const InputType* const window =
-                            input + ((oh * StrideH_) * W_ + ow * StrideW_) * Channels_ + c;
-
-                        AccumulatorType acc = bias;
-#if !defined(__OPTIMIZE_SIZE__)
-#pragma GCC unroll 8
-#endif
-                        for (std::size_t kh = 0; kh < KH_; ++kh)
+                        for (std::size_t ow = 0; ow < OutputWidth; ++ow)
                         {
+                            const InputType* const window =
+                                input + ((oh * StrideH_) * W_ + ow * StrideW_) * Channels_ + c;
+
+                            AccumulatorType acc = bias;
 #if !defined(__OPTIMIZE_SIZE__)
 #pragma GCC unroll 8
 #endif
-                            for (std::size_t kw = 0; kw < KW_; ++kw)
+                            for (std::size_t kh = 0; kh < KH_; ++kh)
                             {
-                                acc += taps[kh * KW_ + kw] *
-                                       static_cast<AccumulatorType>(
-                                           window[(kh * W_ + kw) * Channels_]);
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
+                                for (std::size_t kw = 0; kw < KW_; ++kw)
+                                {
+                                    acc += taps[kh * KW_ + kw] *
+                                           static_cast<AccumulatorType>(
+                                               window[(kh * W_ + kw) * Channels_]);
+                                }
                             }
-                        }
 
-                        output[(oh * OutputWidth + ow) * Channels_ + c] = rq.apply(acc);
+                            output[(oh * OutputWidth + ow) * Channels_ + c] = fast.apply(acc);
+                        }
+                    }
+                }
+                else
+                {
+                    for (std::size_t oh = 0; oh < OutputHeight; ++oh)
+                    {
+                        for (std::size_t ow = 0; ow < OutputWidth; ++ow)
+                        {
+                            const InputType* const window =
+                                input + ((oh * StrideH_) * W_ + ow * StrideW_) * Channels_ + c;
+
+                            AccumulatorType acc = bias;
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
+                            for (std::size_t kh = 0; kh < KH_; ++kh)
+                            {
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
+                                for (std::size_t kw = 0; kw < KW_; ++kw)
+                                {
+                                    acc += taps[kh * KW_ + kw] *
+                                           static_cast<AccumulatorType>(
+                                               window[(kh * W_ + kw) * Channels_]);
+                                }
+                            }
+
+                            output[(oh * OutputWidth + ow) * Channels_ + c] = rq.apply(acc);
+                        }
                     }
                 }
             }

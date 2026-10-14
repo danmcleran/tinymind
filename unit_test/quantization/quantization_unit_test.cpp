@@ -6017,6 +6017,16 @@ namespace dwpw_reference_test {
         rq.zero_point = static_cast<int8_t>(static_cast<int>(i % 5) - 2);
         rq.qmin = -128;
         rq.qmax = 127;
+        // Cycle through requantizers that take the kernels' FastRequantizer
+        // form and ones it must refuse: a fused activation clamp, shift 1,
+        // and a zero point too large to fold at a wide shift.
+        switch (i % 4)
+        {
+            case 1: rq.qmin = rq.zero_point; rq.qmax = 90; break;
+            case 2: rq.shift = 1; break;
+            case 3: rq.zero_point = 100; rq.shift = 24; rq.multiplier = INT32_MAX; break;
+            default: break;
+        }
         return rq;
     }
 
@@ -6093,10 +6103,29 @@ namespace dwpw_reference_test {
             rq[f] = makeRq(f);
         }
 
+        // The per-tensor layer runs once with a fast-form requantizer and
+        // once with one that is not; the second run is checked here.
         TensorLayer tensorLayer;
         tensorLayer.weights = w;
         tensorLayer.biases = withBias ? b : nullptr;
         tensorLayer.input_zero_point = zp;
+        tensorLayer.requantizer = rq[F > 1 ? 1 : 0];
+        tensorLayer.forward(x, yTensor);
+        bool generalOk = true;
+        for (std::size_t p = 0; p < H * W; ++p)
+        {
+            for (std::size_t f = 0; f < F; ++f)
+            {
+                int32_t acc = withBias ? b[f] : 0;
+                for (std::size_t i = 0; i < Cin; ++i)
+                {
+                    acc += static_cast<int32_t>(w[f * Cin + i]) *
+                           (static_cast<int32_t>(x[p * Cin + i]) - static_cast<int32_t>(zp));
+                }
+                generalOk = generalOk && (yTensor[p * F + f] == rq[F > 1 ? 1 : 0].apply(acc));
+            }
+        }
+        BOOST_TEST(generalOk);
         tensorLayer.requantizer = rq[0];
         tensorLayer.forward(x, yTensor);
 
@@ -6142,6 +6171,7 @@ BOOST_AUTO_TEST_CASE(qdepthwise_and_pointwise_match_direct_reference)
             checkPointwise<7, 7, 8, 16>(zp, withBias);   // multi-pixel, filter-outer
             checkPointwise<3, 5, 3, 4>(zp, withBias);    // Cin not a multiple of 4
             checkPointwise<1, 1, 64, 32>(zp, withBias);  // single pixel (dense) path
+            checkPointwise<2, 3, 80, 5>(zp, withBias);   // weight row past the local copy
         }
     }
 }

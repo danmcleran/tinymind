@@ -387,6 +387,53 @@ namespace tinymind {
             }
         };
 
+        // Windows and weight rows up to this many bytes are copied into a
+        // local by FilterWeights.
+        constexpr std::size_t kLocalWeightsMaxBytes = 64;
+
+        /**
+         * One filter's weights as a kernel's output loop reads them. A row of
+         * up to kLocalWeightsMaxBytes is copied into a local: every output
+         * store is an int8 write that may alias the caller's int8 weight
+         * array, so the optimizer must otherwise reload the weights after
+         * each store, and a local it can keep in registers. Longer rows are
+         * read in place.
+         */
+        template<typename WeightType, std::size_t N,
+                 bool Copy = (N * sizeof(WeightType) <= kLocalWeightsMaxBytes)>
+        struct FilterWeights
+        {
+            WeightType w[N];
+
+            explicit FilterWeights(const WeightType* source)
+            {
+                for (std::size_t i = 0; i < N; ++i)
+                {
+                    w[i] = source[i];
+                }
+            }
+
+            const WeightType* data() const
+            {
+                return w;
+            }
+        };
+
+        template<typename WeightType, std::size_t N>
+        struct FilterWeights<WeightType, N, false>
+        {
+            const WeightType* p;
+
+            explicit FilterWeights(const WeightType* source) : p(source)
+            {
+            }
+
+            const WeightType* data() const
+            {
+                return p;
+            }
+        };
+
     } // namespace detail
 
 #if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
