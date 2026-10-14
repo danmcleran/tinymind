@@ -9,7 +9,7 @@ nav_order: 14
 TinyMind, TensorFlow Lite for Microcontrollers (TFLM, now LiteRT for Microcontrollers) and emlearn were run on the same microcontroller. Every framework executed the same two models, and the int8 frameworks used the same int8 weights. Everything was measured on the board; nothing was simulated.
 
 {: .note }
-Measured 2026-10-13 with the code in [`benchmarks/framework_comparison_f411`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/framework_comparison_f411). These are numbers from one board, one compiler and two models. They describe this setup, not every workload. Updated after [#192](https://github.com/danmcleran/tinymind/pull/192), [#195](https://github.com/danmcleran/tinymind/pull/195), [#198](https://github.com/danmcleran/tinymind/pull/198), [#199](https://github.com/danmcleran/tinymind/pull/199), [#202](https://github.com/danmcleran/tinymind/pull/202), [#204](https://github.com/danmcleran/tinymind/pull/204) and [#208](https://github.com/danmcleran/tinymind/pull/208), seven TinyMind fixes this benchmark prompted (see [what changed](#what-changed-since-the-first-run)).
+Measured 2026-10-13 with the code in [`benchmarks/framework_comparison_f411`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/framework_comparison_f411). These are numbers from one board, one compiler and two models. They describe this setup, not every workload. Updated after [#192](https://github.com/danmcleran/tinymind/pull/192), [#195](https://github.com/danmcleran/tinymind/pull/195), [#198](https://github.com/danmcleran/tinymind/pull/198), [#199](https://github.com/danmcleran/tinymind/pull/199), [#202](https://github.com/danmcleran/tinymind/pull/202), [#204](https://github.com/danmcleran/tinymind/pull/204), [#208](https://github.com/danmcleran/tinymind/pull/208), [#210](https://github.com/danmcleran/tinymind/pull/210) and [#211](https://github.com/danmcleran/tinymind/pull/211), nine TinyMind fixes this benchmark prompted (see [what changed](#what-changed-since-the-first-run)).
 
 ## Setup
 
@@ -18,7 +18,7 @@ Measured 2026-10-13 with the code in [`benchmarks/framework_comparison_f411`](ht
 | Board | NUCLEO-F411RE: STM32F411RE, Cortex-M4F at 100 MHz, 3 flash wait states with the ART accelerator on |
 | Compiler | arm-none-eabi-gcc 13.2.1, `-mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16` |
 | Timing | DWT cycle counter; median of 33 warm inferences (spread under 0.1%) |
-| TinyMind | master @ `0a4db84`, int8 layer family, with and without the `TINYMIND_ENABLE_SIMD_ARM_DSP` (SMLAD) backend |
+| TinyMind | master @ `b02e92d`, int8 layer family, with and without the `TINYMIND_ENABLE_SIMD_ARM_DSP` (SMLAD) backend |
 | TFLM | tflite-micro @ `18811372` (2026-10-12), with CMSIS-NN kernels and with reference kernels |
 | emlearn | 0.23.2 (`eml_net`, float32) |
 | Converter | TensorFlow 2.21, post-training int8 quantization with default settings (per-channel weights) |
@@ -54,8 +54,8 @@ Measured 2026-10-13 with the code in [`benchmarks/framework_comparison_f411`](ht
 
 | Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM |
 |---|---:|---:|---:|---:|---:|
-| TinyMind int8 (scalar) | 329,733 | 272,639 | 2.73 ms | 4.1–5.7 KB | 5,164 B |
-| **TinyMind int8 (+SMLAD)** | **276,387** | **229,438** | **2.29 ms** | 3.9–5.8 KB | 5,164 B |
+| TinyMind int8 (scalar) | 266,451 | 254,900 | 2.55 ms | 5.0–6.8 KB | 5,332 B |
+| **TinyMind int8 (+SMLAD)** | **192,965** | **181,568** | **1.82 ms** | 4.7–6.4 KB | 5,296 B |
 | TFLM int8 (CMSIS-NN) | 573,396 | 576,368 | 5.76 ms | 84.5–91.6 KB | 6,288 B |
 | TFLM int8 (reference) | 2,459,339 | 2,435,580 | 24.4 ms | 41.1–46.2 KB | 5,668 B |
 | TFLM float32 | 2,136,067 | 2,159,717 | 21.6 ms | 84.3–91.6 KB | 15,128 B |
@@ -70,22 +70,22 @@ Each layer was timed separately, behind its own non-inlined call.
 
 | Layer | TinyMind +SMLAD `-O2` | TinyMind +SMLAD `-O3` | TFLM CMSIS-NN `-O2` | TFLM CMSIS-NN `-O3` |
 |---|---:|---:|---:|---:|
-| conv 3×3, 1→8 | 189,920 | **157,571** | 434,553 | 435,412 |
-| max-pool 2×2 | 10,162 | **10,154** | 35,807 | 36,697 |
-| depthwise 3×3 | 26,044 | **23,322** | 39,208 | 40,918 |
-| pointwise 8→16 | 41,121 | **38,659** | 53,212 | 53,866 |
-| average-pool | **2,269** | 2,281 | 8,875 | 7,917 |
-| dense 16→10 | **942** | 956 | 2,097 | 2,041 |
+| conv 3×3, 1→8 | 132,155 | **127,756** | 434,553 | 435,412 |
+| max-pool 2×2 | 10,162 | **10,160** | 35,807 | 36,697 |
+| depthwise 3×3 | 21,415 | **21,047** | 39,208 | 40,918 |
+| pointwise 8→16 | **22,941** | 25,865 | 53,212 | 53,866 |
+| average-pool | **2,267** | 2,281 | 8,875 | 7,917 |
+| dense 16→10 | 948 | **946** | 2,097 | 2,041 |
 
 ## What the numbers say
 
-**TinyMind with the SMLAD backend is faster than TFLM with CMSIS-NN on every layer, at both optimization levels.** On the MLP it is 27% faster (10.2k vs 14.0k cycles at `-O3`). On the CNN it is 60% faster at `-O3` (229k vs 576k, 2.5× the speed) and 52% faster at `-O2`. Code + weights are 4–6 KB against 37–92 KB (7–22× smaller), because there is no interpreter or flatbuffer parser, and no unused kernel variants get linked in.
+**TinyMind with the SMLAD backend is faster than TFLM with CMSIS-NN on every layer, at both optimization levels.** On the MLP it is 27% faster (10.2k vs 14.0k cycles at `-O3`). On the CNN it is 68% faster at `-O3` (182k vs 576k, 3.2× the speed) and 66% faster at `-O2`. Code + weights are 5–7 KB against 37–92 KB (7–18× smaller), because there is no interpreter or flatbuffer parser, and no unused kernel variants get linked in.
 
-**Without SMLAD,** TinyMind's portable scalar build still runs the CNN 53% faster than TFLM with CMSIS-NN (273k vs 576k cycles at `-O3`). On the MLP the scalar build (20.5k) sits between CMSIS-NN (14.0k) and TFLM's reference kernels (31.4k).
+**Without SMLAD,** TinyMind's portable scalar build still runs the CNN 56% faster than TFLM with CMSIS-NN (255k vs 576k cycles at `-O3`). On the MLP the scalar build (20.5k) sits between CMSIS-NN (14.0k) and TFLM's reference kernels (31.4k).
 
-**Where the time goes now.** The single-channel 3×3 stem is still about two thirds of the CNN's time, at 36% of CMSIS-NN's cost for the same layer (158k vs 435k cycles), so it remains the layer to work on.
+**Where the time goes now.** The single-channel 3×3 stem is still about two thirds of the CNN's time, at 29% of CMSIS-NN's cost for the same layer (128k vs 435k cycles), so it remains the layer to work on.
 
-**Build TinyMind at `-O3`.** The MLP runs within 1% at either level, but the CNN with SMLAD is 20% slower at `-O2` (276k vs 229k), most of it in the stem convolution (190k vs 158k). TinyMind's kernels are templates compiled in your own translation unit, so the optimizer's choices are part of its performance; CMSIS-NN's kernels ship precompiled and barely move between levels.
+**Build TinyMind at `-O3`.** The MLP runs within 1% at either level, and the CNN is 6% slower at `-O2` with SMLAD (193k vs 182k) and 5% slower without it. Individual layers can still go either way: pointwise is faster at `-O2` here. TinyMind's kernels are templates compiled in your own translation unit, so the optimizer's choices are part of its performance; CMSIS-NN's kernels ship precompiled and barely move between levels.
 
 **RAM is close on the CNN.** TinyMind keeps every intermediate activation buffer static. TFLM's arena planner reuses buffers but carries interpreter state. Alternating between two buffers (2,592 B and 784 B instead of 4,432 B) would save about 1 KB.
 
@@ -93,16 +93,16 @@ Each layer was timed separately, behind its own non-inlined call.
 
 ## What changed since the first run
 
-The first runs (TinyMind before #192) exposed four weak spots. All four are fixed, along with three follow-ups. Every int8 output hash is unchanged, so every fix is bit-exact.
+The first runs (TinyMind before #192) exposed four weak spots. All four are fixed, along with five follow-ups. Every int8 output hash is unchanged, so every fix is bit-exact.
 
 | TinyMind | First run | Now |
 |---|---:|---:|
 | MLP +SMLAD `-O2` | 24,591 | 10,305 |
 | MLP +SMLAD `-O3` | 12,278 | 10,241 |
 | MLP scalar `-O3` | 33,154 | 20,486 |
-| CNN +SMLAD `-O2` | 831,570 | 276,387 |
-| CNN +SMLAD `-O3` | 422,449 | 229,438 |
-| CNN scalar `-O3` | 445,579 | 272,639 |
+| CNN +SMLAD `-O2` | 831,570 | 192,965 |
+| CNN +SMLAD `-O3` | 422,449 | 181,568 |
+| CNN scalar `-O3` | 445,579 | 254,900 |
 
 - **[#192](https://github.com/danmcleran/tinymind/pull/192), SMLAD inner loop.** At `-O2` the int8 dot product stayed rolled inside each layer's output loop, where the requantizer's hoisted constants left it about three scratch registers. In the disassembly it issued 2 SMLADs per iteration, stored each loaded word to the stack and read it back, and reloaded its loop bound from memory on every pass. How badly depended on unrelated surrounding code: with identical kernels the MLP measured anywhere from 14.5k to 24.6k cycles. The loop is now unrolled with a pragma (so `-O2` compiles it like `-O3`), and the input zero point is folded into `SXTAB16`, the way CMSIS-NN does it.
 - **[#195](https://github.com/danmcleran/tinymind/pull/195), convolution windows.** The conv layers called the dot product once per kernel tap, so the single-channel 3×3 stem ran nine length-1 dot products per output, none of them long enough to use SMLAD. Each output pixel's kernel window is now gathered into a small contiguous patch once (up to 64 bytes; larger windows run one dot product per kernel row instead) and reused by every filter.
@@ -111,6 +111,8 @@ The first runs (TinyMind before #192) exposed four weak spots. All four are fixe
 - **[#202](https://github.com/danmcleran/tinymind/pull/202), convolution tiles.** After #195 the stem still reloaded every filter's weights, bias and requantizer at every output pixel. The patch path now gathers a tile of windows (up to `TINYMIND_CONV_TILE_MAX_BYTES`, 256 bytes by default, which is a whole output row for this stem) and sweeps it one filter at a time. The stem dropped from 260k to 177k cycles at `-O3`, for about 0.2 KB more peak stack.
 - **[#204](https://github.com/danmcleran/tinymind/pull/204), pooling loops.** At `-O2` the pooling window loops stayed rolled. With the same unroll hints as the conv kernels, max-pool went from 14.5k to 10.2k cycles and the average pool from 7.2k to 2.3k, level with `-O3`.
 - **[#208](https://github.com/danmcleran/tinymind/pull/208), requantization.** Every int8 output rounded twice, gemmlowp style: a rounding high multiply, then a rounding shift with a mask, threshold and compare. In the stem that was about 30 instructions per output, with seven constants spilled to the stack. For a multiplier ≥ 0 and a right shift of at least 2, which covers every layer here, the two roundings combine exactly into one 64-bit rounding: an `SMLAL` and an `ASR` on the M4, with a bit-identical result. The stem dropped from 177k to 158k cycles at `-O3`, depthwise from 31k to 23k and pointwise from 44k to 39k. The MLP dropped from 11.2k to 10.2k.
+- **[#210](https://github.com/danmcleran/tinymind/pull/210), stem registers.** The stem's output loop still reloaded state on every output. An int8 output store may alias the int8 weight array, so the compiler re-read the filter's weights after each store; the scalar build re-read all nine. And the requantizer kept six values live, which spilled to the stack. The filter's weights are now copied into a local array, which a store cannot alias, and the requantizer is decoded once per filter: the zero point goes into the rounding constant, and the clamp to the int8 range is a single `SSAT`. Layers with a fused activation clamp keep the general path. The stem dropped from 158k to 128k cycles at `-O3` and from 190k to 132k at `-O2`.
+- **[#211](https://github.com/danmcleran/tinymind/pull/211), pointwise and depthwise registers.** The same two fixes applied to the other conv kernels. Pointwise dropped from 39k to 26k cycles at `-O3` (41k to 23k at `-O2`) and depthwise from 23k to 21k.
 
 ## Integration notes
 
