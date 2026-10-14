@@ -12,7 +12,7 @@ A recurrent human-activity classifier over tri-axial accelerometer sequences, in
 ## How it works
 
 - Q16.16 fixed-point **LSTM**, 3 inputs &rarr; one hidden LSTM layer of 16 tanh neurons &rarr; 4 sigmoid outputs, with `GradientClipByValue` for stable recurrent fixed-point training.
-- Demonstrates TinyMind's `LstmNeuralNetwork<>` — a recurrent net trained and run entirely in `QValue` fixed-point — applied to sequence classification rather than the feed-forward MLP path.
+- Demonstrates tinymind's `LstmNeuralNetwork<>` — a recurrent net trained and run entirely in `QValue` fixed-point — applied to sequence classification rather than the feed-forward MLP path.
 - Each window is 32 timesteps. The LSTM is stateful across `feedForward` calls, so the cell state is reset (`resetState()`) at the start of every window; all 32 steps are supervised toward the constant window label so the net settles on its decision as evidence accumulates, and the prediction is read (argmax) at the final timestep. 45 epochs of shuffled passes.
 
 ## Build and run

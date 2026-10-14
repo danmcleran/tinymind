@@ -7,7 +7,7 @@ has_children: true
 
 # Network Architectures
 
-TinyMind provides a range of neural network architectures, all as header-only C++ templates with both fixed-point and floating-point support.
+tinymind provides a range of neural network architectures, all as header-only C++ templates with both fixed-point and floating-point support.
 
 | Architecture | Memory (Q8.8, trainable) | Key Advantage |
 |---|---|---|

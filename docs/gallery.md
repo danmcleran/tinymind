@@ -127,7 +127,7 @@ for which example uses which dataset.
 
 ## Applications
 
-**XOR decision surface** — PyTorch-trained weights, pure-integer TinyMind inference; learned boundary as a heatmap.
+**XOR decision surface** — PyTorch-trained weights, pure-integer tinymind inference; learned boundary as a heatmap.
 ![int8 XOR decision surface]({{ site.baseurl }}/assets/plots/xor_decision_surface.png)
 
 **Predictive maintenance** — training loss + test confusion matrix (machine-failure classifier).

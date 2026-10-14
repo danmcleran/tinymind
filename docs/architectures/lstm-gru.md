@@ -264,7 +264,7 @@ See the [Weight Import Export and PyTorch Interoperability]({{ site.baseurl }}/t
 
 # Liquid Neural Networks (Continuous-Time)
 
-Beyond the gated RNNs above, TinyMind ships two **continuous-time** recurrent cells from the MIT liquid-network line of work. Instead of a discrete gate update, a liquid cell models each neuron as an ODE whose effective time constant depends on the input — well suited to **irregularly-sampled** time series (sensors that report at varying intervals, event streams). Both are standalone single-step cells: the caller owns the state buffer and the time loop, exactly like `QLSTMCell` / `QGRUCell`.
+Beyond the gated RNNs above, tinymind ships two **continuous-time** recurrent cells from the MIT liquid-network line of work. Instead of a discrete gate update, a liquid cell models each neuron as an ODE whose effective time constant depends on the input — well suited to **irregularly-sampled** time series (sensors that report at varying intervals, event streams). Both are standalone single-step cells: the caller owns the state buffer and the time loop, exactly like `QLSTMCell` / `QGRUCell`.
 
 The float cells are written **scalar-templated** in the PINN style (`step<S>`), so the one forward pass serves `double` / `float` / fixed-point `QValue` inference *and* differentiates through the existing autodiff types (`Dual`, `MultiDual`, `RevVar`). They therefore **train through the existing reverse-mode trainer** `pinn::sgdStepReverse` with no hand-written backprop.
 
@@ -309,7 +309,7 @@ The int8 [`examples/qcfc_liquid_int8/`](https://github.com/danmcleran/tinymind/t
 
 # Int8 Quantized Counterparts
 
-For inference-only deployment that does not need the trainable Q-format pipeline at all, TinyMind ships pure-integer int8 cells alongside `LstmNeuralNetwork` / `GruNeuralNetwork`:
+For inference-only deployment that does not need the trainable Q-format pipeline at all, tinymind ships pure-integer int8 cells alongside `LstmNeuralNetwork` / `GruNeuralNetwork`:
 
 - `QLSTMCell` — four gates (i, f, g, o) in TFLite ordering. Two rescalers per gate (input-MAC + recurrent-MAC) into a shared sigmoid / tanh LUT input scale; cell update via two `multiplyByQuantizedMultiplier` calls. Cell-state storage `int8_t` (default) or `int16_t` for long unroll horizons (gate `TINYMIND_ENABLE_INT16_ACCUM=1`).
 - `QGRUCell` — three gates (r, z, n) in canonical ordering. Reset-before-multiply formulation, `(1 - z_t)` computed exactly in the sigmoid grid as `-z_t`.

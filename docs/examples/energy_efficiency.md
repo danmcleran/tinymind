@@ -12,7 +12,7 @@ A two-output building energy-load regressor trained on the [UCI Energy Efficienc
 ## How it works
 
 - Q16.16 fixed-point MLP, 8&nbsp;&rarr;&nbsp;16&nbsp;&rarr;&nbsp;2, ReLU hidden layer and 2 **linear** outputs (Y1 = heating load, Y2 = cooling load).
-- TinyMind's smallest end-to-end **regression** example — the linear-output counterpart to the sigmoid/argmax classifier in [Iris](iris.html). It exercises `LinearActivationPolicy` plus `GradientClipByValue` (clamp to [-1, 1]) with momentum and acceleration disabled, the combination a fixed-point linear head needs to stay stable.
+- tinymind's smallest end-to-end **regression** example — the linear-output counterpart to the sigmoid/argmax classifier in [Iris](iris.html). It exercises `LinearActivationPolicy` plus `GradientClipByValue` (clamp to [-1, 1]) with momentum and acceleration disabled, the combination a fixed-point linear head needs to stay stable.
 - The 8 design features are z-score normalized then scaled by 1/3; the two targets are standardized to z-score (scaled by 1/6) for training and de-standardized back to real load units for reporting. 40k iterations of uniform sampling from the 80% training split.
 
 ## Build and run

@@ -9,7 +9,7 @@ nav_order: 7
 
 > **Real-world use:** one int8 keyword-spotter ships to two targets — a Cortex-M55 with Helium and an application-class core with NEON. A single `-march=` flag selects the matching SIMD path at build time; the `output_checksum` is identical to the scalar build, so the only thing that changes is throughput. The numerics never move.
 
-TinyMind ships ISA-capability-gated SIMD specializations in the inner reduction loop of the int8 affine layer family (`QDense`, `QConv2D`, `QConv2DPerChannel`). The library never sniffs the CPU. Every backend lives behind a `TINYMIND_ENABLE_SIMD_*` preprocessor gate, every gate defaults to `0`, and with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the scalar reference.
+tinymind ships ISA-capability-gated SIMD specializations in the inner reduction loop of the int8 affine layer family (`QDense`, `QConv2D`, `QConv2DPerChannel`). The library never sniffs the CPU. Every backend lives behind a `TINYMIND_ENABLE_SIMD_*` preprocessor gate, every gate defaults to `0`, and with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the scalar reference.
 
 ![SIMD backend comparison]({{ site.baseurl }}/assets/plots/simd_backends.png)
 
@@ -104,7 +104,7 @@ Run the resulting binary on the target hardware (or under `qemu-aarch64` for cor
 
 ## What about non-int8 layers?
 
-TinyMind specializes the int8 affine layer family because that is where the integer dot product wins big. The Q-format pipeline (`QValue<Q, F, signed>`) and float pipeline rely on compiler auto-vectorization with `-O3 -march=native` — no library-side specialization. The `SIMD_NEON_FP16` and `SIMD_HELIUM_MVE_F` float gates land via `cpp/include/simd/simd_neon_fp16.hpp`, used by the mixed-precision exemplar.
+tinymind specializes the int8 affine layer family because that is where the integer dot product wins big. The Q-format pipeline (`QValue<Q, F, signed>`) and float pipeline rely on compiler auto-vectorization with `-O3 -march=native` — no library-side specialization. The `SIMD_NEON_FP16` and `SIMD_HELIUM_MVE_F` float gates land via `cpp/include/simd/simd_neon_fp16.hpp`, used by the mixed-precision exemplar.
 
 ## See Also
 

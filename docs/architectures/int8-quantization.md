@@ -9,7 +9,7 @@ nav_order: 5
 
 > **Real-world use:** a MobileNet-style image classifier trained in PyTorch ships to a Cortex-M with no FPU. Post-training int8 calibration maps the trained float weights onto an int8 grid, so the deployed model keeps its accuracy while every inference op stays pure integer — the same TFLite-shape path the rest of the embedded ecosystem expects.
 
-TinyMind ships a TFLite / CMSIS-NN style **post-training int8** layer family that lives alongside the existing `QValue` Q-format pipeline and the float pipeline. Weights and activations are int8, accumulators are int32, and a per-layer integer **Requantizer** (Q0.31 multiplier + shift) rescales between layers without any floating-point math on the inference path.
+tinymind ships a TFLite / CMSIS-NN style **post-training int8** layer family that lives alongside the existing `QValue` Q-format pipeline and the float pipeline. Weights and activations are int8, accumulators are int32, and a per-layer integer **Requantizer** (Q0.31 multiplier + shift) rescales between layers without any floating-point math on the inference path.
 
 This is a different kind of "quantization" than [BinaryDense / TernaryDense]({{ site.baseurl }}/architectures/quantized-networks). Those layers binarize / ternarize the weights themselves (1- or 2-bit storage, multiply-free MACs). The int8 path keeps a full integer multiply-accumulate but maps the float distribution onto an int8 grid via a calibrated `(scale, zero_point)` per tensor.
 
@@ -27,7 +27,7 @@ This is a different kind of "quantization" than [BinaryDense / TernaryDense]({{ 
 
 Both are "fixed-point", but they live in different layers of the abstraction stack:
 
-- **`QValue` Q-format** (existing TinyMind): a compile-time bit split. `QValue<8, 8, true>` *is* an int16 with a fixed binary point. There is no runtime scale, no zero_point, no per-tensor metadata — every value in the program shares the same grid. You pick the resolution once at the type level and the compiler propagates it.
+- **`QValue` Q-format** (existing tinymind): a compile-time bit split. `QValue<8, 8, true>` *is* an int16 with a fixed binary point. There is no runtime scale, no zero_point, no per-tensor metadata — every value in the program shares the same grid. You pick the resolution once at the type level and the compiler propagates it.
 - **Int8 affine quantization** (this page): each tensor carries its own runtime `(scale, zero_point)` pair fit from observed min/max during calibration. `real = scale * (q - zero_point)`. Different tensors in the same model use different grids. The layer between them rescales with an integer `(multiplier, shift)` triple computed from the surrounding scales.
 
 The two coexist; nothing in `qformat.hpp` or any single-`ValueType` layer changed when the int8 path was added.
@@ -52,7 +52,7 @@ real = scale * (q - zero_point)
 
 `scale` is a positive float chosen during calibration; `zero_point` is the integer storage value that decodes back to `0.0`. With `int8` storage, `q` lives in `[-128, 127]` and `zero_point` is also clamped into that range so the float zero is always representable on the grid.
 
-For weights TinyMind follows the TFLite convention: **symmetric** (`zero_point = 0`), `qmax_signed = 127`, `-128` deliberately unused so a weight can be safely negated. For activations TinyMind uses **asymmetric** `(scale, zero_point)`, with the observed range "nudged" to include zero before fitting.
+For weights tinymind follows the TFLite convention: **symmetric** (`zero_point = 0`), `qmax_signed = 127`, `-128` deliberately unused so a weight can be safely negated. For activations tinymind uses **asymmetric** `(scale, zero_point)`, with the observed range "nudged" to include zero before fitting.
 
 Once a layer's input scale `s_in`, weight scale `s_w`, and output scale `s_out` are fit, the integer requantization ratio is:
 
@@ -201,7 +201,7 @@ fc2.forward(hidden_q, logit_q);
 output_q[0] = tinymind::qApplyLUT(logit_q[0], sigmoidLUT);
 ```
 
-Every value on this path is integer. The `Requantizer` triples and the sigmoid LUT are computed once on the host (or by an offline tool) and embedded as `const` data on the MCU. See [PyTorch -> TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) for the full end-to-end example with PyTorch training, calibration, and weight emission.
+Every value on this path is integer. The `Requantizer` triples and the sigmoid LUT are computed once on the host (or by an offline tool) and embedded as `const` data on the MCU. See [PyTorch -> tinymind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) for the full end-to-end example with PyTorch training, calibration, and weight emission.
 
 ## Activation Functions
 
@@ -300,12 +300,12 @@ ISA-capability-gated SIMD specializations live inside the inner reduction loop o
 
 ## Importer tooling
 
-Two host-side importers in `apps/` consume already-trained float / QDQ models and emit a TinyMind-format `weights.hpp` that snaps into the `Q*` layer family. Per-layer calibration picks any of `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver`; Conv2D-then-BatchNorm2D pairs auto-fuse via `foldBatchNorm` before quantization.
+Two host-side importers in `apps/` consume already-trained float / QDQ models and emit a tinymind-format `weights.hpp` that snaps into the `Q*` layer family. Per-layer calibration picks any of `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver`; Conv2D-then-BatchNorm2D pairs auto-fuse via `foldBatchNorm` before quantization.
 
 - [`apps/import_pytorch/tinymind_import.py`](https://github.com/danmcleran/tinymind/tree/master/apps/import_pytorch) — caller assembles layer descriptors from a `torch.state_dict` and a numpy forward callable. No PyTorch dependency at module import.
 - [`apps/import_onnx/tinymind_import_onnx.py`](https://github.com/danmcleran/tinymind/tree/master/apps/import_onnx) — QDQ-format ONNX importer. Walks `QuantizeLinear` / `DequantizeLinear` / `QLinearConv` / `QLinearMatMul` from a model produced by `onnxruntime.quantization.quantize_static`. The `onnx` package is imported lazily so the emitter half is usable without it.
 
-The [PyTorch → TinyMind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer) walkthrough runs the full flow end-to-end with `examples/import_demo/`.
+The [PyTorch → tinymind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer) walkthrough runs the full flow end-to-end with `examples/import_demo/`.
 
 ## What Is Not Included
 
@@ -342,4 +342,4 @@ The int8 path is intentionally minimal:
 - [Mixed Precision]({{ site.baseurl }}/architectures/mixed-precision) — qbridge converters + fp16/bf16 storage tier.
 - [Quantized Networks (Binary / Ternary)]({{ site.baseurl }}/architectures/quantized-networks) — extreme-quantization siblings; pick this path when you need 32x compression and a multiply-free MAC.
 - [Q-Format (Fixed-Point)]({{ site.baseurl }}/q-format) — the existing `QValue` pipeline. Affine quantization composes with this via `qbridge.hpp`; `QValue` predates the int8 path.
-- [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) — float / Q-format weight import. For the int8 path, see [PyTorch → TinyMind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer).
+- [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) — float / Q-format weight import. For the int8 path, see [PyTorch → tinymind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer).

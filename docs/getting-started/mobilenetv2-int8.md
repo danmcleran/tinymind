@@ -112,5 +112,5 @@ For a larger ResNet-shaped exemplar see [`examples/resnet18_block_int8/`](https:
 
 - [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) — the full layer family.
 - [SIMD Backends]({{ site.baseurl }}/architectures/simd-backends) — the bit-exactness invariant the golden suite relies on.
-- [PyTorch -> TinyMind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer) — how a real model's weights enter this shape.
+- [PyTorch -> tinymind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer) — how a real model's weights enter this shape.
 - [Keyword Spotting CNN (int8)]({{ site.baseurl }}/getting-started/keyword-spotting-int8) — simpler depthwise-separable pipeline without inverted residuals.

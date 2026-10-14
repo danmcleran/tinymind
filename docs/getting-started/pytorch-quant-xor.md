@@ -1,11 +1,11 @@
 ---
-title: PyTorch -> TinyMind int8 (XOR)
+title: PyTorch -> tinymind int8 (XOR)
 layout: default
 parent: Getting Started
 nav_order: 6
 ---
 
-# PyTorch -> TinyMind int8 Quantization (XOR)
+# PyTorch -> tinymind int8 Quantization (XOR)
 
 This tutorial walks the smallest possible end-to-end **post-training int8 affine quantization** pipeline: train a 2-4-1 XOR MLP in PyTorch with float32, fit per-tensor activation scales over a small calibration grid, emit a `weights.hpp` with int8 weights and int32 biases, then run a pure-integer C++ forward pass through `QDense` + `qrelu` + `QDense` + an int8 sigmoid LUT.
 
@@ -26,7 +26,7 @@ XOR is the smallest non-trivial classification task that needs a hidden layer, a
 ## Pipeline
 
 ```
-float32 PyTorch                  int8 TinyMind
+float32 PyTorch                  int8 tinymind
 ---------------                  -------------
   nn.Linear(2, 4)      -->     QDense<int8,int8,int32,int8>
   nn.ReLU              -->     qreluBuffer (or fold into upstream Requantizer)
@@ -51,7 +51,7 @@ class XORNet(nn.Module):
         return self.sigmoid(self.fc2(self.relu(self.fc1(x))))
 ```
 
-Nothing here is TinyMind-specific — it is a vanilla PyTorch model. The whole quantization story sits **after** training is finished.
+Nothing here is tinymind-specific — it is a vanilla PyTorch model. The whole quantization story sits **after** training is finished.
 
 ## Step 2 — Observe activation ranges
 
@@ -73,7 +73,7 @@ For larger / non-toy tasks you replace the grid with a representative slice of t
 
 ## Step 3 — Per-tensor calibration
 
-The Python script reproduces TinyMind's `computeAffineParamsAsymmetric` exactly so the metadata it emits is bit-identical to what the C++ `Requantizer` expects:
+The Python script reproduces tinymind's `computeAffineParamsAsymmetric` exactly so the metadata it emits is bit-identical to what the C++ `Requantizer` expects:
 
 ```python
 def affine_asymmetric(fmin, fmax, qmin=-128, qmax=127):

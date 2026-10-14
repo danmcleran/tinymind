@@ -7,18 +7,18 @@ nav_order: 5
 
 # Predictive Maintenance on the AI4I 2020 Dataset
 
-Predictive maintenance is a workload where TinyMind's fixed-point networks shine: a machine streams a handful of sensor readings, a tiny MLP riding alongside the control loop decides whether something is about to fail, and the decision has to happen inside one control cycle with no FPU in sight. The [`examples/predictive_maintenance/`](https://github.com/danmcleran/tinymind/tree/master/examples/predictive_maintenance) example trains a Q16.16 MLP on the UCI [AI4I 2020 Predictive Maintenance Dataset](https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset), reports precision/recall/F1 on a held-out test set, and runs end-to-end without requiring the CSV download.
+Predictive maintenance is a workload where tinymind's fixed-point networks shine: a machine streams a handful of sensor readings, a tiny MLP riding alongside the control loop decides whether something is about to fail, and the decision has to happen inside one control cycle with no FPU in sight. The [`examples/predictive_maintenance/`](https://github.com/danmcleran/tinymind/tree/master/examples/predictive_maintenance) example trains a Q16.16 MLP on the UCI [AI4I 2020 Predictive Maintenance Dataset](https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset), reports precision/recall/F1 on a held-out test set, and runs end-to-end without requiring the CSV download.
 
 This tutorial walks through the dataset, feature preprocessing, the 50/50 balanced-sampling trick that makes class-imbalanced training actually work, and what the numbers mean when you read the confusion matrix.
 
 ## Why This Problem?
 
-AI4I 2020 is a good fit for TinyMind because:
+AI4I 2020 is a good fit for tinymind because:
 
 - **Six features, one label.** Air temperature, process temperature, rotational speed, torque, tool wear, and a product-quality variant (L/M/H) all come in at ~Hz sample rates from sensors a PLC already reads. No computer-vision front-end required.
 - **Deeply imbalanced.** Only ~3.4% of the 10 000 rows are failures. That mirrors real industrial fault data and makes it a good test of how you handle minority-class learning on a small model.
 - **Five failure modes folded into one label.** The dataset ships both a binary `Machine failure` column and five independent failure-mode labels (Tool wear, Heat dissipation, Power, Overstrain, Random). Training on the binary label is the natural starting point; extending to multi-label output is a one-line template change.
-- **Entirely tabular.** No FFT, no MFCC, no convolutions. This is the ["sensor -> MLP" workload]({{ site.baseurl }}/architectures) TinyMind was originally designed for.
+- **Entirely tabular.** No FFT, no MFCC, no convolutions. This is the ["sensor -> MLP" workload]({{ site.baseurl }}/architectures) tinymind was originally designed for.
 
 ## The Dataset
 
@@ -124,7 +124,7 @@ Positives get repeated many times across the 40 000 iterations; negatives get un
 
 ## Training Loop
 
-Each iteration is the standard TinyMind feed-forward / error / train pattern, no different from the XOR example:
+Each iteration is the standard tinymind feed-forward / error / train pattern, no different from the XOR example:
 
 ```cpp
 ValueType input[7], target[1], learned[1];
@@ -212,7 +212,7 @@ Stripped binary on x86_64 host (`-O3 -Wall -Wextra -Werror -Wpedantic`):
 | Feature stats + program logic | ~6 KB |
 | **Total static allocation** | **~35 KB** |
 
-The sigmoid LUT dominates. That cost is fixed per Q-format: every TinyMind Q16.16 network with a sigmoid output on the same MCU shares the same LUT, so adding a second classifier is nearly free. Dropping to Q8.8 shrinks the LUT by ~16x at the cost of resolution -- a workable option when input features compress to a small integer range (eg raw ADC codes).
+The sigmoid LUT dominates. That cost is fixed per Q-format: every tinymind Q16.16 network with a sigmoid output on the same MCU shares the same LUT, so adding a second classifier is nearly free. Dropping to Q8.8 shrinks the LUT by ~16x at the cost of resolution -- a workable option when input features compress to a small integer range (eg raw ADC codes).
 
 ## Next Steps
 

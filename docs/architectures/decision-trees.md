@@ -9,7 +9,7 @@ nav_order: 12
 
 > **Real-world use:** a pump controller decides on/off from a handful of temperature, pressure, and flow readings. A gradient-boosted tree ensemble walks root-to-leaf with nothing but integer compares and branches — no matmul, no activation tables — making it the cheapest model the microcontroller can run, and a better fit for tabular sensor data than a dense net.
 
-TinyMind provides an int8 **decision-tree** family — single trees and
+tinymind provides an int8 **decision-tree** family — single trees and
 gradient-boosted ensembles — as a non-neural model family. Tree inference is
 the cheapest model a microcontroller can run: a walk from root to leaf is a
 handful of integer compares and a branch, with **no MACs, no matmul, and no
@@ -24,7 +24,7 @@ dense net is overkill.
 
 ## Quantized splits are lossless
 
-A decision-tree split compares one feature against a threshold. TinyMind
+A decision-tree split compares one feature against a threshold. tinymind
 quantizes the threshold onto the **same int8 affine grid** as the input
 feature, and an affine map is monotone:
 

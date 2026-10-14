@@ -4,9 +4,9 @@ layout: default
 nav_order: 10
 ---
 
-# TinyMind for Physics-Informed Neural Networks
+# tinymind for Physics-Informed Neural Networks
 
-This page assesses how TinyMind could be used to build or deploy
+This page assesses how tinymind could be used to build or deploy
 [Physics-Informed Neural Networks](https://en.wikipedia.org/wiki/Physics-informed_neural_networks)
 (PINNs). It combines an audit of the current library against PINN requirements
 with a survey of the relevant literature.
@@ -17,7 +17,7 @@ with a survey of the relevant literature.
 
 ## Verdict
 
-**TinyMind now ships the load-bearing PINN primitive — forward-mode automatic
+**tinymind now ships the load-bearing PINN primitive — forward-mode automatic
 differentiation of a field with respect to its input coordinates — for every
 value type, fixed-point included.** This was originally the one capability gap
 (backpropagation computes `∂Loss/∂weights`, the wrong derivative for a PDE
@@ -45,7 +45,7 @@ pass. The only thing still open is an *efficient* weight-gradient path
 > `pinn_heat1d --train` example. The "Concrete next steps" section marks what is
 > done versus what is left.
 
-## 1. What a PINN requires, and where TinyMind stands
+## 1. What a PINN requires, and where tinymind stands
 
 A PINN's loss is the residual of a partial differential equation: a
 differential operator applied to the network output `u(x, y, z, t)` with
@@ -54,16 +54,16 @@ respect to its **input coordinates**, frequently to second order or higher
 PINN therefore fundamentally requires derivatives of the network output with
 respect to its inputs.
 
-| PINN requirement | TinyMind status | Notes |
+| PINN requirement | tinymind status | Notes |
 |---|---|---|
 | Differentiate output w.r.t. **inputs** | **Present** (`cpp/dual.hpp`) | Forward-mode `Dual<ValueType>`; `∂u/∂x` in one pass. Was the original gap. |
 | 2nd- and higher-order input derivatives | **Present** (nested `Dual`) | `Dual<Dual<…>>` gives `∂²u/∂x²` etc.; verified for polynomials and `tanh`. |
 | Smooth activation (C² or better) | **Present** | `tanh`, `sigmoid`, `ELU`, `GELU` with analytic derivatives; `tanh(Dual)`/`sigmoid(Dual)` overloads in `cpp/dualActivations.hpp`. `ReLU` unsuitable (2nd derivative ≡ 0). |
-| Small network sizes | **Present** | PINNs are typically small MLPs; TinyMind targets embedded-scale models. |
+| Small network sizes | **Present** | PINNs are typically small MLPs; tinymind targets embedded-scale models. |
 | Fixed-point / int8 inference | **Present** | Q-format and int8 pipelines run a plain forward pass of `u(x, t)`. |
 | Residual-loss training (∂residual/∂weights) | **Present** (`cpp/pinn.hpp`, `cpp/multidual.hpp`) | `sgdStep` gets the exact loss gradient w.r.t. all weights in one forward pass via `MultiDual<V,N>`; `sgdStepReverse` does it in one backward pass via the `RevVar` tape. See item 11 below. |
 
-The takeaway: TinyMind now ships the correct **activation family**, the correct
+The takeaway: tinymind now ships the correct **activation family**, the correct
 **size class**, the input-space differentiation operator, *and* the residual-loss
 training loop built on top of them.
 
@@ -88,16 +88,16 @@ header-only C++ template library.
   that.
 - **Header-only C++ is proven feasible.**
   [Boost.Math Autodiff](https://www.boost.org/doc/libs/latest/libs/math/doc/html/math_toolkit/autodiff.html)
-  is exactly this — forward-mode, Taylor-series basis, Nth derivative. TinyMind's
+  is exactly this — forward-mode, Taylor-series basis, Nth derivative. tinymind's
   test Makefiles already set `BOOST_HOME`.
 - **State-of-the-art PINNs already use it.** Separable PINNs (SPINN) use
   forward-mode AD for the residual; STDE uses Taylor-mode for high-order
   operators.
 
-### Fit to TinyMind's design
+### Fit to tinymind's design
 
 A `Dual<ValueType>` type, templated the same way as `QValue`, slots directly
-into TinyMind's policy-based design. Because the activation policies already
+into tinymind's policy-based design. Because the activation policies already
 expose analytic derivatives, propagating a dual number through the network by
 the chain rule is straightforward.
 
@@ -133,7 +133,7 @@ but not as "more precision is a guaranteed fix."
 
 **Largest open gap in the literature:** no published benchmark of int8 or
 fixed-point PINN accuracy — training *or* inference — was found. The viability
-of TinyMind's Q-format pipeline for PINN *inference* is therefore plausible but
+of tinymind's Q-format pipeline for PINN *inference* is therefore plausible but
 **empirically unproven**. This is a genuine research opportunity, not a settled
 result.
 
@@ -154,7 +154,7 @@ evaluating `u(x, t)`. Two supported precision paths, both verified in
 - **(a) double → double.** Train in `double`, infer in `double`. Zero
   quantization error — inference reproduces the trained field bit-faithfully
   (the exemplar's double inference matches the analytic field to 0.0). Still
-  header-only, no OS, no GPU. TinyMind's `NeuralNet<double>` already trains
+  header-only, no OS, no GPU. tinymind's `NeuralNet<double>` already trains
   *and* infers in double (see the floating-point NN unit tests), so this path
   needs nothing new. **The simplest and most accurate option.**
 - **(b) double → Q-format.** Same field in Q16.16 fixed point agrees with the
@@ -170,7 +170,7 @@ evaluation). **There is no FPU build switch.** `TINYMIND_ENABLE_FLOAT` is a
 capability gate, not a hardware assertion: it compiles and runs on a target
 *without* an FPU too — the compiler simply emits soft-float (correct, just
 slower). Whether hardware float is used is a toolchain matter (`-mfpu=`,
-`-mfloat-abi=`), orthogonal to TinyMind's macros.
+`-mfloat-abi=`), orthogonal to tinymind's macros.
 
 So the practical guidance is about **performance, not buildability**: prefer
 path (a) on targets with an FPU (where `double` is cheap) and path (b) on
@@ -186,15 +186,15 @@ itself needs neither macro and runs in the fully freestanding build.
 
 ## 5. The KAN angle (promising, under-explored)
 
-TinyMind already ships **B-spline / KAN layers with derivatives**
+tinymind already ships **B-spline / KAN layers with derivatives**
 (`cpp/bspline.hpp`). Physics-informed KANs (PIKANs) are well-suited to small
-models. An open question worth probing: **can TinyMind's existing
+models. An open question worth probing: **can tinymind's existing
 spline-derivative machinery be repurposed to compute input-coordinate
 derivatives for the PDE residual** (rather than weight gradients)? If so, it
 could be a shortcut to PINN support via the KAN path. This branch is currently
 unverified.
 
-## Concrete next steps for TinyMind
+## Concrete next steps for tinymind
 
 Done:
 
@@ -268,7 +268,7 @@ The forward-mode and Taylor-mode AD mathematics is settled textbook material
 for specific PDEs, not universal constants. The precision finding rests on a
 single 2025 source whose strongest implications were refuted. **No
 quantized-PINN benchmark exists**, so the int8-inference conclusion here is
-inferred from general PINN precision-sensitivity plus TinyMind's design, not
+inferred from general PINN precision-sensitivity plus tinymind's design, not
 measured.
 
 Primary sources:

@@ -9,7 +9,7 @@ layout: default
 
 The same model as [Mackey-Glass ANFIS]({{ site.baseurl }}/examples/anfis_mackey_glass), run through `cpp/qanfis.hpp` — and a deliberate negative result.
 
-**int8 is 9.9x LARGER than Q16.16 for this model.** That is the point of the exemplar. Everywhere else in TinyMind, moving to int8 shrinks a model; here it does not, and measuring that is more useful than letting the assumption ride.
+**int8 is 9.9x LARGER than Q16.16 for this model.** That is the point of the exemplar. Everywhere else in tinymind, moving to int8 shrinks a model; here it does not, and measuring that is more useful than letting the assumption ride.
 
 ![tiers]({{ site.baseurl }}/assets/plots/anfis_mackey_glass_int8.png)
 

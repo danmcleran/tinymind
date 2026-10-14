@@ -7,7 +7,7 @@ nav_order: 4
 
 # A Keyword-Spotting CNN for a Cortex-M
 
-Keyword spotting (KWS) is the workload that put the "TinyML" moniker on the map: always-on wake-word detection running on a sub-dollar microcontroller from a 100 mAh battery. The [`examples/kws_cortex_m/`](https://github.com/danmcleran/tinymind/tree/master/examples/kws_cortex_m) example builds a KWS-style convolutional pipeline out of TinyMind's 2D layers, measures per-layer cycles and bytes with the new bench harness, and ships a portable port stub so the same pipeline can be moved onto a real MCU.
+Keyword spotting (KWS) is the workload that put the "TinyML" moniker on the map: always-on wake-word detection running on a sub-dollar microcontroller from a 100 mAh battery. The [`examples/kws_cortex_m/`](https://github.com/danmcleran/tinymind/tree/master/examples/kws_cortex_m) example builds a KWS-style convolutional pipeline out of tinymind's 2D layers, measures per-layer cycles and bytes with the new bench harness, and ships a portable port stub so the same pipeline can be moved onto a real MCU.
 
 This tutorial walks through the pipeline architecture, the layer composition in C++, how to read the benchmark CSV, and what changes when you move from a host run to a Cortex-M target.
 
@@ -19,7 +19,7 @@ KWS is a canonical TinyML workload because:
 - **Latency budget is tight.** A human expects the wake-word to trigger in about 100 ms. Running a CNN at 10 Hz means each inference has a ~10 ms budget on a Cortex-M4 at 80 MHz -- roughly 800 k cycles.
 - **Flash and RAM are tiny.** The reference TinyMLPerf KWS target fits in ~50 KB flash and ~20 KB RAM.
 
-The whole pipeline -- including TinyMind's training code -- fits easily inside those budgets.
+The whole pipeline -- including tinymind's training code -- fits easily inside those budgets.
 
 ## Pipeline Architecture
 
@@ -188,7 +188,7 @@ struct UartSink {
 
 Build with `-DTINYMIND_BENCH_CORTEX_M` and point the bench harness at a `UartSink` instead of `std::cout`. The model pipeline itself is unchanged.
 
-Replacing the synthetic input with a real MFCC extractor is a short hop: TinyMind already ships [`cpp/fft1d.hpp`]({{ site.baseurl }}/architectures/fft) with sin/cos tables for fixed-point FFTs -- that's the expensive part of MFCC. The remaining mel-filterbank + log step is straightforward to add.
+Replacing the synthetic input with a real MFCC extractor is a short hop: tinymind already ships [`cpp/fft1d.hpp`]({{ site.baseurl }}/architectures/fft) with sin/cos tables for fixed-point FFTs -- that's the expensive part of MFCC. The remaining mel-filterbank + log step is straightforward to add.
 
 ## Next Steps
 

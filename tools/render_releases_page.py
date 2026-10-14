@@ -101,7 +101,7 @@ def main():
         "",
         "# Releases",
         "",
-        "Every TinyMind release, newest first. This page is generated from "
+        "Every tinymind release, newest first. This page is generated from "
         f"[GitHub Releases](https://github.com/{repo}/releases) each time the "
         "site is built; each release there also carries the source archives.",
         "",

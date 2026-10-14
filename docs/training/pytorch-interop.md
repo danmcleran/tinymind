@@ -173,7 +173,7 @@ def export_gru_weights(model, path, use_q16_16=True):
     H = model.hidden_size
     convert = float_to_q16_16 if use_q16_16 else lambda x: x
 
-    # Gate reorder: PyTorch [r, z, n] -> TinyMind [z, r, n]
+    # Gate reorder: PyTorch [r, z, n] -> tinymind [z, r, n]
     gate_reorder = [1, 0, 2]
 
     w_ih = model.gru.weight_ih_l0.detach().numpy()
@@ -236,6 +236,6 @@ This workflow gives you the best of both worlds: state-of-the-art training infra
 
 # Int8 Affine Quantization Path
 
-The flow above uses TinyMind's existing single-`ValueType` Q-format pipeline -- the same network template trains in float on the host and runs in Q8.8 / Q16.16 on the MCU. For a TFLite / CMSIS-NN style **post-training int8** deployment, TinyMind ships a parallel `Q*` layer family ([`QDense`, `QConv2D`, `QDepthwiseConv2D`, `QPointwiseConv2D`, `QPool2D`]({{ site.baseurl }}/architectures/int8-quantization)) plus host-side calibration helpers in `cpp/include/qcalibration.hpp`. Weights and activations are int8, accumulators are int32, and a per-layer integer Requantizer rescales between layers without any floating-point math at runtime.
+The flow above uses tinymind's existing single-`ValueType` Q-format pipeline -- the same network template trains in float on the host and runs in Q8.8 / Q16.16 on the MCU. For a TFLite / CMSIS-NN style **post-training int8** deployment, tinymind ships a parallel `Q*` layer family ([`QDense`, `QConv2D`, `QDepthwiseConv2D`, `QPointwiseConv2D`, `QPool2D`]({{ site.baseurl }}/architectures/int8-quantization)) plus host-side calibration helpers in `cpp/include/qcalibration.hpp`. Weights and activations are int8, accumulators are int32, and a per-layer integer Requantizer rescales between layers without any floating-point math at runtime.
 
-The end-to-end PyTorch -> int8 deployment example lives at [`examples/pytorch_quant/xor/`](https://github.com/danmcleran/tinymind/tree/master/examples/pytorch_quant/xor) -- see [PyTorch -> TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) for the walkthrough. The shape of that flow is the same as above (train, export, load, deploy), but the export step additionally fits per-tensor activation `(scale, zero_point)` from observed ranges and emits int8 weights plus int32 biases instead of Q-format integers.
+The end-to-end PyTorch -> int8 deployment example lives at [`examples/pytorch_quant/xor/`](https://github.com/danmcleran/tinymind/tree/master/examples/pytorch_quant/xor) -- see [PyTorch -> tinymind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) for the walkthrough. The shape of that flow is the same as above (train, export, load, deploy), but the export step additionally fits per-tensor activation `(scale, zero_point)` from observed ranges and emits int8 weights plus int32 biases instead of Q-format integers.

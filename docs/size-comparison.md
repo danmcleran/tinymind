@@ -210,7 +210,7 @@ Makefile.
 
 **These are host binaries and are not a deployable footprint.** The unit-test
 figures include Boost.Test, libstdc++ and the C runtime, which is why they run
-to megabytes. For what TinyMind actually costs on a target, see the instance
+to megabytes. For what tinymind actually costs on a target, see the instance
 sizes above, plus the `heapfree` and `stack_usage` gates and the
 `arm_crosscompile` build in `unit_test/embedded`.
 

@@ -4,9 +4,9 @@ layout: default
 nav_order: 11
 ---
 
-# UCI Datasets → TinyMind Examples
+# UCI Datasets → tinymind Examples
 
-**Scope:** the TinyMind example programs that are built around a UCI Machine
+**Scope:** the tinymind example programs that are built around a UCI Machine
 Learning Repository dataset — what each one does, which dataset it uses, and
 how the data is sourced. This is the *as-built* record (one entry per runnable
 example under `examples/`), not a survey of what *could* be built.
@@ -48,7 +48,7 @@ offline in float and then sweeps fixed-point formats to find the smallest one
 - **Dataset:** [UCI Energy Efficiency](https://archive.ics.uci.edu/dataset/242/energy+efficiency) — 768 inst · 8 features · 2-target regression.
 - **Model:** MLP 8→16→2, ReLU hidden, **2 linear** outputs (heating + cooling load). `LinearActivationPolicy` + `GradientClipByValue`.
 - **Data:** ships real data (`ENB2012_data.csv`, ~35 KB).
-- **Result:** heating R² ≈ 0.90, cooling R² ≈ 0.88. TinyMind's smallest regression example.
+- **Result:** heating R² ≈ 0.90, cooling R² ≈ 0.88. tinymind's smallest regression example.
 - [`examples/energy_efficiency`](https://github.com/danmcleran/tinymind/tree/master/examples/energy_efficiency) · [page]({{ site.baseurl }}/examples/energy_efficiency)
 
 ### Optical Handwritten Digits — 8×8 image classifier

@@ -1,5 +1,5 @@
 theme: just-the-docs
-title: TinyMind
+title: tinymind
 description: "Header-only C++ template library for neural networks and Q-learning on embedded systems: int8 and fixed-point inference with no FPU, heap, or operating system required."
 logo: "/assets/tinymind_logo.png"
 baseurl: "/tinymind"

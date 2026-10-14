@@ -1,15 +1,15 @@
 ---
-title: PyTorch -> TinyMind int8 (importer)
+title: PyTorch -> tinymind int8 (importer)
 layout: default
 parent: Getting Started
 nav_order: 7
 ---
 
-# PyTorch → TinyMind int8 (production importer)
+# PyTorch → tinymind int8 (production importer)
 
-This tutorial walks the **production PyTorch importer flow**: take a trained PyTorch model, pull weights from `torch.state_dict`, run per-layer calibration with any of `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver`, optionally apply Cross-Layer Equalization to recover accuracy on imbalanced layers, and emit a TinyMind-format `weights.hpp` that snaps straight into the int8 `Q*` layer family.
+This tutorial walks the **production PyTorch importer flow**: take a trained PyTorch model, pull weights from `torch.state_dict`, run per-layer calibration with any of `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver`, optionally apply Cross-Layer Equalization to recover accuracy on imbalanced layers, and emit a tinymind-format `weights.hpp` that snaps straight into the int8 `Q*` layer family.
 
-It's the heavier-lift counterpart to [PyTorch → TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor). Same destination — pure-integer C++ inference — but instead of hand-rolling the calibration loop for one tiny network, you describe each layer once and the importer handles range estimation, Conv+BN fusion, weight quantization, and header emission.
+It's the heavier-lift counterpart to [PyTorch → tinymind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor). Same destination — pure-integer C++ inference — but instead of hand-rolling the calibration loop for one tiny network, you describe each layer once and the importer handles range estimation, Conv+BN fusion, weight quantization, and header emission.
 
 Source: [`apps/import_pytorch/tinymind_import.py`](https://github.com/danmcleran/tinymind/tree/master/apps/import_pytorch) (importer module), [`examples/import_demo/`](https://github.com/danmcleran/tinymind/tree/master/examples/import_demo) (end-to-end example).
 
@@ -136,9 +136,9 @@ Exit status 0 on PASS, 1 on FAIL.
 
 ## ONNX path
 
-`apps/import_onnx/tinymind_import_onnx.py` is the QDQ-format ONNX counterpart. It walks `QuantizeLinear` / `DequantizeLinear` / `QLinearConv` / `QLinearMatMul` / `Relu` / `Sigmoid` / `Tanh` / `Softmax` nodes from a model produced by `onnxruntime.quantization.quantize_static`, extracts the per-tensor `(scale, zero_point)` and int8 weight / int32 bias initializers, and emits the same TinyMind-format `weights.hpp`. The `onnx` Python package is imported **lazily** inside `parse_onnx_model` so the emitter half of the module is usable without it.
+`apps/import_onnx/tinymind_import_onnx.py` is the QDQ-format ONNX counterpart. It walks `QuantizeLinear` / `DequantizeLinear` / `QLinearConv` / `QLinearMatMul` / `Relu` / `Sigmoid` / `Tanh` / `Softmax` nodes from a model produced by `onnxruntime.quantization.quantize_static`, extracts the per-tensor `(scale, zero_point)` and int8 weight / int32 bias initializers, and emits the same tinymind-format `weights.hpp`. The `onnx` Python package is imported **lazily** inside `parse_onnx_model` so the emitter half of the module is usable without it.
 
-This is the right path when the source-of-truth model has already been quantized upstream and you just need to land it on TinyMind.
+This is the right path when the source-of-truth model has already been quantized upstream and you just need to land it on tinymind.
 
 ## What this does not cover
 
@@ -149,7 +149,7 @@ This is the right path when the source-of-truth model has already been quantized
 ## See Also
 
 - [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) — the `Q*` layer family the emitted `weights.hpp` consumes.
-- [PyTorch -> TinyMind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) — hand-rolled version of the same flow for a single tiny network.
+- [PyTorch -> tinymind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) — hand-rolled version of the same flow for a single tiny network.
 - [`apps/import_pytorch/`](https://github.com/danmcleran/tinymind/tree/master/apps/import_pytorch) — module source.
 - [`apps/import_onnx/`](https://github.com/danmcleran/tinymind/tree/master/apps/import_onnx) — QDQ-format ONNX importer.
 - [`examples/import_demo/`](https://github.com/danmcleran/tinymind/tree/master/examples/import_demo) — exemplar.

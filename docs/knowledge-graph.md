@@ -8,7 +8,7 @@ has_children: true
 # Repository Knowledge Graph
 {: .fs-9 }
 
-An automatically-extracted map of how TinyMind's code, docs, and tests connect — built with [graphify](https://github.com/safishamsi/graphify).
+An automatically-extracted map of how tinymind's code, docs, and tests connect — built with [graphify](https://github.com/safishamsi/graphify).
 {: .fs-6 .fw-300 }
 
 [Open the interactive graph]({{ site.baseurl }}/assets/knowledge-graph/graph.html){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }

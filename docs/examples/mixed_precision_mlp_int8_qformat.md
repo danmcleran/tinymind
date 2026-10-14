@@ -12,7 +12,7 @@ A hybrid MLP that runs an int8 affine frontend and classifier around a Q8.8 fixe
 ## How it works
 
 - Pipeline: `QDense` int8 frontend → `qrelu` → `affineToQValueIntBuffer` bridge → Q8.8 dense matvec (int32 accumulator) → `qValueToAffineIntBuffer` bridge → `QDense` int8 classifier. Both bridges use the same gemmlowp Q0.31 `(multiplier, shift)` primitive that `Requantizer` already relies on, so no `<cmath>`, `<type_traits>`, or `float` is needed at runtime.
-- Demonstrates the Phase 17 pure-integer mixed-precision qbridge (`cpp/qbridge.hpp`): the `affineToQValueInt` / `qValueToAffineInt` converters let an int8 affine model and a TinyMind Q-format layer interoperate at the deployable shape `QUANTIZATION=1, FLOAT=0, STD=0`. The conversion triples are built host-side once at calibration time by `buildAffineToQValueIntParams` / `buildQValueToAffineIntParams`.
+- Demonstrates the Phase 17 pure-integer mixed-precision qbridge (`cpp/qbridge.hpp`): the `affineToQValueInt` / `qValueToAffineInt` converters let an int8 affine model and a tinymind Q-format layer interoperate at the deployable shape `QUANTIZATION=1, FLOAT=0, STD=0`. The conversion triples are built host-side once at calibration time by `buildAffineToQValueIntParams` / `buildQValueToAffineIntParams`.
 - The int8 logits land around 0.005 max-abs error vs the float reference on the bundled synthetic dataset, well inside the exemplar's tolerance.
 
 ## Build and run

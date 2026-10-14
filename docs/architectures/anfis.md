@@ -7,9 +7,9 @@ nav_order: 13
 
 # Neuro-Fuzzy Inference (ANFIS)
 
-> **Real-world use:** a process controller has to justify itself. When the loop trips a safety review, "the network said so" is not an answer — but "rule 7 fired at 0.62, and rule 7 says *if inlet temperature is high and flow rate is low, reduce the setpoint*" is. TinyMind's ANFIS gives a learned model whose rules you can read back after every inference, in a few hundred bytes.
+> **Real-world use:** a process controller has to justify itself. When the loop trips a safety review, "the network said so" is not an answer — but "rule 7 fired at 0.62, and rule 7 says *if inlet temperature is high and flow rate is low, reduce the setpoint*" is. tinymind's ANFIS gives a learned model whose rules you can read back after every inference, in a few hundred bytes.
 
-TinyMind provides **ANFIS** — the Adaptive Neuro-Fuzzy Inference System of
+tinymind provides **ANFIS** — the Adaptive Neuro-Fuzzy Inference System of
 Jang (1993) — as a standalone composable layer. It is a Takagi-Sugeno fuzzy
 system whose membership functions and rule consequents are learned from
 data, so it sits between a rule base you hand-write and a dense net you
