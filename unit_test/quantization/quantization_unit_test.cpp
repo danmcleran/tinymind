@@ -433,6 +433,102 @@ BOOST_AUTO_TEST_CASE(fused_requantize_matches_two_step_rounding)
     BOOST_TEST(mismatches == 0u);
 }
 
+namespace fast_requantizer_test {
+
+    // FastRequantizer must accept exactly the requantizers it can serve
+    // and, for those, return what Requantizer::apply returns.
+    template<typename Dst>
+    void check(std::size_t& cases, std::size_t& accepted, std::size_t& mismatches)
+    {
+        typedef tinymind::detail::StorageRange<Dst> Range;
+        uint32_t s = 0x6C8E9CF5u;
+        const auto next = [&s]() -> uint32_t
+        {
+            s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+            return s;
+        };
+        for (int i = 0; i < 300000; ++i)
+        {
+            Requantizer<int32_t, Dst> rq;
+            const uint32_t r = next();
+            rq.multiplier = (r & 1u) ? static_cast<int32_t>(next() & 0x7FFFFFFFu)
+                                     : static_cast<int32_t>(next());
+            rq.shift = static_cast<int32_t>(next() % 36u) - 4;
+            rq.zero_point = static_cast<Dst>(next());
+            rq.qmin = static_cast<Dst>(Range::min);
+            rq.qmax = static_cast<Dst>(Range::max);
+            if ((r & 6u) == 6u)
+            {
+                rq.qmax = static_cast<Dst>(Range::max - 1);   // a fused activation clamp
+            }
+            else if ((r & 6u) == 4u)
+            {
+                rq.qmin = static_cast<Dst>(Range::min + 1);
+            }
+
+            tinymind::detail::FastRequantizer<Dst> fast;
+            const bool canUse = (rq.multiplier >= 0) && (rq.shift >= 2) && (rq.shift <= 31) &&
+                                (static_cast<int32_t>(rq.qmin) == Range::min) &&
+                                (static_cast<int32_t>(rq.qmax) == Range::max);
+            const bool init = fast.init(rq);
+            ++cases;
+            if (init && !canUse)
+            {
+                ++mismatches;   // accepted a requantizer it cannot serve
+            }
+            if (!init)
+            {
+                continue;
+            }
+            ++accepted;
+            for (int k = 0; k < 8; ++k)
+            {
+                int32_t acc = static_cast<int32_t>(next());
+                acc >>= (next() % 32u);
+                if (k == 0)
+                {
+                    acc = INT32_MIN;
+                }
+                else if (k == 1)
+                {
+                    acc = INT32_MAX;
+                }
+                ++cases;
+                if (fast.apply(acc) != rq.apply(acc))
+                {
+                    ++mismatches;
+                }
+            }
+        }
+    }
+
+} // namespace fast_requantizer_test
+
+BOOST_AUTO_TEST_CASE(fast_requantizer_matches_requantizer)
+{
+    std::size_t cases = 0;
+    std::size_t accepted = 0;
+    std::size_t mismatches = 0;
+    fast_requantizer_test::check<int8_t>(cases, accepted, mismatches);
+    fast_requantizer_test::check<uint8_t>(cases, accepted, mismatches);
+
+    // A zero point too large to fold at a wide shift is refused, even with
+    // everything else in range; the same zero point at a narrow shift is not.
+    Requantizer<int32_t, int8_t> rq;
+    rq.multiplier = 1 << 30;
+    rq.zero_point = 100;
+    rq.qmin = -128;
+    rq.qmax = 127;
+    tinymind::detail::FastRequantizer<int8_t> fast;
+    rq.shift = 24;
+    BOOST_TEST(!fast.init(rq));
+    rq.shift = 8;
+    BOOST_TEST(fast.init(rq));
+
+    BOOST_TEST(accepted > 50000u);
+    BOOST_TEST(mismatches == 0u);
+}
+
 BOOST_AUTO_TEST_CASE(rounding_divide_by_pot_noop_for_zero_or_negative)
 {
     BOOST_TEST(roundingDivideByPOT(1234, 0) == 1234);
@@ -5795,6 +5891,10 @@ namespace qconv_window_test {
 
         simd_test::fillSawtooth(x, H * W * IC, 13);
         simd_test::fillSawtooth(w, TensorConv::TotalWeights, 29);
+        // Filters cycle through requantizers that take the patch path's
+        // FastRequantizer form (full-range clamp, shift >= 2) and ones it
+        // must refuse: a fused activation clamp, shift 1, and a zero point
+        // too large to fold into the rounding nudge at a wide shift.
         for (std::size_t f = 0; f < F; ++f)
         {
             b[f] = static_cast<int32_t>(f) * 23 - 41;
@@ -5803,14 +5903,49 @@ namespace qconv_window_test {
             rq[f].zero_point = static_cast<int8_t>(f) - 2;
             rq[f].qmin = -128;
             rq[f].qmax = 127;
+            switch (f % 4)
+            {
+                case 1: rq[f].qmin = rq[f].zero_point; rq[f].qmax = 90; break;
+                case 2: rq[f].shift = 1; break;
+                case 3: rq[f].zero_point = 100; rq[f].shift = 24; rq[f].multiplier = INT32_MAX; break;
+                default: break;
+            }
         }
 
-        TensorConv tensorConv;
-        tensorConv.weights = w;
-        tensorConv.biases = b;
-        tensorConv.input_zero_point = zp;
-        tensorConv.requantizer = rq[0];
-        tensorConv.forward(x, yTensor);
+        // The per-tensor layer runs once with a fast-form requantizer and
+        // once with one that is not.
+        for (std::size_t tr = 0; tr < 2; ++tr)
+        {
+            const Requantizer<int32_t, int8_t> tensorRq = rq[tr % F];
+            TensorConv tensorConv;
+            tensorConv.weights = w;
+            tensorConv.biases = b;
+            tensorConv.input_zero_point = zp;
+            tensorConv.requantizer = tensorRq;
+            tensorConv.forward(x, yTensor);
+            bool ok = true;
+            for (std::size_t oh = 0; oh < OutH; ++oh)
+            {
+                for (std::size_t ow = 0; ow < OutW; ++ow)
+                {
+                    for (std::size_t f = 0; f < F; ++f)
+                    {
+                        int32_t acc = b[f];
+                        for (std::size_t kh = 0; kh < KH; ++kh)
+                        {
+                            for (std::size_t kw = 0; kw < KW; ++kw)
+                            {
+                                const std::size_t inOff = ((oh * SH + kh) * W + (ow * SW + kw)) * IC;
+                                const std::size_t wOff = ((f * KH + kh) * KW + kw) * IC;
+                                acc += simd_test::scalarDot(x + inOff, w + wOff, IC, zp);
+                            }
+                        }
+                        ok = ok && (yTensor[(oh * OutW + ow) * F + f] == tensorRq.apply(acc));
+                    }
+                }
+            }
+            BOOST_TEST(ok);
+        }
 
         ChannelConv channelConv;
         channelConv.weights = w;
@@ -5836,8 +5971,6 @@ namespace qconv_window_test {
                         }
                     }
                     const std::size_t outIdx = (oh * OutW + ow) * F + f;
-                    BOOST_TEST(static_cast<int>(yTensor[outIdx]) ==
-                               static_cast<int>(rq[0].apply(acc)));
                     BOOST_TEST(static_cast<int>(yChannel[outIdx]) ==
                                static_cast<int>(rq[f].apply(acc)));
                 }

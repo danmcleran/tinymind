@@ -104,6 +104,33 @@ namespace tinymind {
             }
         }
 
+        // One filter over a gathered tile: count outputs, NumFilters_ apart.
+        // Rq is a Requantizer or its FastRequantizer form; both apply().
+        template<typename InputType, typename WeightType, typename AccumType,
+                 std::size_t NumFilters_, std::size_t WindowLength_, std::size_t Slot_,
+                 typename Rq, typename OutputType>
+        inline void convTileFilterSweep(const InputType* patches, std::size_t count,
+                                        const WeightType* filterWeights, AccumType bias,
+                                        InputType zeroPoint, const Rq& rq, OutputType* out)
+        {
+            // The filter's weights in a local: an int8 store through out may
+            // alias the caller's weight array, and a local it cannot, so the
+            // weights can stay in registers across the outputs.
+            WeightType w[WindowLength_];
+            for (std::size_t i = 0; i < WindowLength_; ++i)
+            {
+                w[i] = filterWeights[i];
+            }
+
+            for (std::size_t t = 0; t < count; ++t)
+            {
+                const AccumType acc = bias +
+                    simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
+                        patches + t * Slot_, w, WindowLength_, zeroPoint);
+                out[t * NumFilters_] = rq.apply(acc);
+            }
+        }
+
         // Patch path: kernel windows of one output-row tile gathered into
         // 4-byte-aligned slots, then a filter-outer sweep of the tile. Rqs
         // holds one Requantizer per filter, or a single per-tensor one.
@@ -150,12 +177,16 @@ namespace tinymind {
                             : static_cast<AccumType>(0);
                         const Requantizer<AccumType, OutputType> rq = rqs[PerChannel ? f : 0];
 
-                        for (std::size_t t = 0; t < count; ++t)
+                        FastRequantizer<OutputType> fast;
+                        if (fast.init(rq))
                         {
-                            const AccumType acc = bias +
-                                simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
-                                    patches + t * slot, filterWeights, windowLength, zeroPoint);
-                            tileOut[t * NumFilters_ + f] = rq.apply(acc);
+                            convTileFilterSweep<InputType, WeightType, AccumType, NumFilters_, windowLength, slot>(
+                                patches, count, filterWeights, bias, zeroPoint, fast, tileOut + f);
+                        }
+                        else
+                        {
+                            convTileFilterSweep<InputType, WeightType, AccumType, NumFilters_, windowLength, slot>(
+                                patches, count, filterWeights, bias, zeroPoint, rq, tileOut + f);
                         }
                     }
                 }
