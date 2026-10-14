@@ -105,29 +105,53 @@ namespace tinymind {
         }
 
         // One filter over a gathered tile: count outputs, NumFilters_ apart.
-        // Rq is a Requantizer or its FastRequantizer form; both apply().
-        template<typename InputType, typename WeightType, typename AccumType,
-                 std::size_t NumFilters_, std::size_t WindowLength_, std::size_t Slot_,
-                 typename Rq, typename OutputType>
+        // The output loop is written out twice, once with the requantizer's
+        // FastRequantizer form and once with the Requantizer itself, and
+        // chosen per filter, so neither relies on the optimizer unswitching
+        // a branch. (Both live in one function rather than two template
+        // instantiations so that a model whose filters all take one form
+        // leaves no instantiated function unexecuted.)
+        template<typename InputType, typename WeightType, typename AccumType, typename OutputType,
+                 std::size_t NumFilters_, std::size_t WindowLength_, std::size_t Slot_>
         inline void convTileFilterSweep(const InputType* patches, std::size_t count,
                                         const WeightType* filterWeights, AccumType bias,
-                                        InputType zeroPoint, const Rq& rq, OutputType* out)
+                                        InputType zeroPoint,
+                                        const Requantizer<AccumType, OutputType>& rq,
+                                        OutputType* out)
         {
-            // The filter's weights in a local: an int8 store through out may
-            // alias the caller's weight array, and a local it cannot, so the
-            // weights can stay in registers across the outputs.
+            // The filter's weights go in a local: an int8 store through out
+            // may alias the caller's weight array, and a local it cannot, so
+            // the weights can stay in registers across the outputs.
             WeightType w[WindowLength_];
-            for (std::size_t i = 0; i < WindowLength_; ++i)
-            {
-                w[i] = filterWeights[i];
-            }
 
-            for (std::size_t t = 0; t < count; ++t)
+            FastRequantizer<OutputType> fast;
+            if (fast.init(rq))
             {
-                const AccumType acc = bias +
-                    simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
-                        patches + t * Slot_, w, WindowLength_, zeroPoint);
-                out[t * NumFilters_] = rq.apply(acc);
+                for (std::size_t i = 0; i < WindowLength_; ++i)
+                {
+                    w[i] = filterWeights[i];
+                }
+                for (std::size_t t = 0; t < count; ++t)
+                {
+                    const AccumType acc = bias +
+                        simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
+                            patches + t * Slot_, w, WindowLength_, zeroPoint);
+                    out[t * NumFilters_] = fast.apply(acc);
+                }
+            }
+            else
+            {
+                for (std::size_t i = 0; i < WindowLength_; ++i)
+                {
+                    w[i] = filterWeights[i];
+                }
+                for (std::size_t t = 0; t < count; ++t)
+                {
+                    const AccumType acc = bias +
+                        simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
+                            patches + t * Slot_, w, WindowLength_, zeroPoint);
+                    out[t * NumFilters_] = rq.apply(acc);
+                }
             }
         }
 
@@ -177,17 +201,9 @@ namespace tinymind {
                             : static_cast<AccumType>(0);
                         const Requantizer<AccumType, OutputType> rq = rqs[PerChannel ? f : 0];
 
-                        FastRequantizer<OutputType> fast;
-                        if (fast.init(rq))
-                        {
-                            convTileFilterSweep<InputType, WeightType, AccumType, NumFilters_, windowLength, slot>(
-                                patches, count, filterWeights, bias, zeroPoint, fast, tileOut + f);
-                        }
-                        else
-                        {
-                            convTileFilterSweep<InputType, WeightType, AccumType, NumFilters_, windowLength, slot>(
-                                patches, count, filterWeights, bias, zeroPoint, rq, tileOut + f);
-                        }
+                        convTileFilterSweep<InputType, WeightType, AccumType, OutputType,
+                                            NumFilters_, windowLength, slot>(
+                            patches, count, filterWeights, bias, zeroPoint, rq, tileOut + f);
                     }
                 }
             }
