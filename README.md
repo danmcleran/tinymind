@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/tinymind_logo_darkmode.png">
-    <img src="docs/assets/tinymind_logo_lightmode.png" alt="TinyMind logo" width="140">
+    <img src="docs/assets/tinymind_logo_lightmode.png" alt="tinymind logo" width="140">
   </picture>
 </p>
 
@@ -13,7 +13,7 @@
 
 A header-only C++ template library for neural networks, Kolmogorov-Arnold Networks (KAN), LSTM and GRU recurrent networks, liquid neural networks (LTC and CfC continuous-time cells), linear self-attention, FFT-based signal processing, 1D and 2D convolutions (including MobileNet-style depthwise-separable blocks), binary and ternary neural networks, and Q-learning, designed for embedded systems with no FPU, GPU, or vectorized instruction requirements.
 
-Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design), TinyMind uses template metaprogramming to produce zero-overhead abstractions where network topology, value type, activation functions, and training policies are all compile-time parameters.
+Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](https://en.wikipedia.org/wiki/Modern_C%2B%2B_Design), tinymind uses template metaprogramming to produce zero-overhead abstractions where network topology, value type, activation functions, and training policies are all compile-time parameters.
 
 ## Features
 
@@ -163,8 +163,8 @@ ISA-capability-gated SIMD specializations on the inner reduction loop of `QDense
 
 ### Importer Tooling
 
-- **`apps/import_pytorch/tinymind_import.py`** -- PyTorch -> TinyMind int8 importer (pure-numpy core). Caller assembles `Dense` / `Conv2D` / `BatchNorm2D` / `ReLU` / `Sigmoid` / `Tanh` / `Softmax` descriptors carrying numpy weights from `torch.state_dict`. `fuse_layers` folds Conv2D-then-BatchNorm pairs. `calibrate` streams data through the float reference with `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver` per layer. `emit_weights_header` writes a TinyMind-format `weights.hpp`. No PyTorch dependency at module import
-- **`apps/import_onnx/tinymind_import_onnx.py`** -- QDQ-format ONNX importer. Walks `QuantizeLinear` / `DequantizeLinear` / `QLinearConv` / `QLinearMatMul` / `Relu` / `Sigmoid` / `Tanh` / `Softmax` from a model produced by `onnxruntime.quantization.quantize_static`, emits the same TinyMind-format `weights.hpp`. The `onnx` package is imported lazily inside `parse_onnx_model`
+- **`apps/import_pytorch/tinymind_import.py`** -- PyTorch -> tinymind int8 importer (pure-numpy core). Caller assembles `Dense` / `Conv2D` / `BatchNorm2D` / `ReLU` / `Sigmoid` / `Tanh` / `Softmax` descriptors carrying numpy weights from `torch.state_dict`. `fuse_layers` folds Conv2D-then-BatchNorm pairs. `calibrate` streams data through the float reference with `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver` per layer. `emit_weights_header` writes a tinymind-format `weights.hpp`. No PyTorch dependency at module import
+- **`apps/import_onnx/tinymind_import_onnx.py`** -- QDQ-format ONNX importer. Walks `QuantizeLinear` / `DequantizeLinear` / `QLinearConv` / `QLinearMatMul` / `Relu` / `Sigmoid` / `Tanh` / `Softmax` from a model produced by `onnxruntime.quantization.quantize_static`, emits the same tinymind-format `weights.hpp`. The `onnx` package is imported lazily inside `parse_onnx_model`
 
 ### Activation Functions
 
@@ -927,7 +927,7 @@ cd examples/pinn_heat1d && make clean && make          # PINN residual via autod
 - Release: `-Wall -Wextra -Werror -Wpedantic -O3`
 
 Both GCC and Clang are built and tested in CI, on the host and (build-only) for
-Cortex-M via `arm-none-eabi-g++`. Because TinyMind is header-only, your
+Cortex-M via `arm-none-eabi-g++`. Because tinymind is header-only, your
 toolchain compiles these headers directly — so both compilers are kept warning
 clean at `-Werror`, not merely working.
 
@@ -968,7 +968,7 @@ must test `__clang__` first; the macros above already do.
 
 ### Platform Feature Gates
 
-TinyMind compiles cleanly on freestanding embedded targets that lack an FPU, a hosted C++ stdlib, or a C runtime `rand()`. Preprocessor macros control which dependencies are pulled in. **All default to 0** so embedded targets get the strictest configuration out of the box; hosted users opt in via `-DTINYMIND_ENABLE_*=1`. The gates are orthogonal — pick exactly the subset your toolchain (and ISA) provides.
+tinymind compiles cleanly on freestanding embedded targets that lack an FPU, a hosted C++ stdlib, or a C runtime `rand()`. Preprocessor macros control which dependencies are pulled in. **All default to 0** so embedded targets get the strictest configuration out of the box; hosted users opt in via `-DTINYMIND_ENABLE_*=1`. The gates are orthogonal — pick exactly the subset your toolchain (and ISA) provides.
 
 | Macro | What it enables |
 |---|---|
@@ -1142,8 +1142,8 @@ tinymind/
     integration/                # Golden-byte regression suite for the Phase 16/17 exemplars
   apps/
     activation/                 # Lookup table generator tool
-    import_pytorch/             # PyTorch -> TinyMind int8 importer (numpy core)
-    import_onnx/                # QDQ-format ONNX -> TinyMind int8 importer
+    import_pytorch/             # PyTorch -> tinymind int8 importer (numpy core)
+    import_onnx/                # QDQ-format ONNX -> tinymind int8 importer
     anfis_train/                # Host ANFIS trainer (hybrid LSE + premise descent, numpy)
 ```
 
