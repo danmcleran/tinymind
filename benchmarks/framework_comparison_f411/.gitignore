@@ -3,3 +3,4 @@ tflite-micro
 build/
 # emlearn.convert() compiles a host self-test here
 tmp/
+local.mk
