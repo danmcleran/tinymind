@@ -107,6 +107,42 @@ namespace tinymind {
     }
 
     /**
+     * roundingDivideByPOT(saturatingRoundingDoublingHighMul(x, multiplier),
+     * exponent) in one 64-bit rounding, for multiplier >= 0 and
+     * 2 <= exponent <= 31 (every requantizer TFLite emits for a scale
+     * ratio below 0.25).
+     *
+     * The two-step form rounds twice: h = floor((x*m + 2^30) / 2^31), then
+     * r = floor((h + 2^(e-1) - [h < 0]) / 2^e), which is gemmlowp's
+     * remainder/threshold test written as one floor. Nested floors of
+     * divisions by positive integers compose, so
+     *
+     *   r = floor((x*m + 2^30 + 2^(30+e) - [h < 0] * 2^31) / 2^(31+e))
+     *
+     * with no intermediate rounding lost. [h < 0] may be replaced by
+     * [x < 0]: with m >= 0 they differ only when -2^30 <= x*m < 0, where
+     * h == 0 and both choices give r == 0. The shift by 31+e >= 33 is the
+     * high word shifted by e-1, so on Cortex-M4 this is an SMLAL and an
+     * ASR in place of the mask, threshold and compare of the two-step form.
+     * Both steps' results are unchanged bit for bit; the saturating corner
+     * of the high multiply needs a negative multiplier, which is excluded.
+     */
+    inline int32_t roundingHighMulDivideByPOT(int32_t x, int32_t multiplier, int32_t exponent)
+    {
+        // nudge = 2^(30+e) + 2^30 - [x < 0] * 2^31, assembled from 32-bit
+        // halves (high 2^(e-2) - neg, low 2^30 | neg << 31) so the low word
+        // is a constant and the sign costs a shift and a subtract. The sum
+        // is formed modulo 2^64; its true value fits int64.
+        const uint32_t negative = static_cast<uint32_t>(x) >> 31;
+        const uint32_t nudgeHigh = (static_cast<uint32_t>(1) << (exponent - 2)) - negative;
+        const uint32_t nudgeLow = (negative << 31) | static_cast<uint32_t>(0x40000000u);
+        const uint64_t nudge = (static_cast<uint64_t>(nudgeHigh) << 32) | nudgeLow;
+        const uint64_t v = nudge + static_cast<uint64_t>(
+            static_cast<int64_t>(x) * static_cast<int64_t>(multiplier));
+        return static_cast<int32_t>(static_cast<uint32_t>(v >> 32)) >> (exponent - 1);
+    }
+
+    /**
      * Combine saturatingRoundingDoublingHighMul with roundingDivideByPOT,
      * and handle the left-shift case (shift < 0) up front. This is the
      * gemmlowp / TFLite "MultiplyByQuantizedMultiplier" primitive: takes
@@ -196,17 +232,29 @@ namespace tinymind {
 
         DstStorageType apply(SrcAccumType acc) const
         {
-            const int32_t left_shift = (shift < 0) ? -shift : 0;
-            const int32_t right_shift = (shift > 0) ? shift : 0;
-
-            int32_t shifted = static_cast<int32_t>(acc);
-            if (left_shift > 0)
+            int32_t scaled;
+            // multiplier >= 0 and shift >= 2 in one sign test, so the
+            // optimizer can hoist a single loop-invariant branch.
+            if ((multiplier | (shift - 2)) >= 0)
             {
-                shifted = shifted * (static_cast<int32_t>(1) << left_shift);
+                // The common case (scale ratio below 0.25): one rounding
+                // that matches the two-step form below bit for bit.
+                scaled = roundingHighMulDivideByPOT(static_cast<int32_t>(acc), multiplier, shift);
             }
+            else
+            {
+                const int32_t left_shift = (shift < 0) ? -shift : 0;
+                const int32_t right_shift = (shift > 0) ? shift : 0;
 
-            const int32_t mul = saturatingRoundingDoublingHighMul(shifted, multiplier);
-            const int32_t scaled = roundingDivideByPOT(mul, right_shift);
+                int32_t shifted = static_cast<int32_t>(acc);
+                if (left_shift > 0)
+                {
+                    shifted = shifted * (static_cast<int32_t>(1) << left_shift);
+                }
+
+                const int32_t mul = saturatingRoundingDoublingHighMul(shifted, multiplier);
+                scaled = roundingDivideByPOT(mul, right_shift);
+            }
             int32_t with_zp = scaled + static_cast<int32_t>(zero_point);
 
             if (with_zp < static_cast<int32_t>(qmin))
