@@ -4,6 +4,8 @@
 #
 #   make deps                 venv (TF, emlearn, sklearn) + TFLM clone + TFLM libs
 #   make host-check           TinyMind int8 outputs reproduce the expected hashes
+#   make host-bench           time TinyMind on the build host, scalar and each x86
+#                             SIMD backend the CPU supports -> results/host_x86.txt
 #   make LEVEL=O2|O3          build every image into build/<LEVEL>/
 #   make LEVEL=O2|O3 run      flash + capture each image -> results/raw_<LEVEL>.txt
 #   make LEVEL=.. IMG=x run1  flash + capture one image
@@ -147,6 +149,50 @@ host-check:
 	    -I$(TM)/cpp -I$(TM)/cpp/include -I$(TM)/include host/tm_check.cpp -o build/tm_check
 	./build/tm_check
 
+# Host timing of the same generated models, once per x86 SIMD backend and
+# level. Gates are cumulative, as in a build for a CPU that has them all.
+# Every backend is compiled; one the CPU lacks (per /proc/cpuinfo) is skipped
+# rather than run, since it would die on an illegal instruction. HOST_PIN pins
+# each run to one core when taskset is available.
+HOST_CXX      ?= g++
+HOST_LEVELS   ?= O2 O3
+HOST_BACKENDS ?= scalar avx2 avx_vnni avx512f avx512_vnni
+HOST_PIN      ?= $(shell command -v taskset >/dev/null 2>&1 && echo taskset -c 2)
+HOST_FLAGS_scalar      :=
+HOST_FLAGS_avx2        := -mavx2 -DTINYMIND_ENABLE_SIMD_AVX2=1
+HOST_FLAGS_avx_vnni    := $(HOST_FLAGS_avx2) -mavxvnni -DTINYMIND_ENABLE_SIMD_AVX_VNNI=1
+HOST_FLAGS_avx512f     := $(HOST_FLAGS_avx2) -mavx512f -mavx512bw -mavx512vl -DTINYMIND_ENABLE_SIMD_AVX512F=1
+HOST_FLAGS_avx512_vnni := $(HOST_FLAGS_avx512f) -mavx512vnni -DTINYMIND_ENABLE_SIMD_AVX512_VNNI=1
+HOST_CPU_scalar        :=
+HOST_CPU_avx2          := avx2
+HOST_CPU_avx_vnni      := avx2 avx_vnni
+HOST_CPU_avx512f       := avx2 avx512f avx512bw avx512vl
+HOST_CPU_avx512_vnni   := avx2 avx512f avx512bw avx512vl avx512_vnni
+HB := build/host
+
+$(HB):
+	mkdir -p $@
+
+# $(1)=level $(2)=backend
+define host_rule
+$(HB)/tm_host_bench_$(1)_$(2): host/tm_host_bench.cpp fw/backend.hpp Makefile gen/out/mlp_tinymind.hpp gen/out/kws_tinymind.hpp | $(HB)
+	$$(HOST_CXX) -std=c++17 -$(1) -Wall -Wextra -Werror $$(HOST_FLAGS_$(2)) -DTINYMIND_ENABLE_QUANTIZATION=1 \
+	    -Ifw -Igen/out -I$$(TM)/cpp -I$$(TM)/cpp/include -I$$(TM)/include $$< -o $$@
+endef
+$(foreach l,$(HOST_LEVELS),$(foreach b,$(HOST_BACKENDS),$(eval $(call host_rule,$(l),$(b)))))
+
+host-bench: $(foreach l,$(HOST_LEVELS),$(foreach b,$(HOST_BACKENDS),$(HB)/tm_host_bench_$(l)_$(b)))
+	@mkdir -p results
+	@{ echo "cpu=$$(grep -m1 '^model name' /proc/cpuinfo | sed 's/^[^:]*: *//')"; \
+	   echo "compiler=$$($(HOST_CXX) --version | head -1)"; } > results/host_x86.txt
+	@for l in $(HOST_LEVELS); do for b in $(HOST_BACKENDS); do \
+	  case $$b in $(foreach b,$(HOST_BACKENDS),($(b)) need='$(HOST_CPU_$(b))';;) esac; \
+	  miss=""; for f in $$need; do grep -qw "$$f" /proc/cpuinfo || miss="$$miss $$f"; done; \
+	  if [ -n "$$miss" ]; then r="skipped=no$$(echo $$miss | sed 's/ /,/g;s/^/:/')"; \
+	  else r=$$($(HOST_PIN) ./$(HB)/tm_host_bench_$${l}_$$b) || { echo "level=$$l backend=$$b failed: $$r"; exit 1; }; fi; \
+	  echo "level=$$l backend=$$b $$r" | tee -a results/host_x86.txt; \
+	done; done
+
 models:
 	$(PY) -I gen/make_models.py
 
@@ -171,4 +217,4 @@ tflm-libs:
 clean:
 	rm -rf build
 
-.PHONY: all run run1 probe clean host-check models deps tflm-libs
+.PHONY: all run run1 probe clean host-check host-bench models deps tflm-libs

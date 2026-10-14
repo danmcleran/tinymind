@@ -137,6 +137,42 @@ TFLM setup (`AllocateTensors`) costs 133k–163k cycles (1.3–1.6 ms) once at b
    column-strided, but its code is tiny. TFLM float KWS is 2.1M cycles because this CMSIS-NN build has its
    float kernels disabled and falls back to the reference float kernels.
 
+## x86 host timing (TinyMind only)
+
+`make host-bench` builds `host/tm_host_bench.cpp` once per optimization level and x86 SIMD backend, runs
+each pinned to one core, and writes `results/host_x86.txt`. It times the same generated models the
+firmware runs: whole-model ns per inference for both networks, then ns per call for each KWS layer (each
+layer out of line, as on the board), as the median of 41 timed repetitions. Each build must reproduce the
+expected output hashes or `make` fails, so a backend that is fast but wrong cannot report a number.
+Backends are cumulative (`avx512_vnni` also enables AVX2 and AVX-512F, as a build for that CPU would). A
+backend the CPU lacks per `/proc/cpuinfo` is still compiled but is skipped, not run. Override the set with
+`HOST_BACKENDS=...` and the levels with `HOST_LEVELS=...`.
+
+This compares TinyMind against itself, the scalar build against its x86 vector backends; there is no other
+framework on the host yet. A TFLM x86 build is the planned next step; CMSIS-NN is Arm-only, so it will
+run TFLM's reference kernels.
+
+Committed run: i7-11850H, g++ 13.3, at `a7de803`, ns per inference:
+
+| Backend | MLP -O2 | MLP -O3 | KWS -O2 | KWS -O3 |
+|---|---:|---:|---:|---:|
+| scalar | 361 | 368 | 15,345 | 14,657 |
+| AVX2 | 336 | 303 | 14,779 | **13,321** |
+| AVX-512F | 304 | 333 | 15,261 | 14,530 |
+| AVX-512 VNNI | **191** | 227 | 15,185 | 14,770 |
+
+* **The MLP gains from wide vectors; KWS barely does.** The MLP's dot products are 16–64 elements, so
+  AVX-512 VNNI is 1.9× scalar at -O2. KWS is about 70% stem conv, whose dot products are 9 elements long
+  (one 3×3 window, one input channel). Below 16 elements every x86 backend routes to the scalar code, so
+  KWS speed is set by scalar code and every backend is within 10% of scalar.
+* **AVX-512 needs `-mavx512vl`.** Without it GCC cannot use EVEX-encoded 256- and 128-bit instructions
+  for loop tails, and the VNNI MLP is about 16% slower. The Makefile passes it.
+* **Expect about ±5% from code layout.** Repeat runs of one binary agree within 1%, but the same library
+  code built into a different harness binary moved KWS by about 5%. Treat differences smaller than that as
+  noise.
+* **Scalar max-pool at -O2 is 4.8× slower than at -O3** (373 vs 77 ns): GCC does not vectorize it at -O2
+  with baseline x86-64 flags, but does once `-mavx2` is on. It is about 2% of KWS.
+
 ## Integration friction observed
 
 * **emlearn:** `pip install emlearn`, `emlearn.convert(model).save()`, include one header. Minutes.
@@ -162,6 +198,7 @@ cd benchmarks/framework_comparison_f411
 make deps                      # .venv (tensorflow-cpu, emlearn, scikit-learn, numpy),
                                # TFLM clone at the pinned revision, six TFLM libs
 make host-check                # TinyMind int8 outputs match the expected hashes
+make host-bench                # x86 host timing per SIMD backend -> results/host_x86.txt
 make LEVEL=O2 run              # build + flash + capture -> results/raw_O2.txt
 make LEVEL=O3 run              # -> results/raw_O3.txt
 .venv/bin/python -I report.py  # -> results/REPORT.md
@@ -179,4 +216,5 @@ sizes; update the `ARENA_*` values in the Makefile if they change.
 | `fw/be_*.c*` | One backend per framework: TinyMind, TFLM, emlearn, empty baseline |
 | `gen/make_models.py` | Trains/quantizes the models and emits every framework's headers into `gen/out/` |
 | `host/tm_check.cpp` | Host-side TinyMind hash check |
+| `host/tm_host_bench.cpp` | Host timing of TinyMind, per x86 SIMD backend (`make host-bench`) |
 | `report.py` | `results/raw_*.txt` → `results/REPORT.md` |
