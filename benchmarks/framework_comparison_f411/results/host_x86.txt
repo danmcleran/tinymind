@@ -1,0 +1,12 @@
+cpu=11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz
+compiler=g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+level=O2 backend=scalar mlp_ns=361 kws_ns=15345 conv_ns=10706 maxpool_ns=373 depthwise_ns=1385 pointwise_ns=2858 avgpool_ns=36 fc_ns=56 hash_ok=1
+level=O2 backend=avx2 mlp_ns=336 kws_ns=14779 conv_ns=10644 maxpool_ns=40 depthwise_ns=1268 pointwise_ns=2605 avgpool_ns=28 fc_ns=43 hash_ok=1
+level=O2 backend=avx_vnni skipped=no:avx_vnni
+level=O2 backend=avx512f mlp_ns=304 kws_ns=15261 conv_ns=11048 maxpool_ns=37 depthwise_ns=1350 pointwise_ns=2707 avgpool_ns=27 fc_ns=49 hash_ok=1
+level=O2 backend=avx512_vnni mlp_ns=191 kws_ns=15185 conv_ns=11014 maxpool_ns=40 depthwise_ns=1349 pointwise_ns=2708 avgpool_ns=27 fc_ns=26 hash_ok=1
+level=O3 backend=scalar mlp_ns=368 kws_ns=14657 conv_ns=11014 maxpool_ns=77 depthwise_ns=1389 pointwise_ns=1765 avgpool_ns=37 fc_ns=58 hash_ok=1
+level=O3 backend=avx2 mlp_ns=303 kws_ns=13321 conv_ns=10370 maxpool_ns=31 depthwise_ns=1307 pointwise_ns=1360 avgpool_ns=28 fc_ns=43 hash_ok=1
+level=O3 backend=avx_vnni skipped=no:avx_vnni
+level=O3 backend=avx512f mlp_ns=333 kws_ns=14530 conv_ns=11451 maxpool_ns=18 depthwise_ns=1426 pointwise_ns=1303 avgpool_ns=28 fc_ns=76 hash_ok=1
+level=O3 backend=avx512_vnni mlp_ns=227 kws_ns=14770 conv_ns=10846 maxpool_ns=18 depthwise_ns=1431 pointwise_ns=1300 avgpool_ns=28 fc_ns=69 hash_ok=1
