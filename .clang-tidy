@@ -1,4 +1,4 @@
-# TinyMind static-analysis profile.
+# tinymind static-analysis profile.
 # Focus: the defect classes that actually bite an embedded, header-only,
 # fixed-point template library — integer narrowing/overflow, out-of-bounds
 # indexing, uninitialized reads, and CERT integer/UB rules. Style/naming

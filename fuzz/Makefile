@@ -1,4 +1,4 @@
-# Fuzzing harnesses for TinyMind int8 compute kernels (libFuzzer + ASan/UBSan).
+# Fuzzing harnesses for tinymind int8 compute kernels (libFuzzer + ASan/UBSan).
 #
 #   make fuzz        build + run ONE target interactively (TARGET=fuzz_qsoftmax)
 #   make replay      build + replay the committed corpus only (-runs=0); fast,

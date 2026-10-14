@@ -34,7 +34,7 @@ A common embedded-inference deployment story:
 * the model is trained in PyTorch / TensorFlow with float weights;
 * the outermost layers go through standard post-training int8 quantization
   (TFLite / ONNX QDQ); but
-* an existing TinyMind Q-format implementation already runs on the target
+* an existing tinymind Q-format implementation already runs on the target
   (e.g. a `NeuralNet<Q8.8>` hand-tuned for the MCU); or
 * a particular hidden layer wants Q-format's compile-time fixed/fractional
   bit split (no per-tensor `scale` field, no runtime requantizers) for

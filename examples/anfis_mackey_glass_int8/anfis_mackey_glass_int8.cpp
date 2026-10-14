@@ -23,7 +23,7 @@
 /*
  * int8 Mackey-Glass ANFIS -- and a deliberate negative result.
  *
- * Everywhere else in TinyMind, moving a model to int8 makes it smaller. For
+ * Everywhere else in tinymind, moving a model to int8 makes it smaller. For
  * ANFIS it does not, and this exemplar exists to measure that rather than let
  * the assumption ride.
  *

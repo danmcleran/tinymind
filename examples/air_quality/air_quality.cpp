@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// Air-quality hourly pollutant forecaster built on TinyMind.
+// Air-quality hourly pollutant forecaster built on tinymind.
 //
 // Inspired by the UCI Air Quality dataset:
 //   https://archive.ics.uci.edu/dataset/360

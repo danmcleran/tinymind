@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// Handwritten-digit classifier built on TinyMind.
+// Handwritten-digit classifier built on tinymind.
 //
 // Dataset: UCI Optical Recognition of Handwritten Digits
 //          https://archive.ics.uci.edu/dataset/80/optical+recognition+of+handwritten+digits

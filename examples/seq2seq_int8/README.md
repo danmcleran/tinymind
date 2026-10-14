@@ -1,7 +1,7 @@
 # seq2seq_int8
 
 A full int8 **encoder–decoder (seq2seq) transformer**. This finishes the
-transformer arc in TinyMind: the encoder family
+transformer arc in tinymind: the encoder family
 ([`../transformer_encoder_int8`](../transformer_encoder_int8),
 [`../transformer_encoder_stack_int8`](../transformer_encoder_stack_int8))
 produced a memory tensor; here a **decoder** consumes it.

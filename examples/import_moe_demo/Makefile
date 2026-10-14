@@ -1,6 +1,6 @@
 # Phase 3 Mixture-of-Experts importer round-trip.
 #
-# Builds a host-side PyTorch->TinyMind importer demonstration for the MoE
+# Builds a host-side PyTorch->tinymind importer demonstration for the MoE
 # layer that does NOT depend on torch: a deterministic float MoE is generated
 # by demo.py with numpy, calibrated through apps/import_pytorch, and emitted as
 # weights.hpp. This binary consumes weights.hpp + moe_reference.hpp, rebuilds

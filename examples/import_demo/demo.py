@@ -23,7 +23,7 @@ SOFTWARE.
 from __future__ import annotations
 
 """
-Phase 15 import_demo: full PyTorch -> TinyMind importer round-trip.
+Phase 15 import_demo: full PyTorch -> tinymind importer round-trip.
 
 Trains a tiny 3-8-4-2 MLP with sigmoid output on a deterministic synthetic
 regression task, then drives the apps/import_pytorch/tinymind_import

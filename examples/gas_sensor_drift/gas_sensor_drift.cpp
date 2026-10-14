@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// Gas-sensor-array drift classifier built on TinyMind.
+// Gas-sensor-array drift classifier built on tinymind.
 //
 // Inspired by the UCI "Gas Sensor Array Drift Dataset":
 //   https://archive.ics.uci.edu/dataset/224

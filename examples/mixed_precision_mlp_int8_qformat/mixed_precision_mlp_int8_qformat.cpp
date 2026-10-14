@@ -28,7 +28,7 @@
 // Demonstrates the offline-training -> embedded-inference path for a model
 // that wants the int8 affine grid at the boundaries (matches the PyTorch /
 // TFLite weight-export story) but a Q-format middle tier (matches the
-// existing TinyMind QValue pipeline, e.g. for code already written against
+// existing tinymind QValue pipeline, e.g. for code already written against
 // QValue<8,8>). The Phase 17 pure-integer qbridge functions span the gap
 // so the inference path never touches <cmath> at runtime.
 //

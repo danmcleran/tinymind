@@ -1,10 +1,10 @@
-# Kolmogorov-Arnold Network (KAN) Implementation Plan for TinyMind
+# Kolmogorov-Arnold Network (KAN) Implementation Plan for tinymind
 
 ## Context
 
 Kolmogorov-Arnold Networks (KANs) are a fundamentally different neural network architecture based on the Kolmogorov-Arnold representation theorem. Unlike MLPs which use fixed activation functions on nodes with learnable scalar weights on edges, KANs place **learnable univariate functions (B-splines) on edges** and use simple summation at nodes. This yields better parameter efficiency and interpretability, especially for regression and scientific computing tasks.
 
-Adding KAN support to TinyMind extends its capabilities while maintaining the library's core principles: fixed-point support via QValue, no FPU/GPU required, header-only, compile-time sizing, zero dynamic allocation, and policy-based template design.
+Adding KAN support to tinymind extends its capabilities while maintaining the library's core principles: fixed-point support via QValue, no FPU/GPU required, header-only, compile-time sizing, zero dynamic allocation, and policy-based template design.
 
 No published fixed-point KAN implementations exist, making this novel work.
 

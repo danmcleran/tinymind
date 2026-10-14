@@ -1,6 +1,6 @@
 # Phase 15 import_demo Makefile.
 #
-# Builds an end-to-end PyTorch -> TinyMind int8 importer demonstration that
+# Builds an end-to-end PyTorch -> tinymind int8 importer demonstration that
 # does NOT depend on a torch install: a small MLP carries deterministic
 # float weights, a 64-sample synthetic dataset drives calibration via the
 # Phase 15 observers (Percentile, KL divergence, RangeObserver) and the

@@ -1,8 +1,8 @@
-# tinymind_import_onnx (ONNX -> TinyMind int8)
+# tinymind_import_onnx (ONNX -> tinymind int8)
 
 Phase 15 importer for QDQ-format quantized ONNX models. Consumes the
 output of `onnxruntime.quantization.quantize_static(...)` and emits a
-TinyMind-format `weights.hpp` matching the layout produced by
+tinymind-format `weights.hpp` matching the layout produced by
 `apps/import_pytorch/tinymind_import.py`:
 
   * int8 symmetric per-tensor weights (zero_point = 0)

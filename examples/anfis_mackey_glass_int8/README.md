@@ -4,7 +4,7 @@ The same model as [`anfis_mackey_glass`](../anfis_mackey_glass/), run through
 `cpp/qanfis.hpp` — and a deliberate negative result.
 
 **int8 is 9.9x LARGER than Q16.16 for this model.** That is the point of the
-exemplar. Everywhere else in TinyMind moving to int8 shrinks a model; here it
+exemplar. Everywhere else in tinymind moving to int8 shrinks a model; here it
 does not, and it is better to measure that than to let the assumption ride.
 
 ![tiers](../../docs/assets/plots/anfis_mackey_glass_int8.png)

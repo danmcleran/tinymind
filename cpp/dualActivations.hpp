@@ -41,7 +41,7 @@ namespace tinymind {
     /**
      * Scalar-activation provider for the Dual<> activation overloads -- the one
      * type-specific hook in forward-mode AD. The primary template targets
-     * TinyMind's fixed-point QValue: it sources tanh/sigmoid from the existing
+     * tinymind's fixed-point QValue: it sources tanh/sigmoid from the existing
      * lookup-table activation policies and the unit "one" from Constants.
      *
      * IEEE float/double get explicit specializations (host-only) that use

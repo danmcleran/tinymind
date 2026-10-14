@@ -2,7 +2,7 @@
 
 Two-output building energy-load regressor trained on the
 [UCI Energy Efficiency dataset](https://archive.ics.uci.edu/dataset/242/energy+efficiency)
-using a Q16.16 fixed-point MLP from TinyMind. This is the library's smallest
+using a Q16.16 fixed-point MLP from tinymind. This is the library's smallest
 end-to-end **regression** example (linear output), the counterpart to the
 classification path in `examples/iris`.
 
@@ -65,7 +65,7 @@ Expected (seed = 7): heating-load **R² ≈ 0.90** (MAE ≈ 2.8), cooling-load
 **R² ≈ 0.88** (MAE ≈ 2.8) — the two loads are highly predictable from the
 building geometry, so the fixed-point MLP tracks the held-out split closely.
 
-## TinyMind capability shown
+## tinymind capability shown
 
 `NeuralNet<>` feed-forward MLP (`MultilayerPerceptron`) trained and run entirely
 in `QValue` Q16.16 fixed-point with a **linear output activation** — the

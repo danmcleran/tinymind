@@ -1,8 +1,8 @@
 """
-PyTorch -> TinyMind int8 quantization demo (XOR).
+PyTorch -> tinymind int8 quantization demo (XOR).
 
 Trains a tiny 2-4-1 MLP (Linear -> ReLU -> Linear -> Sigmoid) in float32,
-then runs post-training int8 quantization in the TinyMind / TFLite style:
+then runs post-training int8 quantization in the tinymind / TFLite style:
 
   * Symmetric per-tensor weights (zero_point = 0, qmax = 127)
   * Asymmetric activations (zero_point in [-128, 127])
@@ -89,7 +89,7 @@ def lround(x: float) -> int:
     """C++ std::lround semantics: ties round away from zero.
 
     Python's built-in round() uses banker's rounding (ties to even); the
-    TinyMind C++ side uses std::lround everywhere quantization rounding
+    tinymind C++ side uses std::lround everywhere quantization rounding
     matters. Matching here keeps the calibration metadata produced by this
     script bit-identical to what the C++ Requantizer would expect.
     """

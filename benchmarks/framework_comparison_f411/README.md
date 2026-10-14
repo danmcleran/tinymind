@@ -1,6 +1,6 @@
-# Framework comparison on NUCLEO-F411RE: TinyMind vs TFLM vs emlearn
+# Framework comparison on NUCLEO-F411RE: tinymind vs TFLM vs emlearn
 
-On-target benchmark of TinyMind against TensorFlow Lite for Microcontrollers (TFLM, now LiteRT for
+On-target benchmark of tinymind against TensorFlow Lite for Microcontrollers (TFLM, now LiteRT for
 Microcontrollers) with CMSIS-NN and with reference kernels, and against emlearn. The board is a
 NUCLEO-F411RE: STM32F411RE, Cortex-M4F at 100 MHz, 3 flash wait states with the ART accelerator on.
 The toolchain is arm-none-eabi-gcc 13.2.1 with the hard-float ABI. Cycles come from the DWT cycle
@@ -8,7 +8,7 @@ counter, as the median of 33 warm inferences (spread < 0.1%).
 
 Write-up: https://danmcleran.github.io/tinymind/benchmarks.html
 
-Versions: TinyMind (this repo; results below at `b02e92d`) · TFLM @ `18811372` (2026-10-12) with its pinned CMSIS-NN ·
+Versions: tinymind (this repo; results below at `b02e92d`) · TFLM @ `18811372` (2026-10-12) with its pinned CMSIS-NN ·
 emlearn 0.23.2 · TensorFlow 2.21 (converter only) · scikit-learn 1.9.1.
 
 This folder lives outside `examples/` on purpose. The top-level build and `check-clang-examples` build
@@ -21,13 +21,13 @@ it.
   scikit-learn digits. The KWS CNN has random weights, so it measures speed and exactness only.
 * TFLite post-training int8 quantization with TF 2.21 defaults: per-channel weights for both conv and dense.
 * The **same int8 weights, biases and requantizer multipliers** are lifted out of the `.tflite` file and
-  emitted as TinyMind `QConv2DPerChannel` / `QDepthwiseConv2D` / `QPointwiseConv2DPerChannel` / pool layers
+  emitted as tinymind `QConv2DPerChannel` / `QDepthwiseConv2D` / `QPointwiseConv2DPerChannel` / pool layers
   (`gen/out/*_tinymind.hpp`). These are `const` aggregates in flash, so there is no setup step. Both
   runtimes run identical integer math, so their int8 outputs must hash-match on the board. They do, for
   every sample in every build. `make host-check` reproduces the expected hashes on the host.
 * emlearn gets the same scikit-learn float MLP. Its final softmax is patched to identity at build time so
   that every backend returns logits; the argmax is unchanged.
-* `LEVEL=O2|O3` sets the optimization level for every framework together. TinyMind and emlearn translation
+* `LEVEL=O2|O3` sets the optimization level for every framework together. tinymind and emlearn translation
   units get `-O2`/`-O3`. TFLM links its own default release build (kernels `-O2`, core `-Os`) or a rebuild
   with every level forced to `-O3`.
 * `flash` = image − empty-harness image − embedded test-set bytes, i.e. runtime code + weights.
@@ -38,15 +38,15 @@ it.
 
 ## Results
 
-The tables below come from `results/raw_O2.txt` and `results/raw_O3.txt`, measured at TinyMind `b02e92d`
+The tables below come from `results/raw_O2.txt` and `results/raw_O3.txt`, measured at tinymind `b02e92d`
 (after #192, #195, #198, #199, #202, #204, #208, #210 and #211; see finding 3 for what changed since the first run).
 
 ## MLP 64-32-16-10, sklearn digits (360 test samples)
 
 | Framework | O2 cycles | O3 cycles | O3 us @100MHz | flash O2 / O3 (B) | RAM (B) | acc | int8 bit-exact |
 |---|---:|---:|---:|---:|---:|---:|---|
-| TinyMind int8 (scalar) | 20,639 | 20,486 | 205 | 5,296 / 5,464 | 152 | 96.11% | yes |
-| TinyMind int8 (+SMLAD) | 10,305 | 10,241 | 102 | 5,380 / 5,548 | 124 | 96.11% | yes |
+| tinymind int8 (scalar) | 20,639 | 20,486 | 205 | 5,296 / 5,464 | 152 | 96.11% | yes |
+| tinymind int8 (+SMLAD) | 10,305 | 10,241 | 102 | 5,380 / 5,548 | 124 | 96.11% | yes |
 | TFLM int8 (CMSIS-NN) | 14,075 | 14,030 | 140 | 36,736 / 40,624 | 2,600 | 96.11% | yes |
 | TFLM int8 (reference) | 32,084 | 31,411 | 314 | 25,664 / 29,552 | 2,152 | 96.11% | yes |
 | TFLM float32 | 27,902 | 28,059 | 281 | 43,228 / 47,276 | 1,824 | 96.11% | n/a (float) |
@@ -54,7 +54,7 @@ The tables below come from `results/raw_O2.txt` and `results/raw_O3.txt`, measur
 
 ### Per-layer cycles (mlp, each layer timed separately)
 
-| Layer | TinyMind scalar O2 | TinyMind scalar O3 | TinyMind +SMLAD O2 | TinyMind +SMLAD O3 | TFLM CMSIS-NN O2 | TFLM CMSIS-NN O3 |
+| Layer | tinymind scalar O2 | tinymind scalar O3 | tinymind +SMLAD O2 | tinymind +SMLAD O3 | TFLM CMSIS-NN O2 | TFLM CMSIS-NN O3 |
 |---|---:|---:|---:|---:|---:|---:|
 | fc0 | 15,096 | 15,097 | 7,344 | 7,345 | 8,592 | 8,556 |
 | fc1 | 4,147 | 4,151 | 2,221 | 2,225 | 3,421 | 3,375 |
@@ -64,15 +64,15 @@ The tables below come from `results/raw_O2.txt` and `results/raw_O3.txt`, measur
 
 | Framework | O2 cycles | O3 cycles | O3 us @100MHz | flash O2 / O3 (B) | RAM (B) | int8 bit-exact |
 |---|---:|---:|---:|---:|---:|---|
-| TinyMind int8 (scalar) | 266,451 | 254,900 | 2,549 | 4,996 / 6,848 | 5,332 | yes |
-| TinyMind int8 (+SMLAD) | 192,965 | 181,568 | 1,816 | 4,692 / 6,364 | 5,296 | yes |
+| tinymind int8 (scalar) | 266,451 | 254,900 | 2,549 | 4,996 / 6,848 | 5,332 | yes |
+| tinymind int8 (+SMLAD) | 192,965 | 181,568 | 1,816 | 4,692 / 6,364 | 5,296 | yes |
 | TFLM int8 (CMSIS-NN) | 573,396 | 576,368 | 5,764 | 84,488 / 91,640 | 6,288 | yes |
 | TFLM int8 (reference) | 2,459,339 | 2,435,580 | 24,356 | 41,088 / 46,192 | 5,668 | yes |
 | TFLM float32 | 2,136,067 | 2,159,717 | 21,597 | 84,324 / 91,604 | 15,128 | n/a (float) |
 
 ### Per-layer cycles (kws, each layer timed separately)
 
-| Layer | TinyMind scalar O2 | TinyMind scalar O3 | TinyMind +SMLAD O2 | TinyMind +SMLAD O3 | TFLM CMSIS-NN O2 | TFLM CMSIS-NN O3 |
+| Layer | tinymind scalar O2 | tinymind scalar O3 | tinymind +SMLAD O2 | tinymind +SMLAD O3 | TFLM CMSIS-NN O2 | TFLM CMSIS-NN O3 |
 |---|---:|---:|---:|---:|---:|---:|
 | conv3x3 | 181,968 | 173,164 | 132,155 | 127,756 | 434,553 | 435,412 |
 | maxpool | 10,166 | 10,156 | 10,162 | 10,160 | 35,807 | 36,697 |
@@ -82,15 +82,15 @@ The tables below come from `results/raw_O2.txt` and `results/raw_O3.txt`, measur
 | fc | 1,284 | 1,281 | 948 | 946 | 2,097 | 2,041 |
 
 
-TFLM setup (`AllocateTensors`) costs 133k–163k cycles (1.3–1.6 ms) once at boot. TinyMind has no setup step.
+TFLM setup (`AllocateTensors`) costs 133k–163k cycles (1.3–1.6 ms) once at boot. tinymind has no setup step.
 
 ## Findings
 
-1. **Bit-exact.** TinyMind and TFLM (both CMSIS-NN and reference kernels) produce identical int8 outputs on
+1. **Bit-exact.** tinymind and TFLM (both CMSIS-NN and reference kernels) produce identical int8 outputs on
    the board, so accuracy is identical (96.11%). The pip TFLite *host* interpreter differs by ±1 LSB on
-   35/3600 MLP outputs: its fully-connected kernel uses single rounding, while TFLM, CMSIS-NN and TinyMind
+   35/3600 MLP outputs: its fully-connected kernel uses single rounding, while TFLM, CMSIS-NN and tinymind
    use double rounding.
-2. **TinyMind+SMLAD is faster than TFLM+CMSIS-NN on every layer, at both levels:** MLP 10.2k vs 14.0k cycles
+2. **tinymind+SMLAD is faster than TFLM+CMSIS-NN on every layer, at both levels:** MLP 10.2k vs 14.0k cycles
    at `-O3` (−27%); KWS 182k vs 576k at `-O3` (−68%) and 193k vs 573k at `-O2` (−66%). The portable scalar
    build still runs KWS 56% faster than CMSIS-NN (255k); on the MLP it (20.5k) sits between CMSIS-NN and
    TFLM's reference kernels (31.4k). The MLP is within 1% across `-O2`/`-O3`; the KWS model is 6% slower at
@@ -124,20 +124,20 @@ TFLM setup (`AllocateTensors`) costs 133k–163k cycles (1.3–1.6 ms) once at b
      158k → 128k at `-O3`, 190k → 132k at `-O2`.
    - #211: the same two fixes for pointwise and depthwise. Pointwise 39k → 26k at `-O3` (41k → 23k at
      `-O2`), depthwise 23k → 21k.
-4. **Per layer (KWS):** TinyMind wins every layer. The Cin=1 3×3 stem is still about two thirds of the
+4. **Per layer (KWS):** tinymind wins every layer. The Cin=1 3×3 stem is still about two thirds of the
    model's time (128k at `-O3`, 29% of CMSIS-NN's 435k).
-5. **Code + weights: 7–18× smaller than TFLM with CMSIS-NN.** TinyMind is 5.3–5.5 KB (MLP) and 4.7–6.8 KB (KWS) including weights. TFLM is
+5. **Code + weights: 7–18× smaller than TFLM with CMSIS-NN.** tinymind is 5.3–5.5 KB (MLP) and 4.7–6.8 KB (KWS) including weights. TFLM is
    26–41 KB (MLP) and 41–92 KB (KWS): the interpreter, the flatbuffer parser and every CMSIS-NN type
    variant that the kernel dispatch references (s4/s16 conv, ...) all get linked. emlearn is 14 KB, almost
    all of it float weights.
-6. **RAM:** MLP: TinyMind ~130 B vs TFLM 2.2–2.6 KB. KWS: TinyMind 5.3 KB vs TFLM 5.7–6.3 KB. TinyMind keeps
+6. **RAM:** MLP: tinymind ~130 B vs TFLM 2.2–2.6 KB. KWS: tinymind 5.3 KB vs TFLM 5.7–6.3 KB. tinymind keeps
    every intermediate buffer static (no reuse); TFLM's arena planner reuses buffers but carries
    interpreter state. A ping-pong buffer pair (2,592 B + 784 B instead of 4,432 B) would save about 1 KB.
 7. **Float:** TFLM float32 (27.9k) beats emlearn (40.5k) on the MLP; emlearn walks its weights
    column-strided, but its code is tiny. TFLM float KWS is 2.1M cycles because this CMSIS-NN build has its
    float kernels disabled and falls back to the reference float kernels.
 
-## x86 host timing (TinyMind only)
+## x86 host timing (tinymind only)
 
 `make host-bench` builds `host/tm_host_bench.cpp` once per optimization level and x86 SIMD backend, runs
 each pinned to one core, and writes `results/host_x86.txt`. It times the same generated models the
@@ -148,7 +148,7 @@ Backends are cumulative (`avx512_vnni` also enables AVX2 and AVX-512F, as a buil
 backend the CPU lacks per `/proc/cpuinfo` is still compiled but is skipped, not run. Override the set with
 `HOST_BACKENDS=...` and the levels with `HOST_LEVELS=...`.
 
-This compares TinyMind against itself, the scalar build against its x86 vector backends; there is no other
+This compares tinymind against itself, the scalar build against its x86 vector backends; there is no other
 framework on the host yet. A TFLM x86 build is the planned next step; CMSIS-NN is Arm-only, so it will
 run TFLM's reference kernels.
 
@@ -186,8 +186,8 @@ Committed run: i7-11850H, g++ 13.3, at `a7de803`, ns per inference:
   - `arena_used_bytes()` under-reports the minimum arena by 100–300 B
   - the per-op profiler is compiled out of release builds (`TF_LITE_STRIP_ERROR_STRINGS`), so it needs a
     `release_with_logs` lib
-* **TinyMind:** header-only and has no `.tflite` importer. The TFLite→TinyMind bridge in
-  `gen/make_models.py` was written for this benchmark (TinyMind ships PyTorch/ONNX importers in `apps/`).
+* **tinymind:** header-only and has no `.tflite` importer. The TFLite→tinymind bridge in
+  `gen/make_models.py` was written for this benchmark (tinymind ships PyTorch/ONNX importers in `apps/`).
 
 ## Reproduce
 
@@ -197,7 +197,7 @@ Needs `arm-none-eabi-gcc`, `openocd`, a NUCLEO-F411RE on `/dev/ttyACM0`, and Pyt
 cd benchmarks/framework_comparison_f411
 make deps                      # .venv (tensorflow-cpu, emlearn, scikit-learn, numpy),
                                # TFLM clone at the pinned revision, six TFLM libs
-make host-check                # TinyMind int8 outputs match the expected hashes
+make host-check                # tinymind int8 outputs match the expected hashes
 make host-bench                # x86 host timing per SIMD backend -> results/host_x86.txt
 make LEVEL=O2 run              # build + flash + capture -> results/raw_O2.txt
 make LEVEL=O3 run              # -> results/raw_O3.txt
@@ -213,8 +213,8 @@ sizes; update the `ARENA_*` values in the Makefile if they change.
 |---|---|
 | `board/` | Bare-metal F411 support: clock, USART2 on the ST-LINK VCP, DWT, stack painting, linker script |
 | `fw/harness.cpp` | Times one backend and prints a `key=value` report |
-| `fw/be_*.c*` | One backend per framework: TinyMind, TFLM, emlearn, empty baseline |
+| `fw/be_*.c*` | One backend per framework: tinymind, TFLM, emlearn, empty baseline |
 | `gen/make_models.py` | Trains/quantizes the models and emits every framework's headers into `gen/out/` |
-| `host/tm_check.cpp` | Host-side TinyMind hash check |
-| `host/tm_host_bench.cpp` | Host timing of TinyMind, per x86 SIMD backend (`make host-bench`) |
+| `host/tm_check.cpp` | Host-side tinymind hash check |
+| `host/tm_host_bench.cpp` | Host timing of tinymind, per x86 SIMD backend (`make host-bench`) |
 | `report.py` | `results/raw_*.txt` → `results/REPORT.md` |

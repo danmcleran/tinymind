@@ -31,7 +31,7 @@ namespace tinymind {
      * Carries a value and its derivative with respect to one seeded input
      * direction. f(a + b*eps) = f(a) + b*f'(a)*eps, with eps^2 = 0. Built
      * purely from the value type's +, -, *, / operators, so it works for any
-     * arithmetic ValueType -- IEEE float/double AND TinyMind's fixed-point
+     * arithmetic ValueType -- IEEE float/double AND tinymind's fixed-point
      * QValue. Whether a given type carries enough precision for a particular
      * use (e.g. a PINN PDE residual) is a separate question from whether the
      * mechanics compile and compute the chain rule correctly; both hold for

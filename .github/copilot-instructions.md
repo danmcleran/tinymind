@@ -1,6 +1,6 @@
-# GitHub Copilot Instructions for TinyMind
+# GitHub Copilot Instructions for tinymind
 
-TinyMind is a **header-only C++ template library** for neural networks and Q-learning, targeting embedded systems with no FPU, GPU, or SIMD requirements. The design follows Andrei Alexandrescu's policy-based design pattern from *Modern C++ Design*.
+tinymind is a **header-only C++ template library** for neural networks and Q-learning, targeting embedded systems with no FPU, GPU, or SIMD requirements. The design follows Andrei Alexandrescu's policy-based design pattern from *Modern C++ Design*.
 
 ## Build & Test Commands
 
@@ -130,7 +130,7 @@ TINYMIND_DISABLE_WARNING_POP
 
 ### PyTorch Weight Import Workflow
 
-`examples/pytorch/` demonstrates training in PyTorch and running inference in TinyMind C++.
+`examples/pytorch/` demonstrates training in PyTorch and running inference in tinymind C++.
 
 **Step 1 — Train and export in Python:**
 
@@ -139,7 +139,7 @@ cd examples/pytorch/xor
 python3 xor.py        # trains, then writes input/xor_weights_q16_16.txt
 ```
 
-The script converts each `float32` weight to a Q16.16 integer (`int(round(x * 65536))`) and writes one integer per line. The value order matches the TinyMind weight file format exactly (see `examples/pytorch/xor/README.md` for the line-by-line layout).
+The script converts each `float32` weight to a Q16.16 integer (`int(round(x * 65536))`) and writes one integer per line. The value order matches the tinymind weight file format exactly (see `examples/pytorch/xor/README.md` for the line-by-line layout).
 
 **Step 2 — Load weights in C++:**
 

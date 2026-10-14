@@ -1,10 +1,10 @@
 # Cross-framework NN benchmark on NUCLEO-F411RE (Cortex-M4F @ 100 MHz):
-# TinyMind vs TensorFlow Lite for Microcontrollers (CMSIS-NN and reference
+# tinymind vs TensorFlow Lite for Microcontrollers (CMSIS-NN and reference
 # kernels) vs emlearn. See README.md for method and results.
 #
 #   make deps                 venv (TF, emlearn, sklearn) + TFLM clone + TFLM libs
-#   make host-check           TinyMind int8 outputs reproduce the expected hashes
-#   make host-bench           time TinyMind on the build host, scalar and each x86
+#   make host-check           tinymind int8 outputs reproduce the expected hashes
+#   make host-bench           time tinymind on the build host, scalar and each x86
 #                             SIMD backend the CPU supports -> results/host_x86.txt
 #   make LEVEL=O2|O3          build every image into build/<LEVEL>/
 #   make LEVEL=O2|O3 run      flash + capture each image -> results/raw_<LEVEL>.txt
@@ -12,7 +12,7 @@
 #   make probe                bisect the minimum TFLM tensor arena on the board
 #   make models               regenerate gen/out/ (needs the venv)
 #
-# LEVEL applies to every framework at once: TinyMind and emlearn translation
+# LEVEL applies to every framework at once: tinymind and emlearn translation
 # units get -O2/-O3; TFLM links libs built with its default release flags
 # (O2: kernels -O2, core -Os) or with every level forced to -O3 (O3).
 #

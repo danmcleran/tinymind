@@ -37,7 +37,7 @@ namespace tinymind {
      *   static_assert(Stats::InstanceSizeBytes <= 2048, "Network exceeds 2KB budget");
      *   std::cout << "Parameters: " << Stats::TotalParameters << std::endl;
      *
-     * @tparam NeuralNetworkType Any TinyMind network type (MLP, LSTM, GRU, etc.)
+     * @tparam NeuralNetworkType Any tinymind network type (MLP, LSTM, GRU, etc.)
      */
     template<typename NeuralNetworkType>
     struct NetworkStats

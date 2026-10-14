@@ -32,7 +32,7 @@ namespace tinymind {
      * vibration, ECG). All dimensions are compile-time template parameters
      * with zero dynamic allocation.
      *
-     * Output feeds into any TinyMind network as input:
+     * Output feeds into any tinymind network as input:
      *   Conv1D<double, 100, 3, 1, 4> conv;    // 100 samples, kernel=3, 4 filters
      *   NeuralNetwork<double, 4*98, ...> mlp;  // flattened conv output
      *

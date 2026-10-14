@@ -29,7 +29,7 @@
  * NetworkPropertiesFileManager stores and restores neural network weights in
  * both text and binary formats. This enables a workflow where a network is
  * trained offline (e.g. in PyTorch) and the learned weights are loaded into
- * an untrainable TinyMind network for inference on a target device.
+ * an untrainable tinymind network for inference on a target device.
  *
  * === Weight File Format (text) ===
  *

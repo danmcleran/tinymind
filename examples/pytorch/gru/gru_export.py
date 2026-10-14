@@ -1,8 +1,8 @@
 """
-PyTorch GRU training and weight export for TinyMind.
+PyTorch GRU training and weight export for tinymind.
 
 Trains a small GRU network on a sequence prediction task and exports
-the weights in TinyMind's RecurrentNetworkPropertiesFileManager format.
+the weights in tinymind's RecurrentNetworkPropertiesFileManager format.
 
 Weight file format (one value per line):
   1. Input-to-hidden weights (gated: I * H * 3 values)
@@ -12,9 +12,9 @@ Weight file format (one value per line):
   5. Output layer bias (O values)
 
 PyTorch GRU gate ordering: reset, update, new (candidate)
-TinyMind GRU gate ordering: update, reset, candidate
+tinymind GRU gate ordering: update, reset, candidate
 
-The export reorders gates to match TinyMind's convention.
+The export reorders gates to match tinymind's convention.
 """
 
 import torch
@@ -45,7 +45,7 @@ class GRUNet(nn.Module):
 
 def export_gru_weights(model: GRUNet, path: str, use_q16_16: bool = True):
     """
-    Export GRU weights in TinyMind RecurrentNetworkPropertiesFileManager format.
+    Export GRU weights in tinymind RecurrentNetworkPropertiesFileManager format.
 
     PyTorch GRU weight layout (for each gate r, z, n):
       weight_ih_l0: [3*H, I] - input weights for all gates
@@ -54,15 +54,15 @@ def export_gru_weights(model: GRUNet, path: str, use_q16_16: bool = True):
       bias_hh_l0:   [3*H]    - recurrent bias
 
     PyTorch gate order: r (reset), z (update), n (new/candidate)
-    TinyMind gate order: z (update=0), r (reset=1), n (candidate=2)
+    tinymind gate order: z (update=0), r (reset=1), n (candidate=2)
     """
     H = model.hidden_size
     convert = float_to_q16_16 if use_q16_16 else lambda x: x
 
-    # Gate reorder map: PyTorch [r, z, n] -> TinyMind [z, r, n]
+    # Gate reorder map: PyTorch [r, z, n] -> tinymind [z, r, n]
     # PyTorch index 0=reset, 1=update, 2=candidate
-    # TinyMind index 0=update, 1=reset, 2=candidate
-    gate_reorder = [1, 0, 2]  # TinyMind gate i gets PyTorch gate gate_reorder[i]
+    # tinymind index 0=update, 1=reset, 2=candidate
+    gate_reorder = [1, 0, 2]  # tinymind gate i gets PyTorch gate gate_reorder[i]
 
     w_ih = model.gru.weight_ih_l0.detach().numpy()  # [3H, I]
     w_hh = model.gru.weight_hh_l0.detach().numpy()  # [3H, H]
@@ -82,7 +82,7 @@ def export_gru_weights(model: GRUNet, path: str, use_q16_16: bool = True):
         for h in range(H):
             for g in range(3):
                 pg = gate_reorder[g]
-                # Combined bias: TinyMind adds bias via input layer bias neuron
+                # Combined bias: tinymind adds bias via input layer bias neuron
                 values.append(convert(float(w_ih[pg * H + h, i])))
 
     # 2. Input layer bias weights (gated)

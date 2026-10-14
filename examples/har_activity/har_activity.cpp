@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// Human Activity Recognition (HAR) classifier built on TinyMind.
+// Human Activity Recognition (HAR) classifier built on tinymind.
 //
 // Inspired by the UCI "Human Activity Recognition Using Smartphones" dataset:
 //   https://archive.ics.uci.edu/dataset/240

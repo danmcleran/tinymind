@@ -269,7 +269,7 @@ jobs:
         run: make -C unit_test/embedded arm_crosscompile
 
   heap-free:
-    # HARD GATE. TinyMind targets no-heap MCUs; the library must never reference
+    # HARD GATE. tinymind targets no-heap MCUs; the library must never reference
     # the dynamic allocator. Compiles the freestanding + quant corners and
     # asserts no malloc / operator new symbols. A std::vector / new sneaking into
     # an embedded header re-triggers this.
@@ -309,7 +309,7 @@ jobs:
     name: Clang build
     runs-on: ubuntu-latest
     needs: changes
-    # HARD GATE. TinyMind is header-only, so users compile cpp/**.hpp with their
+    # HARD GATE. tinymind is header-only, so users compile cpp/**.hpp with their
     # own toolchain; a GCC-only CI means clang conformance breakage is found by
     # them, not by us. Clang diagnoses template member bodies eagerly (GCC
     # defers to instantiation) and owns -W names GCC lacks, which is the class
@@ -472,7 +472,7 @@ jobs:
     #
     # Scoped to unit_test/embedded because MSan requires every linked object to
     # be instrumented; against a stock libstdc++ the Boost suites die inside
-    # Boost.Test's own static init before reaching TinyMind code. Runs at -O0
+    # Boost.Test's own static init before reaching tinymind code. Runs at -O0
     # because at -O1+ the optimizer folds undef reads away before instrumentation
     # sees them -- verified by planting one. Name is pinned in branch protection.
     steps:

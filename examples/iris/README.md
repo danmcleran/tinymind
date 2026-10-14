@@ -1,7 +1,7 @@
 # Iris Species Classifier
 
 Three-way iris species classifier trained on the [Iris dataset](https://archive.ics.uci.edu/dataset/53/iris)
-using a Q16.16 fixed-point MLP from TinyMind.
+using a Q16.16 fixed-point MLP from tinymind.
 
 ## Network
 
@@ -33,7 +33,7 @@ Expected (seed = 7): clean convergence to ~0.015 avg error and **100% test
 accuracy** (30/30) — Iris is linearly separable enough that the fixed-point MLP
 nails the held-out split.
 
-## TinyMind capability shown
+## tinymind capability shown
 
 `NeuralNet<>` feed-forward MLP (`MultilayerPerceptron`) trained and run entirely
 in `QValue` Q16.16 fixed-point — the smallest end-to-end "train + deploy on an

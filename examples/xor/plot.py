@@ -52,7 +52,7 @@ def plot_decision_surface():
         grid[k // g][k % g] = prob[k]
 
     fig, ax = tp.new_fig("XOR decision surface (Q16.16)",
-                         "Fixed-point MLP (2->4->1) trained in TinyMind")
+                         "Fixed-point MLP (2->4->1) trained in tinymind")
     im = ax.imshow(grid, origin="lower", extent=(0, 1, 0, 1),
                    cmap="RdBu_r", vmin=0.0, vmax=1.0, aspect="auto")
     ax.contour(

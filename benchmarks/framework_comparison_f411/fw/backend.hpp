@@ -48,7 +48,7 @@ int      be_profile(uint32_t* cycles, const char** tags, int max);
 }
 #endif
 
-// TinyMind int8 output hashes over the whole test set, computed on the host
+// tinymind int8 output hashes over the whole test set, computed on the host
 // by host/tm_check.cpp. TFLM must reproduce them on the board. (The pip
 // TFLite interpreter differs by 1 LSB on 35/3600 MLP outputs because its
 // fully connected kernel uses single rounding; see README.)

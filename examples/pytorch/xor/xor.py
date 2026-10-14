@@ -46,7 +46,7 @@ class XORNet(nn.Module):
         return self.sigmoid(x)
 
     def save_to_tinymind_format(self, path: str) -> None:
-        """Save model weights in a simple text format for TinyMind."""
+        """Save model weights in a simple text format for tinymind."""
         from collections import OrderedDict
         data = OrderedDict()
         

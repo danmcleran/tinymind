@@ -20,7 +20,7 @@
 * SOFTWARE.
 */
 
-// PyTorch -> TinyMind int8 quantization end-to-end demo.
+// PyTorch -> tinymind int8 quantization end-to-end demo.
 //
 // Loads weights, biases, and calibration scales emitted by xor_quant.py
 // (weights.hpp), reconstructs the per-layer Requantizers and the qsigmoid
@@ -93,7 +93,7 @@ int main()
                                sigmoidLUT);
 
     std::cout << std::fixed << std::setprecision(4);
-    std::cout << "PyTorch -> TinyMind int8 XOR inference\n";
+    std::cout << "PyTorch -> tinymind int8 XOR inference\n";
     std::cout << "  input_scale=" << pq::kInputScale
               << " input_zp="     << pq::kInputZeroPoint
               << " hidden_scale=" << pq::kHiddenScale

@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// AI4I 2020 Predictive Maintenance binary classifier built on TinyMind.
+// AI4I 2020 Predictive Maintenance binary classifier built on tinymind.
 //
 // Dataset: https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset
 //

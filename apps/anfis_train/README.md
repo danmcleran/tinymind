@@ -1,4 +1,4 @@
-# anfis_train (host ANFIS trainer -> TinyMind `anfis.hpp`)
+# anfis_train (host ANFIS trainer -> tinymind `anfis.hpp`)
 
 Phase C tooling. `cpp/anfis.hpp` is inference only — it takes frozen premise
 parameters, a rule table, and consequent parameters. This module produces
@@ -64,7 +64,7 @@ AnfisType anfis(my_model::Premise, my_model::RuleTable, my_model::Consequent);
 
 For a Q-format build, convert the arrays at the call site with
 `tinymind::ValueConverter<double, QType>` — the header always emits
-double, matching how the rest of TinyMind treats host-produced constants.
+double, matching how the rest of tinymind treats host-produced constants.
 
 ## Membership functions
 

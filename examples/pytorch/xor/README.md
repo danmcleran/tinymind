@@ -1,7 +1,7 @@
 # PyTorch XOR Weight Export Example
 
 This example demonstrates training a neural network in PyTorch, exporting the
-learned weights to a text file, and loading them into a TinyMind C++ network
+learned weights to a text file, and loading them into a tinymind C++ network
 for inference.
 
 ## Workflow
@@ -9,7 +9,7 @@ for inference.
 1. **Train in PyTorch** (`xor.py`): Trains a 2-3-1 network on the XOR problem
    and exports the weights as Q16.16 fixed-point integers.
 2. **Run inference in C++** (`xor.cpp`): Loads the exported weights into an
-   untrainable TinyMind `MultilayerPerceptron` and runs 1000 random XOR
+   untrainable tinymind `MultilayerPerceptron` and runs 1000 random XOR
    evaluations.
 
 ## Weight File Format

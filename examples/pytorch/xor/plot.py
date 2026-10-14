@@ -20,7 +20,7 @@
 # SOFTWARE.
 #
 
-"""XOR decision surface (Q16.16) (PyTorch-trained, TinyMind int8 inference)."""
+"""XOR decision surface (Q16.16) (PyTorch-trained, tinymind int8 inference)."""
 
 import os
 import sys
@@ -42,7 +42,7 @@ def main():
         grid[k // g][k % g] = prob[k]
 
     fig, ax = tp.new_fig("XOR decision surface (Q16.16)",
-                         "PyTorch-trained weights, Q16.16 fixed-point TinyMind inference")
+                         "PyTorch-trained weights, Q16.16 fixed-point tinymind inference")
     im = ax.imshow(grid, origin="lower", extent=(0, 1, 0, 1),
                    cmap="RdBu_r", vmin=0.0, vmax=1.0, aspect="auto")
     ax.contour(

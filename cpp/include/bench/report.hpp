@@ -25,7 +25,7 @@
 #include <cstddef>
 #include "bench/platform.hpp"
 
-// Compile-time size reporting for TinyMind pipelines.
+// Compile-time size reporting for tinymind pipelines.
 //
 // Each layer row contributes four numbers reported in CSV:
 //   name, weight_bytes, activation_bytes, cycles
@@ -33,7 +33,7 @@
 // Weight bytes come from sizeof(Layer) minus any known mutable state
 // (e.g., argmax indices in MaxPool1D/2D). Activation bytes must be
 // supplied by the caller because output buffers are external to the
-// layer objects in TinyMind's design. This keeps the harness simple
+// layer objects in tinymind's design. This keeps the harness simple
 // and matches the way Conv1D / Conv2D are actually composed.
 
 namespace tinymind {

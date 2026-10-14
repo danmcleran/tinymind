@@ -2,7 +2,7 @@
 
 A **recurrent** human-activity classifier trained on tri-axial accelerometer
 sequences, inspired by the UCI [Human Activity Recognition Using Smartphones](https://archive.ics.uci.edu/dataset/240)
-dataset. Built with a Q16.16 fixed-point **LSTM** from TinyMind.
+dataset. Built with a Q16.16 fixed-point **LSTM** from tinymind.
 
 ## Network
 
@@ -96,7 +96,7 @@ accuracy** (195/200). The only residual confusion is a handful of
 WALKING_UPSTAIRS windows read as WALKING — the genuinely harder
 frequency-discrimination case; the static SITTING / STANDING classes are nailed.
 
-## TinyMind capability shown
+## tinymind capability shown
 
 `LstmNeuralNetwork<>` — a recurrent LSTM trained and run entirely in `QValue`
 Q16.16 fixed-point — applied to sequence classification, with the per-window
