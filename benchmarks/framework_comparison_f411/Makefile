@@ -10,6 +10,7 @@
 #   make LEVEL=O2|O3 run      flash + capture each image -> results/raw_<LEVEL>.txt
 #   make LEVEL=.. IMG=x run1  flash + capture one image
 #   make probe                bisect the minimum TFLM tensor arena on the board
+#   make stlink               list attached ST-LINK probes and which one is used
 #   make models               regenerate gen/out/ (needs the venv)
 #
 # LEVEL applies to every framework at once: tinymind and emlearn translation
@@ -35,8 +36,22 @@ TFLM_CMSIS := $(TFLM_GEN)/cortex_m_generic_cortex-m4+fp_release_cmsis_nn_gcc/lib
 TFLM_REF   := $(TFLM_GEN)/cortex_m_generic_cortex-m4+fp_release_gcc/lib/libtensorflow-microlite.a
 TFLM_LOGS  := $(TFLM_GEN)/cortex_m_generic_cortex-m4+fp_release_with_logs_cmsis_nn_gcc/lib/libtensorflow-microlite.a
 EML_INC ?= $(shell $(PY) -I -c "import emlearn; print(emlearn.includedir)" 2>/dev/null)
-PORT    ?= /dev/ttyACM0
 B       := build/$(LEVEL)
+
+# Which ST-LINK to flash and read. With one probe attached it is found on its
+# own; with several, STLINK=<serial> picks one (`make stlink` lists them), on
+# the command line, in the environment, or in an untracked local.mk. Both
+# openocd and the VCP port follow the serial, so the two cannot disagree and
+# replugging (which renumbers /dev/ttyACM*) does not matter.
+-include local.mk
+STLINK_VCPS := $(sort $(wildcard /dev/serial/by-id/usb-STMicroelectronics_*_STLink_*-if02))
+STLINK_ALL  := $(foreach v,$(STLINK_VCPS),$(lastword $(subst _, ,$(v:%-if02=%))))
+ifeq ($(STLINK),)
+  ifeq ($(words $(STLINK_ALL)),1)
+    STLINK := $(STLINK_ALL)
+  endif
+endif
+PORT    ?= $(firstword $(filter %_$(STLINK)-if02,$(STLINK_VCPS)))
 
 CXX  = arm-none-eabi-g++
 CC   = arm-none-eabi-gcc
@@ -121,11 +136,21 @@ $(B)/eml_mlp.o: fw/be_emlearn.c $(B)/mlp_emlearn_logits.h | $(B)
 $(B)/eml_mlp.elf: $(B)/eml_mlp.o $(HARNESS) | $(B)
 	$(CXX) $(CXXFLAGS) $(INC) -o $@ $^ -lm $(LD)
 
-OPENOCD = openocd -f interface/stlink.cfg -f target/stm32f4x.cfg
+OPENOCD = openocd -f interface/stlink.cfg -c "adapter serial $(STLINK)" -f target/stm32f4x.cfg
 
-run1:
+stlink:
+	@for v in $(STLINK_VCPS); do s=$${v%-if02}; echo "$${s##*_} $$(readlink -f $$v)"; done
+	@echo "using: $(if $(STLINK),$(STLINK) on $(PORT),none)"
+
+# Refuse to guess: with no probe, or several and no STLINK, any flash could hit the wrong board.
+stlink-check:
+	@test -n "$(STLINK)" || { echo "no ST-LINK selected: $(words $(STLINK_ALL)) attached ($(STLINK_ALL)); pass STLINK=<serial>"; exit 1; }
+	@test -n "$(PORT)" || { echo "no VCP found for ST-LINK $(STLINK); check 'make stlink'"; exit 1; }
+
+run1: stlink-check
 	@mkdir -p results
-	$(OPENOCD) -c "program $(B)/$(IMG).elf verify exit" >/dev/null 2>&1
+	@$(OPENOCD) -c "program $(B)/$(IMG).elf verify exit" >/dev/null 2>&1 || \
+	  { echo "flashing $(IMG) via ST-LINK $(STLINK) failed: is that probe on the F411?"; exit 1; }
 	-fuser -k $(PORT) >/dev/null 2>&1; stty -F $(PORT) 115200 raw -echo
 	( timeout 8 cat $(PORT) > $(B)/$(IMG).raw & ) ; sleep 0.5 ; \
 	  $(OPENOCD) -c "init; reset run; shutdown" >/dev/null 2>&1 ; sleep 6
@@ -133,14 +158,14 @@ run1:
 	@grep -q '^# end bench' $(B)/$(IMG).txt || { echo "capture failed for $(IMG)"; exit 1; }
 	@cat $(B)/$(IMG).txt
 
-run: all
+run: all stlink-check
 	@rm -f results/raw_$(LEVEL).txt
 	@for i in $(IMAGES) $(PROF_IMAGES); do $(MAKE) -s LEVEL=$(LEVEL) IMG=$$i run1 > /dev/null && \
 	  { echo "level=$(LEVEL)"; echo "image=$$i"; cat $(B)/$$i.txt; } >> results/raw_$(LEVEL).txt || exit 1; done
 	@for i in $(IMAGES); do $(SIZE) -A $(B)/$$i.elf | awk -v n=$$i '/^\.(isr_vector|text|rodata|ARM|init_array|data|bss)/{s[$$1]+=$$2} END{printf "size image=%s flash=%d ram=%d\n", n, s[".isr_vector"]+s[".text"]+s[".rodata"]+s[".ARM.exidx"]+s[".init_array"]+s[".data"], s[".data"]+s[".bss"]}'; done >> results/raw_$(LEVEL).txt
 
 PROBES = tflm_cmsis_mlp_int8 tflm_ref_mlp_int8 tflm_cmsis_mlp_f32 tflm_cmsis_kws_int8 tflm_ref_kws_int8 tflm_cmsis_kws_f32
-probe: $(PROBES:%=$(B)/%_probe.elf)
+probe: $(PROBES:%=$(B)/%_probe.elf) stlink-check
 	@for i in $(PROBES); do $(MAKE) -s LEVEL=$(LEVEL) IMG=$${i}_probe run1 | grep -E "^(name|arena_used|setup_rc)"; done
 
 host-check:
@@ -217,4 +242,4 @@ tflm-libs:
 clean:
 	rm -rf build
 
-.PHONY: all run run1 probe clean host-check host-bench models deps tflm-libs
+.PHONY: all run run1 probe stlink stlink-check clean host-check host-bench models deps tflm-libs

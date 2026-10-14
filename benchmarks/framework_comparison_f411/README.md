@@ -191,7 +191,7 @@ Committed run: i7-11850H, g++ 13.3, at `a7de803`, ns per inference:
 
 ## Reproduce
 
-Needs `arm-none-eabi-gcc`, `openocd`, a NUCLEO-F411RE on `/dev/ttyACM0`, and Python 3 with `venv`.
+Needs `arm-none-eabi-gcc`, `openocd`, a NUCLEO-F411RE on USB, and Python 3 with `venv`.
 
 ```
 cd benchmarks/framework_comparison_f411
@@ -206,6 +206,11 @@ make LEVEL=O3 run              # -> results/raw_O3.txt
 
 `make models` regenerates `gen/out/` from scratch (needs the venv). `make probe` re-bisects the TFLM arena
 sizes; update the `ARENA_*` values in the Makefile if they change.
+
+With a single ST-LINK attached, `run` finds it. With several, the Makefile refuses to guess and asks for
+`STLINK=<serial>` (`make stlink` lists the attached probes and their ports). Put `STLINK = <serial>` in an
+untracked `local.mk` to stop repeating it. openocd and the serial capture both follow that serial, so
+replugging, which renumbers `/dev/ttyACM*`, cannot point them at different boards.
 
 ## Layout
 
