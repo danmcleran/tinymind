@@ -101,9 +101,29 @@ namespace tinymind { namespace simd {
         return acc;
     }
 
+    /**
+     * Shortest length an x86 vector backend is used for. Their narrowest
+     * block is 16 elements; below that they do no vector work at all yet
+     * still pay for horizontal reductions, and finish in a rolled scalar
+     * loop. Shorter lengths -- the 8- and 9-tap dot products of small conv
+     * layers -- go to the unrolled scalar reference instead, which is the
+     * same integer sum and so returns the same value.
+     */
+#if TINYMIND_ENABLE_SIMD_AVX512_VNNI || TINYMIND_ENABLE_SIMD_AVX512F || \
+    TINYMIND_ENABLE_SIMD_AVX_VNNI || TINYMIND_ENABLE_SIMD_AVX2
+#define TINYMIND_SIMD_X86_VECTOR_DOT 1
+    constexpr std::size_t kInt8DotVectorMinLength = 16;
+#endif
+
     inline int32_t int8DotWithZeroPoint(const int8_t* x, const int8_t* w,
                                         std::size_t n, int8_t zp)
     {
+#if defined(TINYMIND_SIMD_X86_VECTOR_DOT)
+        if (n < kInt8DotVectorMinLength)
+        {
+            return int8DotWithZeroPointScalar(x, w, n, zp);
+        }
+#endif
 #if TINYMIND_ENABLE_SIMD_AVX512_VNNI
         return avx512_vnni::int8DotWithZeroPoint(x, w, n, zp);
 #elif TINYMIND_ENABLE_SIMD_AVX512F
