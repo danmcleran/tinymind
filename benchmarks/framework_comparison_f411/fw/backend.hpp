@@ -53,4 +53,7 @@ int      be_profile(uint32_t* cycles, const char** tags, int max);
 // TFLite interpreter differs by 1 LSB on 35/3600 MLP outputs because its
 // fully connected kernel uses single rounding; see README.)
 #define TM_MLP_HASH 0x85BDD037u
+// Over the first 32 MLP samples only: the test set boards with 32 KB of flash
+// carry (gen/subset.py).
+#define TM_MLP_HASH_32 0x06CE0530u
 #define TM_KWS_HASH 0x6B1854D3u

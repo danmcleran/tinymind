@@ -51,9 +51,14 @@ uint32_t fnv(uint32_t h, const int8_t* p, int n)
 int main()
 {
     uint32_t mlpHash = 0x811C9DC5u;
+    uint32_t mlpHash32 = 0;
     int correct = 0;
     for (int s = 0; s < MLP_N_TEST; ++s)
     {
+        if (s == 32)
+        {
+            mlpHash32 = mlpHash;
+        }
         int8_t out[MLP_N_OUT];
         tm_mlp::forward(mlp_test_x_i8 + s * MLP_N_IN, out);
         mlpHash = fnv(mlpHash, out, MLP_N_OUT);
@@ -78,6 +83,7 @@ int main()
 
     std::printf("mlp hash 0x%08X (expect 0x%08X), accuracy %.4f\n",
                 mlpHash, TM_MLP_HASH, correct / static_cast<double>(MLP_N_TEST));
+    std::printf("mlp hash over first 32 0x%08X (expect 0x%08X)\n", mlpHash32, TM_MLP_HASH_32);
     std::printf("kws hash 0x%08X (expect 0x%08X)\n", kwsHash, TM_KWS_HASH);
-    return (mlpHash == TM_MLP_HASH && kwsHash == TM_KWS_HASH) ? 0 : 1;
+    return (mlpHash == TM_MLP_HASH && mlpHash32 == TM_MLP_HASH_32 && kwsHash == TM_KWS_HASH) ? 0 : 1;
 }
