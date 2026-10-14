@@ -28,8 +28,8 @@ Two models:
        (same shape as tinymind examples/kws_cortex_m_int8, random weights)
 
 One float model per network is the source of truth. TFLite's int8 post-training
-quantization of it is then re-expressed as TinyMind QDense/QConv layers using the
-*same* int8 weights, biases and requantizer multipliers, so TFLM and TinyMind run
+quantization of it is then re-expressed as tinymind QDense/QConv layers using the
+*same* int8 weights, biases and requantizer multipliers, so TFLM and tinymind run
 identical integer math and their int8 outputs must match bit for bit.
 
 Outputs land in gen/out/. Requires: tensorflow-cpu, emlearn, scikit-learn, numpy.
@@ -97,7 +97,7 @@ def requant(in_scale, w_scale, out_scale, out_zp, relu):
                 / np.float64(np.float32(out_scale)))
     mult, shift = quantize_multiplier(eff)
     qmin = max(-128, int(out_zp)) if relu else -128
-    # TinyMind Requantizer: shift > 0 means right shift (opposite of TFLite).
+    # tinymind Requantizer: shift > 0 means right shift (opposite of TFLite).
     return (mult, -shift, int(out_zp), qmin, 127)
 
 
@@ -222,7 +222,7 @@ mlp_i8_hash = fnv1a(yq.astype(np.int8).tobytes())
 emlearn_c = emlearn.convert(mlp, method="inline")
 emlearn_c.save(file=os.path.join(OUT, "mlp_emlearn.h"), name="mlp")
 
-# Extract the int8 FC chain for TinyMind.
+# Extract the int8 FC chain for tinymind.
 op_list, T = ops(it_q)
 fc = [o for o in op_list if o["op_name"] == "FULLY_CONNECTED"]
 assert len(fc) == 3, [o["op_name"] for o in op_list]
@@ -334,7 +334,7 @@ k = [HDR, "#pragma once\n#include <cstdint>\n#include \"qconv2d.hpp\"\n#include 
      "#include \"qpointwiseconv2d.hpp\"\n#include \"qpool2d.hpp\"\n#include \"qdense.hpp\"\n\n"
      "namespace tm_kws {\n\nusing Rq = tinymind::Requantizer<int32_t, int8_t>;\n\n"]
 
-# conv1: TFLite OHWI == TinyMind [F][KH][KW][Cin]
+# conv1: TFLite OHWI == tinymind [F][KH][KW][Cin]
 W, B, zi, rqs = perchannel(conv[0], True)
 assert W.shape == (8, 3, 3, 1)
 k.append(c_array("int8_t", "Wc1", W, align=4) + c_array("int32_t", "Bc1", B))
@@ -345,7 +345,7 @@ k.append(f"const C1Type C1 = {{Wc1, Bc1, {zi}, Rc1}};\n\n")
 # maxpool: same quant in/out in TFLite, so plain max on int8
 k.append("using P1Type = tinymind::QMaxPool2D<int8_t, 18, 18, 8, 2, 2, 2, 2>;\nconst P1Type P1 = {};\n\n")
 
-# depthwise: TFLite [1][KH][KW][C] -> TinyMind [C][KH][KW]
+# depthwise: TFLite [1][KH][KW][C] -> tinymind [C][KH][KW]
 W, B, zi, rqs = perchannel(dw, True)
 assert W.shape == (1, 3, 3, 8)
 Wt = np.transpose(W[0], (2, 0, 1))
@@ -354,7 +354,7 @@ k.append("const Rq Rdw[8] = {" + ", ".join(rq_init(r) for r in rqs) + "};\n")
 k.append("using DwType = tinymind::QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, 9, 9, 8, 3, 3, 1, 1>;\n")
 k.append(f"const DwType DW = {{Wdw, Bdw, {zi}, Rdw}};\n\n")
 
-# pointwise: TFLite [16][1][1][8] -> TinyMind [F][Cin]
+# pointwise: TFLite [16][1][1][8] -> tinymind [F][Cin]
 W, B, zi, rqs = perchannel(conv[1], True)
 assert W.shape == (16, 1, 1, 8)
 k.append(c_array("int8_t", "Wpw", W, align=4) + c_array("int32_t", "Bpw", B))

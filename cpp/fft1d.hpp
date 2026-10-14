@@ -74,7 +74,7 @@ namespace tinymind {
      * functions for fixed-point. For float/double, twiddle factors
      * can be computed at runtime with standard math functions.
      *
-     * Output feeds into any TinyMind network as input:
+     * Output feeds into any tinymind network as input:
      *   FFT1D<Q8_8, 128> fft;
      *   NeuralNetwork<Q8_8, 64, ...> mlp;  // N/2 magnitude bins
      *

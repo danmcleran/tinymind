@@ -20,7 +20,7 @@
 * SOFTWARE.
 */
 
-// Host check: run the generated TinyMind int8 models over the embedded test
+// Host check: run the generated tinymind int8 models over the embedded test
 // sets and print the output hashes the firmware expects (fw/backend.hpp).
 // Exit status is non-zero if they drift.
 #define MLP_DATA_INT8

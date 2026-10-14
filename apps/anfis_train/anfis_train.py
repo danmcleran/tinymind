@@ -20,7 +20,7 @@
 # SOFTWARE.
 #
 
-"""Host-side ANFIS trainer for TinyMind's cpp/anfis.hpp (Phase C).
+"""Host-side ANFIS trainer for tinymind's cpp/anfis.hpp (Phase C).
 
 The device side is inference only: cpp/anfis.hpp takes frozen premise
 parameters, a rule table, and consequent parameters. This module produces
@@ -758,7 +758,7 @@ def emit_model_header(path, model, namespace, value_type="double",
 
     The arrays are emitted at full double precision. The C++ side chooses
     its own ValueType; for a Q-format build the values are converted at the
-    call site, matching how the rest of TinyMind treats host-produced
+    call site, matching how the rest of tinymind treats host-produced
     constants.
     """
     n_inputs = model.n_inputs

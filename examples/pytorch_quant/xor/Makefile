@@ -1,4 +1,4 @@
-# Makefile for the PyTorch -> TinyMind int8 quantization XOR example.
+# Makefile for the PyTorch -> tinymind int8 quantization XOR example.
 #
 # Host build only. TINYMIND_ENABLE_QUANTIZATION turns on the q*.hpp layer
 # family; FLOAT + STD let the demo rebuild Requantizers and the qsigmoid

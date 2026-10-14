@@ -20,7 +20,7 @@
 # SOFTWARE.
 #
 
-"""Generic per-column viewer for a TinyMind NetworkPropertiesFileManager dump.
+"""Generic per-column viewer for a tinymind NetworkPropertiesFileManager dump.
 
 Reads the header-row file written by ``writeHeader`` / ``storeNetworkProperties``
 (every tracked weight, bias, target, and output, one column per series, one row
@@ -89,7 +89,7 @@ def main():
     fig, axes = tp.plt.subplots(grid_rows, cols,
                                 figsize=(3.2 * cols, 2.2 * grid_rows),
                                 squeeze=False, sharex=True)
-    fig.suptitle("TinyMind network training trajectory\n%s" %
+    fig.suptitle("tinymind network training trajectory\n%s" %
                  os.path.basename(path), fontsize=13, fontweight="bold")
     for idx in range(grid_rows * cols):
         ax = axes[idx // cols][idx % cols]

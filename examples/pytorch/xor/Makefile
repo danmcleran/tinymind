@@ -1,4 +1,4 @@
-# Simple Makefile for the PyTorch -> TinyMind XOR inference example
+# Simple Makefile for the PyTorch -> tinymind XOR inference example
 # Enable C++ iostreams and compile the Q16.16 sigmoid activation LUT
 MKDIR=mkdir -p ./output
 CC=g++

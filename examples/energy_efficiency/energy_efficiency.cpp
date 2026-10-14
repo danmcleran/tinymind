@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// UCI Energy Efficiency regression built on TinyMind.
+// UCI Energy Efficiency regression built on tinymind.
 //
 // Dataset: https://archive.ics.uci.edu/dataset/242/energy+efficiency
 //

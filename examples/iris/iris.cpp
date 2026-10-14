@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// Iris species classifier built on TinyMind.
+// Iris species classifier built on tinymind.
 //
 // Dataset: https://archive.ics.uci.edu/dataset/53/iris
 //

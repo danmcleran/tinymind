@@ -42,7 +42,7 @@
 //
 // In a production flow the float weights and calibration ranges come
 // out of apps/import_pytorch/tinymind_import (which consumes a
-// torch.state_dict and emits a TinyMind-format weights.hpp). This
+// torch.state_dict and emits a tinymind-format weights.hpp). This
 // binary stands alone so `make check` can run it without torch.
 
 #include <algorithm>

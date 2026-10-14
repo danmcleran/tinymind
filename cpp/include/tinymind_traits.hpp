@@ -25,7 +25,7 @@
 #include "tinymind_platform.hpp"
 
 /*
- * Minimal type traits for TinyMind's SFINAE dispatches.
+ * Minimal type traits for tinymind's SFINAE dispatches.
  *
  * The standalone composable layers (BatchNorm1D, Dropout, BinaryLayer,
  * TernaryLayer, MaxPool*, BSpline) use enable_if + is_floating_point to
@@ -37,7 +37,7 @@
  * equivalents are provided so headers used by embedded targets do not
  * include <type_traits> or reference namespace std::.
  *
- * Only the subset actually used by TinyMind is provided.
+ * Only the subset actually used by tinymind is provided.
  */
 
 #if TINYMIND_ENABLE_STD

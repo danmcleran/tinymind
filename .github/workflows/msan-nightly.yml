@@ -6,7 +6,7 @@ name: MSan (nightly, instrumented libc++)
 # unit_test/embedded only. That scope is not a preference: MSan requires every
 # linked object to be instrumented, and against a stock libstdc++ the Boost
 # suites abort inside Boost.Test's own static initialization before reaching
-# any TinyMind code. The reports are artifacts of the uninstrumented runtime,
+# any tinymind code. The reports are artifacts of the uninstrumented runtime,
 # not findings.
 #
 # That gap matters, because it is exactly where the real bug lived. The

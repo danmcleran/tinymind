@@ -1,8 +1,8 @@
-# tinymind_import (PyTorch -> TinyMind int8)
+# tinymind_import (PyTorch -> tinymind int8)
 
 Phase 15 importer tooling. Consumes a sequenced list of layer descriptors
 (plus a calibration dataset) emitted from a trained PyTorch model and
-writes a TinyMind-format `weights.hpp` containing:
+writes a tinymind-format `weights.hpp` containing:
 
   * int8 symmetric per-tensor weights (zero_point = 0, qmax = 127)
   * int32 biases at scale = `input_scale * weight_scale`
@@ -86,7 +86,7 @@ verifies the C++ int8 forward against the float reference.
 ## Hybrid int8 + Q-format models
 
 The importer also handles models that mix an int8 affine tier with the
-TinyMind Q-format (`QValue`) pipeline -- useful when an existing
+tinymind Q-format (`QValue`) pipeline -- useful when an existing
 `NeuralNet<Q8.8>` hand-tuned for the MCU sits between two int8 layers
 exported from PyTorch, or when a specific hidden layer wants Q-format's
 compile-time fixed/fractional bit split.

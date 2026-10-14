@@ -1,4 +1,4 @@
-# Quantization Plan for TinyMind
+# Quantization Plan for tinymind
 
 Post-training int8 quantization (TFLite-style: per-tensor/per-channel scale + zero-point + int32 accumulators + integer requantization). Additive only — does not modify existing Q-format or float layers.
 
@@ -6,7 +6,7 @@ Post-training int8 quantization (TFLite-style: per-tensor/per-channel scale + ze
 
 These are distinct:
 
-- **Q-format substitution** (current TinyMind): swap representation. Float `0.7531` → Q8.8 `0.7539` (nearest grid point). Resolution set by fractional bits. No calibration needed — just type swap. `QValue` carries no runtime metadata; `ValueType` is a single template parameter threaded through every layer.
+- **Q-format substitution** (current tinymind): swap representation. Float `0.7531` → Q8.8 `0.7539` (nearest grid point). Resolution set by fractional bits. No calibration needed — just type swap. `QValue` carries no runtime metadata; `ValueType` is a single template parameter threaded through every layer.
 - **Quantization** (this plan): map continuous distribution to discrete int8 levels via calibrated `scale` + `zero_point`. `q = round(x / scale) + zero_point`. Scale fit per tensor (or per channel) from observed min/max. Requires runtime metadata, requantization between layers, and int32 accumulators paired with int8 weights/activations.
 
 ## Design constraints
@@ -126,7 +126,7 @@ These confirm: quantization cannot retrofit cleanly into the existing single-`Va
 
 # Mixed-Precision Inference Roadmap (Phases 9–16)
 
-Continuation after Phase 8 ships. Goal: enable TinyMind to emulate common GPU-deployed models — CNN (ResNet/MobileNetV2/V3/EfficientNet), recurrent (LSTM/GRU), transformer (encoder block), and mixed-precision hybrids — across MCU through application-class CPUs (M0+, M4F/M7, Cortex-R82, Cortex-A55, x86).
+Continuation after Phase 8 ships. Goal: enable tinymind to emulate common GPU-deployed models — CNN (ResNet/MobileNetV2/V3/EfficientNet), recurrent (LSTM/GRU), transformer (encoder block), and mixed-precision hybrids — across MCU through application-class CPUs (M0+, M4F/M7, Cortex-R82, Cortex-A55, x86).
 
 Each phase = self-contained PR. Builds on prior. Ships with regression corner + at least one example. Additive only — existing Q-format and Phase 1–8 int8 layers untouched.
 
@@ -350,8 +350,8 @@ Medium. Bit-exactness across SIMD widths needs careful order-of-accumulation han
   - `PercentileObserver` — record samples, query `[lower_pct, upper_pct]` range. Clips outliers ahead of `computeAffineParamsAsymmetric`.
   - `KLDivergenceObserver` — TensorRT-style entropy calibration. Two-pass over a 2048-bin histogram, sweeps candidate clip thresholds, returns the one that minimizes KL between the reference distribution and the int8-quantized distribution. Output is an absmax for symmetric quantization.
   - `crossLayerEqualizeDense` / `crossLayerEqualizeConv2D` — Nagel-paper Cross-Layer Equalization. Per-channel `s = sqrt(r1 / r2)` rebalances the upstream output range against the downstream input range. ReLU / identity activations make the transform output-preserving in the float domain (positively homogeneous).
-- `apps/import_pytorch/tinymind_import.py` — Python importer module. Caller assembles `Dense` / `Conv2D` / `BatchNorm2D` / `ReLU` / `Sigmoid` / `Tanh` / `Softmax` descriptors carrying numpy weights from `torch.state_dict`. `fuse_layers` detects Conv2D-then-BatchNorm and folds via the same math as `foldBatchNorm`. `calibrate` streams the calibration dataset through the float reference with `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver` per layer. `quantize_weights` emits symmetric int8 weights + int32 biases. `emit_weights_header` writes a TinyMind-format `weights.hpp`. Top-level `import_pytorch_model` wraps the four passes.
-- `apps/import_onnx/tinymind_import_onnx.py` — QDQ-format ONNX importer. Walks `QuantizeLinear` / `DequantizeLinear` / `QLinearConv` / `QLinearMatMul` / `Relu` / `Sigmoid` / `Tanh` / `Softmax` nodes, extracts the per-tensor `(scale, zero_point)` and int8 weight / int32 bias initializers, emits the same TinyMind-format `weights.hpp`. The `onnx` Python package is imported lazily so the emitter half is usable without it.
+- `apps/import_pytorch/tinymind_import.py` — Python importer module. Caller assembles `Dense` / `Conv2D` / `BatchNorm2D` / `ReLU` / `Sigmoid` / `Tanh` / `Softmax` descriptors carrying numpy weights from `torch.state_dict`. `fuse_layers` detects Conv2D-then-BatchNorm and folds via the same math as `foldBatchNorm`. `calibrate` streams the calibration dataset through the float reference with `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver` per layer. `quantize_weights` emits symmetric int8 weights + int32 biases. `emit_weights_header` writes a tinymind-format `weights.hpp`. Top-level `import_pytorch_model` wraps the four passes.
+- `apps/import_onnx/tinymind_import_onnx.py` — QDQ-format ONNX importer. Walks `QuantizeLinear` / `DequantizeLinear` / `QLinearConv` / `QLinearMatMul` / `Relu` / `Sigmoid` / `Tanh` / `Softmax` nodes, extracts the per-tensor `(scale, zero_point)` and int8 weight / int32 bias initializers, emits the same tinymind-format `weights.hpp`. The `onnx` Python package is imported lazily so the emitter half is usable without it.
 
 **Tests (shipped):**
 - `percentile_observer_clips_outliers` / `percentile_observer_empty_returns_zero_range` — heavy-tail vs uniform data, empty buffer edge case.

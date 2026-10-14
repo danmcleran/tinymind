@@ -24,7 +24,7 @@
 //
 // The point is that the chain-rule mechanics are value-type-agnostic: the same
 // dual expressions produce the same derivatives for IEEE double and for
-// TinyMind's fixed-point QValue. QValue only differs by rounding (the precision
+// tinymind's fixed-point QValue. QValue only differs by rounding (the precision
 // question), not by mechanics. Tolerances reflect that: double is exact, Q16.16
 // is checked to ~1e-3.
 

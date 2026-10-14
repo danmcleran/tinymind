@@ -253,7 +253,7 @@ TSAN_CC     ?= clang++ -fsanitize=thread -fopenmp -DTINYMIND_ENABLE_OPENMP=1 -O1
 TSAN_WARN   ?= -Wall -Wextra -Wpedantic -g
 # ignore_noninstrumented_modules + the called_from_lib suppression silence the
 # false races TSan reports inside the (uninstrumented) packaged libomp runtime;
-# races between TinyMind's own instrumented loop iterations still report.
+# races between tinymind's own instrumented loop iterations still report.
 #
 # Archer (libarcher.so, ships with libomp-dev) must be loaded via
 # OMP_TOOL_LIBRARIES: the packaged libomp's internal synchronization is
@@ -361,7 +361,7 @@ warnings-strict :
 	grep -oE '\[-W[a-z-]+\]' strict-warnings.txt 2>/dev/null | sort | uniq -c | sort -rn || true; \
 	echo "warnings-strict: $$n advisory finding(s) (full list in strict-warnings.txt)"
 
-# Clang conformance build. TinyMind is header-only: users compile these headers
+# Clang conformance build. tinymind is header-only: users compile these headers
 # with their own toolchain, so a GCC-only CI lets non-conforming constructs
 # reach them unflagged. Clang earns its slot on two behaviours GCC does not
 # reproduce -- it diagnoses template member bodies eagerly rather than deferring
@@ -489,7 +489,7 @@ check-clang-examples :
 # 1. Embedded smoke only, not the Boost suites. MSan demands that *every* linked
 #    object be instrumented; against a stock libstdc++ the first report lands
 #    inside Boost.Test's own static init and the run dies before reaching any
-#    TinyMind code. Covering the Boost suites means building libc++ and
+#    tinymind code. Covering the Boost suites means building libc++ and
 #    Boost.Test with MSan, which is a much larger undertaking. The embedded
 #    smoke test uses neither, and it is the code that actually ships.
 #

@@ -47,7 +47,7 @@
  * float scale field on QAffineTensor is host-side calibration metadata only,
  * and is compiled out unless TINYMIND_ENABLE_FLOAT=1.
  *
- * Coexists with everything else in TinyMind: nothing here touches QValue,
+ * Coexists with everything else in tinymind: nothing here touches QValue,
  * the NeuralNet template, or any existing layer. Quantized layers added in
  * later phases will use Requantizer between accumulation and storage.
  */

@@ -1,4 +1,4 @@
-# PyTorch -> TinyMind int8 Quantization (XOR)
+# PyTorch -> tinymind int8 Quantization (XOR)
 
 End-to-end post-training int8 quantization demo. The PyTorch script trains
 a small XOR MLP in float32, observes per-tensor activation ranges over a
@@ -9,12 +9,12 @@ int32 biases, and per-tensor `(scale, zero_point)` metadata. The C++ side
 four XOR inputs.
 
 This is the affine quantization counterpart to `examples/pytorch/xor/`,
-which uses TinyMind's existing single-`ValueType` Q16.16 fixed-point path.
+which uses tinymind's existing single-`ValueType` Q16.16 fixed-point path.
 
 ## Pipeline
 
 ```
-float32 PyTorch                  int8 TinyMind
+float32 PyTorch                  int8 tinymind
 ---------------                  -------------
     nn.Linear(2, 4)      -->     QDense<int8,int8,int32,int8>
     nn.ReLU                -->   qreluBuffer (or fold into requant)

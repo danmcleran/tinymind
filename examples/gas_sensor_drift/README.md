@@ -4,7 +4,7 @@ Six-way gas classifier that demonstrates **sensor drift** — the slow accuracy
 decay a fixed model suffers as metal-oxide gas sensors age. Inspired by the UCI
 [Gas Sensor Array Drift Dataset](https://archive.ics.uci.edu/dataset/224)
 (16 chemo-resistive sensors × 8 features = 128 dimensions, recorded over 36
-months in 10 batches), built on a Q16.16 fixed-point MLP from TinyMind.
+months in 10 batches), built on a Q16.16 fixed-point MLP from tinymind.
 
 ## The drift problem
 
@@ -66,7 +66,7 @@ Expected (seed = 7): batch 1 trains cleanly to high in-distribution accuracy
 (>90%), and the drift curve slopes clearly downward as the batch index grows —
 late batches are well below batch 1.
 
-## TinyMind capability shown
+## tinymind capability shown
 
 `NeuralNet<>` feed-forward MLP (`MultilayerPerceptron`) trained and run entirely
 in `QValue` Q16.16 fixed-point on a 128-input classification task — the same
@@ -75,7 +75,7 @@ in `QValue` Q16.16 fixed-point on a 128-input classification task — the same
 ## Mitigating drift (where to go next)
 
 This example only **classifies and shows** the drift; it does not correct for it.
-TinyMind's relevant mitigation path is the host-side calibration tooling in
+tinymind's relevant mitigation path is the host-side calibration tooling in
 [`cpp/include/qcalibration.hpp`](../../cpp/include/qcalibration.hpp), introduced
 in the project's Phase 15 work:
 

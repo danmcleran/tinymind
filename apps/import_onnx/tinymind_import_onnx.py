@@ -23,15 +23,15 @@ SOFTWARE.
 from __future__ import annotations
 
 """
-ONNX-runtime PTQ -> TinyMind int8 importer (Phase 15).
+ONNX-runtime PTQ -> tinymind int8 importer (Phase 15).
 
 Reads a quantized ONNX model produced by onnxruntime.quantization.quantize_static
 (QDQ format: every quantized tensor is sandwiched between QuantizeLinear /
 DequantizeLinear nodes carrying scale + zero_point attributes) and emits a
-TinyMind-format weights.hpp identical in shape to the one produced by
+tinymind-format weights.hpp identical in shape to the one produced by
 apps/import_pytorch/tinymind_import.py.
 
-Supported ops (mapped to TinyMind layer family):
+Supported ops (mapped to tinymind layer family):
 
     QLinearConv                  -> QConv2D            (per-tensor weights)
     QGemm / QLinearMatMul        -> QDense
@@ -106,7 +106,7 @@ class OnnxQuantizedLayer:
 
 
 def parse_onnx_model(model_path: str) -> list[OnnxQuantizedLayer]:
-    """Parse a QDQ-format quantized ONNX model into TinyMind layer specs.
+    """Parse a QDQ-format quantized ONNX model into tinymind layer specs.
 
     Walks the topologically-sorted node list. For each Conv / Gemm node
     found between QuantizeLinear / DequantizeLinear pairs, extracts the
@@ -228,7 +228,7 @@ def emit_weights_header(path: str,
                         namespace: str,
                         layers: list[OnnxQuantizedLayer],
                         meta: Optional[dict[str, int]] = None) -> None:
-    """Write a TinyMind-format weights.hpp from parsed ONNX layers."""
+    """Write a tinymind-format weights.hpp from parsed ONNX layers."""
     parts: list[str] = []
     parts.append(COPYRIGHT_BLOCK)
     parts.append("\n#pragma once\n\n#include <cstddef>\n#include <cstdint>\n")
@@ -274,7 +274,7 @@ def import_onnx_model(model_path: str,
                       output_path: str,
                       namespace: str,
                       meta: Optional[dict[str, int]] = None) -> list[OnnxQuantizedLayer]:
-    """Top-level: parse the ONNX model, write the TinyMind weights.hpp."""
+    """Top-level: parse the ONNX model, write the tinymind weights.hpp."""
     layers = parse_onnx_model(model_path)
     emit_weights_header(output_path, namespace, layers, meta)
     return layers

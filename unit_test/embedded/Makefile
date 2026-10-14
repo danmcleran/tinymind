@@ -306,7 +306,7 @@ arm_dsp_qemu:
 # -----------------------------------------------------------------------------
 # Heap-free guarantee (build-only). HARD gate.
 #
-# TinyMind targets no-heap MCUs: the library must never pull in the dynamic
+# tinymind targets no-heap MCUs: the library must never pull in the dynamic
 # allocator. This compiles the freestanding + quant corners to objects and
 # asserts none references malloc / operator new (Itanium ABI: _Znwj/_Znwm =
 # new, _Znaj/_Znam = new[], _Zdl*/_Zda* = delete). A regression that adds a

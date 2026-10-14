@@ -2,7 +2,7 @@
 
 Binary machine-failure classifier trained on the [AI4I 2020 Predictive
 Maintenance Dataset](https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset)
-using a Q16.16 fixed-point MLP from TinyMind.
+using a Q16.16 fixed-point MLP from tinymind.
 
 ## Network
 

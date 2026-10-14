@@ -1,6 +1,6 @@
 # import_demo (Phase 15 importer end-to-end)
 
-End-to-end demonstration of the Phase 15 PyTorch -> TinyMind int8 importer
+End-to-end demonstration of the Phase 15 PyTorch -> tinymind int8 importer
 path. Two complementary entry points share this directory:
 
   * **`import_demo.cpp`** -- the host binary built by `make`. It carries a

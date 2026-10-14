@@ -41,7 +41,7 @@ namespace tinymind {
      * P = ProjectionDim. All dimensions are compile-time template parameters
      * with zero dynamic allocation.
      *
-     * Output feeds into any TinyMind network as input:
+     * Output feeds into any tinymind network as input:
      *   SelfAttention1D<double, 32, 16, 8> attn;
      *   NeuralNetwork<double, 32*8, ...> mlp;  // flattened attention output
      *

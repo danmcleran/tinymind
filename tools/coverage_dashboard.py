@@ -120,7 +120,7 @@ def render(files, total_hit, total_lines, out_path):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TinyMind Coverage</title>
+<title>tinymind Coverage</title>
 <style>
   :root {{ color-scheme: dark; }}
   * {{ box-sizing: border-box; }}
@@ -173,7 +173,7 @@ def render(files, total_hit, total_lines, out_path):
 </head>
 <body>
 <div class="wrap">
-  <h1>TinyMind <span>cpp/ line coverage</span></h1>
+  <h1>tinymind <span>cpp/ line coverage</span></h1>
   <div class="summary">
     <div class="donut"><div class="val"><b>{overall:.1f}%</b><small>covered</small></div></div>
     <div class="stats">

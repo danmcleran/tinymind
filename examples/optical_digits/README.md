@@ -2,7 +2,7 @@
 
 Ten-way handwritten-digit classifier trained on the
 [UCI Optical Recognition of Handwritten Digits dataset](https://archive.ics.uci.edu/dataset/80/optical+recognition+of+handwritten+digits)
-using a Q16.16 fixed-point MLP from TinyMind.
+using a Q16.16 fixed-point MLP from tinymind.
 
 Each sample is an 8×8 bitmap (64 pixels, intensity 0..16, flattened row-major)
 produced by downsampling a 32×32 scan of a handwritten digit.
@@ -43,7 +43,7 @@ first. Both files ship with the example.
 Expected (seed = 7): clean convergence to ~0.001 avg error and **~96% test
 accuracy** (1729/1797) on the held-out test split.
 
-## TinyMind capability shown
+## tinymind capability shown
 
 `NeuralNet<>` feed-forward MLP (`MultilayerPerceptron`) trained and run entirely
 in `QValue` Q16.16 fixed-point on a real 64-feature image classification task —

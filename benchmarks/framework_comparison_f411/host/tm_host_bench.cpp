@@ -20,7 +20,7 @@
 * SOFTWARE.
 */
 
-// Host timing: the same generated TinyMind int8 models the firmware runs,
+// Host timing: the same generated tinymind int8 models the firmware runs,
 // timed with std::chrono on the build host. Built once per SIMD backend by
 // `make host-bench`, so the x86 vector paths (AVX2, AVX-VNNI, AVX-512F,
 // AVX-512 VNNI) can be compared against the scalar build. Prints one

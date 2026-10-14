@@ -23,7 +23,7 @@
 #pragma once
 
 /*
- * Platform feature gates for TinyMind.
+ * Platform feature gates for tinymind.
  *
  * All TINYMIND_ENABLE_* macros default to 0 so that a freestanding embedded
  * build (no FPU, no full C++ stdlib, no C runtime rand()) compiles out of
@@ -47,7 +47,7 @@
  *                               (<cmath>, <type_traits>) are available.
  *                               Off by default for embedded toolchains
  *                               that ship a stripped-down or alternate
- *                               C++ stdlib. When off, TinyMind uses its
+ *                               C++ stdlib. When off, tinymind uses its
  *                               own minimal trait equivalents in
  *                               tinymind_traits.hpp and avoids any
  *                               <cmath> dependency.

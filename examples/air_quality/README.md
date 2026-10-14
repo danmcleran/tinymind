@@ -3,7 +3,7 @@
 A recurrent (LSTM) next-hour forecaster for an hourly air-quality pollutant
 series, inspired by the UCI
 [Air Quality dataset](https://archive.ics.uci.edu/dataset/360). Built on a
-Q16.16 fixed-point `LstmNeuralNetwork` from TinyMind — the same recurrent shape
+Q16.16 fixed-point `LstmNeuralNetwork` from tinymind — the same recurrent shape
 as [`examples/lstm_sinusoid`](../lstm_sinusoid), applied to a richer, daily-cycle
 pollutant signal.
 
@@ -73,7 +73,7 @@ the predicted line clearly tracks the daily rise-and-fall of the true series
 behavior), with a one-step-ahead MAE around 0.26 in concentration units over a
 series spanning ~1.3–3.0.
 
-## TinyMind capability shown
+## tinymind capability shown
 
 `LstmNeuralNetwork<>` recurrent training and inference entirely in `QValue`
 Q16.16 fixed-point, with windowed state resets for stable BPTT on a long

@@ -1,7 +1,7 @@
 /*
  * libFuzzer harness for the int8 QLayerNorm1D compute kernel.
  *
- * Rationale: TinyMind has no runtime deserialization surface -- weights are
+ * Rationale: tinymind has no runtime deserialization surface -- weights are
  * baked in as const arrays by the offline importers, so there is no parser to
  * fuzz. The real input-dependent risk is *arithmetic* in the int8 layers fed
  * adversarial activation tensors and quantization parameters: the exact class

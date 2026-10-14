@@ -20,7 +20,7 @@
 # SOFTWARE.
 #
 
-"""Shared plotting helpers for the TinyMind examples.
+"""Shared plotting helpers for the tinymind examples.
 
 Every example writes a header-row CSV to its ``output/`` directory and ships a
 small ``plot.py`` that turns that CSV into a graph. This module gives them a
@@ -91,7 +91,7 @@ _set_theme(os.environ.get("TINYMIND_PLOT_THEME", "light").lower())
 
 
 def apply_style():
-    """Apply the shared TinyMind matplotlib style. Idempotent.
+    """Apply the shared tinymind matplotlib style. Idempotent.
 
     Honors TINYMIND_PLOT_THEME (re-read each call so it can be set before the
     first plot). The saved PNG carries the theme background so it looks right

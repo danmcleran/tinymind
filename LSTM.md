@@ -2,7 +2,7 @@
 
 ## Architecture
 
-TinyMind's LSTM now implements the standard LSTM architecture with **4 independent gate weight matrices**. Each gate (cell candidate, input, forget, output) computes its own weighted sum from input, bias, and recurrent connections:
+tinymind's LSTM now implements the standard LSTM architecture with **4 independent gate weight matrices**. Each gate (cell candidate, input, forget, output) computes its own weighted sum from input, bias, and recurrent connections:
 
 ```cpp
 // For hidden neuron n, connections are indexed as:
@@ -30,7 +30,7 @@ The backpropagation decomposes the output delta through each gate using the chai
 
 ### Previous Architecture (Historical)
 
-An earlier version of TinyMind's LSTM used a shared pre-activation value for all gates — a single weighted sum fed to all gates rather than independent projections. This caused severe training instability (narrow hyperparameter window, collapse to constant predictions under most configurations). The independent gate architecture resolved these issues.
+An earlier version of tinymind's LSTM used a shared pre-activation value for all gates — a single weighted sum fed to all gates rather than independent projections. This caused severe training instability (narrow hyperparameter window, collapse to constant predictions under most configurations). The independent gate architecture resolved these issues.
 
 ## Working Configuration
 

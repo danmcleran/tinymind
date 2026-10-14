@@ -23,7 +23,7 @@
 // PINN building block: the 1-D heat-equation residual r = u_t - nu * u_xx,
 // computed by forward-mode automatic differentiation of a field u(x, t)
 // w.r.t. its INPUT coordinates -- the derivative a PDE residual needs and the
-// one TinyMind's weight-gradient backprop cannot provide.
+// one tinymind's weight-gradient backprop cannot provide.
 //
 // This exemplar proves the differentiation machinery end-to-end, not a trained
 // solver:

@@ -62,8 +62,8 @@ def test_bytes(elf):
 
 
 NICE = {
-    "tm_mlp": "TinyMind int8 (scalar)", "tm_mlp_dsp": "TinyMind int8 (+SMLAD)",
-    "tm_kws": "TinyMind int8 (scalar)", "tm_kws_dsp": "TinyMind int8 (+SMLAD)",
+    "tm_mlp": "tinymind int8 (scalar)", "tm_mlp_dsp": "tinymind int8 (+SMLAD)",
+    "tm_kws": "tinymind int8 (scalar)", "tm_kws_dsp": "tinymind int8 (+SMLAD)",
     "tflm_cmsis_mlp_int8": "TFLM int8 (CMSIS-NN)", "tflm_ref_mlp_int8": "TFLM int8 (reference)",
     "tflm_cmsis_kws_int8": "TFLM int8 (CMSIS-NN)", "tflm_ref_kws_int8": "TFLM int8 (reference)",
     "tflm_cmsis_mlp_f32": "TFLM float32", "tflm_cmsis_kws_f32": "TFLM float32",
@@ -102,7 +102,7 @@ for model, title in [("mlp", "MLP 64-32-16-10, sklearn digits (360 test samples)
     # per-layer
     out.append(f"### Per-layer cycles ({model}, each layer timed separately)\n")
     imgs = [f"tm_{model}_prof", f"tm_{model}_dsp_prof", f"tflm_cmsis_{model}_int8_prof"]
-    heads = ["TinyMind scalar", "TinyMind +SMLAD", "TFLM CMSIS-NN"]
+    heads = ["tinymind scalar", "tinymind +SMLAD", "TFLM CMSIS-NN"]
     out.append("| Layer | " + " | ".join(f"{h} O2 | {h} O3" for h in heads) + " |")
     out.append("|---|" + "---:|" * (2 * len(heads)))
     n = len(data["O2"][0][imgs[0]]["layers"])

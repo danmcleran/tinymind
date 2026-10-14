@@ -46,7 +46,7 @@ namespace tinymind {
      *           trainer.step(nn, &input[t], &target[t]);
      *       trainer.flush(nn);  // train on any remaining steps
      *
-     * @tparam NeuralNetworkType Any recurrent TinyMind network (LSTM, GRU, Elman)
+     * @tparam NeuralNetworkType Any recurrent tinymind network (LSTM, GRU, Elman)
      * @tparam WindowSize Number of timesteps to accumulate before updating weights
      */
     template<typename NeuralNetworkType, size_t WindowSize>

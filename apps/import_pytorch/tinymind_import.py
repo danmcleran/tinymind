@@ -23,11 +23,11 @@ SOFTWARE.
 from __future__ import annotations
 
 """
-PyTorch -> TinyMind int8 importer (Phase 15).
+PyTorch -> tinymind int8 importer (Phase 15).
 
 Generalizes the pattern from examples/pytorch_quant/xor/xor_quant.py. The
 caller assembles a sequenced list of `Layer` descriptors that mirror the
-TinyMind q*.hpp shapes (QDense / QConv2D / QBatchNorm2D / QReLU / QSigmoid /
+tinymind q*.hpp shapes (QDense / QConv2D / QBatchNorm2D / QReLU / QSigmoid /
 QTanh / QSoftmax1D) and supplies a calibration callback that streams a
 representative dataset through the float reference model. The importer:
 
@@ -40,7 +40,7 @@ representative dataset through the float reference model. The importer:
      The user picks per layer; default is MinMax.
   3. Symmetric per-tensor weight quantization (zero_point = 0, qmax = 127).
   4. Asymmetric activation quantization (zero_point in [-128, 127]).
-  5. Emits a TinyMind-format weights.hpp.
+  5. Emits a tinymind-format weights.hpp.
 
 The C++ side rebuilds Requantizers at startup via buildRequantizer from
 qcalibration.hpp; the deployable MCU shape bakes the integer
@@ -411,7 +411,7 @@ def moe_float_forward(layer: "MoE", parent: np.ndarray) -> np.ndarray:
 
 @dataclass
 class QFormatDense(Layer):
-    """Q-format dense layer (TinyMind QValue pipeline).
+    """Q-format dense layer (tinymind QValue pipeline).
 
     Drops alongside the int8 affine layers so a hybrid model can mix
     QDense (int8) with QFormatDense (Q-format) inside the same weights.hpp.
@@ -713,7 +713,7 @@ def emit_weights_header(path: str,
                         input_name: str,
                         meta: Optional[dict[str, int]] = None,
                         boundaries: Sequence[HybridBoundary] = ()) -> None:
-    """Write a TinyMind-format weights.hpp.
+    """Write a tinymind-format weights.hpp.
 
     namespace  : C++ namespace for the constants.
     meta       : optional dict of NameInCpp -> integer literal (e.g.
@@ -753,7 +753,7 @@ def emit_weights_header(path: str,
                                         "int32_t"))
 
     if any(isinstance(layer, QFormatDense) for layer in layers):
-        parts.append("\n    // Q-format weights (TinyMind QValue pipeline).\n")
+        parts.append("\n    // Q-format weights (tinymind QValue pipeline).\n")
         for layer in layers:
             if not isinstance(layer, QFormatDense):
                 continue
