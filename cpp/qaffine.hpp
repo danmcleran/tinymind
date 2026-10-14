@@ -27,6 +27,10 @@
 #include <cstddef>
 #include <cstdint>
 
+#if defined(__ARM_FEATURE_SAT)
+#include <arm_acle.h>
+#endif
+
 /*
  * Affine (per-tensor) integer quantization primitives.
  *
@@ -269,6 +273,121 @@ namespace tinymind {
             return static_cast<DstStorageType>(with_zp);
         }
     };
+
+    namespace detail {
+
+        /**
+         * Full representable range of a requantizer's destination storage.
+         * Types without a specialization report known == false.
+         */
+        template<typename T>
+        struct StorageRange
+        {
+            static constexpr bool known = false;
+            static constexpr int32_t min = 0;
+            static constexpr int32_t max = 0;
+        };
+
+        template<>
+        struct StorageRange<int8_t>
+        {
+            static constexpr bool known = true;
+            static constexpr int32_t min = -128;
+            static constexpr int32_t max = 127;
+
+            static int32_t saturate(int32_t v)
+            {
+#if defined(__ARM_FEATURE_SAT)
+                // GCC 13 lowers the compare form to two compare-and-move
+                // pairs; the ACLE intrinsic is one SSAT.
+                return __ssat(v, 8);
+#else
+                return (v < min) ? min : ((v > max) ? max : v);
+#endif
+            }
+        };
+
+        template<>
+        struct StorageRange<uint8_t>
+        {
+            static constexpr bool known = true;
+            static constexpr int32_t min = 0;
+            static constexpr int32_t max = 255;
+
+            static int32_t saturate(int32_t v)
+            {
+#if defined(__ARM_FEATURE_SAT)
+                return static_cast<int32_t>(__usat(v, 8));
+#else
+                return (v < min) ? min : ((v > max) ? max : v);
+#endif
+            }
+        };
+
+        /**
+         * A Requantizer decoded once for a kernel's inner loop, for the
+         * common case: multiplier >= 0, shift >= 2, and qmin/qmax spanning
+         * the whole storage range (no fused activation clamp). Kernels
+         * instantiate their output loop once with this and once with the
+         * Requantizer itself, and pick per filter with init(), so the
+         * choice never depends on the optimizer unswitching a branch.
+         *
+         * Two things leave the loop compared to Requantizer::apply. The
+         * zero point is folded into the rounding nudge's high word:
+         * floor((h + zp * 2^(e-1)) / 2^(e-1)) == floor(h / 2^(e-1)) + zp
+         * exactly. And the clamp is against constants, one SSAT/USAT on
+         * Arm, so the loop holds three requantizer values instead of six.
+         * init() refuses a zero point large enough for the folded high
+         * word to leave int32 (|zp| * 2^(e-1) > 2^29).
+         */
+        template<typename DstStorage_>
+        struct FastRequantizer
+        {
+            typedef DstStorage_ DstStorageType;
+            typedef StorageRange<DstStorageType> Range;
+
+            int32_t multiplier;
+            uint32_t nudgeHigh;
+            int32_t highShift;
+
+            template<typename SrcAccum_>
+            bool init(const Requantizer<SrcAccum_, DstStorageType>& rq)
+            {
+                if (!Range::known || (rq.multiplier < 0) || (rq.shift < 2) || (rq.shift > 31) ||
+                    (static_cast<int32_t>(rq.qmin) != Range::min) ||
+                    (static_cast<int32_t>(rq.qmax) != Range::max))
+                {
+                    return false;
+                }
+                const int64_t zpTerm = static_cast<int64_t>(rq.zero_point) *
+                                       (static_cast<int64_t>(1) << (rq.shift - 1));
+                const int64_t limit = static_cast<int64_t>(1) << 29;
+                if ((zpTerm > limit) || (zpTerm < -limit))
+                {
+                    return false;
+                }
+                multiplier = rq.multiplier;
+                nudgeHigh = static_cast<uint32_t>((static_cast<int64_t>(1) << (rq.shift - 2)) + zpTerm);
+                highShift = rq.shift - 1;
+                return true;
+            }
+
+            // Same derivation as roundingHighMulDivideByPOT, with the zero
+            // point already in nudgeHigh.
+            DstStorageType apply(int32_t acc) const
+            {
+                const uint32_t negative = static_cast<uint32_t>(acc) >> 31;
+                const uint32_t high = nudgeHigh - negative;
+                const uint32_t low = (negative << 31) | static_cast<uint32_t>(0x40000000u);
+                const uint64_t nudge = (static_cast<uint64_t>(high) << 32) | low;
+                const uint64_t v = nudge + static_cast<uint64_t>(
+                    static_cast<int64_t>(acc) * static_cast<int64_t>(multiplier));
+                const int32_t r = static_cast<int32_t>(static_cast<uint32_t>(v >> 32)) >> highShift;
+                return static_cast<DstStorageType>(Range::saturate(r));
+            }
+        };
+
+    } // namespace detail
 
 #if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
     /**
