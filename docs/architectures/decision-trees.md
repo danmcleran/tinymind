@@ -21,6 +21,7 @@ dense net is overkill.
 | `cpp/qtree.hpp` | `QTreeNode` | flat `{feature, threshold, left, right, leaf_value}` node record |
 | `cpp/qtree.hpp` | `QDecisionTree` | one tree: walk to a leaf, return its int32 value |
 | `cpp/qtree.hpp` | `QGBDT` | additive ensemble: per-class logit accumulation + argmax |
+| `cpp/qtree.hpp` | `QStaticDecisionTree` / `QStaticGBDT` | the same models from a compile-time node pool, run by an evaluation policy |
 
 ## Quantized splits are lossless
 
@@ -55,6 +56,49 @@ returns the argmax. Single-output regression is `NumClasses == 1` (the logit is
 the regression value). This is exactly the structure an XGBoost / LightGBM model
 exports — dump the trees, quantize each threshold onto the feature grid, keep
 the leaf values as int32 logits, and point `QGBDT` at the pool.
+
+## Compile-time models
+
+When the trees are fixed at build time, the node pool can be a `constexpr`
+array inside a type, and `QStaticDecisionTree` / `QStaticGBDT` run it under an
+evaluation policy:
+
+| Policy | How the pool runs | Pick it when |
+|--------|-------------------|--------------|
+| `QTreeInlineEval` (default) | every node is expanded at compile time into a compare of `x[feature]` against an immediate threshold and a branch, the nested if/else a code generator would write; the pool is never read at run time, so it is not stored | speed, and small-to-medium models |
+| `QTreeWalkEval` | `walkQTree` over the pool at run time: one shared loop, the pool as data | large ensembles, where code per node would outgrow the data |
+
+The two give the same result for every input, so switching is a one-word change:
+
+```cpp
+struct Model
+{
+    static constexpr tinymind::QTreeNode<int8_t> nodes[] =
+    {
+        {  0, 12,  1,  2, 0 },          // f0 <= 12 ? node1 : node2
+        { -1,  0, -1, -1, 3 },          // leaf: 3
+        { -1,  0, -1, -1, 7 },          // leaf: 7
+    };
+};
+
+using Tree = tinymind::QStaticDecisionTree<int8_t, Model, 4, tinymind::QTreeInlineEval>;
+const int32_t leaf = Tree::predict(x);  // x: const int8_t[4]
+```
+
+`QStaticGBDT` takes the ensemble's `tree_root`, `tree_class` and `base_score`
+from the same type, as `constexpr` arrays next to `nodes`.
+
+The model is checked when it compiles, under either policy: a split feature
+that is not below `NumFeatures`, a child or root index outside the pool, or a
+class index outside `NumClasses` is a build error rather than an out-of-bounds
+read, and the inline policy also refuses a cyclic tree. Both types build at
+C++14; there, `QTreeWalkEval` needs the usual namespace-scope definition of
+each static array (`constexpr tinymind::QTreeNode<int8_t> Model::nodes[];`),
+which C++17 makes implicit.
+
+Unsigned features help the inline policy on Cortex-M0+: Thumb-1 has an
+immediate-offset `LDRB` but only a register-offset `LDRSB`, so `uint8_t` inputs
+save an instruction per node over `int8_t`.
 
 See the [`gbdt_tabular_int8`]({{ site.baseurl }}/examples/gbdt_tabular_int8)
 example for a 3-class ensemble, the int8-vs-float region agreement check, and

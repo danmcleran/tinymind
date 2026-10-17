@@ -7,7 +7,7 @@ check :
 	cd unit_test/qformat_oracle && make clean && make && make run && cd -
 	cd unit_test/qlearn && make clean && make && make run && cd -
 	cd unit_test/lookuptable && make clean && make && make run && cd -
-	cd unit_test/embedded && make clean && make && make run && make simd_prereq_regressions && cd -
+	cd unit_test/embedded && make clean && make && make run && make simd_prereq_regressions && make qtree_static_regressions && cd -
 	cd unit_test/quantization && make clean && make && make run && cd -
 	cd unit_test/dual && make clean && make && make run && cd -
 	cd unit_test/pinn && make clean && make && make run && cd -
@@ -390,7 +390,8 @@ check-clang :
 	  { echo "ERROR: $(CLANG_CXX) not found. sudo apt install clang"; exit 1; }
 	@echo "=== check-clang: unit_test/embedded (all gate corners) ==="
 	@( cd unit_test/embedded && $(MAKE) clean >/dev/null 2>&1 && \
-	   $(MAKE) CC="$(CLANG_CXX)" && $(MAKE) CC="$(CLANG_CXX)" run ) \
+	   $(MAKE) CC="$(CLANG_CXX)" && $(MAKE) CC="$(CLANG_CXX)" run && \
+	   $(MAKE) CC="$(CLANG_CXX)" qtree_static_regressions ) \
 	   || { echo "CHECK-CLANG FAIL: unit_test/embedded"; exit 1; }
 	@for d in $(CLANG_SUITES); do \
 		echo "=== check-clang: $$d ==="; \

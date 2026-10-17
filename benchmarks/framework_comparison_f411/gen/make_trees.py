@@ -46,7 +46,7 @@ slightly fewer test samples. Each backend is therefore checked against its own
 host reference: tinymind against the forest's majority vote computed here,
 emlearn against emlearn's own compiled C (emlearn.convert(...).predict).
 
-Writes gen/out/rf_data.h, rf_tinymind.hpp, rf_emlearn_inline.h and
+Writes gen/out/rf_data.h, rf_tinymind.hpp, rf_tinymind_inline.hpp, rf_emlearn_inline.h and
 rf_emlearn_loadable.h. Requires: scikit-learn, emlearn, numpy.
 """
 
@@ -161,6 +161,47 @@ inline int predict(const int8_t* x)
 } // namespace tm_rf
 """)
 open(os.path.join(OUT, "rf_tinymind.hpp"), "w").write("".join(tm))
+
+# The same node pool, one constexpr array per tree, as tinymind::QStaticDecisionTree
+# with the QTreeInlineEval policy: each tree expands at compile time into nested
+# compares against immediate thresholds instead of being walked at run time.
+ti = [HDR, f"""#pragma once
+#include <cstddef>
+#include <cstdint>
+#include "qtree.hpp"
+
+// Same forest as rf_tinymind.hpp, as tinymind::QStaticDecisionTree (QTreeInlineEval).
+namespace tm_rf_inline {{
+
+using Node = tinymind::QTreeNode<int8_t>;
+constexpr std::size_t NumTrees = {N_TREES};
+constexpr std::size_t NumClasses = {rf.n_classes_};
+"""]
+for k, (r, c) in enumerate(zip(roots, counts)):
+    ti.append(f"\nstruct Tree{k}\n{{\n    static constexpr Node nodes[{c}] =\n    {{\n")
+    ti += [f"        {{{f}, {th}, {l}, {rr}, {v}}},\n" for f, th, l, rr, v in nodes[r:r + c]]
+    ti.append("    };\n};\n")
+ti.append("""
+template<typename InStorage>
+inline int predict(const InStorage* x)
+{
+    int32_t votes[NumClasses] = {};
+""")
+ti += [f"    ++votes[tinymind::QStaticDecisionTree<InStorage, Tree{k}, 64>::predict(x)];\n" for k in range(N_TREES)]
+ti.append("""    int best = 0;
+    for (std::size_t c = 1; c < NumClasses; ++c)
+    {
+        if (votes[c] > votes[best])
+        {
+            best = static_cast<int>(c);
+        }
+    }
+    return best;
+}
+
+} // namespace tm_rf_inline
+""")
+open(os.path.join(OUT, "rf_tinymind_inline.hpp"), "w").write("".join(ti))
 
 n = len(Xte)
 acc = lambda p: (p == yte).mean()

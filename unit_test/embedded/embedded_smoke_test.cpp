@@ -406,6 +406,23 @@ bool exerciseQAnfis()
            (out <= anfis.output_requantizer.qmax);
 }
 
+// Compile-time tree pools for QStaticDecisionTree / QStaticGBDT. Static data
+// members need a namespace-scope class.
+struct SmokeTreePool
+{
+    static constexpr tinymind::QTreeNode<int8_t> nodes[3] = {
+        { 0, 0, 1, 2, 0 }, { -1, 0, -1, -1, 7 }, { -1, 0, -1, -1, -7 },
+    };
+    static constexpr int16_t tree_root[1]  = {0};
+    static constexpr int16_t tree_class[1] = {0};
+    static constexpr int32_t base_score[1] = {0};
+};
+
+#if TINYMIND_CPLUSPLUS < 201703L
+// C++14: QTreeWalkEval reads the pool at run time, so it needs a definition.
+constexpr tinymind::QTreeNode<int8_t> SmokeTreePool::nodes[];
+#endif
+
 bool exerciseQuantPipeline()
 {
     tinymind::Requantizer<A, Q> r;
@@ -905,6 +922,14 @@ bool exerciseQuantPipeline()
     qgbdt.tree_class = gbdt_classes; qgbdt.base_score = nullptr;
     const std::size_t gbdt_cls = qgbdt.predict(tree_x);
 
+    // Same tree from a compile-time pool, under both evaluation policies.
+    const int32_t static_inline_leaf =
+        tinymind::QStaticDecisionTree<int8_t, SmokeTreePool, 2, tinymind::QTreeInlineEval>::predict(tree_x);
+    const int32_t static_walk_leaf =
+        tinymind::QStaticDecisionTree<int8_t, SmokeTreePool, 2, tinymind::QTreeWalkEval>::predict(tree_x);
+    int32_t static_gbdt_logit[1];
+    tinymind::QStaticGBDT<int8_t, SmokeTreePool, 1, 2, tinymind::QTreeInlineEval>::forward(tree_x, static_gbdt_logit);
+
     return valueIsLive(qDenseOut[0]) && (s != 0)
         && valueIsLive(add_y[0]) && valueIsLive(mul_y[0])
         && valueIsLive(cc_out[0]) && valueIsLive(pad_out[0])
@@ -925,7 +950,9 @@ bool exerciseQuantPipeline()
         && valueIsLive(ssm_out[0])
         && valueIsLive(sel_out[0])
         && (tree_leaf == 7)
-        && (gbdt_cls == 0u);
+        && (gbdt_cls == 0u)
+        && (static_inline_leaf == 7) && (static_walk_leaf == 7)
+        && (static_gbdt_logit[0] == 7);
 }
 int32_t gIntegerBridgeSink[2];
 

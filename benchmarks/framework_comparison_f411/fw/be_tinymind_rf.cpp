@@ -23,9 +23,20 @@
 // tinymind integer random forest: tinymind::QDecisionTree per tree over a
 // QTreeNode<int8_t> pool, majority vote (gen/make_trees.py). const data in
 // flash, no setup step.
+//
+// -DTM_RF_INLINE: the same pool as tinymind::QStaticDecisionTree with the
+// QTreeInlineEval policy (rf_tinymind_inline.hpp), expanded at compile time
+// instead of walked.
+// -DTM_RF_U8 (with TM_RF_INLINE): read the features as uint8_t. They are
+// 0..32, so the value is unchanged; Thumb-1 has an immediate-offset LDRB but
+// only a register-offset LDRSB.
 #include "backend.hpp"
 #include "rf_data.h"
-#include "rf_tinymind.hpp"
+#if defined(TM_RF_INLINE)
+#  include "rf_tinymind_inline.hpp"
+#else
+#  include "rf_tinymind.hpp"
+#endif
 #include <string.h>
 
 #if RF_N_TEST == 360
@@ -47,7 +58,13 @@ int gClass;
 extern "C"
 {
 
+#if defined(TM_RF_INLINE) && defined(TM_RF_U8)
+const char* const be_name = "tinymind_uint8/rf_inline";
+#elif defined(TM_RF_INLINE)
+const char* const be_name = "tinymind_int8/rf_inline";
+#else
 const char* const be_name = "tinymind_int8/rf";
+#endif
 const int be_n_test = RF_N_TEST;
 const uint8_t* const be_labels = rf_test_y;
 const uint32_t be_expect_hash = RF_TM_HASH;
@@ -64,7 +81,13 @@ void be_load(int s)
 
 __attribute__((noinline)) void be_invoke(void)
 {
+#if defined(TM_RF_INLINE) && defined(TM_RF_U8)
+    gClass = tm_rf_inline::predict(reinterpret_cast<const uint8_t*>(gIn));
+#elif defined(TM_RF_INLINE)
+    gClass = tm_rf_inline::predict(gIn);
+#else
     gClass = tm_rf::predict(gIn);
+#endif
 }
 
 int be_argmax(void)
