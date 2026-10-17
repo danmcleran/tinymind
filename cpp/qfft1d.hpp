@@ -260,4 +260,11 @@ namespace tinymind {
         static_assert(N >= 2, "FFT length must be at least 2.");
     };
 
+#if TINYMIND_CPLUSPLUS < 201703L
+    // sBitRevTable is read at run time, so before C++17 (which makes a static
+    // constexpr member implicitly inline) it needs this definition.
+    template<std::size_t N>
+    constexpr qfft_detail::BitReversalTable<N, QFFT1D<N>::NumStages> QFFT1D<N>::sBitRevTable;
+#endif
+
 } // namespace tinymind

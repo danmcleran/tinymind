@@ -873,7 +873,8 @@ matplotlib is the only extra dependency. If your Python already has it, the plot
 
 ### Requirements
 
-- C++14 or later
+- C++14 or later for the library (`cpp/`). This is enforced, not assumed: `tinymind_platform.hpp` stops a pre-C++14 build with an `#error`, and the `check-cxx14` CI gate compiles every header at `-std=c++14 -pedantic-errors` and builds and runs the test suites and examples at `-std=c++14`. The unit tests and examples build at C++14 too; the host tools under `apps/` may need more (`apps/activation` uses C++17 `std::filesystem` and sets `-std=c++17` itself).
+  - One C++14 rule worth knowing: the compile-time constants on tinymind types (`NumOutputs`, `Length`, `NumStages` and the like) are `static constexpr` members, meant to be used by value. Before C++17, using one by reference (passing it to `std::max`, binding it to a `const&`, taking its address) needs an out-of-class definition in your code, as with any C++14 library; C++17 makes them implicitly inline. Copy it into a local first to avoid both.
 - [Boost.Test](https://www.boost.org/doc/libs/release/libs/test/) (for unit tests only)
 - Set `BOOST_HOME` environment variable to your Boost installation path
 

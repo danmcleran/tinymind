@@ -31,6 +31,8 @@ cd examples/dqn_maze && make clean && make
 
 Compiler flags: `-Wall -Wextra -Werror -Wpedantic` (debug builds also add `-ggdb`; release adds `-O3`).
 
+**Language floor is C++14** for everything in `cpp/` (and the tests/examples), enforced by `make check-cxx14` (CI job "C++14 language floor"). Most Makefiles pass no `-std`, so day-to-day builds run at the compiler default (C++17) and will not notice a C++17-only construct; `check-cxx14` is what does. No `if constexpr`, inline variables, fold expressions, structured bindings, `std::optional`/`std::variant`/`std::filesystem`, etc. in `cpp/`. A `static constexpr` data member that is read at run time (indexed, bound to a reference, address taken) needs an out-of-class definition under `#if TINYMIND_CPLUSPLUS < 201703L` (see `fft1d.hpp`); only link-time builds catch its absence, which is why the gate runs the suites and not just a syntax pass. `TINYMIND_CPLUSPLUS` (from `tinymind_platform.hpp`) reads `_MSVC_LANG` on MSVC, where `__cplusplus` lies. Public `static constexpr` constants are documented (README, Requirements) as use-by-value under C++14 rather than each carrying a definition; tests that use one by reference (`BOOST_TEST(T::N == 3u)` binds by reference) must copy it to a local or the type must define it.
+
 The `BOOST_HOME` environment variable must be set to the Boost installation path (used by unit test Makefiles).
 
 ### Platform Feature Gates

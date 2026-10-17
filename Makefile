@@ -324,20 +324,23 @@ tidy : compile_commands.json
 # at a time. Fails if any header is not self-contained -- fix by adding the
 # missing standard include to the header itself.
 PLATFORM_HDR = cpp/include/tinymind_platform.hpp
+# HDR_STD / HDR_FLAGS let check-cxx14 rerun the same pass at the language floor.
+HDR_STD   ?= c++17
+HDR_FLAGS ?=
 .PHONY : header-selfcheck
 header-selfcheck :
 	@pass=0; fail=0; failed=""; \
 	for h in $$(find cpp -name '*.hpp' | sort); do \
-	  if g++ -std=c++17 -fsyntax-only $(ANALYZE_INC) $(ANALYZE_DEF) \
+	  if g++ -std=$(HDR_STD) $(HDR_FLAGS) -fsyntax-only $(ANALYZE_INC) $(ANALYZE_DEF) \
 	         -include $(PLATFORM_HDR) -include "$$h" -xc++ /dev/null 2>/dev/null; then \
 	    pass=$$((pass+1)); \
 	  else \
 	    fail=$$((fail+1)); failed="$$failed $$h"; \
 	  fi; \
 	done; \
-	echo "header-selfcheck: $$pass self-contained, $$fail not"; \
+	echo "header-selfcheck (-std=$(HDR_STD)): $$pass self-contained, $$fail not"; \
 	if [ -n "$$failed" ]; then \
-	  echo "NOT self-contained (add the missing standard include to the header):"; \
+	  echo "Does not compile standalone at -std=$(HDR_STD) $(HDR_FLAGS) (a missing standard include, or under check-cxx14 a construct newer than C++14):"; \
 	  for f in $$failed; do echo "  $$f"; done; \
 	  exit 1; \
 	fi
@@ -477,6 +480,45 @@ check-clang-examples :
 	done; \
 	echo "check-clang-examples: $$n examples build with $(CLANG_CXX)"
 
+# C++14 language floor (HARD GATE). The README promises C++14, but every other
+# build compiles at the compiler's default (C++17 on current GCC and Clang), so
+# nothing else notices a C++17-only construct in cpp/. Three layers:
+#
+# 1. Every cpp/**/*.hpp standalone at -std=c++14 -pedantic-errors. Without
+#    -pedantic-errors GCC accepts if constexpr, inline variables and fold
+#    expressions at C++14 with only a warning.
+# 2. The embedded gate corners and the CXX14_SUITES Boost suites, built and
+#    run. Linking is what catches a static constexpr member read at run time
+#    with no pre-C++17 out-of-class definition; a syntax-only pass cannot, and
+#    FFT1D / QFFT1D had exactly that defect.
+# 3. Every example, built (discovered from the tree, as in check-clang-examples).
+#
+# apps/ are host tools, not the library, and are exempt: apps/activation needs
+# C++17 (std::filesystem) and says so in its own Makefile.
+CXX14_CC     ?= g++ -std=c++14
+CXX14_SUITES  = $(CLANG_SUITES)
+
+check-cxx14 :
+	@$(MAKE) --no-print-directory header-selfcheck HDR_STD=c++14 HDR_FLAGS=-pedantic-errors
+	@echo "=== check-cxx14: unit_test/embedded (all gate corners) ==="
+	@( cd unit_test/embedded && $(MAKE) clean >/dev/null 2>&1 && \
+	   $(MAKE) CC="$(CXX14_CC)" >/dev/null && $(MAKE) CC="$(CXX14_CC)" run >/dev/null ) \
+	   || { echo "CHECK-CXX14 FAIL: unit_test/embedded"; exit 1; }
+	@for d in $(CXX14_SUITES); do \
+		echo "=== check-cxx14: $$d ==="; \
+		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
+		  $(MAKE) CC="$(CXX14_CC)" >/dev/null && $(MAKE) CC="$(CXX14_CC)" run >/dev/null ) \
+		  || { echo "CHECK-CXX14 FAIL: $$d"; exit 1; }; \
+	done
+	@n=0; \
+	for m in $$(find examples -mindepth 2 -name Makefile | sort); do \
+		d=$$(dirname $$m); \
+		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && $(MAKE) CC="$(CXX14_CC)" >/dev/null ) \
+		  || { echo "CHECK-CXX14 FAIL (example): $$d"; exit 1; }; \
+		n=$$((n+1)); \
+	done; \
+	echo "check-cxx14: headers, embedded corners, Boost suites and $$n examples build (and the suites pass) at $(CXX14_CC)"
+
 # MemorySanitizer over the embedded smoke corners.
 #
 # MSan closes a gap ASan and UBSan structurally cannot: reads of uninitialized
@@ -600,7 +642,7 @@ check-msan-libcxx :
 
 analyze : misra tidy cppcheck header-selfcheck warnings-strict
 
-.PHONY : sanitize cppcheck misra tidy analyze coverage-check header-selfcheck warnings-strict \
+.PHONY : sanitize cppcheck misra tidy analyze coverage-check header-selfcheck warnings-strict check-cxx14 \
          check-clang check-clang-avx2 check-clang-integration check-clang-examples \
          check-msan check-msan-libcxx oracle-soak
 

@@ -174,6 +174,8 @@ arm_crosscompile:
 	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M0) -c $(SOURCES) $(INCLUDES) -o /dev/null
 	@echo "[arm] cortex-m0plus soft-float: quant freestanding (deployable int8 shape)"
 	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M0) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
+	@echo "[arm] cortex-m0plus soft-float: quant freestanding at -std=c++14 (the language floor)"
+	$(ARM_CXX) -std=c++14 $(ARM_WARN) $(ARM_M0) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_QUANTIZATION=1 -o /dev/null
 	@echo "[arm] cortex-m4 hard-float: float forward-pass (no stdlib)"
 	$(ARM_CXX) $(ARM_STD) $(ARM_WARN) $(ARM_M4) -c $(SOURCES) $(INCLUDES) -DTINYMIND_ENABLE_FLOAT=1 -o /dev/null
 	@echo "[arm] cortex-m4 hard-float: quant freestanding"
