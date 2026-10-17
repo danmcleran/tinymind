@@ -6,10 +6,10 @@ nav_order: 14
 
 # On-Target Benchmarks: tinymind vs TFLM vs emlearn
 
-tinymind, TensorFlow Lite for Microcontrollers (TFLM, now LiteRT for Microcontrollers) and emlearn were run on the same microcontroller. Every framework executed the same two models, and the int8 frameworks used the same int8 weights. Everything was measured on the board; nothing was simulated.
+tinymind, TensorFlow Lite for Microcontrollers (TFLM, now LiteRT for Microcontrollers) and emlearn were run on the same microcontrollers: a Cortex-M4F (NUCLEO-F411RE) and a [Cortex-M0+](#cortex-m0-nucleo-l031k6) (NUCLEO-L031K6). Every framework executed the same models, and the int8 frameworks used the same int8 weights. Everything was measured on the board; nothing was simulated.
 
 {: .note }
-Measured 2026-10-13 with the code in [`benchmarks/framework_comparison_f411`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/framework_comparison_f411). These are numbers from one board, one compiler and two models. They describe this setup, not every workload. Updated after [#192](https://github.com/danmcleran/tinymind/pull/192), [#195](https://github.com/danmcleran/tinymind/pull/195), [#198](https://github.com/danmcleran/tinymind/pull/198), [#199](https://github.com/danmcleran/tinymind/pull/199), [#202](https://github.com/danmcleran/tinymind/pull/202), [#204](https://github.com/danmcleran/tinymind/pull/204), [#208](https://github.com/danmcleran/tinymind/pull/208), [#210](https://github.com/danmcleran/tinymind/pull/210) and [#211](https://github.com/danmcleran/tinymind/pull/211), nine tinymind fixes this benchmark prompted (see [what changed](#what-changed-since-the-first-run)).
+F411 measured 2026-10-13, Cortex-M0+ measured 2026-10-17, with the code in [`benchmarks/framework_comparison_f411`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/framework_comparison_f411). These are numbers from two boards, one compiler and three models. They describe this setup, not every workload. Updated after [#192](https://github.com/danmcleran/tinymind/pull/192), [#195](https://github.com/danmcleran/tinymind/pull/195), [#198](https://github.com/danmcleran/tinymind/pull/198), [#199](https://github.com/danmcleran/tinymind/pull/199), [#202](https://github.com/danmcleran/tinymind/pull/202), [#204](https://github.com/danmcleran/tinymind/pull/204), [#208](https://github.com/danmcleran/tinymind/pull/208), [#210](https://github.com/danmcleran/tinymind/pull/210) and [#211](https://github.com/danmcleran/tinymind/pull/211), nine tinymind fixes this benchmark prompted (see [what changed](#what-changed-since-the-first-run)).
 
 ## Setup
 
@@ -91,6 +91,63 @@ Each layer was timed separately, behind its own non-inlined call.
 
 **Among the float runtimes,** TFLM float32 is faster than emlearn on the MLP. emlearn has the smallest float footprint, and almost all of it is the weights themselves.
 
+## Cortex-M0+: NUCLEO-L031K6
+
+The same harness, backends and models on the smallest class of part, plus one model that emlearn can also run in integer arithmetic.
+
+| | |
+|---|---|
+| Board | NUCLEO-L031K6: STM32L031K6, Cortex-M0+ (ARMv6-M) at 32 MHz, 1 flash wait state with prefetch on; 32 KB flash, 8 KB SRAM; no FPU, no DSP extension, no hardware divide |
+| Compiler | arm-none-eabi-gcc 13.2.1, `-mcpu=cortex-m0plus -mthumb -mfloat-abi=soft` |
+| Timing | The M0+ has no DWT cycle counter: SysTick runs at the core clock over its full 24-bit range and its interrupt counts wraps, giving a free-running 32-bit cycle count (checked on the board against a 3-cycle busy loop and for monotonicity across ~110k wraps) |
+| Test sets | The first 32 MLP and random-forest samples (360 do not fit in 32 KB of flash next to the code); all 8 KWS samples |
+| tinymind | master @ `576f146`, scalar int8 (ARMv6-M has no SMLAD) |
+
+### MLP (digits, first 32 test samples)
+
+| Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM | Accuracy |
+|---|---:|---:|---:|---:|---:|---:|
+| **tinymind int8** | **35,637** | **35,963** | **1.12 ms** | 5.5–5.8 KB | 200 B | 96.88% |
+| TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 39.2–43.4 KB | 1,872+ B | - |
+| TFLM int8 (reference) | does not fit | does not fit | - | 33.9–38.3 KB | 1,776+ B | - |
+| TFLM float32 | does not fit | does not fit | - | 45.7–50.0 KB | 1,392+ B | - |
+| emlearn float32 (software float) | 712,272 | 707,113 | 22.1 ms | 18.7–19.0 KB | 972 B | 96.88% |
+
+### KWS-style CNN
+
+| Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM |
+|---|---:|---:|---:|---:|---:|
+| **tinymind int8** | **818,262** | **746,112** | **23.3 ms** | 6.0–8.5 KB | 5,488 B |
+| TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 83.0–90.5 KB | 5,136+ B |
+| TFLM int8 (reference) | does not fit | does not fit | - | 51.1–57.1 KB | 5,072+ B |
+| TFLM float32 | does not fit | does not fit | - | 82.9–90.3 KB | 14,448+ B |
+
+"Does not fit" sizes come from linking the same images against an unbounded memory map; their RAM is static RAM, tensor arena included, without stack, so it is a floor.
+
+### Random forest (10 trees, depth 6, digits, first 32 test samples)
+
+emlearn has no int8 MLP, so the MLP row above is int8 against software float. Trees are the model both libraries run in pure integer arithmetic: one scikit-learn `RandomForestClassifier` with majority voting, on integer features, emitted for each. Each backend's predictions match its own host reference on the board.
+
+| Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM | Accuracy |
+|---|---:|---:|---:|---:|---:|---:|
+| tinymind int8, run-time walk (`QDecisionTree`) | 2,581 | 2,524 | 79 µs | 12.8–12.9 KB | 80 B | 96.88% |
+| tinymind int8, compile-time inline (`QStaticDecisionTree`) | 919 | 872 | 27 µs | 6.8–8.3 KB | 120 B | 96.88% |
+| **tinymind uint8, compile-time inline (`QStaticDecisionTree`)** | **872** | 845 | 26 µs | 6.2–**7.9 KB** | **112 B** | 96.88% |
+| emlearn int16, inline (generated if/else) | 917 | **841** | 26 µs | **6.0**–8.3 KB | 184 B | 96.88% |
+| emlearn int16, loadable | 6,267 | 6,409 | 200 µs | 7.1–7.1 KB | 336 B | 96.88% |
+
+A tree walk's length depends on the input, so the spread between fastest and slowest inference is 7–10% here (26% for emlearn's `loadable`), against under 0.1% for the networks.
+
+### What the M0+ numbers say
+
+**Only tinymind fits the networks.** TFLM's runtime plus the MLP alone needs 34–50 KB, more than the part's 32 KB of flash before the harness or a test input is added. tinymind runs the MLP in 5.5 KB and the CNN in 6.0 KB at `-O2`, bit-exact with the host and the F411 on a core that has no unaligned access.
+
+**On the MLP, int8 against software float is 20×** (35.6k vs 712k cycles). That is not int8 against int8, since emlearn has no int8 MLP; it is what each library offers for this network on a part without an FPU.
+
+**The random forest went from a 3× loss to a tie.** The first run walked the forest with `QDecisionTree`: about 20 Thumb-1 instructions per node and a full 12-byte node per leaf, against emlearn's generated load, compare-immediate and branch. [`QStaticDecisionTree`]({{ site.baseurl }}/architectures/decision-trees#compile-time-models) (#223) generates that same code from the same node pool at compile time, so the pool is not stored at all. It is 2.9× faster than the walk in about half its size. With `uint8_t` features, which load with Thumb-1's immediate-offset `LDRB` instead of a register-offset `LDRSB`, it beats emlearn at `-O2` (872 vs 917 cycles), is within 0.5% at `-O3` (845 vs 841), is smaller at `-O3` (7.9 vs 8.3 KB) and uses less RAM (112 vs 184 B). The model is also checked when it compiles: a split on a feature the input does not have, or a child index outside the pool, is a build error instead of an out-of-bounds read.
+
+**M0+ against M4F, same code.** The MLP takes 1.8× the cycles of the F411's scalar build and the CNN 2.9×. Requantization's 64-bit multiply becomes a library call (`__aeabi_lmul`) on ARMv6-M, and the 3×3 stem is 69% of the CNN, so those are where M0+ tuning would start.
+
 ## What changed since the first run
 
 The first runs (tinymind before #192) exposed four weak spots. All four are fixed, along with five follow-ups. Every int8 output hash is unchanged, so every fix is bit-exact.
@@ -133,6 +190,8 @@ make deps            # Python venv + TFLM clone at the pinned revision + TFLM li
 make host-check      # tinymind int8 outputs reproduce the expected hashes
 make LEVEL=O3 run    # build, flash and capture every image
 ```
+
+On a NUCLEO-L031K6, `make BOARD=l031 LEVEL=O3 run` builds and runs the Cortex-M0+ images (`results/raw_l031_O3.txt`), and `make BOARD=l031 fit` reports what the images that do not fit would need.
 
 The generated model headers are committed, so the firmware builds without TensorFlow; `make deps` is only needed for the TFLM and emlearn images.
 
