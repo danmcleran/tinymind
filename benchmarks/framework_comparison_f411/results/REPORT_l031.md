@@ -41,6 +41,8 @@
 | Framework | O2 cycles | O3 cycles | O3 us @32MHz | flash O2 / O3 (B) | RAM (B) | acc | matches own host reference |
 |---|---:|---:|---:|---:|---:|---:|---|
 | tinymind int8 (QDecisionTree x10 + vote) | 2,581 | 2,524 | 79 | 12,800 / 12,912 | 80 | 96.88% | yes |
+| tinymind int8 (QStaticDecisionTree inline x10 + vote) | 919 | 872 | 27 | 6,832 / 8,340 | 120 | 96.88% | yes |
+| tinymind uint8 (QStaticDecisionTree inline x10 + vote) | 872 | 845 | 26 | 6,180 / 7,924 | 112 | 96.88% | yes |
 | emlearn int16 (inline) | 917 | 841 | 26 | 6,032 / 8,256 | 184 | 96.88% | yes |
 | emlearn int16 (loadable) | 6,267 | 6,409 | 200 | 7,148 / 7,140 | 336 | 96.88% | yes |
 
