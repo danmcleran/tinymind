@@ -310,6 +310,9 @@ misra :
 compile_commands.json :
 	@command -v bear >/dev/null 2>&1 || { echo "ERROR: bear not found. sudo apt install bear"; exit 1; }
 	bear --output compile_commands.json -- $(MAKE) check
+	@# Drop the builds that are meant to fail to compile (EXPECT_FAIL in
+	@# unit_test/embedded/Makefile), or clang-tidy reports them as library errors.
+	python3 -I tools/filter_compile_commands.py compile_commands.json
 
 tidy : compile_commands.json
 	@command -v run-clang-tidy >/dev/null 2>&1 || { echo "ERROR: run-clang-tidy not found. sudo apt install clang-tidy"; exit 1; }
