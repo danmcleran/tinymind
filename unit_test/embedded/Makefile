@@ -179,8 +179,10 @@ qtree_static_regressions:
 	@$(CC) $(WARN) $(EXPECT_FAIL) -DQTREE_BAD_FEATURE -c $(QTREE_REG) -o /dev/null $(INCLUDES) 2>&1 | grep -q "a split feature is >= NumFeatures"
 	@echo "[qtree] child index past the pool must fail"
 	@$(CC) $(WARN) $(EXPECT_FAIL) -DQTREE_BAD_CHILD -c $(QTREE_REG) -o /dev/null $(INCLUDES) 2>&1 | grep -q "child index is out of range"
-	@echo "[qtree] cyclic tree must fail inline expansion"
-	@$(CC) $(WARN) $(EXPECT_FAIL) -DQTREE_BAD_CYCLE -c $(QTREE_REG) -o /dev/null $(INCLUDES) 2>&1 | grep -q "deeper than QTreeInlineMaxDepth (or cyclic)"
+	@echo "[qtree] cyclic tree must fail inline expansion and compact packing"
+	@$(CC) $(WARN) $(EXPECT_FAIL) -DQTREE_BAD_CYCLE -c $(QTREE_REG) -o /dev/null $(INCLUDES) > $(QTREE_REG_OUT).cycle.txt 2>&1; \
+	  grep -q "deeper than QTreeInlineMaxDepth (or cyclic)" $(QTREE_REG_OUT).cycle.txt && \
+	  grep -q "QTreeCompactEval: tree is cyclic" $(QTREE_REG_OUT).cycle.txt
 	@echo "[qtree] GBDT tree_root past the pool must fail"
 	@$(CC) $(WARN) $(EXPECT_FAIL) -DQTREE_BAD_ROOT -c $(QTREE_REG) -o /dev/null $(INCLUDES) 2>&1 | grep -q "tree_root index out of range"
 	@echo "[qtree] GBDT tree_class >= NumClasses must fail"

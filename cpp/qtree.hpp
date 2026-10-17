@@ -67,10 +67,15 @@
  *                      branch, the nested if/else a code generator would
  *                      emit. Nothing of the pool is read at run time, so it is
  *                      not stored. Fastest; code size grows with node count.
+ *   QTreeCompactEval -- a walk over a packed copy of the pool, built at
+ *                      compile time: decision nodes only, in pre-order, 4 bytes
+ *                      each for small trees with int8 thresholds, and each
+ *                      distinct leaf value once in the narrowest type. The
+ *                      smallest footprint; no run-time cycle guard is needed.
  *   QTreeWalkEval   -- walkQTree over Pool::nodes at run time: one shared loop
- *                      and the pool as data. Smallest for large ensembles.
+ *                      and the 12-byte QTreeNode pool as data.
  *
- * Both give the same result for every input. The pool is validated at compile
+ * All three give the same result for every input. The pool is validated at compile
  * time for either policy: every split feature must be < NumFeatures and every
  * child, root and class index must be in range, so a bad model is a build
  * error instead of an out-of-bounds read.
@@ -376,6 +381,247 @@ namespace tinymind
     };
 
     /**
+     * Packed decision node for QTreeCompactEval. Only decision nodes exist:
+     * left and right are child references, where a reference with the top bit
+     * of RefT set (detail::QCompactTree<>::LeafTag) indexes the leaf-value table
+     * and any other is the index of the child's decision node.
+     */
+    template<typename FeatureT, typename ThreshT, typename RefT>
+    struct QCompactTreeNode
+    {
+        FeatureT feature;
+        ThreshT  threshold;
+        RefT     left;
+        RefT     right;
+    };
+
+    namespace detail
+    {
+        template<bool Condition, typename A, typename B>
+        struct QTreeSelect
+        {
+            typedef A type;
+        };
+
+        template<typename A, typename B>
+        struct QTreeSelect<false, A, B>
+        {
+            typedef B type;
+        };
+
+        // What the tree rooted at Root needs once packed: its decision nodes
+        // (counted once per path, so a node shared by two parents counts
+        // twice), its distinct leaf values and their range, and its largest
+        // split feature. ok is false for a cycle or a tree too large for
+        // 15-bit references.
+        struct QTreeShape
+        {
+            std::size_t internal;
+            std::size_t leaves;
+            std::size_t max_feature;
+            int32_t     min_leaf;
+            int32_t     max_leaf;
+            bool        ok;
+        };
+
+        static constexpr std::size_t QTreeCompactMaxRefs = 32767;
+
+        template<typename Pool, int16_t Root>
+        constexpr QTreeShape qtreeShape()
+        {
+            constexpr std::size_t N = qtreePoolSize<Pool>();
+            int16_t stack[N] = {};
+            int32_t values[N] = {};
+            QTreeShape shape = { 0, 0, 0, 0, 0, false };
+            std::size_t sp = 0;
+            std::size_t visits = 0;
+            stack[sp++] = Root;
+            while (sp > 0)
+            {
+                const int16_t n = stack[--sp];
+                if (++visits > QTreeCompactMaxRefs)
+                {
+                    return shape;
+                }
+                if (Pool::nodes[n].feature < 0)
+                {
+                    const int32_t v = Pool::nodes[n].leaf_value;
+                    bool seen = false;
+                    for (std::size_t i = 0; i < shape.leaves; ++i)
+                    {
+                        seen = seen || (values[i] == v);
+                    }
+                    if (!seen)
+                    {
+                        if (shape.leaves == N)
+                        {
+                            return shape;
+                        }
+                        values[shape.leaves++] = v;
+                        shape.min_leaf = (shape.leaves == 1 || v < shape.min_leaf) ? v : shape.min_leaf;
+                        shape.max_leaf = (shape.leaves == 1 || v > shape.max_leaf) ? v : shape.max_leaf;
+                    }
+                }
+                else
+                {
+                    ++shape.internal;
+                    const std::size_t f = static_cast<std::size_t>(Pool::nodes[n].feature);
+                    shape.max_feature = (f > shape.max_feature) ? f : shape.max_feature;
+                    if (sp + 2 > N)
+                    {
+                        return shape;
+                    }
+                    stack[sp++] = Pool::nodes[n].right;
+                    stack[sp++] = Pool::nodes[n].left;
+                }
+            }
+            shape.ok = (shape.internal <= QTreeCompactMaxRefs) && (shape.leaves <= QTreeCompactMaxRefs);
+            return shape;
+        }
+
+        template<typename Node, typename LeafT, std::size_t NumInternal, std::size_t NumLeaves>
+        struct QCompactTreeTable
+        {
+            Node  nodes[NumInternal];
+            LeafT leaves[NumLeaves];
+        };
+
+        // Pack the tree rooted at Root: decision nodes in pre-order, so a
+        // decision child always follows its parent and every walk ends, and
+        // each distinct leaf value once. An internal root lands at node 0; a
+        // root that is itself a leaf is leaf 0.
+        template<typename Pool, int16_t Root, typename Table,
+                 typename FeatureT, typename LeafT, typename RefT, RefT LeafTag>
+        constexpr Table qtreeBuildCompact()
+        {
+            constexpr std::size_t N = qtreePoolSize<Pool>();
+            const std::size_t NoParent = static_cast<std::size_t>(-1);
+            Table t{};
+            int16_t     stackNode[N] = {};
+            std::size_t stackParent[N] = {};
+            bool        stackRight[N] = {};
+            std::size_t sp = 0;
+            std::size_t nextInternal = 0;
+            std::size_t numLeaves = 0;
+            stackNode[sp] = Root;
+            stackParent[sp] = NoParent;
+            stackRight[sp] = false;
+            ++sp;
+            while (sp > 0)
+            {
+                --sp;
+                const int16_t n = stackNode[sp];
+                const std::size_t parent = stackParent[sp];
+                const bool isRight = stackRight[sp];
+                RefT ref = 0;
+                if (Pool::nodes[n].feature < 0)
+                {
+                    std::size_t idx = numLeaves;
+                    for (std::size_t i = 0; i < numLeaves; ++i)
+                    {
+                        if (idx == numLeaves && static_cast<int32_t>(t.leaves[i]) == Pool::nodes[n].leaf_value)
+                        {
+                            idx = i;
+                        }
+                    }
+                    if (idx == numLeaves)
+                    {
+                        t.leaves[numLeaves++] = static_cast<LeafT>(Pool::nodes[n].leaf_value);
+                    }
+                    ref = static_cast<RefT>(LeafTag | idx);
+                }
+                else
+                {
+                    const std::size_t idx = nextInternal++;
+                    t.nodes[idx].feature = static_cast<FeatureT>(Pool::nodes[n].feature);
+                    t.nodes[idx].threshold = Pool::nodes[n].threshold;
+                    ref = static_cast<RefT>(idx);
+                    // Right first, so the left child is popped next and lands at idx + 1.
+                    stackNode[sp] = Pool::nodes[n].right;
+                    stackParent[sp] = idx;
+                    stackRight[sp] = true;
+                    ++sp;
+                    stackNode[sp] = Pool::nodes[n].left;
+                    stackParent[sp] = idx;
+                    stackRight[sp] = false;
+                    ++sp;
+                }
+                if (parent != NoParent)
+                {
+                    if (isRight)
+                    {
+                        t.nodes[parent].right = ref;
+                    }
+                    else
+                    {
+                        t.nodes[parent].left = ref;
+                    }
+                }
+            }
+            return t;
+        }
+
+        // The packed form of the tree rooted at Root in Pool, built at compile
+        // time. References and features take the narrowest unsigned type that
+        // holds them, and leaves the narrowest signed type.
+        template<typename Pool, int16_t Root>
+        struct QCompactTree
+        {
+            static constexpr QTreeShape shape = qtreeShape<Pool, Root>();
+            static_assert(shape.ok, "QTreeCompactEval: tree is cyclic or has more than 32767 nodes or leaves.");
+
+            static constexpr std::size_t NumInternal = (shape.internal > 0) ? shape.internal : 1;
+            static constexpr std::size_t NumLeaves   = (shape.leaves > 0) ? shape.leaves : 1;
+
+            typedef typename QTreeSelect<(shape.internal <= 127 && shape.leaves <= 127),
+                                         uint8_t, uint16_t>::type RefType;
+            typedef typename QTreeSelect<(shape.max_feature <= 255), uint8_t, uint16_t>::type FeatureType;
+            typedef typename QTreeSelect<(shape.min_leaf >= -128 && shape.max_leaf <= 127), int8_t,
+                    typename QTreeSelect<(shape.min_leaf >= -32768 && shape.max_leaf <= 32767), int16_t,
+                                         int32_t>::type>::type LeafType;
+            typedef decltype(Pool::nodes[0].threshold) ThreshType;
+            typedef QCompactTreeNode<FeatureType, ThreshType, RefType> Node;
+            typedef QCompactTreeTable<Node, LeafType, NumInternal, NumLeaves> Table;
+
+            static constexpr RefType LeafTag =
+                static_cast<RefType>(static_cast<RefType>(1) << (8 * sizeof(RefType) - 1));
+            static constexpr RefType RootRef =
+                (Pool::nodes[Root].feature < 0) ? LeafTag : static_cast<RefType>(0);
+
+            static constexpr Table table =
+                qtreeBuildCompact<Pool, Root, Table, FeatureType, LeafType, RefType, LeafTag>();
+        };
+    } // namespace detail
+
+    /**
+     * Evaluation policy: walk a packed copy of the pool, built at compile time.
+     * Decision nodes only, in pre-order (a decision child always follows its
+     * parent, so the walk needs no cycle guard), 4 bytes each for trees of up
+     * to 127 decision nodes and 127 distinct leaves with int8 thresholds, and a
+     * deduplicated leaf table in the narrowest type that holds the values.
+     * The QTreeNode pool itself is only read at compile time.
+     */
+    struct QTreeCompactEval
+    {
+        template<typename Pool, int16_t Root, typename InStorage_>
+        static inline int32_t eval(const InStorage_* x)
+        {
+            typedef detail::QCompactTree<Pool, Root> Tree;
+            typedef typename Tree::RefType Ref;
+            Ref r = Tree::RootRef;
+            // Decision references are below LeafTag and leaf references are
+            // LeafTag | index, so one unsigned compare tells them apart.
+            while (r < Tree::LeafTag)
+            {
+                const typename Tree::Node& node = Tree::table.nodes[r];
+                r = (static_cast<int32_t>(x[node.feature]) <= static_cast<int32_t>(node.threshold))
+                    ? node.left : node.right;
+            }
+            return static_cast<int32_t>(Tree::table.leaves[static_cast<std::size_t>(r - Tree::LeafTag)]);
+        }
+    };
+
+    /**
      * Single decision tree known at compile time. Pool::nodes is a constexpr
      * QTreeNode array; nodes[0] is the root.
      */
@@ -469,6 +715,11 @@ namespace tinymind
     template<typename InStorage_, typename ThreshStorage_, std::size_t NumTrees_, std::size_t NumClasses_,
              std::size_t NumNodes_, std::size_t NumFeatures_>
     constexpr std::size_t QGBDT<InStorage_, ThreshStorage_, NumTrees_, NumClasses_, NumNodes_, NumFeatures_>::NumFeatures;
+
+    template<typename Pool, int16_t Root>
+    constexpr detail::QTreeShape detail::QCompactTree<Pool, Root>::shape;
+    template<typename Pool, int16_t Root>
+    constexpr typename detail::QCompactTree<Pool, Root>::Table detail::QCompactTree<Pool, Root>::table;
 
     template<typename InStorage_, typename Pool_, std::size_t NumFeatures_, typename EvalPolicy_>
     constexpr std::size_t QStaticDecisionTree<InStorage_, Pool_, NumFeatures_, EvalPolicy_>::NumNodes;

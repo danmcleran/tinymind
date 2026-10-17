@@ -27,6 +27,8 @@
 // -DTM_RF_INLINE: the same pool as tinymind::QStaticDecisionTree with the
 // QTreeInlineEval policy (rf_tinymind_inline.hpp), expanded at compile time
 // instead of walked.
+// -DTM_RF_COMPACT (with TM_RF_INLINE): the QTreeCompactEval policy instead,
+// a walk over a packed copy of the pool built at compile time.
 // -DTM_RF_U8 (with TM_RF_INLINE): read the features as uint8_t. They are
 // 0..32, so the value is unchanged; Thumb-1 has an immediate-offset LDRB but
 // only a register-offset LDRSB.
@@ -58,7 +60,11 @@ int gClass;
 extern "C"
 {
 
-#if defined(TM_RF_INLINE) && defined(TM_RF_U8)
+#if defined(TM_RF_INLINE) && defined(TM_RF_COMPACT) && defined(TM_RF_U8)
+const char* const be_name = "tinymind_uint8/rf_compact";
+#elif defined(TM_RF_INLINE) && defined(TM_RF_COMPACT)
+const char* const be_name = "tinymind_int8/rf_compact";
+#elif defined(TM_RF_INLINE) && defined(TM_RF_U8)
 const char* const be_name = "tinymind_uint8/rf_inline";
 #elif defined(TM_RF_INLINE)
 const char* const be_name = "tinymind_int8/rf_inline";
@@ -81,7 +87,11 @@ void be_load(int s)
 
 __attribute__((noinline)) void be_invoke(void)
 {
-#if defined(TM_RF_INLINE) && defined(TM_RF_U8)
+#if defined(TM_RF_INLINE) && defined(TM_RF_COMPACT) && defined(TM_RF_U8)
+    gClass = tm_rf_inline::predict<uint8_t, tinymind::QTreeCompactEval>(reinterpret_cast<const uint8_t*>(gIn));
+#elif defined(TM_RF_INLINE) && defined(TM_RF_COMPACT)
+    gClass = tm_rf_inline::predict<int8_t, tinymind::QTreeCompactEval>(gIn);
+#elif defined(TM_RF_INLINE) && defined(TM_RF_U8)
     gClass = tm_rf_inline::predict(reinterpret_cast<const uint8_t*>(gIn));
 #elif defined(TM_RF_INLINE)
     gClass = tm_rf_inline::predict(gIn);

@@ -927,6 +927,8 @@ bool exerciseQuantPipeline()
         tinymind::QStaticDecisionTree<int8_t, SmokeTreePool, 2, tinymind::QTreeInlineEval>::predict(tree_x);
     const int32_t static_walk_leaf =
         tinymind::QStaticDecisionTree<int8_t, SmokeTreePool, 2, tinymind::QTreeWalkEval>::predict(tree_x);
+    const int32_t static_compact_leaf =
+        tinymind::QStaticDecisionTree<int8_t, SmokeTreePool, 2, tinymind::QTreeCompactEval>::predict(tree_x);
     int32_t static_gbdt_logit[1];
     tinymind::QStaticGBDT<int8_t, SmokeTreePool, 1, 2, tinymind::QTreeInlineEval>::forward(tree_x, static_gbdt_logit);
 
@@ -951,7 +953,7 @@ bool exerciseQuantPipeline()
         && valueIsLive(sel_out[0])
         && (tree_leaf == 7)
         && (gbdt_cls == 0u)
-        && (static_inline_leaf == 7) && (static_walk_leaf == 7)
+        && (static_inline_leaf == 7) && (static_walk_leaf == 7) && (static_compact_leaf == 7)
         && (static_gbdt_logit[0] == 7);
 }
 int32_t gIntegerBridgeSink[2];

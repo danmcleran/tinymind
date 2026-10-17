@@ -34,7 +34,8 @@
 //
 //   QTREE_BAD_FEATURE  split feature >= NumFeatures (out-of-bounds input read)
 //   QTREE_BAD_CHILD    child index past the end of the pool
-//   QTREE_BAD_CYCLE    a node that is its own child (inline expansion only)
+//   QTREE_BAD_CYCLE    a node that is its own child (refused by the inline and
+//                      compact policies; the run-time walk only bounds it)
 //   QTREE_BAD_ROOT     GBDT tree_root past the end of the pool
 //   QTREE_BAD_CLASS    GBDT tree_class >= NumClasses
 
@@ -143,8 +144,10 @@ int main()
 {
     typedef tinymind::QStaticDecisionTree<int8_t, RootFirstPool, 2, tinymind::QTreeInlineEval> InlineTree;
     typedef tinymind::QStaticDecisionTree<int8_t, RootFirstPool, 2, tinymind::QTreeWalkEval>   WalkTree;
+    typedef tinymind::QStaticDecisionTree<int8_t, RootFirstPool, 2, tinymind::QTreeCompactEval> CompactTree;
     typedef tinymind::QStaticGBDT<int8_t, GbdtPool, 2, 2, tinymind::QTreeInlineEval> InlineGbdt;
     typedef tinymind::QStaticGBDT<int8_t, GbdtPool, 2, 2, tinymind::QTreeWalkEval>   WalkGbdt;
+    typedef tinymind::QStaticGBDT<int8_t, GbdtPool, 2, 2, tinymind::QTreeCompactEval> CompactGbdt;
 
     // Instantiating the type runs the pool validation on TreePool.
     typedef tinymind::QStaticDecisionTree<int8_t, TreePool, 2, tinymind::QTreeInlineEval> TreePoolCheck;
@@ -169,8 +172,10 @@ int main()
             const int32_t leaf = runtimeTree.predict(x);
             mismatches += (InlineTree::predict(x) != leaf) ? 1 : 0;
             mismatches += (WalkTree::predict(x) != leaf) ? 1 : 0;
+            mismatches += (CompactTree::predict(x) != leaf) ? 1 : 0;
             mismatches += (treePoolLeaf<tinymind::QTreeInlineEval>(x) != leaf) ? 1 : 0;
             mismatches += (treePoolLeaf<tinymind::QTreeWalkEval>(x) != leaf) ? 1 : 0;
+            mismatches += (treePoolLeaf<tinymind::QTreeCompactEval>(x) != leaf) ? 1 : 0;
 
             int32_t ref[2];
             int32_t got[2];
@@ -179,8 +184,11 @@ int main()
             mismatches += (got[0] != ref[0] || got[1] != ref[1]) ? 1 : 0;
             WalkGbdt::forward(x, got);
             mismatches += (got[0] != ref[0] || got[1] != ref[1]) ? 1 : 0;
+            CompactGbdt::forward(x, got);
+            mismatches += (got[0] != ref[0] || got[1] != ref[1]) ? 1 : 0;
             mismatches += (InlineGbdt::predict(x) != runtimeGbdt.predict(x)) ? 1 : 0;
             mismatches += (WalkGbdt::predict(x) != runtimeGbdt.predict(x)) ? 1 : 0;
+            mismatches += (CompactGbdt::predict(x) != runtimeGbdt.predict(x)) ? 1 : 0;
         }
     }
 

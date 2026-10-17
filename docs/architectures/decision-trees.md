@@ -66,9 +66,12 @@ evaluation policy:
 | Policy | How the pool runs | Pick it when |
 |--------|-------------------|--------------|
 | `QTreeInlineEval` (default) | every node is expanded at compile time into a compare of `x[feature]` against an immediate threshold and a branch, the nested if/else a code generator would write; the pool is never read at run time, so it is not stored | speed, and small-to-medium models |
-| `QTreeWalkEval` | `walkQTree` over the pool at run time: one shared loop, the pool as data | large ensembles, where code per node would outgrow the data |
+| `QTreeCompactEval` | a walk over a packed copy of the pool, built at compile time: decision nodes only, in pre-order (a decision child always follows its parent, so the walk needs no cycle guard), 4 bytes each for trees of up to 127 decision nodes with int8 thresholds, and each distinct leaf value stored once in the narrowest type that holds it | the smallest footprint, at a speed between the other two |
+| `QTreeWalkEval` | `walkQTree` over the original 12-byte `QTreeNode` pool at run time | sharing one node array with run-time `QDecisionTree` / `QGBDT` code |
 
-The two give the same result for every input, so switching is a one-word change:
+On a Cortex-M0+, a 10-tree random forest takes about 3 KB with `QTreeCompactEval`, 6–8 KB with `QTreeInlineEval` and 13 KB with `QTreeWalkEval`; the inline policy is about twice as fast as the compact one, and the compact one 1.5× as fast as the walk (see the [benchmarks]({{ site.baseurl }}/benchmarks#random-forest-10-trees-depth-6-digits-first-32-test-samples)).
+
+All three give the same result for every input, so switching is a one-word change:
 
 ```cpp
 struct Model
@@ -91,14 +94,16 @@ from the same type, as `constexpr` arrays next to `nodes`.
 The model is checked when it compiles, under either policy: a split feature
 that is not below `NumFeatures`, a child or root index outside the pool, or a
 class index outside `NumClasses` is a build error rather than an out-of-bounds
-read, and the inline policy also refuses a cyclic tree. Both types build at
+read, and the inline and compact policies also refuse a cyclic tree. Both types build at
 C++14; there, `QTreeWalkEval` needs the usual namespace-scope definition of
 each static array (`constexpr tinymind::QTreeNode<int8_t> Model::nodes[];`),
 which C++17 makes implicit.
 
 Unsigned features help the inline policy on Cortex-M0+: Thumb-1 has an
 immediate-offset `LDRB` but only a register-offset `LDRSB`, so `uint8_t` inputs
-save an instruction per node over `int8_t`.
+save an instruction per node over `int8_t`. The walking policies gain nothing
+from it, because they read the feature index at run time and use a
+register-offset load either way.
 
 See the [`gbdt_tabular_int8`]({{ site.baseurl }}/examples/gbdt_tabular_int8)
 example for a 3-class ensemble, the int8-vs-float region agreement check, and
