@@ -1,7 +1,10 @@
 # Simple Makefile for the activation function LUTs
 MKDIR=mkdir -p ./output
 CC=g++
-WARN=-Wall -Wextra -Werror -Wpedantic
+# Host tool, not part of the library: needs C++17 for std::filesystem, so it
+# states it rather than relying on the compiler default. (The library itself
+# targets C++14; see check-cxx14 in the top-level Makefile.)
+WARN=-std=c++17 -Wall -Wextra -Werror -Wpedantic
 INCLUDES=-I../../cpp/
 SOURCES=activationTableGenerator.cpp
 OUT=./output/activationTableGenerator

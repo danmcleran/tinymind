@@ -461,6 +461,31 @@ jobs:
           BOOST_HOME: /usr
         run: make check-clang-examples
 
+  cxx14-floor:
+    name: C++14 language floor
+    runs-on: ubuntu-latest
+    needs: changes
+    # HARD GATE. The README states C++14 as the minimum, but every other job
+    # compiles at the compiler default (C++17), so a C++17-only construct in
+    # cpp/ would pass all of them and surface as a build break for a user on
+    # an older embedded toolchain. FFT1D / QFFT1D did exactly that: a static
+    # constexpr member read at run time with no pre-C++17 definition, which
+    # only fails at link time. Headers at -std=c++14 -pedantic-errors, the
+    # embedded corners and Boost suites built and run, every example built.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: needs.changes.outputs.code == 'true'
+      - name: Install Boost
+        if: needs.changes.outputs.code == 'true'
+        uses: ./.github/actions/apt-install
+        with:
+          packages: libboost-dev libboost-test-dev
+      - name: Build and run at -std=c++14
+        if: needs.changes.outputs.code == 'true'
+        env:
+          BOOST_HOME: /usr
+        run: make check-cxx14
+
   msan:
     name: MSan (uninitialized reads)
     runs-on: ubuntu-latest

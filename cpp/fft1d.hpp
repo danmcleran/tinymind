@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include "include/tinymind_platform.hpp"
+
 #include <cstddef>
 
 namespace tinymind {
@@ -265,4 +267,11 @@ namespace tinymind {
         static_assert((N & (N - 1)) == 0, "FFT length must be a power of two.");
         static_assert(N >= 2, "FFT length must be at least 2.");
     };
+
+#if TINYMIND_CPLUSPLUS < 201703L
+    // sBitRevTable is read at run time, so before C++17 (which makes a static
+    // constexpr member implicitly inline) it needs this definition.
+    template<typename ValueType, size_t N>
+    constexpr detail::BitReversalTable<N, FFT1D<ValueType, N>::NumStages> FFT1D<ValueType, N>::sBitRevTable;
+#endif
 }

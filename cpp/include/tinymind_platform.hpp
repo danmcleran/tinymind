@@ -23,6 +23,23 @@
 #pragma once
 
 /*
+ * Language floor: C++14. The library uses no C++17 language or library
+ * feature, and `make check-cxx14` builds and runs the test suites at
+ * -std=c++14 to keep it that way. TINYMIND_CPLUSPLUS is the language level in
+ * effect; MSVC reports 199711L in __cplusplus unless /Zc:__cplusplus is given,
+ * so it reads _MSVC_LANG there.
+ */
+#if defined(_MSVC_LANG)
+#define TINYMIND_CPLUSPLUS _MSVC_LANG
+#else
+#define TINYMIND_CPLUSPLUS __cplusplus
+#endif
+
+#if TINYMIND_CPLUSPLUS < 201402L
+#error "tinymind requires C++14 or later (for example -std=c++14)."
+#endif
+
+/*
  * Platform feature gates for tinymind.
  *
  * All TINYMIND_ENABLE_* macros default to 0 so that a freestanding embedded
