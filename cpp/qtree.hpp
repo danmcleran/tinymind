@@ -51,6 +51,34 @@
  *
  * Nodes are a caller-owned flat array (a node pool shared across trees for the
  * ensemble). Pure integer at runtime; freestanding-safe (no float, no LUT).
+ *
+ * Compile-time models. When the trees are known at build time, the same node
+ * pool can instead be a constexpr array inside a type (the "Pool"):
+ *
+ *   QStaticDecisionTree -- one tree from Pool::nodes, root at node 0.
+ *   QStaticGBDT         -- the additive ensemble from Pool::nodes,
+ *                          Pool::tree_root, Pool::tree_class and
+ *                          Pool::base_score.
+ *
+ * An evaluation policy picks how the pool is run:
+ *
+ *   QTreeInlineEval -- every node is expanded at compile time into a compare
+ *                      of x[feature] against an immediate threshold and a
+ *                      branch, the nested if/else a code generator would
+ *                      emit. Nothing of the pool is read at run time, so it is
+ *                      not stored. Fastest; code size grows with node count.
+ *   QTreeWalkEval   -- walkQTree over Pool::nodes at run time: one shared loop
+ *                      and the pool as data. Smallest for large ensembles.
+ *
+ * Both give the same result for every input. The pool is validated at compile
+ * time for either policy: every split feature must be < NumFeatures and every
+ * child, root and class index must be in range, so a bad model is a build
+ * error instead of an out-of-bounds read.
+ *
+ * Under C++14, QTreeWalkEval reads Pool::nodes at run time and so needs the
+ * usual namespace-scope definition of the static member
+ * (`constexpr QTreeNode<int8_t> MyPool::nodes[];`); C++17 makes it implicit.
+ * QTreeInlineEval only reads the pool in constant expressions and needs none.
  */
 
 namespace tinymind
@@ -182,5 +210,279 @@ namespace tinymind
         static_assert(NumNodes_    > 0, "NumNodes must be > 0.");
         static_assert(NumFeatures_ > 0, "NumFeatures must be > 0.");
     };
+
+    /**
+     * Deepest root-to-leaf path QTreeInlineEval expands. A cyclic pool would
+     * otherwise recurse until the compiler's instantiation limit; this turns
+     * it (or an absurdly deep tree) into a readable static_assert.
+     */
+    static constexpr std::size_t QTreeInlineMaxDepth = 64;
+
+    namespace detail
+    {
+        template<typename Pool>
+        constexpr std::size_t qtreePoolSize()
+        {
+            return sizeof(Pool::nodes) / sizeof(Pool::nodes[0]);
+        }
+
+        // Every internal node of the pool splits on a feature < NumFeatures
+        // and points at children inside the pool.
+        template<typename Pool, std::size_t NumFeatures>
+        constexpr bool qtreePoolIsValid()
+        {
+            for (std::size_t i = 0; i < qtreePoolSize<Pool>(); ++i)
+            {
+                if (Pool::nodes[i].feature < 0)
+                {
+                    continue;
+                }
+                if (static_cast<std::size_t>(Pool::nodes[i].feature) >= NumFeatures
+                    || Pool::nodes[i].left < 0
+                    || static_cast<std::size_t>(Pool::nodes[i].left) >= qtreePoolSize<Pool>()
+                    || Pool::nodes[i].right < 0
+                    || static_cast<std::size_t>(Pool::nodes[i].right) >= qtreePoolSize<Pool>())
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        template<typename Pool, int16_t N>
+        constexpr bool qtreeNodeIsLeaf()
+        {
+            return Pool::nodes[N].feature < 0;
+        }
+
+        // Node N of Pool, expanded at compile time. The node's fields are
+        // copied into constants so the pool itself is never odr-used.
+        template<typename Pool, int16_t N, std::size_t Depth,
+                 bool IsLeaf = qtreeNodeIsLeaf<Pool, N>()>
+        struct QTreeInlineNode;
+
+        template<typename Pool, int16_t N, std::size_t Depth>
+        struct QTreeInlineNode<Pool, N, Depth, true>
+        {
+            static constexpr int32_t leaf_value = Pool::nodes[N].leaf_value;
+
+            template<typename InStorage_>
+            static inline int32_t eval(const InStorage_*)
+            {
+                return leaf_value;
+            }
+        };
+
+        template<typename Pool, int16_t N, std::size_t Depth>
+        struct QTreeInlineNode<Pool, N, Depth, false>
+        {
+            static_assert(Depth < QTreeInlineMaxDepth,
+                          "QTreeInlineEval: tree deeper than QTreeInlineMaxDepth (or cyclic).");
+
+            static constexpr std::size_t feature   = static_cast<std::size_t>(Pool::nodes[N].feature);
+            static constexpr int32_t     threshold = static_cast<int32_t>(Pool::nodes[N].threshold);
+            static constexpr int16_t     left      = Pool::nodes[N].left;
+            static constexpr int16_t     right     = Pool::nodes[N].right;
+
+            template<typename InStorage_>
+            static inline int32_t eval(const InStorage_* x)
+            {
+                if (static_cast<int32_t>(x[feature]) <= threshold)
+                {
+                    return QTreeInlineNode<Pool, left, Depth + 1>::eval(x);
+                }
+                return QTreeInlineNode<Pool, right, Depth + 1>::eval(x);
+            }
+        };
+
+        // logits[c] = Pool::base_score[c] for c in [Lo, Lo + Count), split in
+        // halves so the instantiation depth is logarithmic in the count.
+        template<typename Pool, std::size_t Lo, std::size_t Count>
+        struct QGBDTSeed
+        {
+            static inline void run(int32_t* logits)
+            {
+                QGBDTSeed<Pool, Lo, Count / 2>::run(logits);
+                QGBDTSeed<Pool, Lo + Count / 2, Count - Count / 2>::run(logits);
+            }
+        };
+
+        template<typename Pool, std::size_t Lo>
+        struct QGBDTSeed<Pool, Lo, 1>
+        {
+            static constexpr int32_t base = Pool::base_score[Lo];
+
+            static inline void run(int32_t* logits)
+            {
+                logits[Lo] = base;
+            }
+        };
+
+        // Trees [Lo, Lo + Count) each add their leaf to their class's logit.
+        template<typename Pool, typename EvalPolicy, std::size_t NumClasses,
+                 std::size_t Lo, std::size_t Count>
+        struct QGBDTAccumulate
+        {
+            template<typename InStorage_>
+            static inline void run(const InStorage_* x, int32_t* logits)
+            {
+                QGBDTAccumulate<Pool, EvalPolicy, NumClasses, Lo, Count / 2>::run(x, logits);
+                QGBDTAccumulate<Pool, EvalPolicy, NumClasses, Lo + Count / 2, Count - Count / 2>::run(x, logits);
+            }
+        };
+
+        template<typename Pool, typename EvalPolicy, std::size_t NumClasses, std::size_t Lo>
+        struct QGBDTAccumulate<Pool, EvalPolicy, NumClasses, Lo, 1>
+        {
+            static constexpr int16_t root = Pool::tree_root[Lo];
+            static constexpr int16_t cls  = Pool::tree_class[Lo];
+
+            static_assert(root >= 0 && static_cast<std::size_t>(root) < qtreePoolSize<Pool>(),
+                          "QStaticGBDT: tree_root index out of range.");
+            static_assert(cls >= 0 && static_cast<std::size_t>(cls) < NumClasses,
+                          "QStaticGBDT: tree_class out of range.");
+
+            template<typename InStorage_>
+            static inline void run(const InStorage_* x, int32_t* logits)
+            {
+                logits[static_cast<std::size_t>(cls)] += EvalPolicy::template eval<Pool, root>(x);
+            }
+        };
+    } // namespace detail
+
+    /**
+     * Evaluation policy: expand the pool into compare-and-branch code at
+     * compile time.
+     */
+    struct QTreeInlineEval
+    {
+        template<typename Pool, int16_t Root, typename InStorage_>
+        static inline int32_t eval(const InStorage_* x)
+        {
+            return detail::QTreeInlineNode<Pool, Root, 0>::eval(x);
+        }
+    };
+
+    /**
+     * Evaluation policy: walk the pool at run time with walkQTree.
+     */
+    struct QTreeWalkEval
+    {
+        template<typename Pool, int16_t Root, typename InStorage_>
+        static inline int32_t eval(const InStorage_* x)
+        {
+            return walkQTree(Pool::nodes, Root, x, detail::qtreePoolSize<Pool>());
+        }
+    };
+
+    /**
+     * Single decision tree known at compile time. Pool::nodes is a constexpr
+     * QTreeNode array; nodes[0] is the root.
+     */
+    template<typename InStorage_, typename Pool_, std::size_t NumFeatures_,
+             typename EvalPolicy_ = QTreeInlineEval>
+    struct QStaticDecisionTree
+    {
+        typedef InStorage_ InputType;
+        typedef Pool_      PoolType;
+        typedef EvalPolicy_ EvalPolicy;
+
+        static constexpr std::size_t NumNodes    = detail::qtreePoolSize<Pool_>();
+        static constexpr std::size_t NumFeatures = NumFeatures_;
+
+        static int32_t predict(const InputType* x)
+        {
+            return EvalPolicy_::template eval<Pool_, 0>(x);
+        }
+
+        static_assert(NumFeatures_ > 0, "NumFeatures must be > 0.");
+        static_assert(detail::qtreePoolIsValid<Pool_, NumFeatures_>(),
+                      "QStaticDecisionTree: a split feature is >= NumFeatures or a child index is out of range.");
+    };
+
+    /**
+     * Gradient-boosted ensemble known at compile time. Pool_ provides constexpr
+     * arrays: nodes (the shared node pool), tree_root and tree_class (one
+     * entry per tree) and base_score (NumClasses entries; zeros for none).
+     * Same semantics as QGBDT.
+     */
+    template<typename InStorage_, typename Pool_, std::size_t NumClasses_,
+             std::size_t NumFeatures_, typename EvalPolicy_ = QTreeInlineEval>
+    struct QStaticGBDT
+    {
+        typedef InStorage_ InputType;
+        typedef Pool_      PoolType;
+        typedef EvalPolicy_ EvalPolicy;
+
+        static constexpr std::size_t NumTrees    = sizeof(Pool_::tree_root) / sizeof(Pool_::tree_root[0]);
+        static constexpr std::size_t NumClasses  = NumClasses_;
+        static constexpr std::size_t NumNodes    = detail::qtreePoolSize<Pool_>();
+        static constexpr std::size_t NumFeatures = NumFeatures_;
+
+        static void forward(const InputType* x, int32_t* logits)
+        {
+            detail::QGBDTSeed<Pool_, 0, NumClasses_>::run(logits);
+            detail::QGBDTAccumulate<Pool_, EvalPolicy_, NumClasses_, 0, NumTrees>::run(x, logits);
+        }
+
+        static std::size_t predict(const InputType* x)
+        {
+            int32_t logits[NumClasses_];
+            forward(x, logits);
+            std::size_t best = 0;
+            for (std::size_t c = 1; c < NumClasses_; ++c)
+            {
+                if (logits[c] > logits[best]) best = c;
+            }
+            return best;
+        }
+
+        static_assert(NumTrees > 0, "QStaticGBDT: Pool::tree_root must name at least one tree.");
+        static_assert(sizeof(Pool_::tree_class) / sizeof(Pool_::tree_class[0]) == NumTrees,
+                      "QStaticGBDT: Pool::tree_class must have one entry per tree.");
+        static_assert(sizeof(Pool_::base_score) / sizeof(Pool_::base_score[0]) == NumClasses_,
+                      "QStaticGBDT: Pool::base_score must have NumClasses entries.");
+        static_assert(NumClasses_  > 0, "NumClasses must be > 0.");
+        static_assert(NumFeatures_ > 0, "NumFeatures must be > 0.");
+        static_assert(detail::qtreePoolIsValid<Pool_, NumFeatures_>(),
+                      "QStaticGBDT: a split feature is >= NumFeatures or a child index is out of range.");
+    };
+
+#if TINYMIND_CPLUSPLUS < 201703L
+    // Before C++17 a static constexpr member used by reference (std::max, a
+    // test macro, binding to const&) needs a definition; C++17 makes them
+    // implicitly inline.
+    template<typename InStorage_, typename ThreshStorage_, std::size_t NumNodes_, std::size_t NumFeatures_>
+    constexpr std::size_t QDecisionTree<InStorage_, ThreshStorage_, NumNodes_, NumFeatures_>::NumNodes;
+    template<typename InStorage_, typename ThreshStorage_, std::size_t NumNodes_, std::size_t NumFeatures_>
+    constexpr std::size_t QDecisionTree<InStorage_, ThreshStorage_, NumNodes_, NumFeatures_>::NumFeatures;
+
+    template<typename InStorage_, typename ThreshStorage_, std::size_t NumTrees_, std::size_t NumClasses_,
+             std::size_t NumNodes_, std::size_t NumFeatures_>
+    constexpr std::size_t QGBDT<InStorage_, ThreshStorage_, NumTrees_, NumClasses_, NumNodes_, NumFeatures_>::NumTrees;
+    template<typename InStorage_, typename ThreshStorage_, std::size_t NumTrees_, std::size_t NumClasses_,
+             std::size_t NumNodes_, std::size_t NumFeatures_>
+    constexpr std::size_t QGBDT<InStorage_, ThreshStorage_, NumTrees_, NumClasses_, NumNodes_, NumFeatures_>::NumClasses;
+    template<typename InStorage_, typename ThreshStorage_, std::size_t NumTrees_, std::size_t NumClasses_,
+             std::size_t NumNodes_, std::size_t NumFeatures_>
+    constexpr std::size_t QGBDT<InStorage_, ThreshStorage_, NumTrees_, NumClasses_, NumNodes_, NumFeatures_>::NumNodes;
+    template<typename InStorage_, typename ThreshStorage_, std::size_t NumTrees_, std::size_t NumClasses_,
+             std::size_t NumNodes_, std::size_t NumFeatures_>
+    constexpr std::size_t QGBDT<InStorage_, ThreshStorage_, NumTrees_, NumClasses_, NumNodes_, NumFeatures_>::NumFeatures;
+
+    template<typename InStorage_, typename Pool_, std::size_t NumFeatures_, typename EvalPolicy_>
+    constexpr std::size_t QStaticDecisionTree<InStorage_, Pool_, NumFeatures_, EvalPolicy_>::NumNodes;
+    template<typename InStorage_, typename Pool_, std::size_t NumFeatures_, typename EvalPolicy_>
+    constexpr std::size_t QStaticDecisionTree<InStorage_, Pool_, NumFeatures_, EvalPolicy_>::NumFeatures;
+
+    template<typename InStorage_, typename Pool_, std::size_t NumClasses_, std::size_t NumFeatures_, typename EvalPolicy_>
+    constexpr std::size_t QStaticGBDT<InStorage_, Pool_, NumClasses_, NumFeatures_, EvalPolicy_>::NumTrees;
+    template<typename InStorage_, typename Pool_, std::size_t NumClasses_, std::size_t NumFeatures_, typename EvalPolicy_>
+    constexpr std::size_t QStaticGBDT<InStorage_, Pool_, NumClasses_, NumFeatures_, EvalPolicy_>::NumClasses;
+    template<typename InStorage_, typename Pool_, std::size_t NumClasses_, std::size_t NumFeatures_, typename EvalPolicy_>
+    constexpr std::size_t QStaticGBDT<InStorage_, Pool_, NumClasses_, NumFeatures_, EvalPolicy_>::NumNodes;
+    template<typename InStorage_, typename Pool_, std::size_t NumClasses_, std::size_t NumFeatures_, typename EvalPolicy_>
+    constexpr std::size_t QStaticGBDT<InStorage_, Pool_, NumClasses_, NumFeatures_, EvalPolicy_>::NumFeatures;
+#endif
 
 } // namespace tinymind

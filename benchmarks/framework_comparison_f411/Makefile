@@ -117,8 +117,9 @@ PROF_IMAGES = tm_mlp_prof tm_mlp_dsp_prof tm_kws_prof tm_kws_dsp_prof \
 else
 # ARMv6-M has no SMLAD, so no +dsp images (the ARM_DSP gate #errors there).
 # tm_rf / eml_rf_*: integer random forest, the one model emlearn also runs
-# integer-only (it has no int8 MLP); see gen/make_trees.py.
-IMAGES = baseline tm_mlp tm_kws eml_mlp tm_rf eml_rf_inline eml_rf_loadable
+# integer-only (it has no int8 MLP); see gen/make_trees.py. tm_rf walks the
+# QTreeNode pool; tm_rf_inline{,_u8} expand it at compile time (QStaticDecisionTree).
+IMAGES = baseline tm_mlp tm_kws eml_mlp tm_rf tm_rf_inline tm_rf_inline_u8 eml_rf_inline eml_rf_loadable
 PROF_IMAGES = tm_mlp_prof tm_kws_prof
 # Images that do not fit the L031. `make BOARD=l031 fit` links them against an
 # unbounded memory map (board/unbounded.ld) to report what they would need.
@@ -185,8 +186,14 @@ $(eval $(call tflm_rule,tflm_cmsis_kws_int8,$(TFLM_CMSIS),-DMODEL_KWS,+cmsis))
 $(eval $(call tflm_rule,tflm_ref_kws_int8,$(TFLM_REF),-DMODEL_KWS,+ref))
 $(eval $(call tflm_rule,tflm_cmsis_kws_f32,$(TFLM_CMSIS),-DMODEL_KWS -DDTYPE_F32,+cmsis))
 
-$(B)/tm_rf.elf: fw/be_tinymind_rf.cpp $(HARNESS) | $(B) $(DATA_DEPS)
-	$(CXX) $(CXXFLAGS) $(INC) $(TM_INC) -o $@ $^ $(LD)
+# $(1)=image $(2)=extra defines
+define tm_rf_rule
+$(B)/$(1).elf: fw/be_tinymind_rf.cpp $$(HARNESS) | $$(B) $$(DATA_DEPS)
+	$$(CXX) $$(CXXFLAGS) $$(INC) $$(TM_INC) $(2) -o $$@ $$^ $$(LD)
+endef
+$(eval $(call tm_rf_rule,tm_rf,))
+$(eval $(call tm_rf_rule,tm_rf_inline,-DTM_RF_INLINE))
+$(eval $(call tm_rf_rule,tm_rf_inline_u8,-DTM_RF_INLINE -DTM_RF_U8))
 
 # $(1)=image $(2)=extra defines
 define eml_rf_rule

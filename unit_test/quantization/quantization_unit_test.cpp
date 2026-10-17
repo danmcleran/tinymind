@@ -7605,4 +7605,142 @@ BOOST_AUTO_TEST_CASE(qtree_quantized_matches_float_tree)
     BOOST_TEST(agree >= total - 2);
 }
 
+// Compile-time pools for QStaticDecisionTree / QStaticGBDT. A static data
+// member needs a namespace-scope class, so they live here, not in the tests.
+//
+// Depth-3, 4-feature tree with leaves at two depths:
+//   n0: f2 <= 10 ? n1 : n2
+//   n1: f0 <= -20 ? n3 : leaf(1)
+//   n2: f3 <= 60 ? n5 : n6
+//   n3: f1 <= 0 ? leaf(2) : leaf(3)
+//   n5: f0 <= 90 ? leaf(4) : leaf(5)
+//   n6: leaf(6)
+struct QStaticTreeTestPool
+{
+    static constexpr tinymind::QTreeNode<int8_t> nodes[11] =
+    {
+        {  2,  10,  1,  2, 0 },
+        {  0, -20,  3,  4, 0 },
+        {  3,  60,  5,  6, 0 },
+        {  1,   0,  7,  8, 0 },
+        { -1,   0, -1, -1, 1 },
+        {  0,  90,  9, 10, 0 },
+        { -1,   0, -1, -1, 6 },
+        { -1,   0, -1, -1, 2 },
+        { -1,   0, -1, -1, 3 },
+        { -1,   0, -1, -1, 4 },
+        { -1,   0, -1, -1, 5 },
+    };
+};
+
+// Three stumps over a shared pool, two classes, seeded logits.
+struct QStaticGbdtTestPool
+{
+    static constexpr tinymind::QTreeNode<int8_t> nodes[9] =
+    {
+        { 0,  0, 1, 2, 0 }, { -1, 0, -1, -1,  5 }, { -1, 0, -1, -1, -5 },
+        { 1,  0, 4, 5, 0 }, { -1, 0, -1, -1,  8 }, { -1, 0, -1, -1, -8 },
+        { 0, 50, 7, 8, 0 }, { -1, 0, -1, -1,  3 }, { -1, 0, -1, -1, -3 },
+    };
+    static constexpr int16_t tree_root[3]  = { 0, 3, 6 };
+    static constexpr int16_t tree_class[3] = { 0, 1, 0 };
+    static constexpr int32_t base_score[2] = { 100, -7 };
+};
+
+#if TINYMIND_CPLUSPLUS < 201703L
+// C++14: the run-time QDecisionTree / QGBDT references and QTreeWalkEval read
+// the pools at run time, so they need definitions.
+constexpr tinymind::QTreeNode<int8_t> QStaticTreeTestPool::nodes[];
+constexpr tinymind::QTreeNode<int8_t> QStaticGbdtTestPool::nodes[];
+constexpr int16_t QStaticGbdtTestPool::tree_root[];
+constexpr int16_t QStaticGbdtTestPool::tree_class[];
+constexpr int32_t QStaticGbdtTestPool::base_score[];
+#endif
+
+BOOST_AUTO_TEST_CASE(qstatic_tree_policies_match_runtime_walk)
+{
+    // Both evaluation policies must return the run-time walk's leaf for every
+    // input, over int8 features and over uint8 features (whose 128..255 range
+    // lies above every threshold).
+    typedef tinymind::QStaticDecisionTree<int8_t, QStaticTreeTestPool, 4, tinymind::QTreeInlineEval> InlineTree;
+    typedef tinymind::QStaticDecisionTree<int8_t, QStaticTreeTestPool, 4, tinymind::QTreeWalkEval>   WalkTree;
+    typedef tinymind::QStaticDecisionTree<uint8_t, QStaticTreeTestPool, 4, tinymind::QTreeInlineEval> InlineTreeU8;
+    BOOST_TEST(InlineTree::NumNodes == 11u);
+
+    tinymind::QDecisionTree<int8_t, int8_t, 11, 4> runtimeTree;
+    runtimeTree.nodes = QStaticTreeTestPool::nodes;
+
+    uint32_t lcg = 12345u;
+    int leafSeen[7] = {0};
+    for (int i = 0; i < 20000; ++i)
+    {
+        int8_t x[4];
+        uint8_t xu[4];
+        for (std::size_t f = 0; f < 4; ++f)
+        {
+            lcg = lcg * 1664525u + 1013904223u;
+            xu[f] = static_cast<uint8_t>(lcg >> 24);
+            x[f] = static_cast<int8_t>(xu[f]);
+        }
+        const int32_t leaf = runtimeTree.predict(x);
+        BOOST_REQUIRE(InlineTree::predict(x) == leaf);
+        BOOST_REQUIRE(WalkTree::predict(x) == leaf);
+        ++leafSeen[leaf];
+
+        // Reference for the uint8 view: walk with the values widened to int32.
+        int n = 0;
+        while (QStaticTreeTestPool::nodes[n].feature >= 0)
+        {
+            const tinymind::QTreeNode<int8_t>& node = QStaticTreeTestPool::nodes[n];
+            n = (static_cast<int32_t>(xu[node.feature]) <= node.threshold) ? node.left : node.right;
+        }
+        BOOST_REQUIRE(InlineTreeU8::predict(xu) == QStaticTreeTestPool::nodes[n].leaf_value);
+    }
+    // The sweep must reach every leaf, or the agreement proves less than it says.
+    for (int leaf = 1; leaf <= 6; ++leaf)
+    {
+        BOOST_TEST(leafSeen[leaf] > 0);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qstatic_gbdt_policies_match_qgbdt)
+{
+    typedef tinymind::QStaticGBDT<int8_t, QStaticGbdtTestPool, 2, 2, tinymind::QTreeInlineEval> InlineGbdt;
+    typedef tinymind::QStaticGBDT<int8_t, QStaticGbdtTestPool, 2, 2, tinymind::QTreeWalkEval>   WalkGbdt;
+    BOOST_TEST(InlineGbdt::NumTrees == 3u);
+
+    tinymind::QGBDT<int8_t, int8_t, 3, 2, 9, 2> runtimeGbdt;
+    runtimeGbdt.nodes      = QStaticGbdtTestPool::nodes;
+    runtimeGbdt.tree_root  = QStaticGbdtTestPool::tree_root;
+    runtimeGbdt.tree_class = QStaticGbdtTestPool::tree_class;
+    runtimeGbdt.base_score = QStaticGbdtTestPool::base_score;
+
+    for (int a = -128; a <= 127; ++a)
+    {
+        for (int b = -128; b <= 127; ++b)
+        {
+            const int8_t x[2] = { static_cast<int8_t>(a), static_cast<int8_t>(b) };
+            int32_t ref[2];
+            int32_t inl[2];
+            int32_t walk[2];
+            runtimeGbdt.forward(x, ref);
+            InlineGbdt::forward(x, inl);
+            WalkGbdt::forward(x, walk);
+            BOOST_REQUIRE(inl[0] == ref[0]);
+            BOOST_REQUIRE(inl[1] == ref[1]);
+            BOOST_REQUIRE(walk[0] == ref[0]);
+            BOOST_REQUIRE(walk[1] == ref[1]);
+            BOOST_REQUIRE(InlineGbdt::predict(x) == runtimeGbdt.predict(x));
+            BOOST_REQUIRE(WalkGbdt::predict(x) == runtimeGbdt.predict(x));
+        }
+    }
+
+    // Spot values: base {100, -7}; x = {-1, -1} -> c0 = 100 + 5 + 3, c1 = -7 + 8.
+    const int8_t x_mm[2] = {-1, -1};
+    int32_t logits[2];
+    InlineGbdt::forward(x_mm, logits);
+    BOOST_TEST(logits[0] == 108);
+    BOOST_TEST(logits[1] == 1);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

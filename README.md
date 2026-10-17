@@ -1067,7 +1067,7 @@ tinymind/
     qcrossattention.hpp         # QCrossAttention1D / QCrossAttentionSoftmax1D (encoder-decoder)
     qkvcache.hpp                # QLinearKVState / QSoftmaxKVCache (autoregressive decode state)
     qssm.hpp                    # QStateSpace1D / QSelectiveStateSpace1D (diagonal state-space, S4-lite)
-    qtree.hpp                   # QDecisionTree / QGBDT (int8 decision trees + boosted ensemble)
+    qtree.hpp                   # QDecisionTree / QGBDT (int8 decision trees + boosted ensemble); QStatic* compile-time variants
     qmha.hpp                    # QMultiHeadLinearAttention1D
     qbridge.hpp                 # Mixed-precision bridges (qformat <-> affine <-> fp16/bf16/float)
     activationFunctions.hpp     # Activation function policies (9 functions)

@@ -150,6 +150,37 @@ simd_prereq_regressions:
 	@echo "[prereq] all prerequisite checks behaved as expected"
 
 # -----------------------------------------------------------------------------
+# QStaticDecisionTree / QStaticGBDT compile-time model checks (cpp/qtree.hpp).
+#
+# Clean, qtree_static_regressions.cpp must build at C++14 (the README floor,
+# where the walk policy needs out-of-class pool definitions) and C++17, and
+# both evaluation policies must agree with the run-time QDecisionTree / QGBDT
+# over every int8 input pair. Each QTREE_BAD_* build plants one model defect
+# that must be refused at compile time, and the diagnostic must name it, so the
+# build cannot pass by failing for an unrelated reason.
+QTREE_REG     = qtree_static_regressions.cpp
+QTREE_REG_OUT = ./output/qtree_static_regressions
+
+.PHONY: qtree_static_regressions
+qtree_static_regressions:
+	$(MKDIR)
+	@for std in c++14 c++17; do \
+		echo "[qtree] clean build at -std=$$std: policies agree with the run-time trees"; \
+		$(CC) -std=$$std $(WARN) -o $(QTREE_REG_OUT) $(QTREE_REG) $(INCLUDES) && $(QTREE_REG_OUT) || exit 1; \
+	done
+	@echo "[qtree] split feature >= NumFeatures must fail"
+	@$(CC) $(WARN) -DQTREE_BAD_FEATURE -c $(QTREE_REG) -o /dev/null $(INCLUDES) 2>&1 | grep -q "a split feature is >= NumFeatures"
+	@echo "[qtree] child index past the pool must fail"
+	@$(CC) $(WARN) -DQTREE_BAD_CHILD -c $(QTREE_REG) -o /dev/null $(INCLUDES) 2>&1 | grep -q "child index is out of range"
+	@echo "[qtree] cyclic tree must fail inline expansion"
+	@$(CC) $(WARN) -DQTREE_BAD_CYCLE -c $(QTREE_REG) -o /dev/null $(INCLUDES) 2>&1 | grep -q "deeper than QTreeInlineMaxDepth (or cyclic)"
+	@echo "[qtree] GBDT tree_root past the pool must fail"
+	@$(CC) $(WARN) -DQTREE_BAD_ROOT -c $(QTREE_REG) -o /dev/null $(INCLUDES) 2>&1 | grep -q "tree_root index out of range"
+	@echo "[qtree] GBDT tree_class >= NumClasses must fail"
+	@$(CC) $(WARN) -DQTREE_BAD_CLASS -c $(QTREE_REG) -o /dev/null $(INCLUDES) 2>&1 | grep -q "tree_class out of range"
+	@echo "[qtree] all static-tree checks behaved as expected"
+
+# -----------------------------------------------------------------------------
 # ARM cross-compilation (build-only). HARD gate.
 #
 # The matrix above builds every gate corner with the host g++ and freestanding
