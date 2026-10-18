@@ -165,6 +165,7 @@ ISA-capability-gated SIMD specializations on the inner reduction loop of `QDense
 
 - **`apps/import_pytorch/tinymind_import.py`** -- PyTorch -> tinymind int8 importer (pure-numpy core). Caller assembles `Dense` / `Conv2D` / `BatchNorm2D` / `ReLU` / `Sigmoid` / `Tanh` / `Softmax` descriptors carrying numpy weights from `torch.state_dict`. `fuse_layers` folds Conv2D-then-BatchNorm pairs. `calibrate` streams data through the float reference with `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver` per layer. `emit_weights_header` writes a tinymind-format `weights.hpp`. No PyTorch dependency at module import
 - **`apps/import_onnx/tinymind_import_onnx.py`** -- QDQ-format ONNX importer. Walks `QuantizeLinear` / `DequantizeLinear` / `QLinearConv` / `QLinearMatMul` / `Relu` / `Sigmoid` / `Tanh` / `Softmax` from a model produced by `onnxruntime.quantization.quantize_static`, emits the same tinymind-format `weights.hpp`. The `onnx` package is imported lazily inside `parse_onnx_model`
+- **`apps/import_trees/tinymind_import_trees.py`** -- tree-ensemble importer. scikit-learn decision trees, random forests, extra trees and gradient boosting, XGBoost and LightGBM, as classifiers or regressors, become a C++14 header of `QStaticDecisionTree` / `QStaticGBDT` pools that runs under every qtree policy (inline, compact, walk). Integer features reproduce every split exactly; calibrated float features go onto a per-feature int8 / uint8 / int16 grid. `verify()` compiles the header and checks it bit-exact against the importer's reference
 
 ### Activation Functions
 
@@ -1146,6 +1147,7 @@ tinymind/
     import_pytorch/             # PyTorch -> tinymind int8 importer (numpy core)
     import_onnx/                # QDQ-format ONNX -> tinymind int8 importer
     anfis_train/                # Host ANFIS trainer (hybrid LSE + premise descent, numpy)
+    import_trees/               # scikit-learn / XGBoost / LightGBM trees -> qtree.hpp pools
 ```
 
 ## Documentation

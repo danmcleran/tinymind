@@ -179,7 +179,7 @@ The first runs (tinymind before #192) exposed four weak spots. All four are fixe
   - `arena_used_bytes()` reported 100–300 B less than the minimum arena `AllocateTensors()` accepts.
   - The per-operator profiler is compiled out of release builds, so a separate `release_with_logs` library is needed to profile.
   - A Keras `Flatten` with a dynamic batch dimension adds shape-computation operators unless the model is built with `batch_size=1`.
-- **tinymind:** header-only, with nothing to build or link. It has no `.tflite` importer. The bridge that copied the TFLite int8 parameters into tinymind layers was written for this benchmark. tinymind ships [PyTorch and ONNX importers](https://github.com/danmcleran/tinymind/tree/master/apps).
+- **tinymind:** header-only, with nothing to build or link. It has no `.tflite` importer. The bridge that copied the TFLite int8 parameters into tinymind layers was written for this benchmark. tinymind ships [PyTorch, ONNX and tree-ensemble importers](https://github.com/danmcleran/tinymind/tree/master/apps); the tree importer covers scikit-learn, XGBoost and LightGBM.
 
 ## Reproduce it
 

@@ -105,6 +105,38 @@ save an instruction per node over `int8_t`. The walking policies gain nothing
 from it, because they read the feature index at run time and use a
 register-offset load either way.
 
+## Importing a trained model
+
+[`apps/import_trees`](https://github.com/danmcleran/tinymind/tree/master/apps/import_trees)
+turns a scikit-learn, XGBoost or LightGBM tree model into a header of these
+compile-time pools:
+
+```python
+from tinymind_import_trees import FeatureQuant, export_trees
+
+model = export_trees(clf, X_train, "model.hpp", namespace="my_model",
+                     quant=FeatureQuant.from_data(X_train, "int8"))
+model.verify(X_test)   # compiles the header, checks every policy bit-exact
+```
+
+```cpp
+my_model::InputType q[my_model::NumFeatures];
+my_model::quantizeFeatures(x, q);
+std::size_t cls = my_model::predict<tinymind::QTreeCompactEval>(q);
+```
+
+It covers single trees, random forests, extra trees and gradient boosting
+from scikit-learn, XGBoost `gbtree` models and LightGBM models, as
+classifiers or regressors.
+
+Features that are already integers (ADC counts, pixels, bins) reproduce every
+split exactly. Calibrated float features agree except for samples within one
+grid step of a threshold, and the importer reports the agreement.
+
+The model's base score isn't read from library metadata. It's measured from
+the model's own outputs, which also checks that the trees were parsed
+correctly.
+
 See the [`gbdt_tabular_int8`]({{ site.baseurl }}/examples/gbdt_tabular_int8)
 example for a 3-class ensemble, the int8-vs-float region agreement check, and
 the decision-region map.
