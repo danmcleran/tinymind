@@ -114,6 +114,40 @@ static_ram=204
 arena_used=0
 # end bench
 level=O3
+image=tm_rf_compact
+# begin bench
+name=tinymind_int8/rf_compact
+setup_rc=0
+setup_cycles=47
+infer_min=1557
+infer_med=1649
+infer_max=1688
+n_test=32
+correct=31
+hash=0xC2E23534
+hash_match=1
+stack_bytes=132
+static_ram=204
+arena_used=0
+# end bench
+level=O3
+image=tm_rf_compact_u8
+# begin bench
+name=tinymind_uint8/rf_compact
+setup_rc=0
+setup_cycles=47
+infer_min=1557
+infer_med=1649
+infer_max=1688
+n_test=32
+correct=31
+hash=0xC2E23534
+hash_match=1
+stack_bytes=132
+static_ram=204
+arena_used=0
+# end bench
+level=O3
 image=eml_rf_inline
 # begin bench
 name=emlearn_int16_inline/rf
@@ -196,6 +230,8 @@ size image=eml_mlp flash=30440 ram=1004
 size image=tm_rf flash=18220 ram=204
 size image=tm_rf_inline flash=13648 ram=204
 size image=tm_rf_inline_u8 flash=13232 ram=204
+size image=tm_rf_compact flash=8388 ram=204
+size image=tm_rf_compact_u8 flash=8388 ram=204
 size image=eml_rf_inline flash=13564 ram=268
 size image=eml_rf_loadable flash=12448 ram=296
 size image=tflm_cmsis_mlp_int8 flash=48752 ram=2008 fits=no

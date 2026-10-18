@@ -228,7 +228,9 @@ and emits it for both. tinymind gets it two ways, plus a vote loop (`qtree.hpp` 
 `tinymind::QDecisionTree` per tree walking a `QTreeNode<int8_t>` pool at run time (`tm_rf`), and the same
 pool as `constexpr` data in one `tinymind::QStaticDecisionTree` per tree with the default `QTreeInlineEval`
 policy (#223), which expands every node at compile time into a compare against an immediate threshold and a
-branch (`tm_rf_inline`; `tm_rf_inline_u8` reads the same bytes as `uint8_t`). emlearn runs through
+branch (`tm_rf_inline`; `tm_rf_inline_u8` reads the same bytes as `uint8_t`), and with the
+`QTreeCompactEval` policy, which walks a packed copy of the pool built at compile time: decision nodes only,
+4 bytes each, in pre-order, and a deduplicated int8 leaf table (`tm_rf_compact`, `tm_rf_compact_u8`). emlearn runs through
 `emlearn.convert()` with both of its methods: `inline` (one generated if/else function per tree, integer votes) and `loadable` (node data walked by
 `eml_trees_predict`, which tallies votes in float). Features are 2 x the pixel value; see friction below for
 why. Each backend's predictions hash-match its own host reference on the board.
@@ -236,6 +238,8 @@ why. Each backend's predictions hash-match its own host reference on the board.
 | Framework | O2 cycles | O3 cycles | O3 us @32MHz | flash O2 / O3 (B) | RAM (B) | acc | matches own host reference |
 |---|---:|---:|---:|---:|---:|---:|---|
 | tinymind int8 (QDecisionTree x10 + vote) | 2,581 | 2,524 | 79 | 12,800 / 12,912 | 80 | 96.88% | yes |
+| tinymind int8 (QStaticDecisionTree compact x10 + vote) | 1,705 | 1,649 | 52 | 2,984 / 3,080 | 72 | 96.88% | yes |
+| tinymind uint8 (QStaticDecisionTree compact x10 + vote) | 1,705 | 1,649 | 52 | 2,984 / 3,080 | 72 | 96.88% | yes |
 | tinymind int8 (QStaticDecisionTree inline x10 + vote) | 919 | 872 | 27 | 6,832 / 8,340 | 120 | 96.88% | yes |
 | tinymind uint8 (QStaticDecisionTree inline x10 + vote) | 872 | 845 | 26 | 6,180 / 7,924 | 112 | 96.88% | yes |
 | emlearn int16 (inline) | 917 | 841 | 26 | 6,032 / 8,256 | 184 | 96.88% | yes |
@@ -275,9 +279,14 @@ Findings:
    features load with Thumb-1's immediate-offset `LDRB` instead of a register-offset `LDRSB`, one
    instruction less per node: 872 at `-O2` (ahead of emlearn's 917) and 845 at `-O3` (emlearn 841, within
    0.5%), in 7.9 KB at `-O3` against emlearn's 8.3 KB and 6.2 KB at `-O2` against 6.0 KB. It also takes
-   less RAM (112 B to 184 B). The walk stays the smaller choice for large ensembles, where code per node
-   outgrows 12-byte nodes. Against emlearn's data-driven `loadable` method, the walk is 2.5x faster, but
-   that gap is mostly emlearn tallying votes in software float. Accuracy is identical on the subset; over
+   less RAM (112 B to 184 B). Where flash matters more than cycles, `QTreeCompactEval` packs the same
+   pool at compile time into 4-byte decision nodes in pre-order (so the walk needs no cycle guard) and a
+   deduplicated int8 leaf table: the whole forest is 3.0 KB at `-O2`, half of emlearn's smallest (6.0 KB)
+   and a quarter of the 12-byte-node walk, at 1,705 / 1,649 cycles, 1.5x faster than that walk and about
+   half the speed of inline. The compact walk reads each node's feature index at run time, so `uint8_t`
+   features gain nothing there; both builds are the same code. Against emlearn's data-driven `loadable`
+   method, the compact walk is 3.7-3.9x faster in 42% of the flash, and even the 12-byte-node walk is 2.5x
+   faster, though that gap is mostly emlearn tallying votes in software float. Accuracy is identical on the subset; over
    all 360 test samples, emlearn's predictions agree with the forest on 358 (see friction).
 
 ## Integration friction observed

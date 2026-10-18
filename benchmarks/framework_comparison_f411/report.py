@@ -82,6 +82,8 @@ NICE = {
     "tm_rf": "tinymind int8 (QDecisionTree x10 + vote)",
     "tm_rf_inline": "tinymind int8 (QStaticDecisionTree inline x10 + vote)",
     "tm_rf_inline_u8": "tinymind uint8 (QStaticDecisionTree inline x10 + vote)",
+    "tm_rf_compact": "tinymind int8 (QStaticDecisionTree compact x10 + vote)",
+    "tm_rf_compact_u8": "tinymind uint8 (QStaticDecisionTree compact x10 + vote)",
     "eml_rf_inline": "emlearn int16 (inline)", "eml_rf_loadable": "emlearn int16 (loadable)",
 }
 if BOARD["mhz"] == 32:
@@ -90,7 +92,8 @@ if BOARD["mhz"] == 32:
 ORDER = {
     "mlp": ["tm_mlp", "tm_mlp_dsp", "tflm_cmsis_mlp_int8", "tflm_ref_mlp_int8", "tflm_cmsis_mlp_f32", "eml_mlp"],
     "kws": ["tm_kws", "tm_kws_dsp", "tflm_cmsis_kws_int8", "tflm_ref_kws_int8", "tflm_cmsis_kws_f32"],
-    "rf": ["tm_rf", "tm_rf_inline", "tm_rf_inline_u8", "eml_rf_inline", "eml_rf_loadable"],
+    "rf": ["tm_rf", "tm_rf_compact", "tm_rf_compact_u8", "tm_rf_inline", "tm_rf_inline_u8",
+           "eml_rf_inline", "eml_rf_loadable"],
 }
 
 data = {lv: parse(lv) for lv in LEVELS}

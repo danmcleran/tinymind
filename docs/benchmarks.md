@@ -131,9 +131,10 @@ emlearn has no int8 MLP, so the MLP row above is int8 against software float. Tr
 | Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM | Accuracy |
 |---|---:|---:|---:|---:|---:|---:|
 | tinymind int8, run-time walk (`QDecisionTree`) | 2,581 | 2,524 | 79 µs | 12.8–12.9 KB | 80 B | 96.88% |
-| tinymind int8, compile-time inline (`QStaticDecisionTree`) | 919 | 872 | 27 µs | 6.8–8.3 KB | 120 B | 96.88% |
-| **tinymind uint8, compile-time inline (`QStaticDecisionTree`)** | **872** | 845 | 26 µs | 6.2–**7.9 KB** | **112 B** | 96.88% |
-| emlearn int16, inline (generated if/else) | 917 | **841** | 26 µs | **6.0**–8.3 KB | 184 B | 96.88% |
+| **tinymind int8, compile-time compact (`QStaticDecisionTree`, `QTreeCompactEval`)** | 1,705 | 1,649 | 52 µs | **3.0–3.1 KB** | **72 B** | 96.88% |
+| tinymind int8, compile-time inline (`QStaticDecisionTree`, `QTreeInlineEval`) | 919 | 872 | 27 µs | 6.8–8.3 KB | 120 B | 96.88% |
+| **tinymind uint8, compile-time inline (`QStaticDecisionTree`, `QTreeInlineEval`)** | **872** | 845 | 26 µs | 6.2–7.9 KB | 112 B | 96.88% |
+| emlearn int16, inline (generated if/else) | 917 | **841** | 26 µs | 6.0–8.3 KB | 184 B | 96.88% |
 | emlearn int16, loadable | 6,267 | 6,409 | 200 µs | 7.1–7.1 KB | 336 B | 96.88% |
 
 A tree walk's length depends on the input, so the spread between fastest and slowest inference is 7–10% here (26% for emlearn's `loadable`), against under 0.1% for the networks.
@@ -144,7 +145,7 @@ A tree walk's length depends on the input, so the spread between fastest and slo
 
 **On the MLP, int8 against software float is 20×** (35.6k vs 712k cycles). That is not int8 against int8, since emlearn has no int8 MLP; it is what each library offers for this network on a part without an FPU.
 
-**The random forest went from a 3× loss to a tie.** The first run walked the forest with `QDecisionTree`: about 20 Thumb-1 instructions per node and a full 12-byte node per leaf, against emlearn's generated load, compare-immediate and branch. [`QStaticDecisionTree`]({{ site.baseurl }}/architectures/decision-trees#compile-time-models) (#223) generates that same code from the same node pool at compile time, so the pool is not stored at all. It is 2.9× faster than the walk in about half its size. With `uint8_t` features, which load with Thumb-1's immediate-offset `LDRB` instead of a register-offset `LDRSB`, it beats emlearn at `-O2` (872 vs 917 cycles), is within 0.5% at `-O3` (845 vs 841), is smaller at `-O3` (7.9 vs 8.3 KB) and uses less RAM (112 vs 184 B). The model is also checked when it compiles: a split on a feature the input does not have, or a child index outside the pool, is a build error instead of an out-of-bounds read.
+**The random forest went from a 3× loss to a tie.** The first run walked the forest with `QDecisionTree`: about 20 Thumb-1 instructions per node and a full 12-byte node per leaf, against emlearn's generated load, compare-immediate and branch. [`QStaticDecisionTree`]({{ site.baseurl }}/architectures/decision-trees#compile-time-models) (#223) generates that same code from the same node pool at compile time, so the pool is not stored at all. It is 2.9× faster than the walk in about half its size. With `uint8_t` features, which load with Thumb-1's immediate-offset `LDRB` instead of a register-offset `LDRSB`, it beats emlearn at `-O2` (872 vs 917 cycles), is within 0.5% at `-O3` (845 vs 841), is smaller at `-O3` (7.9 vs 8.3 KB) and uses less RAM (112 vs 184 B). When flash matters more than cycles, the compact policy packs the same pool at compile time into 4-byte decision nodes in pre-order and a deduplicated int8 leaf table: the whole forest is 3.0 KB, half of emlearn's smallest and a quarter of the walk, at 1.5× the walk's speed and about half of inline's. Against emlearn's data-driven `loadable` method it is 3.7–3.9× faster in 42% of the flash. The model is also checked when it compiles: a split on a feature the input does not have, or a child index outside the pool, is a build error instead of an out-of-bounds read.
 
 **M0+ against M4F, same code.** The MLP takes 1.8× the cycles of the F411's scalar build and the CNN 2.9×. Requantization's 64-bit multiply becomes a library call (`__aeabi_lmul`) on ARMv6-M, and the 3×3 stem is 69% of the CNN, so those are where M0+ tuning would start.
 

@@ -170,7 +170,8 @@ ti = [HDR, f"""#pragma once
 #include <cstdint>
 #include "qtree.hpp"
 
-// Same forest as rf_tinymind.hpp, as tinymind::QStaticDecisionTree (QTreeInlineEval).
+// Same forest as rf_tinymind.hpp, as tinymind::QStaticDecisionTree; predict<In, EvalPolicy>
+// picks the evaluation policy (QTreeInlineEval by default, or QTreeCompactEval / QTreeWalkEval).
 namespace tm_rf_inline {{
 
 using Node = tinymind::QTreeNode<int8_t>;
@@ -182,12 +183,12 @@ for k, (r, c) in enumerate(zip(roots, counts)):
     ti += [f"        {{{f}, {th}, {l}, {rr}, {v}}},\n" for f, th, l, rr, v in nodes[r:r + c]]
     ti.append("    };\n};\n")
 ti.append("""
-template<typename InStorage>
+template<typename InStorage, typename EvalPolicy = tinymind::QTreeInlineEval>
 inline int predict(const InStorage* x)
 {
     int32_t votes[NumClasses] = {};
 """)
-ti += [f"    ++votes[tinymind::QStaticDecisionTree<InStorage, Tree{k}, 64>::predict(x)];\n" for k in range(N_TREES)]
+ti += [f"    ++votes[tinymind::QStaticDecisionTree<InStorage, Tree{k}, 64, EvalPolicy>::predict(x)];\n" for k in range(N_TREES)]
 ti.append("""    int best = 0;
     for (std::size_t c = 1; c < NumClasses; ++c)
     {

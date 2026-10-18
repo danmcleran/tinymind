@@ -118,8 +118,10 @@ else
 # ARMv6-M has no SMLAD, so no +dsp images (the ARM_DSP gate #errors there).
 # tm_rf / eml_rf_*: integer random forest, the one model emlearn also runs
 # integer-only (it has no int8 MLP); see gen/make_trees.py. tm_rf walks the
-# QTreeNode pool; tm_rf_inline{,_u8} expand it at compile time (QStaticDecisionTree).
-IMAGES = baseline tm_mlp tm_kws eml_mlp tm_rf tm_rf_inline tm_rf_inline_u8 eml_rf_inline eml_rf_loadable
+# QTreeNode pool; tm_rf_inline{,_u8} expand it at compile time (QStaticDecisionTree);
+# tm_rf_compact{,_u8} walk a packed copy built at compile time (QTreeCompactEval).
+IMAGES = baseline tm_mlp tm_kws eml_mlp tm_rf tm_rf_inline tm_rf_inline_u8 tm_rf_compact tm_rf_compact_u8 \
+  eml_rf_inline eml_rf_loadable
 PROF_IMAGES = tm_mlp_prof tm_kws_prof
 # Images that do not fit the L031. `make BOARD=l031 fit` links them against an
 # unbounded memory map (board/unbounded.ld) to report what they would need.
@@ -156,10 +158,19 @@ $(B)/mlp_emlearn_logits.h: gen/out/mlp_emlearn.h | $(B) $(DATA_DEPS)
 $(B)/baseline.elf: fw/be_baseline.cpp $(HARNESS) | $(B) $(DATA_DEPS)
 	$(CXX) $(CXXFLAGS) $(INC) -o $@ $^ $(LD)
 
+# Every tinymind image depends on the library and generated headers, so a
+# header change rebuilds it. Without this an image built before a cpp/ edit is
+# silently re-flashed and re-measured. -MMD cannot do it here: one compile+link
+# command per image keeps only the last source's dependencies. Coarse (any
+# header rebuilds every tinymind image), but it cannot go stale. Recipes pass
+# only the sources ($(SOURCES_OF)) to the compiler.
+TM_HDRS = $(shell find $(TM)/cpp $(TM)/include -name '*.hpp' -o -name '*.h') $(wildcard gen/out/*.hpp gen/out/*.h fw/*.hpp)
+SOURCES_OF = $(filter %.c %.cpp,$(1))
+
 # $(1)=image $(2)=extra defines
 define tm_rule
-$(B)/$(1).elf: fw/be_tinymind.cpp $$(HARNESS) | $$(B) $$(DATA_DEPS)
-	$$(CXX) $$(CXXFLAGS) $$(INC) $$(TM_INC) $(2) -o $$@ $$^ $$(LD)
+$(B)/$(1).elf: fw/be_tinymind.cpp $$(HARNESS) $$(TM_HDRS) | $$(B) $$(DATA_DEPS)
+	$$(CXX) $$(CXXFLAGS) $$(INC) $$(TM_INC) $(2) -o $$@ $$(call SOURCES_OF,$$^) $$(LD)
 endef
 $(eval $(call tm_rule,tm_mlp,-DMODEL_MLP))
 $(eval $(call tm_rule,tm_mlp_dsp,-DMODEL_MLP $(DSP)))
@@ -188,12 +199,14 @@ $(eval $(call tflm_rule,tflm_cmsis_kws_f32,$(TFLM_CMSIS),-DMODEL_KWS -DDTYPE_F32
 
 # $(1)=image $(2)=extra defines
 define tm_rf_rule
-$(B)/$(1).elf: fw/be_tinymind_rf.cpp $$(HARNESS) | $$(B) $$(DATA_DEPS)
-	$$(CXX) $$(CXXFLAGS) $$(INC) $$(TM_INC) $(2) -o $$@ $$^ $$(LD)
+$(B)/$(1).elf: fw/be_tinymind_rf.cpp $$(HARNESS) $$(TM_HDRS) | $$(B) $$(DATA_DEPS)
+	$$(CXX) $$(CXXFLAGS) $$(INC) $$(TM_INC) $(2) -o $$@ $$(call SOURCES_OF,$$^) $$(LD)
 endef
 $(eval $(call tm_rf_rule,tm_rf,))
 $(eval $(call tm_rf_rule,tm_rf_inline,-DTM_RF_INLINE))
 $(eval $(call tm_rf_rule,tm_rf_inline_u8,-DTM_RF_INLINE -DTM_RF_U8))
+$(eval $(call tm_rf_rule,tm_rf_compact,-DTM_RF_INLINE -DTM_RF_COMPACT))
+$(eval $(call tm_rf_rule,tm_rf_compact_u8,-DTM_RF_INLINE -DTM_RF_COMPACT -DTM_RF_U8))
 
 # $(1)=image $(2)=extra defines
 define eml_rf_rule

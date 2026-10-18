@@ -7665,6 +7665,8 @@ BOOST_AUTO_TEST_CASE(qstatic_tree_policies_match_runtime_walk)
     typedef tinymind::QStaticDecisionTree<int8_t, QStaticTreeTestPool, 4, tinymind::QTreeInlineEval> InlineTree;
     typedef tinymind::QStaticDecisionTree<int8_t, QStaticTreeTestPool, 4, tinymind::QTreeWalkEval>   WalkTree;
     typedef tinymind::QStaticDecisionTree<uint8_t, QStaticTreeTestPool, 4, tinymind::QTreeInlineEval> InlineTreeU8;
+    typedef tinymind::QStaticDecisionTree<int8_t, QStaticTreeTestPool, 4, tinymind::QTreeCompactEval> CompactTree;
+    typedef tinymind::QStaticDecisionTree<uint8_t, QStaticTreeTestPool, 4, tinymind::QTreeCompactEval> CompactTreeU8;
     BOOST_TEST(InlineTree::NumNodes == 11u);
 
     tinymind::QDecisionTree<int8_t, int8_t, 11, 4> runtimeTree;
@@ -7685,6 +7687,7 @@ BOOST_AUTO_TEST_CASE(qstatic_tree_policies_match_runtime_walk)
         const int32_t leaf = runtimeTree.predict(x);
         BOOST_REQUIRE(InlineTree::predict(x) == leaf);
         BOOST_REQUIRE(WalkTree::predict(x) == leaf);
+        BOOST_REQUIRE(CompactTree::predict(x) == leaf);
         ++leafSeen[leaf];
 
         // Reference for the uint8 view: walk with the values widened to int32.
@@ -7695,6 +7698,7 @@ BOOST_AUTO_TEST_CASE(qstatic_tree_policies_match_runtime_walk)
             n = (static_cast<int32_t>(xu[node.feature]) <= node.threshold) ? node.left : node.right;
         }
         BOOST_REQUIRE(InlineTreeU8::predict(xu) == QStaticTreeTestPool::nodes[n].leaf_value);
+        BOOST_REQUIRE(CompactTreeU8::predict(xu) == QStaticTreeTestPool::nodes[n].leaf_value);
     }
     // The sweep must reach every leaf, or the agreement proves less than it says.
     for (int leaf = 1; leaf <= 6; ++leaf)
@@ -7703,10 +7707,45 @@ BOOST_AUTO_TEST_CASE(qstatic_tree_policies_match_runtime_walk)
     }
 }
 
+BOOST_AUTO_TEST_CASE(qtree_compact_layout)
+{
+    // The packed form of QStaticTreeTestPool: decision nodes only, in
+    // pre-order, 4 bytes each (uint8 feature and references, int8
+    // threshold), and the six distinct leaves once each, in int8.
+    typedef tinymind::detail::QCompactTree<QStaticTreeTestPool, 0> Packed;
+    const std::size_t numInternal = Packed::NumInternal;
+    const std::size_t numLeaves = Packed::NumLeaves;
+    BOOST_TEST(numInternal == 5u);
+    BOOST_TEST(numLeaves == 6u);
+    BOOST_TEST(sizeof(Packed::Node) == 4u);
+    BOOST_TEST(sizeof(Packed::RefType) == 1u);
+    BOOST_TEST(sizeof(Packed::LeafType) == 1u);
+    const uint8_t leafTag = Packed::LeafTag;
+    BOOST_TEST(leafTag == 0x80u);
+
+    // Pre-order: a decision child always has a larger index than its parent,
+    // which is what lets the walk run without a cycle guard.
+    for (std::size_t i = 0; i < numInternal; ++i)
+    {
+        const Packed::Node& node = Packed::table.nodes[i];
+        if (node.left < leafTag)
+        {
+            BOOST_TEST(node.left > i);
+        }
+        if (node.right < leafTag)
+        {
+            BOOST_TEST(node.right > i);
+        }
+    }
+    // The left decision child of a decision node is the next node.
+    BOOST_TEST(Packed::table.nodes[0].left == 1u);
+}
+
 BOOST_AUTO_TEST_CASE(qstatic_gbdt_policies_match_qgbdt)
 {
     typedef tinymind::QStaticGBDT<int8_t, QStaticGbdtTestPool, 2, 2, tinymind::QTreeInlineEval> InlineGbdt;
     typedef tinymind::QStaticGBDT<int8_t, QStaticGbdtTestPool, 2, 2, tinymind::QTreeWalkEval>   WalkGbdt;
+    typedef tinymind::QStaticGBDT<int8_t, QStaticGbdtTestPool, 2, 2, tinymind::QTreeCompactEval> CompactGbdt;
     BOOST_TEST(InlineGbdt::NumTrees == 3u);
 
     tinymind::QGBDT<int8_t, int8_t, 3, 2, 9, 2> runtimeGbdt;
@@ -7723,15 +7762,20 @@ BOOST_AUTO_TEST_CASE(qstatic_gbdt_policies_match_qgbdt)
             int32_t ref[2];
             int32_t inl[2];
             int32_t walk[2];
+            int32_t compact[2];
             runtimeGbdt.forward(x, ref);
             InlineGbdt::forward(x, inl);
             WalkGbdt::forward(x, walk);
+            CompactGbdt::forward(x, compact);
             BOOST_REQUIRE(inl[0] == ref[0]);
             BOOST_REQUIRE(inl[1] == ref[1]);
             BOOST_REQUIRE(walk[0] == ref[0]);
             BOOST_REQUIRE(walk[1] == ref[1]);
+            BOOST_REQUIRE(compact[0] == ref[0]);
+            BOOST_REQUIRE(compact[1] == ref[1]);
             BOOST_REQUIRE(InlineGbdt::predict(x) == runtimeGbdt.predict(x));
             BOOST_REQUIRE(WalkGbdt::predict(x) == runtimeGbdt.predict(x));
+            BOOST_REQUIRE(CompactGbdt::predict(x) == runtimeGbdt.predict(x));
         }
     }
 
