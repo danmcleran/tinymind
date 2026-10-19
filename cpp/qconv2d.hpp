@@ -112,15 +112,12 @@ namespace tinymind {
          * contribution w * (x - zp) is zero, which is what TFLite pads
          * with), so the layer needs no padded copy of the whole input.
          */
-        template<typename InputType, std::size_t H_, std::size_t W_, std::size_t C_,
-                 std::size_t KH_, std::size_t StrideH_,
-                 std::size_t PadTop_, std::size_t PadBottom_, std::size_t PadLeft_, std::size_t PadRight_,
-                 bool Padded = ((PadTop_ | PadBottom_ | PadLeft_ | PadRight_) != 0)>
-        struct ConvRowSource
+        template<typename InputType, std::size_t W_, std::size_t C_, std::size_t KH_, std::size_t StrideH_>
+        struct ConvRowsDirect
         {
             const InputType* input;
 
-            ConvRowSource(const InputType* in, InputType) : input(in)
+            ConvRowsDirect(const InputType* in, InputType) : input(in)
             {
             }
 
@@ -136,8 +133,8 @@ namespace tinymind {
 
         template<typename InputType, std::size_t H_, std::size_t W_, std::size_t C_,
                  std::size_t KH_, std::size_t StrideH_,
-                 std::size_t PadTop_, std::size_t PadBottom_, std::size_t PadLeft_, std::size_t PadRight_>
-        struct ConvRowSource<InputType, H_, W_, C_, KH_, StrideH_, PadTop_, PadBottom_, PadLeft_, PadRight_, true>
+                 std::size_t PadTop_, std::size_t PadLeft_, std::size_t PadRight_>
+        struct ConvRowsPadded
         {
             static constexpr std::size_t RowLength = (W_ + PadLeft_ + PadRight_) * C_;
 
@@ -146,11 +143,11 @@ namespace tinymind {
                           "raise the limit, or pad with QPad2D and use an unpadded layer.");
 
             InputType band[KH_ * RowLength];
-            const InputType* input;
+            const InputType* unpadded; // the layer input the padded rows are built from
             InputType zeroPoint;
             std::size_t next; // the next padded row to build
 
-            ConvRowSource(const InputType* in, InputType zp) : input(in), zeroPoint(zp), next(0)
+            ConvRowsPadded(const InputType* in, InputType zp) : unpadded(in), zeroPoint(zp), next(0)
             {
             }
 
@@ -165,7 +162,7 @@ namespace tinymind {
                     }
                     return;
                 }
-                const InputType* const src = input + (r - PadTop_) * W_ * C_;
+                const InputType* const src = unpadded + (r - PadTop_) * W_ * C_;
                 for (std::size_t i = 0; i < PadLeft_ * C_; ++i)
                 {
                     dst[i] = zeroPoint;
@@ -197,6 +194,26 @@ namespace tinymind {
                     rowPointers[kh] = band + ((top + kh) % KH_) * RowLength;
                 }
             }
+        };
+
+        // ConvRowsDirect for an unpadded layer, ConvRowsPadded otherwise. (Two
+        // class names rather than a specialization: cppcheck attributes a
+        // specialization's constructor to the primary template's members.)
+        template<typename InputType, std::size_t H_, std::size_t W_, std::size_t C_,
+                 std::size_t KH_, std::size_t StrideH_,
+                 std::size_t PadTop_, std::size_t PadBottom_, std::size_t PadLeft_, std::size_t PadRight_,
+                 bool Padded = ((PadTop_ | PadBottom_ | PadLeft_ | PadRight_) != 0)>
+        struct ConvRowSource
+        {
+            typedef ConvRowsDirect<InputType, W_, C_, KH_, StrideH_> type;
+        };
+
+        template<typename InputType, std::size_t H_, std::size_t W_, std::size_t C_,
+                 std::size_t KH_, std::size_t StrideH_,
+                 std::size_t PadTop_, std::size_t PadBottom_, std::size_t PadLeft_, std::size_t PadRight_>
+        struct ConvRowSource<InputType, H_, W_, C_, KH_, StrideH_, PadTop_, PadBottom_, PadLeft_, PadRight_, true>
+        {
+            typedef ConvRowsPadded<InputType, H_, W_, C_, KH_, StrideH_, PadTop_, PadLeft_, PadRight_> type;
         };
 
         // Gather from a window whose kernel rows are RowStride apart (an
@@ -307,8 +324,8 @@ namespace tinymind {
             constexpr bool padded = (PadTop_ | PadBottom_ | PadLeft_ | PadRight_) != 0;
 
             alignas(alignof(InputType) > 4 ? alignof(InputType) : 4) InputType patches[tileMax * slot];
-            ConvRowSource<InputType, H_, W_, InChannels_, KH_, StrideH_,
-                          PadTop_, PadBottom_, PadLeft_, PadRight_> source(input, zeroPoint);
+            typename ConvRowSource<InputType, H_, W_, InChannels_, KH_, StrideH_,
+                                   PadTop_, PadBottom_, PadLeft_, PadRight_>::type source(input, zeroPoint);
             const InputType* rows[KH_];
 
             for (std::size_t oh = 0; oh < OutputHeight; ++oh)
@@ -460,8 +477,8 @@ namespace tinymind {
             constexpr std::size_t windowLength = KH_ * KW_ * InChannels_;
             constexpr std::size_t pixelStep = StrideW_ * InChannels_;
 
-            ConvRowSource<InputType, H_, W_, InChannels_, KH_, StrideH_,
-                          PadTop_, PadBottom_, PadLeft_, PadRight_> source(input, zeroPoint);
+            typename ConvRowSource<InputType, H_, W_, InChannels_, KH_, StrideH_,
+                                   PadTop_, PadBottom_, PadLeft_, PadRight_>::type source(input, zeroPoint);
             const InputType* rows[KH_];
 
             for (std::size_t oh = 0; oh < OutputHeight; ++oh)
