@@ -25,7 +25,7 @@ F411 measured 2026-10-13, Cortex-M0+ measured 2026-10-17, with the code in [`ben
 
 ### Models
 
-- **MLP 64 → 32 → 16 → 10** (ReLU), trained on the scikit-learn digits dataset and evaluated on 360 held-out samples. All three frameworks run it.
+- **MLP 64 → 32 → 16 → 10** (ReLU), trained on the scikit-learn digits dataset and evaluated on 360 held-out samples. All three frameworks run it. The digits are scikit-learn's copy of the UCI [Optical Recognition of Handwritten Digits](https://doi.org/10.24432/C50P49) dataset (Alpaydin and Kaynak, 1998), licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 - **Keyword-spotting-style CNN** with the same shape as [`examples/kws_cortex_m_int8`](https://github.com/danmcleran/tinymind/tree/master/examples/kws_cortex_m_int8): 20×20×1 input → conv 3×3×8 → max-pool 2×2 → depthwise 3×3 → pointwise 8→16 → average-pool → dense 10. It uses random weights, so it measures speed and exactness, not accuracy. tinymind and TFLM only; emlearn has no convolution.
 
 ### Keeping it fair

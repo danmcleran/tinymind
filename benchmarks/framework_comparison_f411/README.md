@@ -22,6 +22,10 @@ it.
 
 * One float model per network is the source of truth (`gen/make_models.py`). The MLP is trained on
   scikit-learn digits. The KWS CNN has random weights, so it measures speed and exactness only.
+* The digits data is scikit-learn's copy of the UCI "Optical Recognition of Handwritten Digits" dataset
+  (E. Alpaydin and C. Kaynak, 1998, https://doi.org/10.24432/C50P49), licensed
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). `gen/out/mlp_data.h` and `gen/out/rf_data.h`
+  contain 360 of its samples with their labels, as raw pixels, scaled floats or int8, and carry the same credit.
 * TFLite post-training int8 quantization with TF 2.21 defaults: per-channel weights for both conv and dense.
 * The **same int8 weights, biases and requantizer multipliers** are lifted out of the `.tflite` file and
   emitted as tinymind `QConv2DPerChannel` / `QDepthwiseConv2D` / `QPointwiseConv2DPerChannel` / pool layers
