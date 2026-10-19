@@ -2,6 +2,9 @@
 #pragma once
 #include <stdint.h>
 
+// Test samples: UCI Optical Recognition of Handwritten Digits (Alpaydin & Kaynak, 1998),
+// https://doi.org/10.24432/C50P49, licensed CC BY 4.0, via sklearn.datasets.load_digits.
+
 // sklearn 1.9.1, emlearn 0.23.2. Test accuracy: forest predict() 0.9222, majority vote 0.9056, emlearn 0.9028; emlearn agrees with the vote on 358/360.
 // Hashes: FNV-1a over the predicted class of each test sample, whole set and first 32.
 #define RF_N_TEST 360

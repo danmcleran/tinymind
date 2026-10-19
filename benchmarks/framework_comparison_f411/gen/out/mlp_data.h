@@ -2,6 +2,9 @@
 #pragma once
 #include <stdint.h>
 
+// Test samples: UCI Optical Recognition of Handwritten Digits (Alpaydin & Kaynak, 1998),
+// https://doi.org/10.24432/C50P49, licensed CC BY 4.0, via sklearn.datasets.load_digits.
+
 #define MLP_N_TEST 360
 #define MLP_N_IN 64
 #define MLP_N_OUT 10
