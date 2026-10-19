@@ -20,8 +20,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-"""Turn results/raw_<LEVEL>.txt into results/REPORT.md (F411, the default), or
-results/raw_l031_<LEVEL>.txt into results/REPORT_l031.md with `report.py l031`.
+"""Turn results/raw_<LEVEL>.txt into results/REPORT.md (F411, the default),
+results/raw_l031_<LEVEL>.txt into results/REPORT_l031.md with `report.py l031`,
+or results/raw_mlperf_<LEVEL>.txt (SUITE=mlperf) into results/REPORT_mlperf.md
+with `report.py mlperf`.
 
 flash = image flash - baseline image flash - embedded test-set bytes
 ram   = (.data+.bss - baseline) + (peak stack - baseline peak stack)
@@ -35,11 +37,14 @@ import sys
 BOARDS = {
     "f411": {"raw": "results/raw_{lv}.txt", "build": "build/{lv}", "mhz": 100, "out": "results/REPORT.md"},
     "l031": {"raw": "results/raw_l031_{lv}.txt", "build": "build/l031/{lv}", "mhz": 32, "out": "results/REPORT_l031.md"},
+    "mlperf": {"raw": "results/raw_mlperf_{lv}.txt", "build": "build/mlperf/{lv}", "mhz": 100,
+               "out": "results/REPORT_mlperf.md"},
 }
 BOARD = BOARDS[sys.argv[1] if len(sys.argv) > 1 else "f411"]
+MLPERF = BOARD["out"].endswith("_mlperf.md")
 LEVELS = ["O2", "O3"]
 TEST_SYMS = ("mlp_test_x_i8", "mlp_test_x_f32", "mlp_test_y", "kws_test_x_i8", "kws_test_x_f32",
-             "rf_test_x_i8", "rf_test_y")
+             "rf_test_x_i8", "rf_test_y", "mlperf_kws_test_x_i8", "mlperf_ic_test_x_i8")
 
 
 def parse(level):
@@ -86,6 +91,9 @@ NICE = {
     "tm_rf_compact_u8": "tinymind uint8 (QStaticDecisionTree compact x10 + vote)",
     "eml_rf_inline": "emlearn int16 (inline)", "eml_rf_loadable": "emlearn int16 (loadable)",
 }
+for m in ("kws", "ic"):
+    NICE.update({f"tm_mlperf_{m}": "tinymind int8 (scalar)", f"tm_mlperf_{m}_dsp": "tinymind int8 (+SMLAD)",
+                 f"tflm_cmsis_mlperf_{m}_int8": "TFLM int8 (CMSIS-NN)", f"tflm_ref_mlperf_{m}_int8": "TFLM int8 (reference)"})
 if BOARD["mhz"] == 32:
     # No FPU on the L031: emlearn's MLP, its only MLP path, runs in software float.
     NICE["eml_mlp"] = "emlearn float32 (only MLP path; software float)"
@@ -95,13 +103,22 @@ ORDER = {
     "rf": ["tm_rf", "tm_rf_compact", "tm_rf_compact_u8", "tm_rf_inline", "tm_rf_inline_u8",
            "eml_rf_inline", "eml_rf_loadable"],
 }
+for m in ("kws", "ic"):
+    ORDER[f"mlperf_{m}"] = [f"tm_mlperf_{m}", f"tm_mlperf_{m}_dsp", f"tflm_cmsis_mlperf_{m}_int8",
+                            f"tflm_ref_mlperf_{m}_int8"]
 
 data = {lv: parse(lv) for lv in LEVELS}
 out = []
 mhz = BOARD["mhz"]
-n_mlp = data["O2"][0]["tm_mlp"]["n_test"]
-models = [("mlp", f"MLP 64-32-16-10, sklearn digits ({n_mlp} test samples)"),
-          ("kws", "KWS CNN 20x20x1 -> conv3x3x8 -> maxpool -> dw3x3 -> pw16 -> avgpool -> fc10")]
+if MLPERF:
+    models = [("mlperf_kws", "MLPerf(R) Tiny reference keyword spotting model (DS-CNN, 49x10x1 -> 12), "
+               "8 random int8 inputs"),
+              ("mlperf_ic", "MLPerf(R) Tiny reference image classification model (ResNet-8, 32x32x3 -> 10), "
+               "8 random int8 inputs")]
+else:
+    n_mlp = data["O2"][0]["tm_mlp"]["n_test"]
+    models = [("mlp", f"MLP 64-32-16-10, sklearn digits ({n_mlp} test samples)"),
+              ("kws", "KWS CNN 20x20x1 -> conv3x3x8 -> maxpool -> dw3x3 -> pw16 -> avgpool -> fc10")]
 if "tm_rf" in data["O2"][0]:
     n_rf = data["O2"][0]["tm_rf"]["n_test"]
     models.append(("rf", f"Random forest, 10 trees, depth 6, sklearn digits, integer features ({n_rf} test samples)"))
@@ -149,14 +166,33 @@ for model, title in models:
                         if i in data["O2"][0]])
     out.append("| Layer | " + " | ".join(f"{h} O2 | {h} O3" for h in heads) + " |")
     out.append("|---|" + "---:|" * (2 * len(heads)))
-    n = len(data["O2"][0][imgs[0]]["layers"])
+    def layers(img, lv):
+        L = data[lv][0][img]["layers"]
+        if not MLPERF:
+            return L
+        if img.startswith("tflm"):
+            # RESHAPE is a few hundred cycles of bookkeeping; tinymind aliases the buffer.
+            return [(t, c) for t, c in L if t != "RESHAPE"]
+        # tinymind pads SAME convolutions in a separate pass: count it with its layer.
+        merged, pad = [], 0
+        for t, c in L:
+            if t.endswith("_pad"):
+                pad += c
+            else:
+                merged.append((t + (" (+pad)" if pad else ""), c + pad))
+                pad = 0
+        return merged
+
+    n = len(layers(imgs[0], "O2"))
     for i in range(n):
         cells = []
         for img in imgs:
             for lv in LEVELS:
-                L = data[lv][0][img]["layers"]
+                L = layers(img, lv)
                 cells.append(f"{L[i][1]:,}" if i < len(L) else "-")
-        tag = data["O2"][0][imgs[0]]["layers"][i][0]
+        tag = layers(imgs[0], "O2")[i][0]
+        if MLPERF:
+            tag += " / " + layers(imgs[-1], "O2")[i][0]
         out.append(f"| {tag} | " + " | ".join(cells) + " |")
     out.append("")
 

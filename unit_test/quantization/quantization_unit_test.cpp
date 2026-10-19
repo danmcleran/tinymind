@@ -36,6 +36,7 @@
 #include <cstdint>
 #include <climits>
 #include <cmath>
+#include <vector>
 
 #include "qaffine.hpp"
 #include "qcalibration.hpp"
@@ -54,6 +55,7 @@
 #include "qbatchnorm.hpp"
 #include "qlayernorm.hpp"
 #include "qsoftmax.hpp"
+#include "qsoftmax_fixedpoint.hpp"
 #include "qlstm.hpp"
 #include "qgru.hpp"
 #include "qcfc.hpp"
@@ -3788,6 +3790,357 @@ BOOST_AUTO_TEST_CASE(qsoftmax_zero_lut_emits_clamped_zero_point)
         BOOST_TEST(static_cast<int>(output[i]) == -128);
     }
 }
+
+// QSoftmaxFixedPoint1D: golden rows from the TFLite Micro reference int8
+// softmax (tflite::micro::reference_ops::Softmax, the same kernel CMSIS-NN's
+// arm_softmax_s8 reproduces) with the parameters TFLite Micro computes
+// (PreprocessSoftmaxScaling, CalculateInputRadius). Rows: random, near-equal,
+// one dominant class, random. The last case's multiplier is capped
+// (input scale 40), which leaves diff_min at 0.
+namespace
+{
+    struct QSoftmaxFixedPointGolden
+    {
+        double input_scale;
+        double beta;
+        int32_t multiplier;
+        int32_t left_shift;
+        int32_t diff_min;
+        int8_t input[48];
+        int8_t output[48];
+    };
+
+    const QSoftmaxFixedPointGolden kQSoftmaxFixedPointGoldens[] =
+    {
+        {
+            0.10000000000000001, 1, 1717986918, 23, -248,
+            {
+                -109, -70, 71, -47, -16, 122, 57, -12, 122, -50, 9, -61, 90, 91, 92, 90, 91, 92, 90, 91, 92,
+                90, 91, 92, -128, -128, -128, -128, -128, 127, -128, -128, -128, -128, -128, -128, 110, -61,
+                -122, 64, 25, -63, 115, 89, -70, -84, 12, 74
+            },
+            {
+                -128, -128, -127, -128, -128, 0, -128, -128, 0, -128, -128, -128, -109, -107, -105, -109, -107,
+                -105, -109, -107, -105, -109, -107, -105, -128, -128, -128, -128, -128, 127, -128, -128, -128,
+                -128, -128, -128, -37, -128, -128, -127, -128, -128, 22, -117, -128, -128, -128, -126
+            },
+        },
+        {
+            0.0625, 1, 1073741824, 23, -248,
+            {
+                104, 112, -94, -14, 5, -30, 64, -37, 43, -79, -9, -103, 90, 91, 92, 90, 91, 92, 90, 91, 92, 90,
+                91, 92, -128, -128, -128, -128, -128, 127, -128, -128, -128, -128, -128, -128, 40, -56, -34,
+                107, -11, -18, 56, -21, -23, 124, 104, 75
+            },
+            {
+                -35, 25, -128, -128, -128, -128, -120, -128, -126, -128, -128, -128, -108, -107, -105, -108,
+                -107, -105, -108, -107, -105, -108, -107, -105, -128, -128, -128, -128, -128, 127, -128, -128,
+                -128, -128, -128, -128, -127, -128, -128, -76, -128, -128, -126, -128, -128, 23, -85, -121
+            },
+        },
+        {
+            0.5, 1, 1073741824, 26, -31,
+            {
+                -82, -41, 61, -52, -20, 1, -19, 31, 34, 40, 5, -62, 90, 91, 92, 90, 91, 92, 90, 91, 92, 90, 91,
+                92, -128, -128, -128, -128, -128, 127, -128, -128, -128, -128, -128, -128, 119, -92, 113, -14,
+                89, 40, -8, 41, 87, 86, -95, 8
+            },
+            {
+                -128, -128, 127, -128, -128, -128, -128, -128, -128, -128, -128, -128, -116, -108, -96, -116,
+                -108, -96, -116, -108, -96, -116, -108, -96, -128, -128, -128, -128, -128, 127, -128, -128,
+                -128, -128, -128, -128, 116, -128, -116, -128, -128, -128, -128, -128, -128, -128, -128, -128
+            },
+        },
+        {
+            0.00390625, 1, 1073741824, 19, -3968,
+            {
+                -49, -118, -10, -104, 61, 76, -4, -25, -93, 46, -41, 0, 90, 91, 92, 90, 91, 92, 90, 91, 92, 90,
+                91, 92, -128, -128, -128, -128, -128, 127, -128, -128, -128, -128, -128, -128, 76, -60, 112,
+                -68, -118, -33, 96, -30, -58, -69, -7, -84
+            },
+            {
+                -109, -114, -106, -113, -99, -98, -106, -108, -112, -101, -109, -105, -107, -107, -107, -107,
+                -107, -107, -107, -107, -107, -107, -107, -107, -109, -109, -109, -109, -109, -77, -109, -109,
+                -109, -109, -109, -109, -98, -110, -94, -111, -114, -109, -96, -108, -110, -111, -106, -112
+            },
+        },
+        {
+            0.050000000000000003, 2.5, 1073741824, 24, -124,
+            {
+                75, -26, 55, 87, -91, 73, 40, 36, -111, -2, -37, -7, 90, 91, 92, 90, 91, 92, 90, 91, 92, 90,
+                91, 92, -128, -128, -128, -128, -128, 127, -128, -128, -128, -128, -128, -128, 84, 22, 113,
+                -81, -96, 79, -70, 20, 40, -14, -95, 76
+            },
+            {
+                -88, -128, -125, 52, -128, -97, -127, -128, -128, -128, -128, -128, -109, -107, -104, -109,
+                -107, -104, -109, -107, -104, -109, -107, -104, -128, -128, -128, -128, -128, 127, -128, -128,
+                -128, -128, -128, -128, -122, -128, 116, -128, -128, -125, -128, -128, -128, -128, -128, -126
+            },
+        },
+        {
+            40, 1, 2147483647, 31, 0,
+            {
+                -71, 11, 19, -21, -85, -124, 72, 47, 91, -4, -120, -72, 90, 91, 92, 90, 91, 92, 90, 91, 92, 90,
+                91, 92, -128, -128, -128, -128, -128, 127, -128, -128, -128, -128, -128, -128, 42, -28, 78,
+                113, 12, -41, -86, 52, -119, -10, -56, -29
+            },
+            {
+                -128, -128, -128, -128, -128, -128, -128, -128, 127, -128, -128, -128, -128, -128, -64, -128,
+                -128, -64, -128, -128, -64, -128, -128, -64, -128, -128, -128, -128, -128, 127, -128, -128,
+                -128, -128, -128, -128, -128, -128, -128, 127, -128, -128, -128, -128, -128, -128, -128, -128
+            },
+        },
+    };
+} // namespace
+
+BOOST_AUTO_TEST_CASE(qsoftmax_fixedpoint_params_match_tflite_micro)
+{
+    for (const QSoftmaxFixedPointGolden& g : kQSoftmaxFixedPointGoldens)
+    {
+        int32_t multiplier = 0;
+        int32_t leftShift = 0;
+        int32_t diffMin = 0;
+        tinymind::buildQSoftmaxFixedPointParams(g.input_scale, g.beta, multiplier, leftShift, diffMin);
+        BOOST_TEST(multiplier == g.multiplier);
+        BOOST_TEST(leftShift == g.left_shift);
+        BOOST_TEST(diffMin == g.diff_min);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qsoftmax_fixedpoint_bit_exact_with_tflite_micro)
+{
+    for (const QSoftmaxFixedPointGolden& g : kQSoftmaxFixedPointGoldens)
+    {
+        const tinymind::QSoftmaxFixedPoint1D<4, 12> softmax = {g.multiplier, g.left_shift, g.diff_min};
+        int8_t output[48] = {0};
+        softmax.forward(g.input, output);
+        for (std::size_t i = 0; i < 48; ++i)
+        {
+            BOOST_TEST(static_cast<int>(output[i]) == static_cast<int>(g.output[i]));
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qsoftmax_fixedpoint_sweep_matches_tflite_micro)
+{
+    // 4096 rows of 12 per golden case from a fixed LCG, every fourth row in a
+    // narrow band so logits tie or sit one step apart. The expected FNV-1a
+    // hashes of the outputs come from the TFLite Micro reference kernel run
+    // over the same rows. The goldens above are too few to catch a defect
+    // that changes 1 row in 200 (two Newton steps instead of three); this is not.
+    const uint32_t expected[6] =
+    {
+        0x1723FB42u, 0x89B83D62u, 0x5B984723u, 0xF5D0854Cu, 0x5FFB453Au, 0xAFE86A52u,
+    };
+    constexpr std::size_t N = 12;
+    for (std::size_t c = 0; c < 6; ++c)
+    {
+        const QSoftmaxFixedPointGolden& g = kQSoftmaxFixedPointGoldens[c];
+        const tinymind::QSoftmaxFixedPoint1D<1, N> softmax = {g.multiplier, g.left_shift, g.diff_min};
+        uint32_t state = 0x1234u + static_cast<uint32_t>(c);
+        uint32_t hash = 0x811C9DC5u;
+        for (std::size_t r = 0; r < 4096; ++r)
+        {
+            int8_t input[N];
+            int8_t output[N];
+            for (std::size_t i = 0; i < N; ++i)
+            {
+                state = state * 1664525u + 1013904223u;
+                const uint32_t v = state >> 24;
+                input[i] = (r % 4 == 3) ? static_cast<int8_t>(96 + static_cast<int>(v & 7u))
+                                        : static_cast<int8_t>(static_cast<int>(v) - 128);
+            }
+            softmax.forward(input, output);
+            for (std::size_t i = 0; i < N; ++i)
+            {
+                hash ^= static_cast<uint8_t>(output[i]);
+                hash *= 0x01000193u;
+            }
+        }
+        BOOST_TEST(hash == expected[c]);
+    }
+}
+
+// Folded padding (the PadTop..PadRight parameters of QConv2D,
+// QConv2DPerChannel and QDepthwiseConv2D) against QPad2D followed by the
+// unpadded layer: the two must agree bit for bit. Shapes cover the patch and
+// row paths, strides, uneven padding, odd widths and odd filter counts, and
+// per-filter requantizers that alternate between the fast and the full form.
+namespace
+{
+    uint32_t gPadTestRng = 0x9E3779B9u;
+
+    int8_t padTestByte()
+    {
+        gPadTestRng = gPadTestRng * 1664525u + 1013904223u;
+        return static_cast<int8_t>(gPadTestRng >> 24);
+    }
+
+    template<std::size_t F>
+    void padTestRequantizers(tinymind::Requantizer<int32_t, int8_t>* rqs)
+    {
+        for (std::size_t f = 0; f < F; ++f)
+        {
+            rqs[f].multiplier = (1 << 30) + static_cast<int32_t>(f) * 7919;
+            rqs[f].shift = 9;
+            rqs[f].zero_point = static_cast<int8_t>(static_cast<int>(f) - 2);
+            rqs[f].qmin = (f % 3 == 2) ? static_cast<int8_t>(-100) : static_cast<int8_t>(-128);
+            rqs[f].qmax = 127;
+        }
+    }
+
+    template<std::size_t H, std::size_t W, std::size_t C, std::size_t KH, std::size_t KW,
+             std::size_t SH, std::size_t SW, std::size_t F,
+             std::size_t PT, std::size_t PB, std::size_t PL, std::size_t PR>
+    void checkPaddedConv()
+    {
+        typedef tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, H, W, C, KH, KW, SH, SW, F,
+                                            PT, PB, PL, PR> Folded;
+        typedef tinymind::QPad2D<int8_t, H, W, C, PT, PB, PL, PR> Pad;
+        typedef tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, H + PT + PB, W + PL + PR, C,
+                                            KH, KW, SH, SW, F> Valid;
+        typedef tinymind::QConv2D<int8_t, int8_t, int32_t, int8_t, H, W, C, KH, KW, SH, SW, F,
+                                  PT, PB, PL, PR> FoldedPerTensor;
+        typedef tinymind::QConv2D<int8_t, int8_t, int32_t, int8_t, H + PT + PB, W + PL + PR, C,
+                                  KH, KW, SH, SW, F> ValidPerTensor;
+        static_assert(Folded::OutputSize == Valid::OutputSize, "shape");
+
+        std::vector<int8_t> input(Folded::InputSize);
+        std::vector<int8_t> weights(Folded::TotalWeights);
+        std::vector<int32_t> biases(F);
+        tinymind::Requantizer<int32_t, int8_t> rqs[F];
+        for (int8_t& v : input) { v = padTestByte(); }
+        for (int8_t& v : weights) { v = padTestByte(); }
+        for (std::size_t f = 0; f < F; ++f) { biases[f] = static_cast<int32_t>(f) * 997 - 1500; }
+        padTestRequantizers<F>(rqs);
+        const int8_t zp = -9;
+
+        std::vector<int8_t> padded(Pad::OutputSize);
+        std::vector<int8_t> want(Folded::OutputSize);
+        std::vector<int8_t> got(Folded::OutputSize);
+        const Pad pad = {zp};
+        pad.forward(input.data(), padded.data());
+
+        const Valid valid = {weights.data(), biases.data(), zp, rqs};
+        valid.forward(padded.data(), want.data());
+        const Folded folded = {weights.data(), biases.data(), zp, rqs};
+        folded.forward(input.data(), got.data());
+        BOOST_TEST(got == want, boost::test_tools::per_element());
+
+        const ValidPerTensor validT = {weights.data(), biases.data(), zp, rqs[0]};
+        validT.forward(padded.data(), want.data());
+        const FoldedPerTensor foldedT = {weights.data(), biases.data(), zp, rqs[0]};
+        foldedT.forward(input.data(), got.data());
+        BOOST_TEST(got == want, boost::test_tools::per_element());
+    }
+
+    template<std::size_t H, std::size_t W, std::size_t C, std::size_t KH, std::size_t KW,
+             std::size_t SH, std::size_t SW, std::size_t PT, std::size_t PB, std::size_t PL, std::size_t PR>
+    void checkPaddedDepthwise()
+    {
+        typedef tinymind::QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, H, W, C, KH, KW, SH, SW,
+                                           PT, PB, PL, PR> Folded;
+        typedef tinymind::QPad2D<int8_t, H, W, C, PT, PB, PL, PR> Pad;
+        typedef tinymind::QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, H + PT + PB, W + PL + PR, C,
+                                           KH, KW, SH, SW> Valid;
+        static_assert(Folded::OutputSize == Valid::OutputSize, "shape");
+
+        std::vector<int8_t> input(Folded::InputSize);
+        std::vector<int8_t> weights(Folded::TotalWeights);
+        std::vector<int32_t> biases(C);
+        tinymind::Requantizer<int32_t, int8_t> rqs[C];
+        for (int8_t& v : input) { v = padTestByte(); }
+        for (int8_t& v : weights) { v = padTestByte(); }
+        for (std::size_t c = 0; c < C; ++c) { biases[c] = 700 - static_cast<int32_t>(c) * 333; }
+        padTestRequantizers<C>(rqs);
+        const int8_t zp = 17;
+
+        std::vector<int8_t> padded(Pad::OutputSize);
+        std::vector<int8_t> want(Folded::OutputSize);
+        std::vector<int8_t> got(Folded::OutputSize);
+        const Pad pad = {zp};
+        pad.forward(input.data(), padded.data());
+        const Valid valid = {weights.data(), biases.data(), zp, rqs};
+        valid.forward(padded.data(), want.data());
+        const Folded folded = {weights.data(), biases.data(), zp, rqs};
+        folded.forward(input.data(), got.data());
+        BOOST_TEST(got == want, boost::test_tools::per_element());
+    }
+} // namespace
+
+BOOST_AUTO_TEST_CASE(qconv2d_folded_padding_matches_qpad2d)
+{
+    checkPaddedConv<7, 7, 16, 3, 3, 1, 1, 5, 1, 1, 1, 1>();   // row path, SAME
+    checkPaddedConv<8, 9, 16, 3, 3, 2, 2, 4, 0, 1, 0, 1>();   // row path, stride 2, SAME
+    checkPaddedConv<6, 5, 32, 3, 3, 1, 1, 3, 2, 0, 0, 2>();   // row path, uneven
+    checkPaddedConv<9, 6, 1, 5, 2, 2, 1, 6, 2, 2, 1, 0>();    // patch path
+    checkPaddedConv<10, 4, 1, 10, 4, 2, 2, 7, 4, 5, 1, 1>();  // the MLPerf KWS stem: band wider than the input
+    checkPaddedConv<5, 5, 3, 3, 3, 1, 1, 2, 3, 3, 3, 3>();    // pad wider than the kernel reach
+    checkPaddedConv<11, 11, 16, 2, 3, 3, 2, 2, 1, 1, 1, 1>(); // stride above the kernel height
+}
+
+BOOST_AUTO_TEST_CASE(qdepthwise_folded_padding_matches_qpad2d)
+{
+    checkPaddedDepthwise<25, 5, 8, 3, 3, 1, 1, 1, 1, 1, 1>();  // the MLPerf KWS block shape
+    checkPaddedDepthwise<8, 9, 6, 3, 3, 2, 2, 0, 1, 0, 1>();
+    checkPaddedDepthwise<6, 7, 5, 5, 3, 1, 2, 2, 2, 0, 2>();
+    checkPaddedDepthwise<11, 7, 4, 2, 2, 3, 2, 1, 1, 1, 0>();  // stride above the kernel height
+}
+
+BOOST_AUTO_TEST_CASE(qpointwise_wide_blocked_matches_reference)
+{
+    // Wide enough (>= 32 input channels) for the filter-pair, pixel-pair
+    // path; odd pixel and filter counts take its single-output edges.
+    constexpr std::size_t H = 3, W = 3, C = 40, F = 5;
+    typedef tinymind::QPointwiseConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, H, W, C, F> PerChannel;
+    typedef tinymind::QPointwiseConv2D<int8_t, int8_t, int32_t, int8_t, H, W, C, F> PerTensor;
+    std::vector<int8_t> input(H * W * C);
+    std::vector<int8_t> weights(F * C);
+    std::vector<int32_t> biases(F);
+    tinymind::Requantizer<int32_t, int8_t> rqs[F];
+    for (int8_t& v : input) { v = padTestByte(); }
+    for (int8_t& v : weights) { v = padTestByte(); }
+    for (std::size_t f = 0; f < F; ++f) { biases[f] = 300 - static_cast<int32_t>(f) * 211; }
+    padTestRequantizers<F>(rqs);
+
+    std::vector<int8_t> got(H * W * F);
+    const PerChannel perChannel = {weights.data(), biases.data(), 21, rqs};
+    perChannel.forward(input.data(), got.data());
+    const PerTensor perTensor = {weights.data(), biases.data(), 21, rqs[2]};
+    std::vector<int8_t> gotT(H * W * F);
+    perTensor.forward(input.data(), gotT.data());
+    for (std::size_t p = 0; p < H * W; ++p)
+    {
+        for (std::size_t f = 0; f < F; ++f)
+        {
+            int32_t acc = biases[f];
+            for (std::size_t c = 0; c < C; ++c)
+            {
+                acc += static_cast<int32_t>(weights[f * C + c]) * (static_cast<int32_t>(input[p * C + c]) - 21);
+            }
+            BOOST_TEST(static_cast<int>(got[p * F + f]) == static_cast<int>(rqs[f].apply(acc)));
+            BOOST_TEST(static_cast<int>(gotT[p * F + f]) == static_cast<int>(rqs[2].apply(acc)));
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qsoftmax_fixedpoint_equal_inputs_split_evenly)
+{
+    // Four equal logits: exactly 1/4 each, 64/256 on the int8 grid.
+    int32_t multiplier = 0;
+    int32_t leftShift = 0;
+    int32_t diffMin = 0;
+    tinymind::buildQSoftmaxFixedPointParams(0.1, 1.0, multiplier, leftShift, diffMin);
+    const tinymind::QSoftmaxFixedPoint1D<1, 4> softmax = {multiplier, leftShift, diffMin};
+    const int8_t input[4] = {17, 17, 17, 17};
+    int8_t output[4] = {0};
+    softmax.forward(input, output);
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        BOOST_TEST(static_cast<int>(output[i]) == 64 - 128);
+    }
+}
+
 
 namespace {
 

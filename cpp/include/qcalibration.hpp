@@ -541,6 +541,40 @@ namespace tinymind {
     }
 
     /**
+     * Parameters for QSoftmaxFixedPoint1D, computed as TFLite Micro does
+     * for an int8 softmax (PreprocessSoftmaxScaling with 5 integer bits,
+     * then CalculateInputRadius), so the layer reproduces its output bit
+     * for bit. beta is the softmax's beta (1.0 for a plain softmax).
+     */
+    inline void buildQSoftmaxFixedPointParams(double input_scale, double beta,
+                                              int32_t& input_multiplier,
+                                              int32_t& input_left_shift,
+                                              int32_t& diff_min)
+    {
+        const int inputIntegerBits = 5;
+        const double maxRealMultiplier =
+            static_cast<double>((static_cast<int64_t>(1) << 31) - 1);
+        double realMultiplier = beta * input_scale *
+            static_cast<double>(static_cast<int64_t>(1) << (31 - inputIntegerBits));
+        if (realMultiplier > maxRealMultiplier)
+        {
+            realMultiplier = maxRealMultiplier;
+        }
+
+        // quantizeMultiplier returns shift = -exponent; a multiplier above
+        // one is a left shift.
+        int32_t shift = 0;
+        quantizeMultiplier(realMultiplier, input_multiplier, shift);
+        input_left_shift = -shift;
+
+        const double maxInputRescaled =
+            static_cast<double>((1 << inputIntegerBits) - 1) *
+            static_cast<double>(static_cast<int64_t>(1) << (31 - inputIntegerBits)) /
+            static_cast<double>(static_cast<int64_t>(1) << input_left_shift);
+        diff_min = -static_cast<int32_t>(std::floor(maxInputRescaled));
+    }
+
+    /**
      * Phase 12 -- QLSTM calibration constants.
      *
      * Bundles every (multiplier, shift) pair the cell consumes, populated

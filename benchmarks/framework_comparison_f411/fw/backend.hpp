@@ -57,3 +57,8 @@ int      be_profile(uint32_t* cycles, const char** tags, int max);
 // carry (gen/subset.py).
 #define TM_MLP_HASH_32 0x06CE0530u
 #define TM_KWS_HASH 0x6B1854D3u
+// MLPerf Tiny reference models (gen/make_mlperf.py) over their 8 generated
+// inputs; `make host-check-mlperf` recomputes them. The TFLite interpreter's
+// reference kernels give the same two hashes.
+#define TM_MLPERF_KWS_HASH 0xF623A166u
+#define TM_MLPERF_IC_HASH 0x8897F6EDu

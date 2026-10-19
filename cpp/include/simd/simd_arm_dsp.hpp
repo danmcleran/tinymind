@@ -148,6 +148,173 @@ namespace tinymind { namespace simd { namespace arm_dsp {
         return acc;
     }
 
+    /**
+     * Two inputs against two weight rows, n elements each:
+     *   acc[0] += w0 . (x0 - zp)    acc[1] += w1 . (x0 - zp)
+     *   acc[2] += w0 . (x1 - zp)    acc[3] += w1 . (x1 - zp)
+     * Each widened input pair feeds two SMLADs and each widened weight pair
+     * two more, so a block of four elements is 4 loads, 8 extends and 8
+     * SMLADs for 16 multiply-accumulates, against 2 loads, 4 extends and 4
+     * SMLADs for 4 in int8DotWithZeroPoint. Convolutions call it for two
+     * output pixels times two filters. Same products, so bit-exact.
+     */
+    inline void int8Dot2x2WithZeroPoint(const int8_t* x0, const int8_t* x1,
+                                        const int8_t* w0, const int8_t* w1,
+                                        std::size_t n, int8_t zp, int32_t* acc)
+    {
+        const uint32_t nzp16 = static_cast<uint16_t>(static_cast<int16_t>(-static_cast<int16_t>(zp)));
+        const int16x2_t negZpPair = static_cast<int16x2_t>(nzp16 | (nzp16 << 16));
+
+        int32_t a00 = acc[0];
+        int32_t a10 = acc[1];
+        int32_t a01 = acc[2];
+        int32_t a11 = acc[3];
+
+        // The second input and weight rows are addressed from the first. A
+        // caller that pairs neighbouring pixels and filters passes rows a
+        // compile-time distance apart, and after inlining these become
+        // immediate offsets: two pointers advance instead of four.
+        const std::ptrdiff_t dx = x1 - x0;
+        const std::ptrdiff_t dw = w1 - w0;
+
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
+        for (std::size_t blocks = n >> 2; blocks != 0; --blocks)
+        {
+            // Inputs first, widened once and held; then each weight word is
+            // widened and spent on both pixels before the next is loaded, so
+            // at most one widened weight is live.
+            const int8x4_t x0v = load4(x0);
+            const int16x2_t x0e = __sxtab16(negZpPair, x0v);
+            const int16x2_t x0o = sxtab16Ror8(negZpPair, x0v);
+            const int8x4_t x1v = load4(x0 + dx);
+            const int16x2_t x1e = __sxtab16(negZpPair, x1v);
+            const int16x2_t x1o = sxtab16Ror8(negZpPair, x1v);
+            x0 += 4;
+
+            const int8x4_t w0v = load4(w0);
+            const int16x2_t w0e = __sxtb16(w0v);
+            a00 = __smlad(w0e, x0e, a00);
+            a01 = __smlad(w0e, x1e, a01);
+            const int16x2_t w0o = sxtb16Ror8(w0v);
+            a00 = __smlad(w0o, x0o, a00);
+            a01 = __smlad(w0o, x1o, a01);
+
+            const int8x4_t w1v = load4(w0 + dw);
+            const int16x2_t w1e = __sxtb16(w1v);
+            a10 = __smlad(w1e, x0e, a10);
+            a11 = __smlad(w1e, x1e, a11);
+            const int16x2_t w1o = sxtb16Ror8(w1v);
+            a10 = __smlad(w1o, x0o, a10);
+            a11 = __smlad(w1o, x1o, a11);
+            w0 += 4;
+        }
+
+        for (std::size_t i = 0; i < (n & 3u); ++i)
+        {
+            const int32_t xa = static_cast<int32_t>(x0[i]) - static_cast<int32_t>(zp);
+            const int32_t xb = static_cast<int32_t>(x0[dx + static_cast<std::ptrdiff_t>(i)]) -
+                               static_cast<int32_t>(zp);
+            const int32_t wa = static_cast<int32_t>(w0[i]);
+            const int32_t wb = static_cast<int32_t>(w0[dw + static_cast<std::ptrdiff_t>(i)]);
+            a00 += wa * xa;
+            a10 += wb * xa;
+            a01 += wa * xb;
+            a11 += wb * xb;
+        }
+
+        acc[0] = a00;
+        acc[1] = a10;
+        acc[2] = a01;
+        acc[3] = a11;
+    }
+
+    /**
+     * A convolution's 2x2 block over all KH kernel rows: two output pixels
+     * PixelStep elements apart times two filters WindowLength apart, each
+     * kernel row RowLength elements, accumulated into acc as in
+     * int8Dot2x2WithZeroPoint. Kept out of line on purpose. Inlined into a
+     * layer's loops, the four accumulators, eight widened values and two
+     * base pointers compete with the caller's live state for the 14
+     * allocatable registers, and whether they spilled swung the layer's
+     * cost by 30% with unrelated changes to the surrounding code. Out of
+     * line, the kernel owns the register file; the call costs a few cycles
+     * against KH * RowLength / 4 blocks of work. The offsets are template
+     * parameters, so every load is base plus immediate.
+     */
+    template<std::size_t KH, std::size_t RowLength, std::size_t PixelStep, std::size_t WindowLength>
+    __attribute__((noinline)) void int8ConvRows2x2WithZeroPoint(const int8_t* const* rows, std::size_t offset,
+                                                               const int8_t* w0, int8_t zp, int32_t* acc)
+    {
+        const uint32_t nzp16 = static_cast<uint16_t>(static_cast<int16_t>(-static_cast<int16_t>(zp)));
+        const int16x2_t negZpPair = static_cast<int16x2_t>(nzp16 | (nzp16 << 16));
+
+        int32_t a00 = acc[0];
+        int32_t a10 = acc[1];
+        int32_t a01 = acc[2];
+        int32_t a11 = acc[3];
+
+        for (std::size_t kh = 0; kh < KH; ++kh)
+        {
+            const int8_t* x = rows[kh] + offset;
+            const int8_t* w = w0 + kh * RowLength;
+
+            // Two blocks per iteration, measured on a Cortex-M4 (F411, GCC 13,
+            // -O3) over the MLPerf Tiny ResNet-8: the loop then keeps its
+            // accumulators, widened values and pointers in registers with no
+            // spill, in about 160 bytes of code. Three, four and sixteen
+            // blocks made the whole model 22-27% slower, one block 15%.
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 2
+#endif
+            for (std::size_t blocks = RowLength >> 2; blocks != 0; --blocks)
+            {
+                const int8x4_t x0v = load4(x);
+                const int16x2_t x0e = __sxtab16(negZpPair, x0v);
+                const int16x2_t x0o = sxtab16Ror8(negZpPair, x0v);
+                const int8x4_t x1v = load4(x + PixelStep);
+                const int16x2_t x1e = __sxtab16(negZpPair, x1v);
+                const int16x2_t x1o = sxtab16Ror8(negZpPair, x1v);
+                x += 4;
+
+                const int8x4_t w0v = load4(w);
+                const int16x2_t w0e = __sxtb16(w0v);
+                a00 = __smlad(w0e, x0e, a00);
+                a01 = __smlad(w0e, x1e, a01);
+                const int16x2_t w0o = sxtb16Ror8(w0v);
+                a00 = __smlad(w0o, x0o, a00);
+                a01 = __smlad(w0o, x1o, a01);
+
+                const int8x4_t w1v = load4(w + WindowLength);
+                const int16x2_t w1e = __sxtb16(w1v);
+                a10 = __smlad(w1e, x0e, a10);
+                a11 = __smlad(w1e, x1e, a11);
+                const int16x2_t w1o = sxtb16Ror8(w1v);
+                a10 = __smlad(w1o, x0o, a10);
+                a11 = __smlad(w1o, x1o, a11);
+                w += 4;
+            }
+
+            for (std::size_t i = 0; i < (RowLength & 3u); ++i)
+            {
+                const int32_t xa = static_cast<int32_t>(x[i]) - static_cast<int32_t>(zp);
+                const int32_t xb = static_cast<int32_t>(x[PixelStep + i]) - static_cast<int32_t>(zp);
+                const int32_t wa = static_cast<int32_t>(w[i]);
+                const int32_t wb = static_cast<int32_t>(w[WindowLength + i]);
+                a00 += wa * xa;
+                a10 += wb * xa;
+                a01 += wa * xb;
+                a11 += wb * xb;
+            }
+        }
+
+        acc[0] = a00;
+        acc[1] = a10;
+        acc[2] = a01;
+        acc[3] = a11;
+    }
+
 } } } // namespace tinymind::simd::arm_dsp
 
 #endif // __ARM_FEATURE_DSP

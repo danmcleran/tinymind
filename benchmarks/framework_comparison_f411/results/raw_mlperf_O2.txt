@@ -1,0 +1,331 @@
+level=O2
+image=baseline
+# begin bench
+name=baseline
+setup_rc=0
+setup_cycles=18
+infer_min=13
+infer_med=13
+infer_max=13
+n_test=1
+hash=0x811C9DC5
+stack_bytes=120
+static_ram=132
+arena_used=0
+# end bench
+level=O2
+image=tm_mlperf_kws
+# begin bench
+name=tinymind_int8/mlperf_kws
+setup_rc=0
+setup_cycles=24
+infer_min=16378319
+infer_med=16379073
+infer_max=16381288
+n_test=8
+hash=0xF623A166
+hash_match=1
+stack_bytes=644
+static_ram=16636
+arena_used=0
+# end bench
+level=O2
+image=tm_mlperf_kws_dsp
+# begin bench
+name=tinymind_int8+dsp/mlperf_kws
+setup_rc=0
+setup_cycles=24
+infer_min=8848999
+infer_med=8849753
+infer_max=8851960
+n_test=8
+hash=0xF623A166
+hash_match=1
+stack_bytes=752
+static_ram=16636
+arena_used=0
+# end bench
+level=O2
+image=tflm_cmsis_mlperf_kws_int8
+# begin bench
+name=tflm_int8+cmsis/mlperf_kws
+setup_rc=0
+setup_cycles=1131631
+infer_min=9691176
+infer_med=9692160
+infer_max=9695033
+n_test=8
+hash=0xF623A166
+hash_match=1
+stack_bytes=1272
+static_ram=23412
+arena_used=22820
+# end bench
+level=O2
+image=tflm_ref_mlperf_kws_int8
+# begin bench
+name=tflm_int8+ref/mlperf_kws
+setup_rc=0
+setup_cycles=1135920
+infer_min=61650670
+infer_med=61652645
+infer_max=61655553
+n_test=8
+hash=0xF623A166
+hash_match=1
+stack_bytes=716
+static_ram=23364
+arena_used=22772
+# end bench
+level=O2
+image=tm_mlperf_ic
+# begin bench
+name=tinymind_int8/mlperf_ic
+setup_rc=0
+setup_cycles=21
+infer_min=88938062
+infer_med=88938990
+infer_max=88939142
+n_test=8
+hash=0x8897F6ED
+hash_match=1
+stack_bytes=2252
+static_ram=52368
+arena_used=0
+# end bench
+level=O2
+image=tm_mlperf_ic_dsp
+# begin bench
+name=tinymind_int8+dsp/mlperf_ic
+setup_rc=0
+setup_cycles=21
+infer_min=27848074
+infer_med=27849002
+infer_max=27849153
+n_test=8
+hash=0x8897F6ED
+hash_match=1
+stack_bytes=2308
+static_ram=52368
+arena_used=0
+# end bench
+level=O2
+image=tflm_cmsis_mlperf_ic_int8
+# begin bench
+name=tflm_int8+cmsis/mlperf_ic
+setup_rc=0
+setup_cycles=807721
+infer_min=38771718
+infer_med=38773171
+infer_max=38773226
+n_test=8
+hash=0x8897F6ED
+hash_match=1
+stack_bytes=1272
+static_ram=55588
+arena_used=54996
+# end bench
+level=O2
+image=tflm_ref_mlperf_ic_int8
+# begin bench
+name=tflm_int8+ref/mlperf_ic
+setup_rc=0
+setup_cycles=786567
+infer_min=159041261
+infer_med=159042196
+infer_max=159043889
+n_test=8
+hash=0x8897F6ED
+hash_match=1
+stack_bytes=716
+static_ram=54932
+arena_used=54340
+# end bench
+level=O2
+image=tm_mlperf_kws_prof
+# begin bench
+name=tinymind_int8/mlperf_kws
+setup_rc=0
+setup_cycles=19
+infer_min=16373467
+infer_med=16374221
+infer_max=16376428
+n_test=8
+hash=0xF623A166
+hash_match=1
+stack_bytes=900
+static_ram=16636
+arena_used=0
+layer.0.conv0=2068345
+layer.1.dw1=662656
+layer.2.pw2=2906683
+layer.3.dw3=662591
+layer.4.pw4=2906652
+layer.5.dw5=662589
+layer.6.pw6=2906649
+layer.7.dw7=662589
+layer.8.pw8=2906649
+layer.9.avgpool9=21175
+layer.10.fc10=5486
+layer.11.softmax11=3536
+# end bench
+level=O2
+image=tm_mlperf_kws_dsp_prof
+# begin bench
+name=tinymind_int8+dsp/mlperf_kws
+setup_rc=0
+setup_cycles=21
+infer_min=8659268
+infer_med=8660026
+infer_max=8662236
+n_test=8
+hash=0xF623A166
+hash_match=1
+stack_bytes=1008
+static_ram=16636
+arena_used=0
+layer.0.conv0=1203862
+layer.1.dw1=662646
+layer.2.pw2=1195216
+layer.3.dw3=662634
+layer.4.pw4=1195209
+layer.5.dw5=662630
+layer.6.pw6=1195205
+layer.7.dw7=662630
+layer.8.pw8=1195205
+layer.9.avgpool9=21181
+layer.10.fc10=2602
+layer.11.softmax11=3539
+# end bench
+level=O2
+image=tflm_cmsis_mlperf_kws_int8_prof
+# begin bench
+name=tflm_int8+cmsis/mlperf_kws
+setup_rc=0
+setup_cycles=1137070
+infer_min=9693325
+infer_med=9694312
+infer_max=9697191
+n_test=8
+hash=0xF623A166
+hash_match=1
+stack_bytes=1536
+static_ram=23828
+arena_used=22820
+layer.0.CONV_2D=1453200
+layer.1.DEPTHWISE_CONV_2D=720546
+layer.2.CONV_2D=1318660
+layer.3.DEPTHWISE_CONV_2D=720546
+layer.4.CONV_2D=1318660
+layer.5.DEPTHWISE_CONV_2D=720546
+layer.6.CONV_2D=1318663
+layer.7.DEPTHWISE_CONV_2D=720546
+layer.8.CONV_2D=1318660
+layer.9.AVERAGE_POOL_2D=75830
+layer.10.RESHAPE=507
+layer.11.FULLY_CONNECTED=3734
+layer.12.SOFTMAX=5095
+# end bench
+level=O2
+image=tm_mlperf_ic_prof
+# begin bench
+name=tinymind_int8/mlperf_ic
+setup_rc=0
+setup_cycles=24
+infer_min=89132298
+infer_med=89133238
+infer_max=89133390
+n_test=8
+hash=0x8897F6ED
+hash_match=1
+stack_bytes=2508
+static_ram=52368
+arena_used=0
+layer.0.conv0=3161840
+layer.1.conv1=16698680
+layer.2.conv2=16698627
+layer.3.add3=557115
+layer.4.conv4=8415609
+layer.5.conv5=16495417
+layer.6.pw6=870034
+layer.7.add7=335930
+layer.8.conv8=8291872
+layer.9.conv9=16251645
+layer.10.pw10=964195
+layer.11.add11=176180
+layer.12.avgpool12=11826
+layer.13.fc13=4577
+layer.14.softmax14=3577
+# end bench
+level=O2
+image=tm_mlperf_ic_dsp_prof
+# begin bench
+name=tinymind_int8+dsp/mlperf_ic
+setup_rc=0
+setup_cycles=18
+infer_min=28243700
+infer_med=28244634
+infer_max=28244786
+n_test=8
+hash=0x8897F6ED
+hash_match=1
+stack_bytes=2564
+static_ram=52368
+arena_used=0
+layer.0.conv0=2035792
+layer.1.conv1=5079077
+layer.2.conv2=5078980
+layer.3.add3=557112
+layer.4.conv4=2601043
+layer.5.conv5=4453943
+layer.6.pw6=524639
+layer.7.add7=335933
+layer.8.conv8=2270711
+layer.9.conv9=4247746
+layer.10.pw10=452677
+layer.11.add11=176181
+layer.12.avgpool12=11823
+layer.13.fc13=2108
+layer.14.softmax14=3563
+# end bench
+level=O2
+image=tflm_cmsis_mlperf_ic_int8_prof
+# begin bench
+name=tflm_int8+cmsis/mlperf_ic
+setup_rc=0
+setup_cycles=819804
+infer_min=38791717
+infer_med=38793167
+infer_max=38793225
+n_test=8
+hash=0x8897F6ED
+hash_match=1
+stack_bytes=1536
+static_ram=56004
+arena_used=54996
+layer.0.CONV_2D=2846244
+layer.1.CONV_2D=7276144
+layer.2.CONV_2D=7270334
+layer.3.ADD=1381687
+layer.4.CONV_2D=3316766
+layer.5.CONV_2D=6010446
+layer.6.CONV_2D=679028
+layer.7.ADD=688519
+layer.8.CONV_2D=2893540
+layer.9.CONV_2D=5506920
+layer.10.CONV_2D=530106
+layer.11.ADD=343791
+layer.12.AVERAGE_POOL_2D=39603
+layer.13.RESHAPE=505
+layer.14.FULLY_CONNECTED=3275
+layer.15.SOFTMAX=5015
+# end bench
+size image=baseline flash=2268 ram=132
+size image=tm_mlperf_kws flash=43624 ram=16636
+size image=tm_mlperf_kws_dsp flash=45804 ram=16636
+size image=tflm_cmsis_mlperf_kws_int8 flash=145116 ram=23412
+size image=tflm_ref_mlperf_kws_int8 flash=101844 ram=23364
+size image=tm_mlperf_ic flash=148764 ram=52368
+size image=tm_mlperf_ic_dsp flash=125972 ram=52368
+size image=tflm_cmsis_mlperf_ic_int8 flash=204456 ram=55588
+size image=tflm_ref_mlperf_ic_int8 flash=171360 ram=54932

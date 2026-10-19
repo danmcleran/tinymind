@@ -9,7 +9,7 @@ nav_order: 14
 tinymind, TensorFlow Lite for Microcontrollers (TFLM, now LiteRT for Microcontrollers) and emlearn were run on the same microcontrollers: a Cortex-M4F (NUCLEO-F411RE) and a [Cortex-M0+](#cortex-m0-nucleo-l031k6) (NUCLEO-L031K6). Every framework executed the same models, and the int8 frameworks used the same int8 weights. Everything was measured on the board; nothing was simulated.
 
 {: .note }
-F411 measured 2026-10-13, Cortex-M0+ measured 2026-10-17, with the code in [`benchmarks/framework_comparison_f411`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/framework_comparison_f411). These are numbers from two boards, one compiler and three models. They describe this setup, not every workload. Updated after [#192](https://github.com/danmcleran/tinymind/pull/192), [#195](https://github.com/danmcleran/tinymind/pull/195), [#198](https://github.com/danmcleran/tinymind/pull/198), [#199](https://github.com/danmcleran/tinymind/pull/199), [#202](https://github.com/danmcleran/tinymind/pull/202), [#204](https://github.com/danmcleran/tinymind/pull/204), [#208](https://github.com/danmcleran/tinymind/pull/208), [#210](https://github.com/danmcleran/tinymind/pull/210) and [#211](https://github.com/danmcleran/tinymind/pull/211), nine tinymind fixes this benchmark prompted (see [what changed](#what-changed-since-the-first-run)).
+F411 measured 2026-10-13, Cortex-M0+ measured 2026-10-17, [MLPerf Tiny reference models](#mlperf-tiny-reference-models) measured 2026-10-19, with the code in [`benchmarks/framework_comparison_f411`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/framework_comparison_f411). These are numbers from two boards, one compiler and five models. They describe this setup, not every workload. Updated after [#192](https://github.com/danmcleran/tinymind/pull/192), [#195](https://github.com/danmcleran/tinymind/pull/195), [#198](https://github.com/danmcleran/tinymind/pull/198), [#199](https://github.com/danmcleran/tinymind/pull/199), [#202](https://github.com/danmcleran/tinymind/pull/202), [#204](https://github.com/danmcleran/tinymind/pull/204), [#208](https://github.com/danmcleran/tinymind/pull/208), [#210](https://github.com/danmcleran/tinymind/pull/210) and [#211](https://github.com/danmcleran/tinymind/pull/211), nine tinymind fixes this benchmark prompted (see [what changed](#what-changed-since-the-first-run)).
 
 ## Setup
 
@@ -90,6 +90,57 @@ Each layer was timed separately, behind its own non-inlined call.
 **RAM is close on the CNN.** tinymind keeps every intermediate activation buffer static. TFLM's arena planner reuses buffers but carries interpreter state. Alternating between two buffers (2,592 B and 784 B instead of 4,432 B) would save about 1 KB.
 
 **Among the float runtimes,** TFLM float32 is faster than emlearn on the MLP. emlearn has the smallest float footprint, and almost all of it is the weights themselves.
+
+## MLPerf® Tiny reference models
+
+The models above were built for this benchmark. To check the comparison on standard models, the F411 also runs two of the [MLPerf Tiny](https://github.com/mlcommons/tiny) reference int8 models, unmodified, with tinymind and with TFLM: keyword spotting (DS-CNN, 49×10 MFCC input, 12 classes) and image classification (ResNet-8, 32×32×3 input, 10 classes).
+
+{: .note }
+**These are not MLPerf results.** They were not produced with the MLPerf Tiny benchmark runner or under its rules: there is no accuracy run on the benchmark datasets and no energy measurement, and MLCommons has not verified them. They compare two inference stacks on the same reference models and the same inputs, and should not be compared with published MLPerf Tiny scores. MLPerf® is a registered trademark of MLCommons Association in the United States and other countries; see [mlcommons.org](https://mlcommons.org).
+
+How they were run:
+
+- **Same arithmetic.** A generator reads each `.tflite` and rebuilds the graph from tinymind layers, using the model's own int8 weights and int32 biases and the requantizer multipliers TFLM derives from its scales. Every output of every image matched between tinymind and TFLM, with CMSIS-NN and with reference kernels, at `-O2` and `-O3`.
+- **Inputs.** 8 seeded random int8 tensors per model, not dataset samples. This measures latency, memory and agreement; accuracy is a property of the reference models, and it is MLCommons' to report.
+- **Not redistributed.** The models are Apache-2.0 (MLCommons). The repository has the generator, not the models: `make mlperf-models` downloads them at a pinned commit and checks their SHA-256.
+
+`-O3`, 100 MHz. RAM is static RAM plus peak stack, and includes TFLM's tensor arena. Flash includes the weights.
+
+| Model | Framework | Cycles | ms | Flash | RAM |
+|---|---|---:|---:|---:|---:|
+| Keyword spotting (DS-CNN) | **tinymind +SMLAD** | **8,193,064** | **81.9** | **53,156** | **17,248** |
+| | tinymind scalar | 15,736,026 | 157.4 | 52,748 | 17,264 |
+| | TFLM CMSIS-NN | 9,583,099 | 95.8 | 148,864 | 24,432 |
+| | TFLM reference | 67,484,238 | 674.8 | 101,944 | 23,828 |
+| Image classification (ResNet-8) | **tinymind +SMLAD** | **26,753,191** | **267.5** | **108,324** | **54,424** |
+| | tinymind scalar | 85,467,754 | 854.7 | 120,836 | 54,380 |
+| | TFLM CMSIS-NN | 37,372,049 | 373.7 | 191,212 | 56,608 |
+| | TFLM reference | 191,555,451 | 1,915.6 | 155,412 | 55,396 |
+
+Per-layer cycles for the image classification model, `-O3` (each layer timed separately):
+
+| Layer | tinymind +SMLAD | TFLM CMSIS-NN |
+|---|---:|---:|
+| conv 3×3, 3→16 | 1,903,707 | 2,837,416 |
+| conv 3×3, 16→16 (×2) | 5,008,401 | 6,984,937 |
+| conv 3×3 stride 2, 16→32 | 2,538,895 | 3,171,053 |
+| conv 3×3, 32→32 | 4,414,087 | 5,718,998 |
+| conv 1×1 stride 2, 16→32 | 506,977 | 677,296 |
+| conv 3×3 stride 2, 32→64 | 2,236,304 | 2,747,445 |
+| conv 3×3, 64→64 | 4,219,491 | 5,213,962 |
+| conv 1×1 stride 2, 32→64 | 457,817 | 533,502 |
+| residual add (32×32×16) | 557,110 | 1,407,630 |
+
+What these numbers say:
+
+- **tinymind takes 14.5% fewer cycles than CMSIS-NN on keyword spotting and 28.4% fewer on image classification**, and fewer on every layer of both models at `-O2` and `-O3`. It needs a third of TFLM's flash on keyword spotting and 57% on image classification, and less RAM on both (17.2 against 24.4 KB, and 54.4 against 56.6 KB).
+- **The first run lost image classification by 16%.** Before this suite, tinymind's 3×3 convolutions over 16 to 64 channels computed one output at a time, and SAME padding needed a separate pass and a padded copy of each input. Three changes closed it, all bit-exact:
+  - The convolutions now compute two filters by two output pixels per pass through an SMLAD kernel, so each load feeds two multiplies, as CMSIS-NN does. The kernel is a separate function on purpose: inlined into the layer, it competed with the surrounding loops for registers, and these layers' cost swung by 30% with unrelated code changes. The 1×1 convolutions over 32 or more channels use the same kernel.
+  - Padding is folded into the convolution and depthwise layers (`PadTop` … `PadRight` template parameters). A ring of padded rows on the stack replaces the 12 KB and 18 KB padded copies that had put tinymind's RAM above TFLM's.
+  - A new `QSoftmaxFixedPoint1D` reproduces the TFLite int8 softmax exactly, so a model that ends in a softmax can be checked against TFLM bit for bit.
+- **The models above did not move.** The KWS-style CNN is within 0.3% at `-O3` and 2% faster at `-O2`; the MLP and every Cortex-M0+ image are unchanged. Their tables stay as measured at `b02e92d`.
+
+Reproduce with `make mlperf-models`, then `make SUITE=mlperf LEVEL=O3 run`; full tables, `-O2` included, are in [`results/REPORT_mlperf.md`](https://github.com/danmcleran/tinymind/blob/master/benchmarks/framework_comparison_f411/results/REPORT_mlperf.md).
 
 ## Cortex-M0+: NUCLEO-L031K6
 
@@ -179,7 +230,7 @@ The first runs (tinymind before #192) exposed four weak spots. All four are fixe
   - `arena_used_bytes()` reported 100–300 B less than the minimum arena `AllocateTensors()` accepts.
   - The per-operator profiler is compiled out of release builds, so a separate `release_with_logs` library is needed to profile.
   - A Keras `Flatten` with a dynamic batch dimension adds shape-computation operators unless the model is built with `batch_size=1`.
-- **tinymind:** header-only, with nothing to build or link. It has no `.tflite` importer. The bridge that copied the TFLite int8 parameters into tinymind layers was written for this benchmark. tinymind ships [PyTorch, ONNX and tree-ensemble importers](https://github.com/danmcleran/tinymind/tree/master/apps); the tree importer covers scikit-learn, XGBoost and LightGBM.
+- **tinymind:** header-only, with nothing to build or link. It has no `.tflite` importer. The bridges that copied the TFLite int8 parameters into tinymind layers (`gen/make_models.py`, and `gen/make_mlperf.py` for the MLPerf Tiny models) were written for this benchmark. tinymind ships [PyTorch, ONNX and tree-ensemble importers](https://github.com/danmcleran/tinymind/tree/master/apps); the tree importer covers scikit-learn, XGBoost and LightGBM.
 
 ## Reproduce it
 
@@ -191,6 +242,8 @@ make deps            # Python venv + TFLM clone at the pinned revision + TFLM li
 make host-check      # tinymind int8 outputs reproduce the expected hashes
 make LEVEL=O3 run    # build, flash and capture every image
 ```
+
+For the MLPerf Tiny reference models, `make mlperf-models` downloads them and `make SUITE=mlperf LEVEL=O3 run` writes `results/raw_mlperf_O3.txt`.
 
 On a NUCLEO-L031K6, `make BOARD=l031 LEVEL=O3 run` builds and runs the Cortex-M0+ images (`results/raw_l031_O3.txt`), and `make BOARD=l031 fit` reports what the images that do not fit would need.
 

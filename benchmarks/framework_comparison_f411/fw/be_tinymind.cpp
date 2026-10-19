@@ -31,6 +31,14 @@
 #if defined(MODEL_MLP)
 #  include "mlp_tinymind.hpp"
 #  define FORWARD tm_mlp::forward
+#elif defined(MODEL_MLPERF_KWS)
+#  include "mlperf_kws_tinymind.hpp"
+#  define FORWARD tm_mlperf_kws::forward
+#  define MLPERF_NS tm_mlperf_kws
+#elif defined(MODEL_MLPERF_IC)
+#  include "mlperf_ic_tinymind.hpp"
+#  define FORWARD tm_mlperf_ic::forward
+#  define MLPERF_NS tm_mlperf_ic
 #else
 #  include "kws_tinymind.hpp"
 #  define FORWARD tm_kws::forward
@@ -113,10 +121,10 @@ namespace
 
 // Each layer behind its own noinline call so per-layer timings are not
 // polluted by cross-layer inlining and register allocation.
-template<typename Layer, typename In, typename Out>
-__attribute__((noinline)) void runLayer(const Layer& layer, const In* in, Out* out)
+template<typename Layer, typename... Args>
+__attribute__((noinline)) void runLayer(const Layer& layer, Args... args)
 {
-    layer.forward(in, out);
+    layer.forward(args...);
 }
 
 struct LayerTimer
@@ -126,18 +134,18 @@ struct LayerTimer
     int max;
     int n;
 
-    template<typename Layer, typename In, typename Out>
-    void step(const char* tag, const Layer& layer, const In* in, Out* out)
+    template<typename Layer, typename... Args>
+    void step(const char* tag, const Layer& layer, Args... args)
     {
 #if defined(BENCH_SMALL_RAM)
         if (cycles == nullptr)
         {
-            runLayer(layer, in, out);
+            runLayer(layer, args...);
             return;
         }
 #endif
         const uint32_t a = board_cycles();
-        runLayer(layer, in, out);
+        runLayer(layer, args...);
         const uint32_t elapsed = board_cycles() - a;
         if (n < max)
         {
@@ -145,6 +153,13 @@ struct LayerTimer
             tags[n] = tag;
         }
         ++n;
+    }
+
+    // The MLPerf model headers drive their layers through step(tag, layer, ...).
+    template<typename Layer, typename... Args>
+    void operator()(const char* tag, const Layer& layer, Args... args)
+    {
+        step(tag, layer, args...);
     }
 };
 
@@ -195,6 +210,8 @@ extern "C" int be_profile(uint32_t* c, const char** t, int max)
     timer.step("fc0", L0, gIn, a0);
     timer.step("fc1", L1, a0, a1);
     timer.step("fc2", L2, a1, gOut);
+#elif defined(MLPERF_NS)
+    MLPERF_NS::run(timer, gIn, gOut);
 #elif defined(BENCH_SMALL_RAM)
     kwsChain(timer);
 #else

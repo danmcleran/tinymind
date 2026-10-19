@@ -20,7 +20,8 @@
 * SOFTWARE.
 */
 
-// Maps MODEL_MLP / MODEL_KWS to generic names used by the backends.
+// Maps MODEL_MLP / MODEL_KWS / MODEL_MLPERF_KWS / MODEL_MLPERF_IC to generic
+// names used by the backends.
 #pragma once
 
 #if defined(MODEL_MLP)
@@ -49,6 +50,24 @@
 #  define X_I8      kws_test_x_i8
 #  define X_F32     kws_test_x_f32
 #  define MODEL_TAG "kws"
+#elif defined(MODEL_MLPERF_KWS)
+#  include "mlperf_kws_data.h"
+#  define N_TEST    MLPERF_KWS_N_TEST
+#  define N_IN      MLPERF_KWS_N_IN
+#  define N_OUT     MLPERF_KWS_N_OUT
+#  define LABELS    nullptr
+#  define TM_HASH   TM_MLPERF_KWS_HASH
+#  define X_I8      mlperf_kws_test_x_i8
+#  define MODEL_TAG "mlperf_kws"
+#elif defined(MODEL_MLPERF_IC)
+#  include "mlperf_ic_data.h"
+#  define N_TEST    MLPERF_IC_N_TEST
+#  define N_IN      MLPERF_IC_N_IN
+#  define N_OUT     MLPERF_IC_N_OUT
+#  define LABELS    nullptr
+#  define TM_HASH   TM_MLPERF_IC_HASH
+#  define X_I8      mlperf_ic_test_x_i8
+#  define MODEL_TAG "mlperf_ic"
 #else
-#  error "define MODEL_MLP or MODEL_KWS"
+#  error "define MODEL_MLP, MODEL_KWS, MODEL_MLPERF_KWS or MODEL_MLPERF_IC"
 #endif
