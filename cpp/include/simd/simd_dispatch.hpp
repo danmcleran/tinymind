@@ -179,6 +179,99 @@ namespace tinymind { namespace simd {
     }
 
     /**
+     * Two inputs against two weight rows (two output pixels times two
+     * filters of a convolution), accumulated into acc:
+     *   acc[0] += w0 . (x0 - zp)    acc[1] += w1 . (x0 - zp)
+     *   acc[2] += w0 . (x1 - zp)    acc[3] += w1 . (x1 - zp)
+     * The Arm DSP backend computes the four in one blocked loop, so each
+     * load feeds two SMLADs. Every other build makes four
+     * int8DotWithZeroPoint calls, which keeps its results and its speed
+     * exactly as they were. Same integer sums either way.
+     */
+    inline void int8Dot2x2WithZeroPoint(const int8_t* x0, const int8_t* x1,
+                                        const int8_t* w0, const int8_t* w1,
+                                        std::size_t n, int8_t zp, int32_t* acc)
+    {
+#if TINYMIND_ENABLE_SIMD_ARM_DSP && !TINYMIND_ENABLE_SIMD_HELIUM_MVE_I && \
+    !defined(TINYMIND_SIMD_X86_VECTOR_DOT) && !TINYMIND_ENABLE_SIMD_NEON && \
+    !TINYMIND_ENABLE_SIMD_NEON_DOTPROD && !TINYMIND_ENABLE_SIMD_SVE
+        arm_dsp::int8Dot2x2WithZeroPoint(x0, x1, w0, w1, n, zp, acc);
+#else
+        acc[0] += int8DotWithZeroPoint(x0, w0, n, zp);
+        acc[1] += int8DotWithZeroPoint(x0, w1, n, zp);
+        acc[2] += int8DotWithZeroPoint(x1, w0, n, zp);
+        acc[3] += int8DotWithZeroPoint(x1, w1, n, zp);
+#endif
+    }
+
+    template<typename Input, typename Weight, typename Accum>
+    inline void dotProduct2x2WithZeroPoint(const Input* x0, const Input* x1,
+                                           const Weight* w0, const Weight* w1,
+                                           std::size_t n, Input zp, Accum* acc)
+    {
+        acc[0] += dotProductWithZeroPoint<Input, Weight, Accum>(x0, w0, n, zp);
+        acc[1] += dotProductWithZeroPoint<Input, Weight, Accum>(x0, w1, n, zp);
+        acc[2] += dotProductWithZeroPoint<Input, Weight, Accum>(x1, w0, n, zp);
+        acc[3] += dotProductWithZeroPoint<Input, Weight, Accum>(x1, w1, n, zp);
+    }
+
+    template<>
+    inline void dotProduct2x2WithZeroPoint<int8_t, int8_t, int32_t>(
+        const int8_t* x0, const int8_t* x1, const int8_t* w0, const int8_t* w1,
+        std::size_t n, int8_t zp, int32_t* acc)
+    {
+        int8Dot2x2WithZeroPoint(x0, x1, w0, w1, n, zp, acc);
+    }
+
+    /**
+     * A convolution's 2x2 block (two output pixels PixelStep apart, two
+     * filters WindowLength apart) over KH kernel rows of RowLength, each
+     * row read from rows[kh] + offset. The Arm DSP backend runs it as one
+     * out-of-line kernel (see arm_dsp::int8ConvRows2x2WithZeroPoint);
+     * everything else is KH dotProduct2x2WithZeroPoint calls.
+     */
+    template<typename Input, typename Weight, typename Accum,
+             std::size_t KH, std::size_t RowLength, std::size_t PixelStep, std::size_t WindowLength>
+    struct ConvRows2x2
+    {
+        static void apply(const Input* const* rows, std::size_t offset, const Weight* w0, Input zp, Accum* acc)
+        {
+            for (std::size_t kh = 0; kh < KH; ++kh)
+            {
+                const Input* const x = rows[kh] + offset;
+                const Weight* const w = w0 + kh * RowLength;
+                dotProduct2x2WithZeroPoint<Input, Weight, Accum>(
+                    x, x + PixelStep, w, w + WindowLength, RowLength, zp, acc);
+            }
+        }
+    };
+
+#if TINYMIND_ENABLE_SIMD_ARM_DSP && !TINYMIND_ENABLE_SIMD_HELIUM_MVE_I && \
+    !defined(TINYMIND_SIMD_X86_VECTOR_DOT) && !TINYMIND_ENABLE_SIMD_NEON && \
+    !TINYMIND_ENABLE_SIMD_NEON_DOTPROD && !TINYMIND_ENABLE_SIMD_SVE
+    /**
+     * True when ConvRows2x2 is a blocked kernel rather than four dot
+     * products. Layers whose existing one-output loop is already tuned
+     * (pointwise, with its weights in a local) switch to the 2x2 form only
+     * then: as four separate dot products it is slower than that loop.
+     */
+    constexpr bool kBlockedConvRows2x2 = true;
+
+    template<std::size_t KH, std::size_t RowLength, std::size_t PixelStep, std::size_t WindowLength>
+    struct ConvRows2x2<int8_t, int8_t, int32_t, KH, RowLength, PixelStep, WindowLength>
+    {
+        static void apply(const int8_t* const* rows, std::size_t offset, const int8_t* w0, int8_t zp,
+                          int32_t* acc)
+        {
+            arm_dsp::int8ConvRows2x2WithZeroPoint<KH, RowLength, PixelStep, WindowLength>(
+                rows, offset, w0, zp, acc);
+        }
+    };
+#else
+    constexpr bool kBlockedConvRows2x2 = false;
+#endif
+
+    /**
      * Compile-time advertising of which backend the dispatch resolved
      * to. Useful for benchmark reports and the perf_matrix example.
      */

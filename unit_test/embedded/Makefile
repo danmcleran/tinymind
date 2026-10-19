@@ -301,8 +301,10 @@ arm_crosscompile_clang:
 # links arm_dsp/arm_dsp_qemu_test.cpp into a bare-metal image for QEMU's
 # mps2-an386 machine (a Cortex-M4) and runs it under semihosting. The test
 # sweeps every length 0..80, every x/w byte misalignment and the int8
-# extremes against the scalar reference, then checks QPointwiseConv2D and
-# QDense end to end; QEMU's exit status is the test's.
+# extremes against the scalar reference, for the dot product and the 2x2
+# kernel, then checks the out-of-line convolution kernel, QPointwiseConv2D,
+# padded QConv2DPerChannel and QDense end to end; QEMU's exit status is the
+# test's.
 #
 # Three images, because the kernel has three code shapes: GCC (inline-asm
 # SXTB16 ROR #8, unaligned LDR), Clang with -munaligned-access (folded rotate,

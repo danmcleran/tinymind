@@ -100,6 +100,114 @@ namespace tinymind {
             }
         }
 
+        /*
+         * Input channels from which a multi-pixel pointwise layer runs filter
+         * pairs over pixel pairs through simd::ConvRows2x2 (each load feeds
+         * two multiplies), when the backend has a blocked kernel for it
+         * (simd::kBlockedConvRows2x2). Below it, or without one, the
+         * one-filter sweep above, with its weights held in a local, is as
+         * fast or faster and its tuning is kept.
+         */
+        constexpr std::size_t kPointwise2x2MinChannels = 32;
+
+        // Tag for the choice between the two multi-pixel forms, made at
+        // compile time so the form a layer does not use is never instantiated.
+        template<bool Blocked>
+        struct PointwiseBlockedTag
+        {
+        };
+
+        // Two filters over every pixel, two pixels at a time; an odd last
+        // pixel takes two single dot products. As in convRowsFilterPairRow,
+        // the pixel loop is written out once per requantizer form in this one
+        // function. Bit-exact.
+        template<typename InputType, typename WeightType, typename AccumType, typename OutputType,
+                 std::size_t Pixels_, std::size_t InChannels_, std::size_t NumFilters_>
+        inline void pointwiseFilterPairSweep(const InputType* input, const WeightType* w0,
+                                             AccumType bias0, AccumType bias1, InputType zeroPoint,
+                                             const Requantizer<AccumType, OutputType>& rq0,
+                                             const Requantizer<AccumType, OutputType>& rq1,
+                                             OutputType* out)
+        {
+            constexpr std::size_t pairedPixels = Pixels_ & ~static_cast<std::size_t>(1u);
+            typedef simd::ConvRows2x2<InputType, WeightType, AccumType, 1, InChannels_, InChannels_, InChannels_>
+                Kernel;
+
+            // Value-initialized: GCC cannot see that both are set whenever
+            // the fast forms are used, and warns.
+            FastRequantizer<OutputType> fast0 = {};
+            FastRequantizer<OutputType> fast1 = {};
+            const bool fast0Ready = fast0.init(rq0);
+            const bool fast1Ready = fast1.init(rq1);
+            if (fast0Ready && fast1Ready)
+            {
+                for (std::size_t p = 0; p < pairedPixels; p += 2)
+                {
+                    const InputType* const rows[1] = {input + p * InChannels_};
+                    AccumType acc[4] = {bias0, bias1, bias0, bias1};
+                    Kernel::apply(rows, 0, w0, zeroPoint, acc);
+                    OutputType* const o = out + p * NumFilters_;
+                    o[0] = fast0.apply(acc[0]);
+                    o[1] = fast1.apply(acc[1]);
+                    o[NumFilters_] = fast0.apply(acc[2]);
+                    o[NumFilters_ + 1] = fast1.apply(acc[3]);
+                }
+            }
+            else
+            {
+                for (std::size_t p = 0; p < pairedPixels; p += 2)
+                {
+                    const InputType* const rows[1] = {input + p * InChannels_};
+                    AccumType acc[4] = {bias0, bias1, bias0, bias1};
+                    Kernel::apply(rows, 0, w0, zeroPoint, acc);
+                    OutputType* const o = out + p * NumFilters_;
+                    o[0] = rq0.apply(acc[0]);
+                    o[1] = rq1.apply(acc[1]);
+                    o[NumFilters_] = rq0.apply(acc[2]);
+                    o[NumFilters_ + 1] = rq1.apply(acc[3]);
+                }
+            }
+            if (pairedPixels < Pixels_)
+            {
+                const InputType* const x = input + pairedPixels * InChannels_;
+                OutputType* const o = out + pairedPixels * NumFilters_;
+                o[0] = rq0.apply(bias0 + simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
+                                             x, w0, InChannels_, zeroPoint));
+                o[1] = rq1.apply(bias1 + simd::dotProductWithZeroPoint<InputType, WeightType, AccumType>(
+                                             x, w0 + InChannels_, InChannels_, zeroPoint));
+            }
+        }
+
+        // Every filter of a multi-pixel pointwise layer: filter pairs through
+        // pointwiseFilterPairSweep, an odd last filter through the one-filter
+        // sweep. Rqs holds one Requantizer per filter, or a single per-tensor one.
+        template<typename InputType, typename WeightType, typename AccumType, typename OutputType,
+                 std::size_t Pixels_, std::size_t InChannels_, std::size_t NumFilters_, bool PerChannel>
+        inline void pointwiseForward2x2(const InputType* input, OutputType* output,
+                                        const WeightType* weights, const AccumType* biases,
+                                        InputType zeroPoint, const Requantizer<AccumType, OutputType>* rqs)
+        {
+            for (std::size_t pair = 0; pair < NumFilters_ / 2; ++pair)
+            {
+                const std::size_t f = 2 * pair;
+                const AccumType bias0 = (biases != nullptr) ? biases[f] : static_cast<AccumType>(0);
+                const AccumType bias1 = (biases != nullptr) ? biases[f + 1] : static_cast<AccumType>(0);
+                const Requantizer<AccumType, OutputType> rq0 = rqs[PerChannel ? f : 0];
+                const Requantizer<AccumType, OutputType> rq1 = rqs[PerChannel ? f + 1 : 0];
+                pointwiseFilterPairSweep<InputType, WeightType, AccumType, OutputType,
+                                         Pixels_, InChannels_, NumFilters_>(
+                    input, weights + f * InChannels_, bias0, bias1, zeroPoint, rq0, rq1, output + f);
+            }
+            if ((NumFilters_ & 1u) != 0)
+            {
+                const std::size_t f = NumFilters_ - 1;
+                const AccumType bias = (biases != nullptr) ? biases[f] : static_cast<AccumType>(0);
+                pointwiseFilterSweep<InputType, WeightType, AccumType, OutputType,
+                                     Pixels_, InChannels_, NumFilters_>(
+                    input, weights + f * InChannels_, bias, zeroPoint, rqs[PerChannel ? f : 0], output + f);
+            }
+        }
+
     } // namespace detail
 
     template<
@@ -168,6 +276,30 @@ namespace tinymind {
                 return;
             }
 
+            forwardPixels(input, output, layerWeights, layerBiases, inputZeroPoint, rq,
+                          detail::PointwiseBlockedTag<Blocked>());
+        }
+
+    private:
+        static constexpr bool Blocked = simd::kBlockedConvRows2x2 &&
+            (InChannels_ >= detail::kPointwise2x2MinChannels) && (NumFilters_ >= 2) && (H_ * W_ >= 2);
+
+        // Filter pairs over pixel pairs through the backend's blocked kernel.
+        void forwardPixels(const InputType* input, OutputType* output, const WeightType* layerWeights,
+                           const AccumulatorType* layerBiases, InputType inputZeroPoint,
+                           const Requantizer<AccumulatorType, OutputType>& rq,
+                           detail::PointwiseBlockedTag<true>) const
+        {
+            detail::pointwiseForward2x2<InputType, WeightType, AccumulatorType, OutputType,
+                                        H_ * W_, InChannels_, NumFilters_, false>(
+                input, output, layerWeights, layerBiases, inputZeroPoint, &rq);
+        }
+
+        void forwardPixels(const InputType* input, OutputType* output, const WeightType* layerWeights,
+                           const AccumulatorType* layerBiases, InputType inputZeroPoint,
+                           const Requantizer<AccumulatorType, OutputType>& rq,
+                           detail::PointwiseBlockedTag<false>) const
+        {
             // Filter-outer: one filter's weight row, bias and requantizer stay
             // loaded while it sweeps every pixel, instead of being re-fetched
             // for each output. Same products and sums, so bit-exact with the
@@ -261,6 +393,30 @@ namespace tinymind {
                 return;
             }
 
+            forwardPixels(input, output, layerWeights, layerBiases, inputZeroPoint, rqs,
+                          detail::PointwiseBlockedTag<Blocked>());
+        }
+
+    private:
+        static constexpr bool Blocked = simd::kBlockedConvRows2x2 &&
+            (InChannels_ >= detail::kPointwise2x2MinChannels) && (NumFilters_ >= 2) && (H_ * W_ >= 2);
+
+        // Filter pairs over pixel pairs through the backend's blocked kernel.
+        void forwardPixels(const InputType* input, OutputType* output, const WeightType* layerWeights,
+                           const AccumulatorType* layerBiases, InputType inputZeroPoint,
+                           const Requantizer<AccumulatorType, OutputType>* rqs,
+                           detail::PointwiseBlockedTag<true>) const
+        {
+            detail::pointwiseForward2x2<InputType, WeightType, AccumulatorType, OutputType,
+                                        H_ * W_, InChannels_, NumFilters_, true>(
+                input, output, layerWeights, layerBiases, inputZeroPoint, rqs);
+        }
+
+        void forwardPixels(const InputType* input, OutputType* output, const WeightType* layerWeights,
+                           const AccumulatorType* layerBiases, InputType inputZeroPoint,
+                           const Requantizer<AccumulatorType, OutputType>* rqs,
+                           detail::PointwiseBlockedTag<false>) const
+        {
             // Filter-outer: one filter's weight row, bias and requantizer stay
             // loaded while it sweeps every pixel, instead of being re-fetched
             // for each output. Same products and sums, so bit-exact with the

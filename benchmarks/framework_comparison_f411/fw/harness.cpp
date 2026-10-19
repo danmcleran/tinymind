@@ -137,10 +137,10 @@ int main()
     kv("arena_used", be_arena_used());
 #ifdef PROFILE
     {
-        uint32_t c[16];
-        const char* tags[16];
+        uint32_t c[32];
+        const char* tags[32];
         be_load(0);
-        const int n = be_profile(c, tags, 16);
+        const int n = be_profile(c, tags, 32);
         for (int i = 0; i < n; ++i)
         {
             board_puts("layer.");

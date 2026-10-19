@@ -293,6 +293,66 @@ Findings:
    faster, though that gap is mostly emlearn tallying votes in software float. Accuracy is identical on the subset; over
    all 360 test samples, emlearn's predictions agree with the forest on 358 (see friction).
 
+## MLPerf® Tiny reference models (F411)
+
+The two models above were built for this benchmark. `SUITE=mlperf` runs two standard ones instead: the
+MLPerf Tiny reference int8 models for keyword spotting (DS-CNN, 49x10 MFCC input, 12 classes) and image
+classification (ResNet-8, 32x32x3 CIFAR-10 input, 10 classes), taken unmodified from
+[mlcommons/tiny](https://github.com/mlcommons/tiny) at a pinned commit.
+
+**These are not MLPerf results.** They were not produced with the MLPerf Tiny runner or under its rules
+(no accuracy run on the dataset, no energy measurement), and MLCommons has not verified them. They compare
+two inference stacks on the same reference model and inputs. MLPerf® is a registered trademark of MLCommons
+Association in the United States and other countries; see [mlcommons.org](https://mlcommons.org).
+
+* **Same arithmetic.** `gen/make_mlperf.py` reads each `.tflite` and rebuilds the graph from tinymind layers,
+  using the model's own int8 weights and int32 biases, and the requantizer multipliers derived from its
+  scales the same way TFLM derives them. The graphs end in a softmax, which `QSoftmaxFixedPoint1D`
+  (`cpp/qsoftmax_fixedpoint.hpp`) reproduces bit-exactly. RESHAPE becomes a buffer alias. SAME padding
+  goes into the convolution and depthwise layers' padding parameters, which pad with the input zero point
+  as TFLM does. Activations share one arena, planned from tensor lifetimes like TFLM's.
+* **Inputs.** 8 seeded random int8 tensors per model, not dataset samples: this measures latency, memory
+  and agreement, and the reference models' accuracy is MLCommons' to report. Every image's output hash
+  matches tinymind's host hash, which also matches the TFLite interpreter's reference kernels. The table
+  shows `yes` only for a hash computed on the board.
+* **Not committed.** The models are Apache-2.0 (MLCommons), so neither they nor the headers generated
+  from them are in this repository. `make mlperf-models` downloads them, checks their SHA-256, and
+  writes `gen/mlperf/`, which is gitignored.
+
+O3, 100 MHz. RAM is static RAM plus peak stack, and for TFLM that includes the tensor arena. Flash excludes
+the test inputs and includes the weights: tinymind holds them as const arrays, TFLM inside the flatbuffer.
+Full tables, O2 and per layer, are in [`results/REPORT_mlperf.md`](results/REPORT_mlperf.md).
+
+| Model | Framework | Cycles | ms | Flash | RAM | Bit-exact |
+|---|---|---:|---:|---:|---:|---|
+| KWS DS-CNN | tinymind +SMLAD | **8,193,064** | **81.9** | **53,156** | 17,248 | yes |
+| | tinymind scalar | 15,736,026 | 157.4 | 52,748 | 17,264 | yes |
+| | TFLM CMSIS-NN | 9,583,099 | 95.8 | 148,864 | 24,432 | yes |
+| | TFLM reference | 67,484,238 | 674.8 | 101,944 | 23,828 | yes |
+| IC ResNet-8 | tinymind +SMLAD | **26,753,191** | **267.5** | **108,324** | 54,424 | yes |
+| | tinymind scalar | 85,467,754 | 854.7 | 120,836 | 54,380 | yes |
+| | TFLM CMSIS-NN | 37,372,049 | 373.7 | 191,212 | 56,608 | yes |
+| | TFLM reference | 191,555,451 | 1,915.6 | 155,412 | 55,396 | yes |
+
+* **tinymind with SMLAD against TFLM with CMSIS-NN:** 14.5% fewer cycles on keyword spotting and 28.4% fewer
+  on image classification. At O2 and O3, it takes fewer cycles on every layer of both models.
+* **Memory:** a third (keyword spotting) and 57% (image classification) of TFLM's flash, and 29% and 4% less
+  RAM. TFLM's RAM is mostly its arena; tinymind's is its planned activation arena (16,000 and 49,152 B)
+  plus up to 2 KB of stack for the padded-row bands.
+* **The 3x3 convolutions over 16 to 64 channels** are most of image classification:
+  - 5.01M cycles against CMSIS-NN's 6.98M (16 channels), 4.41M against 5.72M (32) and 4.22M against 5.21M (64).
+  - Their kernel windows are too big to gather into a patch, so tinymind reads them in place: two filters
+    by two output pixels per pass through an out-of-line SMLAD kernel (`simd::ConvRows2x2`), so each load
+    feeds two multiplies, as CMSIS-NN's `arm_convolve_s8` does.
+  - The kernel is out of line on purpose. Inlined into the layer, it competed with the surrounding loops
+    for registers, and whether its accumulators spilled swung these layers by 30% with unrelated changes.
+* **Keyword spotting:**
+  - The 1x1 64→64 convolutions take the same 2x2 kernel: 1.25M cycles against CMSIS-NN's 1.30M.
+  - Each depthwise layer takes 497k against 728k, and the 10x4 stride-2 stem 1.21M against 1.41M.
+* **Padding** is folded into the layers: a ring of KH padded rows on the stack replaces the padded copy
+  of each input. That removes a 218k-cycle (keyword spotting) and 390k-cycle (image classification) copy
+  pass, and the 12 KB and 18 KB padded tensors that had put tinymind's RAM above TFLM's.
+
 ## Integration friction observed
 
 * **emlearn:** `pip install emlearn`, `emlearn.convert(model).save()`, include one header. Minutes.
@@ -332,7 +392,16 @@ make BOARD=l031 tflm-libs      # TFLM libs for Cortex-M0+ (only `make fit` needs
 make BOARD=l031 LEVEL=O2 run   # NUCLEO-L031K6 -> results/raw_l031_O2.txt (runs `make fit` too)
 make BOARD=l031 LEVEL=O3 run
 .venv/bin/python -I report.py l031  # -> results/REPORT_l031.md
+
+make mlperf-models             # fetch + verify the MLPerf Tiny reference models, write gen/mlperf/
+make host-check-mlperf         # tinymind outputs match the expected hashes
+make SUITE=mlperf LEVEL=O2 run # -> results/raw_mlperf_O2.txt
+make SUITE=mlperf LEVEL=O3 run # -> results/raw_mlperf_O3.txt
+.venv/bin/python -I report.py mlperf  # -> results/REPORT_mlperf.md
 ```
+
+A run stops capturing at each image's end marker; `CAPTURE_MAX` (default 180 s) only bounds a hung image.
+TFLM's reference kernels on the image classification model take about 90 s.
 
 `make models` regenerates `gen/out/` from scratch (needs the venv). `make probe` re-bisects the TFLM arena
 sizes; update the `ARENA_*` values in the Makefile if they change.
@@ -352,6 +421,8 @@ replugging, which renumbers `/dev/ttyACM*`, cannot point them at different board
 | `gen/make_models.py` | Trains/quantizes the models and emits every framework's headers into `gen/out/` |
 | `gen/make_trees.py` | Trains the random forest and emits it for tinymind and emlearn (`make models` runs it) |
 | `gen/subset.py` | Cuts a test set down to its first N samples for the L031 build |
+| `gen/make_mlperf.py` | Fetches the MLPerf Tiny reference models and translates them into `gen/mlperf/` (`make mlperf-models`, not committed) |
 | `host/tm_check.cpp` | Host-side tinymind hash check |
+| `host/tm_check_mlperf.cpp` | The same for the MLPerf models (`make host-check-mlperf`) |
 | `host/tm_host_bench.cpp` | Host timing of tinymind, per x86 SIMD backend (`make host-bench`) |
-| `report.py` | `results/raw_<LEVEL>.txt` → `results/REPORT.md`; `report.py l031` → `results/REPORT_l031.md` |
+| `report.py` | `results/raw_<LEVEL>.txt` → `results/REPORT.md`; `report.py l031` → `results/REPORT_l031.md`; `report.py mlperf` → `results/REPORT_mlperf.md` |

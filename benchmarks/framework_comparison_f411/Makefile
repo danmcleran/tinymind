@@ -18,6 +18,13 @@
 #   make stlink               list attached ST-LINK probes and which one is used
 #   make models               regenerate gen/out/ (needs the venv)
 #
+# SUITE=mlperf (F411 only) swaps the image set for the MLPerf Tiny reference
+# keyword spotting and image classification models, run by tinymind and TFLM:
+#   make mlperf-models        fetch the pinned models, generate gen/mlperf/ (venv)
+#   make host-check-mlperf    tinymind outputs reproduce the expected hashes
+#   make SUITE=mlperf LEVEL=O3 run   -> results/raw_mlperf_<LEVEL>.txt
+# gen/mlperf/ is derived from Apache-2.0 MLCommons models and is not committed.
+#
 # LEVEL applies to every framework at once: tinymind and emlearn translation
 # units get -O2/-O3; TFLM links libs built with its default release flags
 # (O2: kernels -O2, core -Os) or with every level forced to -O3 (O3).
@@ -73,6 +80,17 @@ else
   $(error BOARD must be f411 or l031)
 endif
 
+SUITE ?= default
+ifeq ($(SUITE),mlperf)
+  ifneq ($(BOARD),f411)
+    $(error SUITE=mlperf runs on the F411 only: no reference model fits the L031's 8 KB of RAM)
+  endif
+  B   := build/mlperf/$(LEVEL)
+  RAW  = results/raw_mlperf_$(LEVEL).txt
+else ifneq ($(SUITE),default)
+  $(error SUITE must be default or mlperf)
+endif
+
 # Which ST-LINK to flash and read. With one probe attached it is found on its
 # own; with several, STLINK=<serial> picks one (`make stlink` lists them), on
 # the command line, in the environment, or in an untracked local.mk (which can
@@ -96,7 +114,7 @@ SIZE = arm-none-eabi-size
 COMMON = $(CPU) $(OPT) -g -ffunction-sections -fdata-sections -Wall -Wextra -Werror
 CXXFLAGS = $(COMMON) -std=c++17 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit
 CFLAGS   = $(COMMON) -std=c99
-INC  = -Iboard -Ifw $(DATA_INC) -Igen/out $(BOARD_DEFS)
+INC  = -Iboard -Ifw $(DATA_INC) -Igen/out -Igen/mlperf $(BOARD_DEFS)
 LD   = -Lboard -T $(LDSCRIPT) -nostartfiles --specs=nano.specs --specs=nosys.specs -Wl,--gc-sections
 HARNESS = $(BOARD_SRC) fw/harness.cpp
 
@@ -106,7 +124,13 @@ TFLM_INC = -isystem $(TFLM) -isystem $(TFLM)/tensorflow/lite/micro/tools/make/do
            -isystem $(TFLM)/tensorflow/lite/micro/tools/make/downloads/gemmlowp \
            -DTF_LITE_STRIP_ERROR_STRINGS -DNDEBUG -funsigned-char
 
-ifeq ($(BOARD),f411)
+ifeq ($(SUITE),mlperf)
+IMAGES = baseline \
+  tm_mlperf_kws tm_mlperf_kws_dsp tflm_cmsis_mlperf_kws_int8 tflm_ref_mlperf_kws_int8 \
+  tm_mlperf_ic tm_mlperf_ic_dsp tflm_cmsis_mlperf_ic_int8 tflm_ref_mlperf_ic_int8
+PROF_IMAGES = tm_mlperf_kws_prof tm_mlperf_kws_dsp_prof tflm_cmsis_mlperf_kws_int8_prof \
+  tm_mlperf_ic_prof tm_mlperf_ic_dsp_prof tflm_cmsis_mlperf_ic_int8_prof
+else ifeq ($(BOARD),f411)
 IMAGES = baseline \
   tm_mlp tm_mlp_dsp tm_kws tm_kws_dsp \
   tflm_cmsis_mlp_int8 tflm_ref_mlp_int8 tflm_cmsis_mlp_f32 \
@@ -137,6 +161,10 @@ ARENA_tflm_cmsis_mlp_f32  = 1200
 ARENA_tflm_cmsis_kws_int8 = 4800
 ARENA_tflm_ref_kws_int8   = 4736
 ARENA_tflm_cmsis_kws_f32  = 14112
+ARENA_tflm_cmsis_mlperf_kws_int8 = 22832
+ARENA_tflm_ref_mlperf_kws_int8   = 22784
+ARENA_tflm_cmsis_mlperf_ic_int8  = 55008
+ARENA_tflm_ref_mlperf_ic_int8    = 54352
 
 all: $(IMAGES:%=$(B)/%.elf) $(PROF_IMAGES:%=$(B)/%.elf)
 
@@ -165,6 +193,10 @@ $(B)/baseline.elf: fw/be_baseline.cpp $(HARNESS) | $(B) $(DATA_DEPS)
 # header rebuilds every tinymind image), but it cannot go stale. Recipes pass
 # only the sources ($(SOURCES_OF)) to the compiler.
 TM_HDRS = $(shell find $(TM)/cpp $(TM)/include -name '*.hpp' -o -name '*.h') $(wildcard gen/out/*.hpp gen/out/*.h fw/*.hpp)
+ifeq ($(SUITE),mlperf)
+  MLPERF_GEN = $(foreach m,kws ic,gen/mlperf/mlperf_$(m)_tinymind.hpp gen/mlperf/mlperf_$(m)_tflite_int8.h gen/mlperf/mlperf_$(m)_data.h)
+  TM_HDRS += $(MLPERF_GEN)
+endif
 SOURCES_OF = $(filter %.c %.cpp,$(1))
 
 # $(1)=image $(2)=extra defines
@@ -180,15 +212,25 @@ $(eval $(call tm_rule,tm_mlp_prof,-DMODEL_MLP -DPROFILE))
 $(eval $(call tm_rule,tm_mlp_dsp_prof,-DMODEL_MLP $(DSP) -DPROFILE))
 $(eval $(call tm_rule,tm_kws_prof,-DMODEL_KWS -DPROFILE))
 $(eval $(call tm_rule,tm_kws_dsp_prof,-DMODEL_KWS $(DSP) -DPROFILE))
+$(foreach m,kws ic,$(eval $(call tm_rule,tm_mlperf_$(m),-DMODEL_MLPERF_$(shell echo $(m) | tr a-z A-Z))))
+$(foreach m,kws ic,$(eval $(call tm_rule,tm_mlperf_$(m)_dsp,-DMODEL_MLPERF_$(shell echo $(m) | tr a-z A-Z) $(DSP))))
+$(foreach m,kws ic,$(eval $(call tm_rule,tm_mlperf_$(m)_prof,-DMODEL_MLPERF_$(shell echo $(m) | tr a-z A-Z) -DPROFILE)))
+$(foreach m,kws ic,$(eval $(call tm_rule,tm_mlperf_$(m)_dsp_prof,-DMODEL_MLPERF_$(shell echo $(m) | tr a-z A-Z) $(DSP) -DPROFILE)))
 
-# $(1)=image $(2)=lib $(3)=defines $(4)=kernels tag
+# The MLPerf headers are generated, not committed: say how to get them.
+gen/mlperf/%:
+	@echo "gen/mlperf/$* is missing: run 'make mlperf-models' first"; exit 1
+
+# $(1)=image $(2)=lib $(3)=defines $(4)=kernels tag $(5)=extra prerequisites (not linked)
+# Images also depend on this Makefile: it holds each image's ARENA_ size and flags,
+# and an edit to either must not leave a stale binary to be re-measured.
 define tflm_rule
-$(B)/$(1).elf: fw/be_tflm.cpp $$(HARNESS) $(2) | $$(B) $$(DATA_DEPS)
+$(B)/$(1).elf: fw/be_tflm.cpp $$(HARNESS) $(2) $(5) Makefile | $$(B) $$(DATA_DEPS)
 	$$(CXX) $$(CXXFLAGS) $$(INC) $$(TFLM_INC) $(3) -DKERNELS_TAG='"$(4)"' -DARENA_BYTES=$$(ARENA_$(1)) -o $$@ fw/be_tflm.cpp $$(HARNESS) $(2) -lm $$(LD)
-$(B)/$(1)_prof.elf: fw/be_tflm.cpp $$(HARNESS) $$(TFLM_LOGS) | $$(B) $$(DATA_DEPS)
+$(B)/$(1)_prof.elf: fw/be_tflm.cpp $$(HARNESS) $$(TFLM_LOGS) $(5) Makefile | $$(B) $$(DATA_DEPS)
 	$$(CXX) $$(CXXFLAGS) $$(INC) $$(TFLM_INC) -UTF_LITE_STRIP_ERROR_STRINGS -DPROFILE $(3) -DKERNELS_TAG='"$(4)"' -DARENA_BYTES=$$(ARENA_$(1)) -o $$@ fw/be_tflm.cpp $$(HARNESS) $$(TFLM_LOGS) -lm $$(LD)
-$(B)/$(1)_probe.elf: fw/be_tflm.cpp $$(HARNESS) $(2) | $$(B) $$(DATA_DEPS)
-	$$(CXX) $$(CXXFLAGS) $$(INC) $$(TFLM_INC) -DARENA_PROBE $(3) -DKERNELS_TAG='"$(4)"' -DARENA_BYTES=32768 -o $$@ fw/be_tflm.cpp $$(HARNESS) $(2) -lm $$(LD)
+$(B)/$(1)_probe.elf: fw/be_tflm.cpp $$(HARNESS) $(2) $(5) Makefile | $$(B) $$(DATA_DEPS)
+	$$(CXX) $$(CXXFLAGS) $$(INC) $$(TFLM_INC) -DARENA_PROBE $(3) -DKERNELS_TAG='"$(4)"' -DARENA_BYTES=$$(PROBE_ARENA) -o $$@ fw/be_tflm.cpp $$(HARNESS) $(2) -lm $$(LD)
 endef
 $(eval $(call tflm_rule,tflm_cmsis_mlp_int8,$(TFLM_CMSIS),-DMODEL_MLP,+cmsis))
 $(eval $(call tflm_rule,tflm_ref_mlp_int8,$(TFLM_REF),-DMODEL_MLP,+ref))
@@ -196,6 +238,10 @@ $(eval $(call tflm_rule,tflm_cmsis_mlp_f32,$(TFLM_CMSIS),-DMODEL_MLP -DDTYPE_F32
 $(eval $(call tflm_rule,tflm_cmsis_kws_int8,$(TFLM_CMSIS),-DMODEL_KWS,+cmsis))
 $(eval $(call tflm_rule,tflm_ref_kws_int8,$(TFLM_REF),-DMODEL_KWS,+ref))
 $(eval $(call tflm_rule,tflm_cmsis_kws_f32,$(TFLM_CMSIS),-DMODEL_KWS -DDTYPE_F32,+cmsis))
+$(eval $(call tflm_rule,tflm_cmsis_mlperf_kws_int8,$(TFLM_CMSIS),-DMODEL_MLPERF_KWS,+cmsis,$(MLPERF_GEN)))
+$(eval $(call tflm_rule,tflm_ref_mlperf_kws_int8,$(TFLM_REF),-DMODEL_MLPERF_KWS,+ref,$(MLPERF_GEN)))
+$(eval $(call tflm_rule,tflm_cmsis_mlperf_ic_int8,$(TFLM_CMSIS),-DMODEL_MLPERF_IC,+cmsis,$(MLPERF_GEN)))
+$(eval $(call tflm_rule,tflm_ref_mlperf_ic_int8,$(TFLM_REF),-DMODEL_MLPERF_IC,+ref,$(MLPERF_GEN)))
 
 # $(1)=image $(2)=extra defines
 define tm_rf_rule
@@ -236,20 +282,27 @@ stlink-check:
 	@test -n "$(STLINK)" || { echo "no ST-LINK selected: $(words $(STLINK_ALL)) attached ($(STLINK_ALL)); pass STLINK=<serial>"; exit 1; }
 	@test -n "$(PORT)" || { echo "no VCP found for ST-LINK $(STLINK); check 'make stlink'"; exit 1; }
 
+# Seconds to wait for an image's report. Capture stops at the end marker, so
+# this only bounds a hung run; TFLM's reference kernels on the MLPerf image
+# classification model take about 90 seconds.
+CAPTURE_MAX ?= 180
+
 run1: stlink-check
 	@mkdir -p results
 	@$(OPENOCD) -c "program $(B)/$(IMG).elf verify exit" >/dev/null 2>&1 || \
 	  { echo "flashing $(IMG) via ST-LINK $(STLINK) failed: is that probe on the $(BOARD)?"; exit 1; }
 	-fuser -k $(PORT) >/dev/null 2>&1; stty -F $(PORT) 115200 raw -echo
-	( timeout 8 cat $(PORT) > $(B)/$(IMG).raw & ) ; sleep 0.5 ; \
-	  $(OPENOCD) -c "init; reset run; shutdown" >/dev/null 2>&1 ; sleep 6
+	( timeout $(CAPTURE_MAX) cat $(PORT) > $(B)/$(IMG).raw & ) ; sleep 0.5 ; \
+	  $(OPENOCD) -c "init; reset run; shutdown" >/dev/null 2>&1 ; \
+	  n=0; until tr -d '\r' < $(B)/$(IMG).raw | grep -q '^# end bench' || [ $$n -ge $$((2 * $(CAPTURE_MAX))) ]; do sleep 0.5; n=$$((n + 1)); done; \
+	  fuser -k $(PORT) >/dev/null 2>&1; true
 	tr -d '\r' < $(B)/$(IMG).raw | sed -n '/^# begin bench/,/^# end bench/p' > $(B)/$(IMG).txt
 	@grep -q '^# end bench' $(B)/$(IMG).txt || { echo "capture failed for $(IMG)"; exit 1; }
 	@cat $(B)/$(IMG).txt
 
 run: all stlink-check
 	@rm -f $(RAW)
-	@for i in $(IMAGES) $(PROF_IMAGES); do $(MAKE) -s BOARD=$(BOARD) LEVEL=$(LEVEL) STLINK=$(STLINK) IMG=$$i run1 > /dev/null && \
+	@for i in $(IMAGES) $(PROF_IMAGES); do $(MAKE) -s BOARD=$(BOARD) SUITE=$(SUITE) LEVEL=$(LEVEL) STLINK=$(STLINK) IMG=$$i run1 > /dev/null && \
 	  { echo "level=$(LEVEL)"; echo "image=$$i"; cat $(B)/$$i.txt; } >> $(RAW) || exit 1; done
 	@for i in $(IMAGES); do $(call size_line,$(B)/$$i.elf,$$i,); done >> $(RAW)
 ifdef FIT_IMAGES
@@ -269,9 +322,15 @@ $(FB)/%.elf: | $(B) $(DATA_DEPS)
 	@mkdir -p $(FB)
 	$(MAKE) -s BOARD=$(BOARD) LEVEL=$(LEVEL) B=$(FB) LDSCRIPT=board/unbounded.ld DATA_INC="$(DATA_INC)" $@
 
+ifeq ($(SUITE),mlperf)
+PROBES = tflm_cmsis_mlperf_kws_int8 tflm_ref_mlperf_kws_int8 tflm_cmsis_mlperf_ic_int8 tflm_ref_mlperf_ic_int8
+PROBE_ARENA = 98304
+else
 PROBES = tflm_cmsis_mlp_int8 tflm_ref_mlp_int8 tflm_cmsis_mlp_f32 tflm_cmsis_kws_int8 tflm_ref_kws_int8 tflm_cmsis_kws_f32
+PROBE_ARENA = 32768
+endif
 probe: $(PROBES:%=$(B)/%_probe.elf) stlink-check
-	@for i in $(PROBES); do $(MAKE) -s BOARD=$(BOARD) LEVEL=$(LEVEL) STLINK=$(STLINK) IMG=$${i}_probe run1 | grep -E "^(name|arena_used|setup_rc)"; done
+	@for i in $(PROBES); do $(MAKE) -s BOARD=$(BOARD) SUITE=$(SUITE) LEVEL=$(LEVEL) STLINK=$(STLINK) IMG=$${i}_probe run1 | grep -E "^(name|arena_used|setup_rc)"; done
 
 host-check:
 	@mkdir -p build
@@ -327,6 +386,15 @@ models:
 	$(PY) -I gen/make_models.py
 	$(PY) -I gen/make_trees.py
 
+mlperf-models:
+	$(PY) -I gen/make_mlperf.py
+
+host-check-mlperf: $(foreach m,kws ic,gen/mlperf/mlperf_$(m)_tinymind.hpp gen/mlperf/mlperf_$(m)_data.h)
+	@mkdir -p build
+	g++ -std=c++17 -O2 -Wall -Wextra -Werror -DTINYMIND_ENABLE_QUANTIZATION=1 -Ifw -Igen/mlperf \
+	    -I$(TM)/cpp -I$(TM)/cpp/include -I$(TM)/include host/tm_check_mlperf.cpp -o build/tm_check_mlperf
+	./build/tm_check_mlperf
+
 TFLM_MAKE = $(MAKE) -C $(TFLM) -f tensorflow/lite/micro/tools/make/Makefile \
             TARGET=cortex_m_generic TARGET_ARCH=$(TFLM_ARCH) microlite
 TFLM_O3   = BASE_GENDIR=gen_o3 KERNEL_OPTIMIZATION_LEVEL=-O3 \
@@ -348,4 +416,4 @@ tflm-libs:
 clean:
 	rm -rf build
 
-.PHONY: all run run1 probe fit stlink stlink-check clean host-check host-bench models deps tflm-libs
+.PHONY: all run run1 probe fit stlink stlink-check clean host-check host-check-mlperf host-bench models mlperf-models deps tflm-libs

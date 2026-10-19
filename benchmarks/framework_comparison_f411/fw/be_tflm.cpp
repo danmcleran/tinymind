@@ -41,6 +41,14 @@
 #elif defined(MODEL_MLP)
 #  include "mlp_tflite_int8.h"
 #  define MODEL_BLOB mlp_int8_tflite
+#elif defined(MODEL_MLPERF_KWS)
+#  include "mlperf_kws_tflite_int8.h"
+#  define MODEL_BLOB mlperf_kws_int8_tflite
+#  define MODEL_MLPERF
+#elif defined(MODEL_MLPERF_IC)
+#  include "mlperf_ic_tflite_int8.h"
+#  define MODEL_BLOB mlperf_ic_int8_tflite
+#  define MODEL_MLPERF
 #elif defined(DTYPE_F32)
 #  include "kws_tflite_f32.h"
 #  define MODEL_BLOB kws_f32_tflite
@@ -77,13 +85,13 @@ class DwtProfiler : public tflite::MicroProfilerInterface
 public:
     bool active = false;
     int n = 0;
-    const char* tags[16];
-    uint32_t start[16];
-    uint32_t cycles[16];
+    const char* tags[32];
+    uint32_t start[32];
+    uint32_t cycles[32];
 
     uint32_t BeginEvent(const char* tag) override
     {
-        if (!active || n >= 16)
+        if (!active || n >= 32)
         {
             return 0;
         }
@@ -112,6 +120,8 @@ uint32_t gArenaMin = 0;
 #endif
 #if defined(MODEL_MLP)
 using Resolver = tflite::MicroMutableOpResolver<1>;
+#elif defined(MODEL_MLPERF)
+using Resolver = tflite::MicroMutableOpResolver<6>;
 #else
 using Resolver = tflite::MicroMutableOpResolver<5>;
 #endif
@@ -145,6 +155,17 @@ int be_setup(void)
     resolver->AddMaxPool2D();
     resolver->AddDepthwiseConv2D();
     resolver->AddAveragePool2D();
+#elif defined(MODEL_MLPERF)
+    // Exactly the reference graph's operators, so no unused kernel is linked.
+    resolver->AddConv2D();
+#  if defined(MODEL_MLPERF_KWS)
+    resolver->AddDepthwiseConv2D();
+#  else
+    resolver->AddAdd();
+#  endif
+    resolver->AddAveragePool2D();
+    resolver->AddReshape();
+    resolver->AddSoftmax();
 #endif
 #ifdef ARENA_PROBE
     // Bisect the smallest arena (16-byte steps) AllocateTensors accepts.
