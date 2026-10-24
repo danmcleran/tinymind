@@ -1,0 +1,38 @@
+name: Exhaustive sweeps (nightly)
+
+# Full-domain run of unit_test/exhaustive, NOT a PR gate.
+#
+# The per-PR run (part of `make check`, `make sanitize`, `make check-clang`
+# and the AVX2 jobs) checks every input of the small domains -- every input
+# of the 8- and 16-bit LUT formats, every int8 softmax row of 2 and 3
+# features, every (x, w, zero point) of the int8 dot product -- but for the
+# int32 accumulator sweeps only the range an int8 layer reaches (|acc| <=
+# 2^22). This job widens those to every int32 accumulator and every uint32
+# square-root input, which takes ~130 CPU-minutes, parallelized with OpenMP.
+#
+# A failure names the case and the domain. Reproduce it locally with
+#   make -C unit_test/exhaustive full
+
+on:
+  schedule:
+    - cron: "0 8 * * *"   # 08:00 UTC daily, after the oracle soak
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exhaustive-full:
+    name: Exhaustive sweeps (every int32 accumulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Install Boost
+        uses: ./.github/actions/apt-install
+        with:
+          packages: libboost-dev libboost-test-dev
+      - name: Sweep every int32 accumulator and uint32 sqrt input
+        env:
+          BOOST_HOME: /usr
+        run: make -C unit_test/exhaustive full

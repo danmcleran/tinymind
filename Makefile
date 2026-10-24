@@ -7,6 +7,7 @@ check :
 	cd unit_test/qformat_oracle && make clean && make && make run && cd -
 	cd unit_test/qlearn && make clean && make && make run && cd -
 	cd unit_test/lookuptable && make clean && make && make run && cd -
+	cd unit_test/exhaustive && make clean && make && make run && cd -
 	cd unit_test/embedded && make clean && make && make run && make simd_prereq_regressions && make qtree_static_regressions && cd -
 	cd unit_test/quantization && make clean && make && make run && cd -
 	cd unit_test/dual && make clean && make && make run && cd -
@@ -191,7 +192,7 @@ ANALYZE_SRCS = $(shell find cpp -name '*.hpp') cpp/lookupTables.cpp
 # gate's function count with one-off template instances. They are the suites
 # that catch QValue undefined behaviour (signed overflow in WrapPolicy and in
 # fromParts was found this way), so they must run under UBSan in CI.
-SAN_EXTRA_SUITES = unit_test/qformat unit_test/qformat_oracle
+SAN_EXTRA_SUITES = unit_test/qformat unit_test/qformat_oracle unit_test/exhaustive
 
 sanitize :
 	@for d in $(COV_SUITES) $(COV_EXAMPLES) $(SAN_EXTRA_SUITES); do \
@@ -229,8 +230,13 @@ oracle-soak :
 SAN_AVX2_CC ?= g++ -fsanitize=address,undefined -fno-sanitize-recover=all -O1 \
                -mavx2 -DTINYMIND_ENABLE_SIMD_AVX2=1
 
+# unit_test/exhaustive rides along: with the AVX2 backend compiled in, its
+# per-lane sweep checks every (x, w) pair in every vector lane against the
+# scalar reference.
+SIMD_SUITES = $(TSAN_SUITES) unit_test/exhaustive
+
 sanitize-avx2 :
-	@for d in $(TSAN_SUITES); do \
+	@for d in $(SIMD_SUITES); do \
 		echo "=== sanitize-avx2: $$d ==="; \
 		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
 		  $(MAKE) CC="$(SAN_AVX2_CC)" WARN="$(SAN_WARN)" >/dev/null && \
@@ -385,7 +391,7 @@ warnings-strict :
 # with clang first, which is a larger change than this target is scoped for.
 CLANG_CXX    ?= clang++
 CLANG_SUITES  = unit_test/nn unit_test/qformat unit_test/qformat_oracle unit_test/qlearn \
-                unit_test/lookuptable unit_test/quantization unit_test/dual \
+                unit_test/lookuptable unit_test/exhaustive unit_test/quantization unit_test/dual \
                 unit_test/kan unit_test/pinn unit_test/ltc unit_test/cfc
 
 check-clang :
@@ -413,7 +419,7 @@ CLANG_AVX2_CC ?= $(CLANG_CXX) -mavx2 -DTINYMIND_ENABLE_SIMD_AVX2=1
 check-clang-avx2 :
 	@command -v $(CLANG_CXX) >/dev/null 2>&1 || \
 	  { echo "ERROR: $(CLANG_CXX) not found. sudo apt install clang"; exit 1; }
-	@for d in $(TSAN_SUITES); do \
+	@for d in $(SIMD_SUITES); do \
 		echo "=== check-clang-avx2: $$d ==="; \
 		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
 		  $(MAKE) CC="$(CLANG_AVX2_CC)" && $(MAKE) CC="$(CLANG_AVX2_CC)" run ) \

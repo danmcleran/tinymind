@@ -1010,6 +1010,7 @@ Every push and pull request runs the [Static & Dynamic Analysis](.github/workflo
 | Formal proofs | CBMC over the fixed-point `qformat` kernels | **Blocking** | `make -C formal prove` |
 | Fuzzing | libFuzzer int8 kernel harnesses with property checks (exact reference oracles, permutation equivariance, softmax mass and order), committed corpus replayed under ASan+UBSan; nightly exploratory run | **Blocking** | `make -C fuzz replay` / `make -C fuzz fuzz-ci` |
 | Cross-build agreement | The fuzz corpus through unsanitized g++ and Clang builds at `-O0` and `-O3`; output digests must match | **Blocking** | `make -C fuzz agree` |
+| Exhaustive sweeps | Every input of small domains (LUT activations per format, requantizer fast paths, int8 dot per SIMD lane, softmax rows, layernorm sqrt); every int32 accumulator nightly | **Blocking** | `make -C unit_test/exhaustive && make -C unit_test/exhaustive run` / `make -C unit_test/exhaustive full` |
 | Property-check reachability | Every fuzz property check must execute on the committed corpus (gcov) | **Blocking** | `make -C fuzz check-coverage` |
 | Uninitialized reads | Clang MemorySanitizer over the embedded gate corners and the fuzz corpus, `-O0` | **Blocking** | `make check-msan` |
 | Cortex-M4 SMLAD path | QEMU `mps2-an386`: bit-exact vs scalar, plus GCC and Clang UBSan images in trap mode | **Blocking** | `make -C unit_test/embedded arm_dsp_qemu` |
