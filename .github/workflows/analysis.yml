@@ -162,7 +162,9 @@ jobs:
     needs: changes
     # Hard gate: deterministic replay of the committed seed + crash corpus
     # (-runs=0, no new mutation). Fast and reproducible -- a regressed kernel
-    # re-triggers its archived crash input. Exploratory fuzzing runs nightly
+    # re-triggers its archived crash input, and each harness's property
+    # checks (reference oracles, permutation equivariance, softmax mass)
+    # run on every committed input. Exploratory fuzzing runs nightly
     # (fuzz-nightly.yml), not here, so the PR gate never flaps on a path found
     # at second 89 vs 91.
     steps:
@@ -176,6 +178,18 @@ jobs:
       - name: Replay committed corpus (ASan+UBSan)
         if: needs.changes.outputs.code == 'true'
         run: make -C fuzz replay FUZZ_CXX=clang++
+      # The same corpus through unsanitized g++/clang++ builds at -O0/-O3:
+      # every build must produce identical output digests, which catches UB
+      # an optimizer exploits and compiler-dependent arithmetic that a single
+      # sanitizer build cannot see.
+      - name: Cross-build output agreement
+        if: needs.changes.outputs.code == 'true'
+        run: make -C fuzz agree FUZZ_CXX=clang++
+      # Every TINYMIND_FUZZ_CHECK must execute on the committed corpus;
+      # a property check no committed input reaches guards nothing here.
+      - name: Property-check reachability
+        if: needs.changes.outputs.code == 'true'
+        run: make -C fuzz check-coverage
 
   cbmc:
     name: CBMC proofs (qformat kernels)
@@ -508,7 +522,7 @@ jobs:
         uses: ./.github/actions/apt-install
         with:
           packages: clang
-      - name: Run the embedded gate corners under MemorySanitizer
+      - name: Run the embedded gate corners and the fuzz corpus under MemorySanitizer
         if: needs.changes.outputs.code == 'true'
         run: make check-msan
 

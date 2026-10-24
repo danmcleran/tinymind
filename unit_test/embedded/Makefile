@@ -313,6 +313,17 @@ arm_crosscompile_clang:
 # that silently fell back to scalar would otherwise pass while testing
 # nothing. QEMU is functionally exact, not cycle-accurate: this proves
 # bit-exactness, never speed; speed is measured on hardware.
+#
+# Two more images build the test translation unit with UndefinedBehavior-
+# Sanitizer in trap mode (-fsanitize-trap=undefined). Trap mode needs no
+# runtime, so it works bare-metal: a failed check executes UDF, the core
+# faults, and Fault_Handler exits through semihosting with a failure. This is
+# the only UB check the SMLAD path gets -- the hosted sanitizer jobs cannot
+# run it. The startup file stays uninstrumented: its linker-symbol pointer
+# walk is not the code under test and trips the pointer checks. GCC and Clang
+# both, because they catch different things: a planted signed overflow whose
+# result is discarded is caught by Clang only (GCC rewrites the multiply
+# before instrumenting it), one whose result is used is caught by both.
 QEMU_ARM        ?= qemu-system-arm
 ARM_OBJDUMP     ?= arm-none-eabi-objdump
 ARM_DSP_DIR      = arm_dsp
@@ -321,6 +332,7 @@ ARM_DSP_DEFS     = -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_ARM_D
 ARM_DSP_CFLAGS   = $(ARM_STD) $(ARM_WARN) -O2 -ffreestanding -fno-exceptions -fno-rtti \
                    $(INCLUDES) -I$(ARM_DSP_DIR) $(ARM_DSP_DEFS)
 ARM_DSP_LDFLAGS  = $(ARM_M4) -nostdlib -T $(ARM_DSP_DIR)/mps2_an386.ld -Wl,-z,noexecstack -lgcc
+ARM_DSP_UBSAN    = -fsanitize=undefined -fsanitize-trap=undefined
 QEMU_ARM_FLAGS   = -M mps2-an386 -nographic -monitor none -serial none \
                    -semihosting-config enable=on,target=native
 
@@ -339,13 +351,21 @@ arm_dsp_qemu:
 	  done; \
 	  $(ARM_CXX) ./output/arm_dsp_clang_$${mode}_*.o $(ARM_DSP_LDFLAGS) -o ./output/arm_dsp_clang_$$mode.elf || exit 1; \
 	done
-	@for img in gcc clang_unaligned clang_strict; do \
+	$(ARM_CXX) $(ARM_DSP_CFLAGS) $(ARM_M4) $(ARM_DSP_UBSAN) -c $(ARM_DSP_DIR)/arm_dsp_qemu_test.cpp -o ./output/arm_dsp_gcc_ubsan_test.o
+	$(ARM_CXX) $(ARM_DSP_CFLAGS) $(ARM_M4) -c $(ARM_DSP_DIR)/startup_mps2.cpp -o ./output/arm_dsp_gcc_ubsan_startup.o
+	$(ARM_CXX) ./output/arm_dsp_gcc_ubsan_*.o $(ARM_DSP_LDFLAGS) -o ./output/arm_dsp_gcc_ubsan.elf
+	$(ARM_CLANG) --target=arm-none-eabi $(ARM_M4) $(ARM_CLANG_INC) $(ARM_DSP_CFLAGS) -munaligned-access $(ARM_DSP_UBSAN) \
+	  -c $(ARM_DSP_DIR)/arm_dsp_qemu_test.cpp -o ./output/arm_dsp_clang_ubsan_test.o
+	$(ARM_CLANG) --target=arm-none-eabi $(ARM_M4) $(ARM_CLANG_INC) $(ARM_DSP_CFLAGS) -munaligned-access \
+	  -c $(ARM_DSP_DIR)/startup_mps2.cpp -o ./output/arm_dsp_clang_ubsan_startup.o
+	$(ARM_CXX) ./output/arm_dsp_clang_ubsan_*.o $(ARM_DSP_LDFLAGS) -o ./output/arm_dsp_clang_ubsan.elf
+	@for img in gcc clang_unaligned clang_strict gcc_ubsan clang_ubsan; do \
 	  elf=./output/arm_dsp_$$img.elf; \
 	  $(ARM_OBJDUMP) -d $$elf | grep -q -w smlad || { echo "ARM_DSP GATE FAIL ($$img): no SMLAD in image -- backend not compiled in"; exit 1; }; \
 	  echo "[qemu mps2-an386] $$img"; \
 	  timeout 120 $(QEMU_ARM) $(QEMU_ARM_FLAGS) -kernel $$elf || { echo "ARM_DSP GATE FAIL ($$img)"; exit 1; }; \
 	done
-	@echo "arm_dsp_qemu: SMLAD backend bit-exact with scalar on emulated Cortex-M4 (gcc, clang, clang strict-align)"
+	@echo "arm_dsp_qemu: SMLAD backend bit-exact with scalar on emulated Cortex-M4 (gcc, clang, clang strict-align), no UB under gcc/clang UBSan"
 
 # -----------------------------------------------------------------------------
 # Heap-free guarantee (build-only). HARD gate.

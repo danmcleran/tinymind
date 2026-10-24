@@ -16,6 +16,19 @@
  * derives them, so every (multiplier, shift) pair stays in the
  * importer-reachable band.
  *
+ * Properties checked (a failure traps):
+ *   1. Head isolation: each head's block of the concatenated output equals
+ *      that head run on its own. Heads share the caller's scratch buffers,
+ *      so this catches one head's state leaking into another's output.
+ *   2. Permutation equivariance: relabelling the sequence positions, the
+ *      embedding features and, per head, the projection features (one
+ *      relabelling shared by that head's Q, K and V, with the matching
+ *      weight rows and columns and biases) relabels the output rows and
+ *      each head's output columns the same way, bit for bit. Linear
+ *      attention sums over the sequence and the projection, and integer
+ *      sums are order-independent, so any difference is an indexing or
+ *      stride error.
+ *
  * Build/run: see fuzz/Makefile (`make fuzz` / `make fuzz-ci`).
  *
  * Copyright (c) 2026 Dan McLeran. MIT (see LICENSE.txt).
@@ -24,6 +37,7 @@
 #include <cstdint>
 
 #include "qmha.hpp"
+#include "fuzz_check.hpp"
 #include "qcalibration.hpp"
 
 using tinymind::QMultiHeadLinearAttention1D;
@@ -130,11 +144,58 @@ void run(ByteReader& br)
 
     mha.forward(input, q_scratch, k_scratch, v_scratch,
                 kv_scratch, head_out_scratch, output);
+    tinymind_fuzz::emit(output, sizeof(output));
 
-    // Touch the output so the call cannot be optimized away.
-    volatile int sink = 0;
-    for (std::size_t k = 0; k < Mha::OutputSize; ++k) { sink += output[k]; }
-    (void)sink;
+    const std::size_t total = NH * D;
+    for (std::size_t h = 0; h < NH; ++h)
+    {
+        int8_t alone[Head::OutputSize];
+        mha.heads[h].forward(input, q_scratch, k_scratch, v_scratch, kv_scratch, alone);
+        for (std::size_t t = 0; t < S; ++t)
+        {
+            for (std::size_t p = 0; p < D; ++p)
+            {
+                TINYMIND_FUZZ_CHECK(output[t * total + h * D + p] == alone[t * D + p]);
+            }
+        }
+    }
+
+    std::size_t sp[S];
+    std::size_t ep[E];
+    std::size_t pp[NH][D];
+    tinymind_fuzz::makePermutation(sp, S, br.u8());
+    tinymind_fuzz::makePermutation(ep, E, br.u8());
+    for (std::size_t h = 0; h < NH; ++h) { tinymind_fuzz::makePermutation(pp[h], D, br.u8()); }
+    const std::size_t* none = static_cast<const std::size_t*>(nullptr);
+
+    int8_t  pinput[S * E];
+    int8_t  pweights[NH][Head::TotalWeights];
+    int32_t pbiases[NH][Head::TotalBiases];
+    tinymind_fuzz::permuteMatrix(input, pinput, 1, S, E, sp, ep);
+    Mha pmha = mha;
+    for (std::size_t h = 0; h < NH; ++h)
+    {
+        // Each projection's weights are [E][D].
+        tinymind_fuzz::permuteMatrix(weights[h], pweights[h], 3, E, D, ep, pp[h]);
+        tinymind_fuzz::permuteMatrix(biases[h], pbiases[h], 3, D, 1, pp[h], none);
+        pmha.heads[h].weights = pweights[h];
+        pmha.heads[h].biases  = with_bias ? pbiases[h] : static_cast<const int32_t*>(nullptr);
+    }
+
+    int8_t poutput[Mha::OutputSize];
+    pmha.forward(pinput, q_scratch, k_scratch, v_scratch,
+                 kv_scratch, head_out_scratch, poutput);
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        for (std::size_t h = 0; h < NH; ++h)
+        {
+            for (std::size_t p = 0; p < D; ++p)
+            {
+                TINYMIND_FUZZ_CHECK(poutput[sp[t] * total + h * D + pp[h][p]] ==
+                                    output[t * total + h * D + p]);
+            }
+        }
+    }
 }
 
 } // namespace
