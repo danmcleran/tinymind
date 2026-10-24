@@ -43,6 +43,7 @@ unit_test/quantization/output/
 unit_test/dual/output/
 unit_test/pinn/output/
 unit_test/ltc/output/
+unit_test/exhaustive/output/
 unit_test/cfc/output/
 unit_test/integration/output/
 examples/resnet18_block_int8/output/

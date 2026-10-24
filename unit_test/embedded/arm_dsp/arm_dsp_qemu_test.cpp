@@ -26,7 +26,10 @@
 // AArch32-only and the hosted suites build for x86-64.
 //
 // Every case compares the dispatched dot product against the scalar
-// reference. The sweep covers every length 0..kMaxN (so every n % 4 tail),
+// reference. A per-lane sweep checks every (x, w) pair in each of the 8
+// byte lanes of two SMLAD blocks with every zero point (134M cases), so each
+// SXTB16 / ROR #8 extraction path is checked on every input. The length
+// sweep covers every length 0..kMaxN (so every n % 4 tail),
 // every pair of byte misalignments for x and w (the kernel loads words from
 // int8 pointers), zero points at both int8 extremes, and data sets chosen
 // to hit the widest |w * (x - zp)| = 128 * 255. The 2x2 kernel (two inputs
@@ -159,6 +162,49 @@ namespace {
                                 fail("dot n,offset", static_cast<uint32_t>(n),
                                      static_cast<uint32_t>(xo * kSlack + wo), got, want);
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Exhaustive per lane: every (x, w) pair in each of the 8 byte lanes of
+    // two SMLAD blocks, with every zero point, against the scalar reference.
+    // SXTB16 widens lanes 0 and 2 of a word and the ROR #8 form lanes 1 and
+    // 3, so each extraction path sees every byte value with every zero point;
+    // the other lanes hold fixed non-zero values so the pairwise sums and the
+    // accumulator carry are exercised too. The dot product is a sum of lane
+    // products, so this checks every lane's contribution on every input.
+    void testDotEveryLane()
+    {
+        constexpr std::size_t kLanes = 8;
+        alignas(4) static int8_t xbuf[kLanes];
+        alignas(4) static int8_t wbuf[kLanes];
+        for (std::size_t lane = 0; lane < kLanes; ++lane)
+        {
+            for (int zp = -128; zp <= 127; ++zp)
+            {
+                for (std::size_t k = 0; k < kLanes; ++k)
+                {
+                    xbuf[k] = static_cast<int8_t>(static_cast<int>((k * 37u) % 256u) - 128);
+                    wbuf[k] = static_cast<int8_t>(static_cast<int>((k * 91u + 17u) % 256u) - 128);
+                }
+                for (int x = -128; x <= 127; ++x)
+                {
+                    xbuf[lane] = static_cast<int8_t>(x);
+                    for (int w = -128; w <= 127; ++w)
+                    {
+                        wbuf[lane] = static_cast<int8_t>(w);
+                        const int32_t want = tinymind::simd::int8DotWithZeroPointScalar(
+                            xbuf, wbuf, kLanes, static_cast<int8_t>(zp));
+                        const int32_t got = tinymind::simd::int8DotWithZeroPoint(
+                            xbuf, wbuf, kLanes, static_cast<int8_t>(zp));
+                        ++g_cases;
+                        if (got != want)
+                        {
+                            fail("dot lane,x|w", static_cast<uint32_t>(lane),
+                                 static_cast<uint32_t>(((x + 128) << 8) | (w + 128)), got, want);
                         }
                     }
                 }
@@ -529,6 +575,7 @@ extern "C" int run_tests()
     }
 
     testDotSweep();
+    testDotEveryLane();
     testDot2x2Sweep();
     testConvRows2x2();
     testPointwiseConv();

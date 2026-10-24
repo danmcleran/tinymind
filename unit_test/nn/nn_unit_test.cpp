@@ -3642,8 +3642,29 @@ BOOST_AUTO_TEST_CASE(test_case_fixed_point_gradient_clipping_xor)
         nn.trainNetwork(&output[0]);
     }
 
-    // Network should have learned XOR to some degree
-    BOOST_TEST(error.getValue() < ValueHelper<ValueType>::getErrorLimit());
+    // The network should have learned XOR: every case classified correctly
+    // and a small mean squared error over all four. (The last training
+    // sample's error alone is one random draw; it exceeds the old limit on
+    // some seeds even for a network that has learned the function.)
+    (void)error;
+    double meanSquaredError = 0.0;
+    for (int a = 0; a < 2; ++a)
+    {
+        for (int b = 0; b < 2; ++b)
+        {
+            const int32_t one = static_cast<int32_t>(1) << ValueType::NumberOfFractionalBits;
+            values[0] = static_cast<ValueType>(a * one);
+            values[1] = static_cast<ValueType>(b * one);
+            nn.feedForward(&values[0]);
+            ValueType learned[1];
+            nn.getLearnedValues(&learned[0]);
+            const double y = static_cast<double>(learned[0].getValue()) / static_cast<double>(one);
+            const double target = static_cast<double>(a ^ b);
+            BOOST_TEST((y > 0.5) == (target > 0.5));
+            meanSquaredError += (y - target) * (y - target) / 4.0;
+        }
+    }
+    BOOST_TEST(meanSquaredError < 0.0625);
 }
 
 BOOST_AUTO_TEST_CASE(test_case_gru_neural_network_floating_point)
