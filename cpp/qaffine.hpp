@@ -247,17 +247,25 @@ namespace tinymind {
             }
             else
             {
-                const int32_t left_shift = (shift < 0) ? -shift : 0;
-                const int32_t right_shift = (shift > 0) ? shift : 0;
+                // The saturating form: an int32 `acc * (1 << left_shift)`
+                // overflows (UB) for a large accumulator under a scale ratio
+                // above 1, where the result can only saturate anyway. In
+                // contract the two forms agree bit for bit.
+                scaled = multiplyByQuantizedMultiplier(static_cast<int32_t>(acc), multiplier, shift);
 
-                int32_t shifted = static_cast<int32_t>(acc);
-                if (left_shift > 0)
+                // This path can return values near the int32 rails, where
+                // adding the zero point below would overflow. Clamping to
+                // [qmin - zp, qmax - zp] first gives the same final result.
+                const int64_t lo = static_cast<int64_t>(qmin) - static_cast<int64_t>(zero_point);
+                const int64_t hi = static_cast<int64_t>(qmax) - static_cast<int64_t>(zero_point);
+                if (static_cast<int64_t>(scaled) < lo)
                 {
-                    shifted = shifted * (static_cast<int32_t>(1) << left_shift);
+                    scaled = static_cast<int32_t>(lo);
                 }
-
-                const int32_t mul = saturatingRoundingDoublingHighMul(shifted, multiplier);
-                scaled = roundingDivideByPOT(mul, right_shift);
+                else if (static_cast<int64_t>(scaled) > hi)
+                {
+                    scaled = static_cast<int32_t>(hi);
+                }
             }
             int32_t with_zp = scaled + static_cast<int32_t>(zero_point);
 

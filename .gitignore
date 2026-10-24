@@ -82,6 +82,10 @@ scan-report/
 fuzz/fuzz_*
 !fuzz/fuzz_*.cpp
 !fuzz/fuzz_*.h
+!fuzz/fuzz_*.hpp
+fuzz/agree/
+fuzz/msan/
+fuzz/coverage/
 # The seed + regression corpus IS committed -- it is the deterministic replay
 # gate's input. Only the live crash reproducers dropped at fuzz/ root are noise.
 fuzz/crash-*

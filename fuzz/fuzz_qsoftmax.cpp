@@ -12,6 +12,18 @@
  * helper the importers use -- so findings are reachable in real deployments,
  * not artifacts of impossible LUT values.
  *
+ * Properties checked on every input (a failure traps):
+ *   1. Order: within a row, a larger input never gets a smaller output, and
+ *      equal inputs get equal outputs.
+ *   2. Mass: each row's probabilities, in units of 1/256, sum to 256 within
+ *      the rounding of F elements (half a unit each) plus one unit for the
+ *      clamp of a single saturated class at qmax.
+ *   3. Accuracy: each output is within one unit of round(256 * softmax) of
+ *      the dequantized row, computed in double.
+ *   4. Shift invariance: adding a constant to a row leaves its output
+ *      unchanged bit for bit (softmax depends only on differences).
+ *   5. Equivariance: reversing a row reverses its output bit for bit.
+ *
  * Build/run: see fuzz/Makefile (`make fuzz` / `make fuzz-ci`).
  *
  * Copyright (c) 2026 Dan McLeran. MIT (see LICENSE.txt).
@@ -19,8 +31,11 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <cmath>
+
 #include "qsoftmax.hpp"
 #include "qcalibration.hpp"
+#include "fuzz_check.hpp"
 
 using tinymind::QSoftmax1D;
 using tinymind::buildQSoftmaxExpLUT;
@@ -68,11 +83,95 @@ void run(ByteReader& br)
     sm.qmax = 127;
 
     sm.forward(input, output);
+    tinymind_fuzz::emit(output, sizeof(output));
 
-    // Touch the output so the call cannot be optimized away.
-    volatile int sink = 0;
-    for (std::size_t k = 0; k < R * F; ++k) { sink += output[k]; }
-    (void)sink;
+    // Probabilities in units of 1/256: output - zero point.
+    const int32_t zp = static_cast<int32_t>(sm.output_zero_point);
+    for (std::size_t r = 0; r < R; ++r)
+    {
+        const int8_t* in  = input  + r * F;
+        const int8_t* out = output + r * F;
+
+        int32_t total = 0;
+        int32_t max_q = in[0];
+        for (std::size_t i = 0; i < F; ++i)
+        {
+            total += static_cast<int32_t>(out[i]) - zp;
+            if (in[i] > max_q) { max_q = in[i]; }
+            for (std::size_t j = 0; j < F; ++j)
+            {
+                if (in[i] > in[j])
+                {
+                    TINYMIND_FUZZ_CHECK(out[i] >= out[j]);
+                }
+                if (in[i] == in[j])
+                {
+                    TINYMIND_FUZZ_CHECK(out[i] == out[j]);
+                }
+            }
+        }
+        const int32_t mass_error = (total > 256) ? (total - 256) : (256 - total);
+        TINYMIND_FUZZ_CHECK(2 * mass_error <= static_cast<int32_t>(F) + 2);
+
+        double denom = 0.0;
+        for (std::size_t i = 0; i < F; ++i)
+        {
+            denom += std::exp(static_cast<double>(in[i] - max_q) * static_cast<double>(input_scale));
+        }
+        for (std::size_t i = 0; i < F; ++i)
+        {
+            const double p = std::exp(static_cast<double>(in[i] - max_q) *
+                                      static_cast<double>(input_scale)) / denom;
+            double want = std::floor(256.0 * p + 0.5);
+            if (want > 255.0) { want = 255.0; }
+            const double got = static_cast<double>(static_cast<int32_t>(out[i]) - zp);
+            TINYMIND_FUZZ_CHECK(std::fabs(got - want) <= 1.0);
+        }
+    }
+
+    // Shift: move every row by the same constant, as far as the row with
+    // the widest headroom in the chosen direction allows for all rows.
+    int8_t shifted_in[R * F];
+    int8_t shifted_out[R * F];
+    int32_t lo = 127;
+    int32_t hi = -128;
+    for (std::size_t k = 0; k < R * F; ++k)
+    {
+        if (input[k] < lo) { lo = input[k]; }
+        if (input[k] > hi) { hi = input[k]; }
+    }
+    const int32_t up   = 127 - hi;
+    const int32_t down = lo + 128;
+    const int32_t raw  = static_cast<int32_t>(br.u8());
+    const int32_t delta = (raw & 0x01) ? ((up > 0) ? (raw % (up + 1)) : 0)
+                                       : -((down > 0) ? (raw % (down + 1)) : 0);
+    for (std::size_t k = 0; k < R * F; ++k)
+    {
+        shifted_in[k] = static_cast<int8_t>(input[k] + delta);
+    }
+    sm.forward(shifted_in, shifted_out);
+    for (std::size_t k = 0; k < R * F; ++k)
+    {
+        TINYMIND_FUZZ_CHECK(shifted_out[k] == output[k]);
+    }
+
+    int8_t reversed_in[R * F];
+    int8_t reversed_out[R * F];
+    for (std::size_t r = 0; r < R; ++r)
+    {
+        for (std::size_t i = 0; i < F; ++i)
+        {
+            reversed_in[r * F + i] = input[r * F + (F - 1 - i)];
+        }
+    }
+    sm.forward(reversed_in, reversed_out);
+    for (std::size_t r = 0; r < R; ++r)
+    {
+        for (std::size_t i = 0; i < F; ++i)
+        {
+            TINYMIND_FUZZ_CHECK(reversed_out[r * F + i] == output[r * F + (F - 1 - i)]);
+        }
+    }
 }
 
 } // namespace

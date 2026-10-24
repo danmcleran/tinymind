@@ -553,7 +553,9 @@ check-msan :
 	   $(MAKE) CC="$(MSAN_CC)" WARN="$(SAN_WARN)" && \
 	   $(MAKE) CC="$(MSAN_CC)" WARN="$(SAN_WARN)" run ) \
 	   || { echo "CHECK-MSAN FAIL: unit_test/embedded"; exit 1; }
-	@echo "check-msan: no uninitialized reads across the embedded gate corners"
+	@$(MAKE) -C fuzz msan-replay FUZZ_CXX=$(CLANG_CXX) \
+	   || { echo "CHECK-MSAN FAIL: fuzz corpus"; exit 1; }
+	@echo "check-msan: no uninitialized reads across the embedded gate corners or the fuzz corpus"
 
 # The same sanitizer over the Boost suites, which check-msan cannot reach.
 #

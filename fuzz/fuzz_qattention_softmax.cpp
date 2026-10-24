@@ -17,6 +17,18 @@
  * calibration derives them, so every (multiplier, shift) pair stays in the
  * importer-reachable band.
  *
+ * Properties checked (a failure traps):
+ *   1. The attention weights are the softmax of the scores: every row of
+ *      attn_scratch equals QSoftmax1D run on that row of score_scratch with
+ *      the same LUT and zero point. The layer carries its own copy of the
+ *      softmax loop; this pins the two copies together.
+ *   2. Permutation equivariance: relabelling the sequence positions, the
+ *      embedding features and the projection features (one relabelling
+ *      shared by Q, K and V, with the matching weight rows and columns and
+ *      biases) relabels the output rows and columns the same way, bit for
+ *      bit. Integer sums are order-independent and softmax is
+ *      equivariant, so any difference is an indexing or stride error.
+ *
  * Build/run: see fuzz/Makefile (`make fuzz` / `make fuzz-ci`).
  *
  * Copyright (c) 2026 Dan McLeran. MIT (see LICENSE.txt).
@@ -26,6 +38,8 @@
 
 #include "qattention_softmax.hpp"
 #include "qcalibration.hpp"
+#include "qsoftmax.hpp"
+#include "fuzz_check.hpp"
 
 using tinymind::QAttentionSoftmax1D;
 using tinymind::Requantizer;
@@ -149,11 +163,50 @@ void run(ByteReader& br)
 
     att.forward(input, q_scratch, k_scratch, v_scratch,
                 score_scratch, attn_scratch, output);
+    tinymind_fuzz::emit(output, sizeof(output));
 
-    // Touch the output so the call cannot be optimized away.
-    volatile int sink = 0;
-    for (std::size_t k = 0; k < Att::OutputSize; ++k) { sink += output[k]; }
-    (void)sink;
+    tinymind::QSoftmax1D<int8_t, int8_t, S, S> sm;
+    sm.exp_lut           = exp_lut;
+    sm.output_zero_point = att.attn_zero_point;
+    sm.qmin              = att.attn_qmin;
+    sm.qmax              = att.attn_qmax;
+    int8_t attn_ref[Att::AttnScratchSize];
+    sm.forward(score_scratch, attn_ref);
+    for (std::size_t k = 0; k < Att::AttnScratchSize; ++k)
+    {
+        TINYMIND_FUZZ_CHECK(attn_scratch[k] == attn_ref[k]);
+    }
+
+    std::size_t sp[S];
+    std::size_t ep[E];
+    std::size_t pp[P];
+    tinymind_fuzz::makePermutation(sp, S, br.u8());
+    tinymind_fuzz::makePermutation(ep, E, br.u8());
+    tinymind_fuzz::makePermutation(pp, P, br.u8());
+    const std::size_t* none = static_cast<const std::size_t*>(nullptr);
+
+    int8_t  pinput[Att::InputSize];
+    int8_t  pweights[Att::TotalWeights];
+    int32_t pbiases[Att::TotalBiases];
+    tinymind_fuzz::permuteMatrix(input, pinput, 1, S, E, sp, ep);
+    // Each projection's weights are [E][P].
+    tinymind_fuzz::permuteMatrix(weights, pweights, 3, E, P, ep, pp);
+    tinymind_fuzz::permuteMatrix(biases, pbiases, 3, P, 1, pp, none);
+
+    Att patt = att;
+    patt.weights = pweights;
+    patt.biases  = with_bias ? pbiases : static_cast<const int32_t*>(nullptr);
+
+    int8_t poutput[Att::OutputSize];
+    patt.forward(pinput, q_scratch, k_scratch, v_scratch,
+                 score_scratch, attn_scratch, poutput);
+    for (std::size_t t = 0; t < S; ++t)
+    {
+        for (std::size_t p = 0; p < P; ++p)
+        {
+            TINYMIND_FUZZ_CHECK(poutput[sp[t] * P + pp[p]] == output[t * P + p]);
+        }
+    }
 }
 
 } // namespace

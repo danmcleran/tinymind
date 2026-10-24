@@ -29,6 +29,7 @@
 #include <cstdint>
 
 #include "include/simd/simd_dispatch.hpp"
+#include "fuzz_check.hpp"
 
 #if !TINYMIND_ENABLE_SIMD_AVX2
 #error "fuzz_simd_avx2_diff requires -DTINYMIND_ENABLE_SIMD_AVX2=1 -mavx2"
@@ -83,9 +84,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
     const int32_t simd_out   = tinymind::simd::avx2::int8DotWithZeroPoint(x, w, n, zp);
     const int32_t scalar_out = int8DotWithZeroPointScalar(x, w, n, zp);
 
-    if (simd_out != scalar_out)
-    {
-        __builtin_trap();
-    }
+    TINYMIND_FUZZ_CHECK(simd_out == scalar_out);
+    tinymind_fuzz::emitValue(simd_out);
     return 0;
 }

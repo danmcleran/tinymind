@@ -15,6 +15,14 @@
  * the band real calibration emits, so findings are reachable in real
  * deployments.
  *
+ * Property checked (a failure traps): permutation equivariance over all
+ * three axes. Relabelling the input features, the backbone units and the
+ * hidden units -- in every weight matrix, bias and state vector that
+ * carries them -- must relabel the final hidden state the same way, bit for
+ * bit. Integer sums are order-independent, so any difference is an
+ * indexing or stride error, e.g. a head matrix read [B][H] instead of
+ * [H][B].
+ *
  * Build/run: see fuzz/Makefile (`make fuzz` / `make fuzz-ci`).
  *
  * Copyright (c) 2026 Dan McLeran. MIT (see LICENSE.txt).
@@ -25,6 +33,7 @@
 #include "qcfc.hpp"
 #include "qactivations.hpp"
 #include "qcalibration.hpp"
+#include "fuzz_check.hpp"
 
 using tinymind::QCfCCell;
 using tinymind::QCfCScales;
@@ -150,20 +159,74 @@ void run(ByteReader& br)
     int8_t h_state[H];
     for (std::size_t k = 0; k < H; ++k) { h_state[k] = br.i8(); }
 
+    int8_t h_initial[H];
+    for (std::size_t k = 0; k < H; ++k) { h_initial[k] = h_state[k]; }
+
     // Recurrence: carry state across fuzz-driven steps so saturation rails
     // feed back through the backbone's hidden MAC.
     const std::size_t steps = 1 + (br.u8() & 0x03);
-    int8_t x[I];
+    int8_t x[4][I];
     for (std::size_t t = 0; t < steps; ++t)
     {
-        for (std::size_t j = 0; j < I; ++j) { x[j] = br.i8(); }
-        cell.forward(x, h_state);
+        for (std::size_t j = 0; j < I; ++j) { x[t][j] = br.i8(); }
+        cell.forward(x[t], h_state);
     }
+    tinymind_fuzz::emit(h_state, sizeof(h_state));
 
-    // Touch the state so the calls cannot be optimized away.
-    volatile int sink = 0;
-    for (std::size_t k = 0; k < H; ++k) { sink += h_state[k]; }
-    (void)sink;
+    // The same cell with inputs, backbone units and hidden units relabelled.
+    std::size_t ip[I];
+    std::size_t hp[H];
+    std::size_t bp[B];
+    tinymind_fuzz::makePermutation(ip, I, br.u8());
+    tinymind_fuzz::makePermutation(hp, H, br.u8());
+    tinymind_fuzz::makePermutation(bp, B, br.u8());
+    const std::size_t* none = static_cast<const std::size_t*>(nullptr);
+
+    int8_t  pw_backbone_input[B * I];
+    int8_t  pw_backbone_hidden[B * H];
+    int8_t  pw_ff1[H * B];
+    int8_t  pw_ff2[H * B];
+    int8_t  pw_time_a[H * B];
+    int8_t  pw_time_b[H * B];
+    int32_t pb_backbone[B];
+    int32_t pb_ff1[H];
+    int32_t pb_ff2[H];
+    int32_t pb_time[H];
+    tinymind_fuzz::permuteMatrix(w_backbone_input, pw_backbone_input, 1, B, I, bp, ip);
+    tinymind_fuzz::permuteMatrix(w_backbone_hidden, pw_backbone_hidden, 1, B, H, bp, hp);
+    tinymind_fuzz::permuteMatrix(w_ff1, pw_ff1, 1, H, B, hp, bp);
+    tinymind_fuzz::permuteMatrix(w_ff2, pw_ff2, 1, H, B, hp, bp);
+    tinymind_fuzz::permuteMatrix(w_time_a, pw_time_a, 1, H, B, hp, bp);
+    tinymind_fuzz::permuteMatrix(w_time_b, pw_time_b, 1, H, B, hp, bp);
+    tinymind_fuzz::permuteMatrix(b_backbone, pb_backbone, 1, B, 1, bp, none);
+    tinymind_fuzz::permuteMatrix(b_ff1, pb_ff1, 1, H, 1, hp, none);
+    tinymind_fuzz::permuteMatrix(b_ff2, pb_ff2, 1, H, 1, hp, none);
+    tinymind_fuzz::permuteMatrix(b_time, pb_time, 1, H, 1, hp, none);
+
+    QCfCCell<int8_t, int8_t, int32_t, int8_t, I, H, B> pcell = cell;
+    pcell.w_backbone_input  = pw_backbone_input;
+    pcell.w_backbone_hidden = pw_backbone_hidden;
+    pcell.b_backbone        = pb_backbone;
+    pcell.w_ff1             = pw_ff1;
+    pcell.w_ff2             = pw_ff2;
+    pcell.w_time_a          = pw_time_a;
+    pcell.w_time_b          = pw_time_b;
+    pcell.b_ff1             = pb_ff1;
+    pcell.b_ff2             = pb_ff2;
+    pcell.b_time            = pb_time;
+
+    int8_t ph[H];
+    for (std::size_t k = 0; k < H; ++k) { ph[hp[k]] = h_initial[k]; }
+    int8_t px[I];
+    for (std::size_t t = 0; t < steps; ++t)
+    {
+        for (std::size_t j = 0; j < I; ++j) { px[ip[j]] = x[t][j]; }
+        pcell.forward(px, ph);
+    }
+    for (std::size_t k = 0; k < H; ++k)
+    {
+        TINYMIND_FUZZ_CHECK(ph[hp[k]] == h_state[k]);
+    }
 }
 
 } // namespace

@@ -15,6 +15,19 @@
  * helpers the importers use, so findings are reachable in real deployments,
  * not artifacts of impossible parameter values.
  *
+ * Properties checked on every input (a failure traps):
+ *   1. Accuracy: given the kernel's integer row mean and variance (the two
+ *      documented integer roundings), each output is within a derived error
+ *      bound of gamma * (x - mean) / sqrt(var + eps) + beta computed in
+ *      double. The bound covers the Q30 inverse square root, the Q14
+ *      normalized value, the Q28 product clamp and the output rounding, so
+ *      a scaling, sign or indexing error lands far outside it.
+ *   2. Constant rows: a row with zero variance outputs exactly
+ *      clamp(beta + zero point) for each feature.
+ *   3. Shift invariance: adding a constant to a row whose sum keeps its
+ *      sign leaves the output unchanged bit for bit (the mean rounds half
+ *      away from zero, so the constant passes through it exactly).
+ *
  * Build/run: see fuzz/Makefile (`make fuzz` / `make fuzz-ci`).
  *
  * Copyright (c) Dan McLeran. MIT (see LICENSE.txt).
@@ -22,7 +35,10 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <cmath>
+
 #include "qlayernorm.hpp"
+#include "fuzz_check.hpp"
 
 using tinymind::QLayerNorm1D;
 using tinymind::quantizeLayerNormGamma;
@@ -84,12 +100,94 @@ void run(ByteReader& br)
     ln.qmin = -128;
     ln.qmax = 127;
 
-    ln.forward(input, output);
+    // Read after every pre-existing field, so archived corpus inputs decode
+    // as they did before. One bit flattens every row to its first element, so the zero-variance
+    // branch is reached by design rather than only by short inputs.
+    const bool constant_rows = (br.u8() & 0x01) != 0;
+    if (constant_rows)
+    {
+        for (std::size_t k = 0; k < R * F; ++k) { input[k] = input[(k / F) * F]; }
+    }
 
-    // Touch the output so the call cannot be optimized away.
-    volatile int sink = 0;
-    for (std::size_t k = 0; k < R * F; ++k) { sink += output[k]; }
-    (void)sink;
+    ln.forward(input, output);
+    tinymind_fuzz::emit(output, sizeof(output));
+
+    const int32_t N = static_cast<int32_t>(F);
+    for (std::size_t r = 0; r < R; ++r)
+    {
+        const int8_t* in  = input  + r * F;
+        const int8_t* out = output + r * F;
+
+        // The kernel's integer statistics: mean rounded half away from zero,
+        // variance (about that mean) rounded half up.
+        int64_t sum = 0;
+        for (std::size_t i = 0; i < F; ++i) { sum += in[i]; }
+        const int64_t bias = (sum >= 0) ? (N / 2) : -(N / 2);
+        const int32_t mean_q = static_cast<int32_t>((sum + bias) / N);
+        int64_t ssum = 0;
+        for (std::size_t i = 0; i < F; ++i)
+        {
+            const int64_t dev = in[i] - mean_q;
+            ssum += dev * dev;
+        }
+        const int64_t var_q = (ssum + N / 2) / N;
+        const double denom = std::sqrt(static_cast<double>(var_q + ln.epsilon_q));
+
+        for (std::size_t i = 0; i < F; ++i)
+        {
+            const double normalized = static_cast<double>(in[i] - mean_q) / denom;
+            const double gamma_real = static_cast<double>(gamma_int[i]) / 16384.0;
+            double weighted = normalized * gamma_real;
+            // The kernel holds gamma * normalized as an int32 Q28 value.
+            if (weighted > 8.0)  { weighted = 8.0; }
+            if (weighted < -8.0) { weighted = -8.0; }
+            double want = weighted / static_cast<double>(output_scale) +
+                          static_cast<double>(beta_int[i]) +
+                          static_cast<double>(ln.output_zero_point);
+            if (want < -128.0) { want = -128.0; }
+            if (want > 127.0)  { want = 127.0; }
+
+            // Error of the Q14 normalized value: the inverse square root is
+            // within 2^-13 relative, plus one unit of the floor.
+            const double q14_error = (2.0 * std::fabs(normalized) + 2.0) / 16384.0;
+            const double bound = q14_error * std::fabs(gamma_real) /
+                                 static_cast<double>(output_scale) + 1.0;
+            TINYMIND_FUZZ_CHECK(std::fabs(static_cast<double>(out[i]) - want) <= bound);
+
+            if (constant_rows)
+            {
+                int32_t expect = beta_int[i] + ln.output_zero_point;
+                if (expect < -128) { expect = -128; }
+                if (expect > 127)  { expect = 127; }
+                TINYMIND_FUZZ_CHECK(out[i] == expect);
+            }
+        }
+    }
+
+    // Shift every row by one constant, kept only where each row's sum keeps
+    // its sign (so its mean rounds the same way) and every value stays in
+    // range.
+    int32_t delta = (static_cast<int32_t>(br.u8()) % 33) - 16;
+    for (std::size_t r = 0; r < R && delta != 0; ++r)
+    {
+        int64_t sum = 0;
+        for (std::size_t i = 0; i < F; ++i)
+        {
+            const int32_t moved = static_cast<int32_t>(input[r * F + i]) + delta;
+            if (moved < -128 || moved > 127) { delta = 0; }
+            sum += input[r * F + i];
+        }
+        const int64_t moved_sum = sum + static_cast<int64_t>(delta) * N;
+        if ((sum >= 0) != (moved_sum >= 0)) { delta = 0; }
+    }
+    int8_t shifted_in[R * F];
+    int8_t shifted_out[R * F];
+    for (std::size_t k = 0; k < R * F; ++k) { shifted_in[k] = static_cast<int8_t>(input[k] + delta); }
+    ln.forward(shifted_in, shifted_out);
+    for (std::size_t k = 0; k < R * F; ++k)
+    {
+        TINYMIND_FUZZ_CHECK(shifted_out[k] == output[k]);
+    }
 }
 
 } // namespace

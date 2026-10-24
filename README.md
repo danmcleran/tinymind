@@ -1008,8 +1008,11 @@ Every push and pull request runs the [Static & Dynamic Analysis](.github/workflo
 | Static analysis | cppcheck (warning + portability), all headers | **Blocking** | `make cppcheck` |
 | Coverage floor | gcov + lcov, `cpp/` line/function floors | **Blocking** | `make coverage && make coverage-check` |
 | Formal proofs | CBMC over the fixed-point `qformat` kernels | **Blocking** | `make -C formal prove` |
-| Fuzzing | libFuzzer over int8 kernels, time-boxed, ASan+UBSan | **Blocking** | `make -C fuzz fuzz-ci` |
-| Uninitialized reads | Clang MemorySanitizer over the embedded gate corners, `-O0` | **Blocking** | `make check-msan` |
+| Fuzzing | libFuzzer int8 kernel harnesses with property checks (exact reference oracles, permutation equivariance, softmax mass and order), committed corpus replayed under ASan+UBSan; nightly exploratory run | **Blocking** | `make -C fuzz replay` / `make -C fuzz fuzz-ci` |
+| Cross-build agreement | The fuzz corpus through unsanitized g++ and Clang builds at `-O0` and `-O3`; output digests must match | **Blocking** | `make -C fuzz agree` |
+| Property-check reachability | Every fuzz property check must execute on the committed corpus (gcov) | **Blocking** | `make -C fuzz check-coverage` |
+| Uninitialized reads | Clang MemorySanitizer over the embedded gate corners and the fuzz corpus, `-O0` | **Blocking** | `make check-msan` |
+| Cortex-M4 SMLAD path | QEMU `mps2-an386`: bit-exact vs scalar, plus GCC and Clang UBSan images in trap mode | **Blocking** | `make -C unit_test/embedded arm_dsp_qemu` |
 | Second toolchain | Clang build + run of the embedded matrix and the Boost suites | **Blocking** | `make check-clang` |
 | Second toolchain (SIMD) | Clang build + run with the AVX2 backend active | **Blocking** | `make check-clang-avx2` |
 | Cross-compiler bit-exactness | int8 exemplars built with Clang must reproduce the committed golden bytes | **Blocking** | `make check-clang-integration` |
