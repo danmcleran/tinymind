@@ -255,6 +255,24 @@ BOOST_AUTO_TEST_CASE(branch_interpolation_interior)
     BOOST_CHECK_SMALL(qToDouble<BranchQ>(out) - refSigmoid(1.0625), 2.0 / 256.0);
 }
 
+BOOST_AUTO_TEST_CASE(saturating_policy_matches_wrapping_policy_every_input)
+{
+    // Inside the table's range nothing saturates, so a saturating Q8.8 must
+    // return exactly what the wrapping Q8.8 does, on every input -- knots,
+    // interior points and both clamped tails.
+    using SatQ = QValue<8, 8, true, tinymind::TruncatePolicy, tinymind::MinMaxSaturatePolicy>;
+    static const SigmoidTable8_8 table;
+    constexpr ptrdiff_t MAX_INDEX = NUMBER_OF_ACTIVATION_TABLE_VALUES - 1;
+    for (int32_t raw = -32768; raw <= 32767; ++raw)
+    {
+        const BranchQ in(static_cast<BranchQ::FullWidthValueType>(raw));
+        const SatQ satIn(static_cast<SatQ::FullWidthValueType>(raw));
+        const BranchQ out = LookupTable<BranchQ>::getValue(in, &table.values[0], MAX_INDEX);
+        const SatQ satOut = LookupTable<SatQ>::getValue(satIn, &table.values[0], MAX_INDEX);
+        BOOST_REQUIRE_EQUAL(static_cast<int32_t>(out.getValue()), static_cast<int32_t>(satOut.getValue()));
+    }
+}
+
 // ----- Bit-exact table verification ------------------------------------------
 //
 // Reproduces the generator's cast chain and asserts every entry of every
