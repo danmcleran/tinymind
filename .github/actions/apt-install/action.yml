@@ -6,6 +6,9 @@ description: >
   connection and never returns. Retrying alone only covers the first. Every
   apt call here is therefore bounded by both apt's own network timeouts and an
   outer `timeout`, so a hang degrades into a failure the retry loop can absorb.
+  A retry against the same mirror often stalls the same way (on the 26.04
+  image, azure.archive.ubuntu.com trickled the large amd64v3 packages until
+  every attempt timed out), so retries after the first go to archive.ubuntu.com.
 
 inputs:
   packages:
@@ -47,6 +50,24 @@ runs:
         apt_opts="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
         apt_opts="$apt_opts -o Acquire::ftp::Timeout=30 -o Acquire::Retries=2"
 
+        # Point apt at archive.ubuntu.com instead of the runner's Azure
+        # mirror. The runner lists the mirror in /etc/apt/apt-mirrors.txt (read
+        # through a mirror+file: URI) or names it directly in the sources, so
+        # rewrite the host in both. apt's mirror method falls back to the next
+        # entry only when a fetch fails, not when it crawls, which is why the
+        # list alone does not save a stalled job.
+        use_archive_mirror() {
+          local files
+          files="$(sudo grep -rlsF azure.archive.ubuntu.com \
+                     /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d || true)"
+          if [ -z "$files" ]; then
+            echo "apt-install: no Azure mirror configured; keeping the sources as they are" >&2
+            return
+          fi
+          echo "apt-install: switching from azure.archive.ubuntu.com to archive.ubuntu.com in:" $files >&2
+          sudo sed -i 's#azure\.archive\.ubuntu\.com#archive.ubuntu.com#g' $files
+        }
+
         for attempt in $(seq 1 "$max"); do
           # Capture the status via `|| status=$?` rather than reading $? after
           # an `if`: an `if` whose condition fails and which has no `else`
@@ -78,6 +99,9 @@ runs:
             # recover before the next attempt instead of failing on the lock.
             sudo dpkg --configure -a || true
             sudo apt-get clean || true
+            if [ "$attempt" -eq 1 ]; then
+              use_archive_mirror
+            fi
             sleep "$wait"
           fi
         done
