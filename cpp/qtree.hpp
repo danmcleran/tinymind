@@ -573,12 +573,17 @@ namespace tinymind
             static constexpr std::size_t NumInternal = (shape.internal > 0) ? shape.internal : 1;
             static constexpr std::size_t NumLeaves   = (shape.leaves > 0) ? shape.leaves : 1;
 
-            typedef typename QTreeSelect<(shape.internal <= 127 && shape.leaves <= 127),
-                                         uint8_t, uint16_t>::type RefType;
-            typedef typename QTreeSelect<(shape.max_feature <= 255), uint8_t, uint16_t>::type FeatureType;
-            typedef typename QTreeSelect<(shape.min_leaf >= -128 && shape.max_leaf <= 127), int8_t,
-                    typename QTreeSelect<(shape.min_leaf >= -32768 && shape.max_leaf <= 32767), int16_t,
-                                         int32_t>::type>::type LeafType;
+            // Named rather than written inline as template arguments:
+            // cppcheck 2.19 reports a syntax error on the inline form.
+            static constexpr bool NarrowRefs    = (shape.internal <= 127) && (shape.leaves <= 127);
+            static constexpr bool NarrowFeature = (shape.max_feature <= 255);
+            static constexpr bool Int8Leaves    = (shape.min_leaf >= -128) && (shape.max_leaf <= 127);
+            static constexpr bool Int16Leaves   = (shape.min_leaf >= -32768) && (shape.max_leaf <= 32767);
+
+            typedef typename QTreeSelect<NarrowRefs, uint8_t, uint16_t>::type RefType;
+            typedef typename QTreeSelect<NarrowFeature, uint8_t, uint16_t>::type FeatureType;
+            typedef typename QTreeSelect<Int8Leaves, int8_t,
+                    typename QTreeSelect<Int16Leaves, int16_t, int32_t>::type>::type LeafType;
             typedef decltype(Pool::nodes[0].threshold) ThreshType;
             typedef QCompactTreeNode<FeatureType, ThreshType, RefType> Node;
             typedef QCompactTreeTable<Node, LeafType, NumInternal, NumLeaves> Table;
