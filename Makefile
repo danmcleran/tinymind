@@ -654,6 +654,17 @@ check-msan-libcxx :
 
 analyze : misra tidy cppcheck header-selfcheck warnings-strict
 
+# Run gates inside the CI runner image's toolchain (tools/ci-image.sh, podman),
+# so a newer compiler or analyzer than the host's fails here and not after a
+# push. The default set covers the gates the ubuntu-26.04 move broke (GCC 15,
+# cppcheck 2.19) plus the second-toolchain and language-floor builds; pass
+# CI_IMAGE_RUN to run something else, e.g. `make check-ci-image CI_IMAGE_RUN='make tidy'`.
+CI_IMAGE_RUN ?= make check cppcheck header-selfcheck check-cxx14 check-clang && \
+                make -C fuzz agree FUZZ_CXX=clang++
+check-ci-image :
+	tools/ci-image.sh bash -c '$(CI_IMAGE_RUN)'
+
+.PHONY : check-ci-image
 .PHONY : sanitize cppcheck misra tidy analyze coverage-check header-selfcheck warnings-strict check-cxx14 \
          check-clang check-clang-avx2 check-clang-integration check-clang-examples \
          check-msan check-msan-libcxx oracle-soak
