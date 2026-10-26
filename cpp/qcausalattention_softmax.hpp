@@ -186,7 +186,10 @@ namespace tinymind
         {
             project(x_row, q_row, k_row, v_row);
             cache.append(k_row, v_row);
-            const std::size_t L = cache.length;
+            // append() keeps length <= MaxSeq_; restating the bound lets GCC 15
+            // see the loops below never run past the caller's scratch, which
+            // it otherwise reports at -O3 as -Wstringop-overflow.
+            const std::size_t L = (cache.length < MaxSeq_) ? cache.length : MaxSeq_;
 
             // Scores against every cached key (the causal prefix). 1/sqrt(P)
             // lives in score_requantizer.

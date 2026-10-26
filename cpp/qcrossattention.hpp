@@ -393,7 +393,10 @@ namespace tinymind
                    OutputType*      o_row) const
         {
             projectQ(d_row, q_row);
-            const std::size_t L = cache.length;
+            // append() keeps length <= EncSeqLength_; restating the bound lets GCC 15
+            // see the loops below never run past the caller's scratch, which
+            // it otherwise reports at -O3 as -Wstringop-overflow.
+            const std::size_t L = (cache.length < EncSeqLength_) ? cache.length : EncSeqLength_;
 
             const int32_t q_zp = static_cast<int32_t>(q_zero_point);
             const int32_t k_zp = static_cast<int32_t>(k_zero_point);
