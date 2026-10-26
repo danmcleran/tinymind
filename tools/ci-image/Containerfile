@@ -1,0 +1,39 @@
+# Copyright (c) 2026 Dan McLeran
+#
+# The toolchain of the GitHub-hosted runner image, for running CI gates
+# locally before a push. CI jobs run on ubuntu-latest and install their tools
+# with apt, so the compilers and analyzers they use are the Ubuntu archive's
+# for that release: this image installs the union of every package the
+# workflows ask for. Recommended packages are kept, as the runner's
+# apt-get install keeps them (the Arm newlib and C++ headers arrive that way).
+# When GitHub moves ubuntu-latest to a new release, change CI_IMAGE_BASE in
+# tools/ci-image.sh.
+#
+# Built and run by tools/ci-image.sh; see the comment there.
+
+ARG BASE
+FROM ${BASE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# The 26.04 runner installs the amd64v3 builds of the archive (its apt log
+# fetches ".../resolute/main amd64v3 ..."). That variant's GCC defaults to
+# -march=x86-64-v3, so -O3 vectorizes with AVX2 and reports warnings the
+# plain amd64 GCC does not (the fuzz_qlstm -Wstringop-overflow in #232 was
+# one). Without this line the image misses them. The host CPU must support
+# x86-64-v3 (AVX2) to run what this image builds. Drop this line if
+# CI_IMAGE_BASE names a release that has no amd64v3 variant.
+RUN echo 'APT::Architecture-Variants "amd64v3";' > /etc/apt/apt.conf.d/99-architecture-variants
+
+RUN apt-get update \
+ && apt-get install -y \
+        build-essential make python3 \
+        libboost-dev libboost-test-dev \
+        clang libomp-dev clang-tidy bear \
+        cppcheck lcov cbmc \
+        gcc-arm-none-eabi qemu-system-arm \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV BOOST_HOME=/usr
+RUN mkdir -p /work
+WORKDIR /work
