@@ -221,14 +221,6 @@ namespace tinymind {
 
         QLearningEnvironment(const ValueType& learningRate, const ValueType& discountFactor, const size_t randomActionDecisionPoint)
         {
-            size_t bufferIndex = 0;
-
-            for(ActionType action = 0;action < NumberOfActions;++action)
-            {
-                new(&this->mActionsBuffer[bufferIndex]) ActionType(0);
-                bufferIndex += sizeof(ActionType);
-            }
-
             this->setLearningRate(learningRate);
             this->setDiscountFactor(discountFactor);
             this->setRandomActionDecisionPoint(randomActionDecisionPoint);
@@ -269,28 +261,6 @@ namespace tinymind {
         ValueType getLearningRate() const
         {
             return this->mLearningPolicy.getLearningRate();
-        }
-
-        ActionType getRandomActionForState(const StateType state) const
-        {
-            ActionType* pActions = reinterpret_cast<ActionType*>(&this->mActionsBuffer[0]);
-            const size_t numberOfValidActions = this->getValidActionsForState(state, pActions);
-            ActionType action;
-
-            switch(numberOfValidActions)
-            {
-                case 0:
-                    action = EnvironmentInvalidAction;
-                    break;
-                case 1:
-                    action = *pActions;
-                    break;
-                default:
-                    action = this->chooseRandomActionFromValidActions(pActions, numberOfValidActions);
-                    break;
-            }
-
-            return action;
         }
 
         size_t getRandomActionDecisionPoint() const
@@ -337,8 +307,6 @@ namespace tinymind {
     protected:
         RandomNumberPolicy mRandomNumberPolicy;
         LearningPolicy mLearningPolicy;
-    private:
-        alignas(ActionType) unsigned char mActionsBuffer[sizeof(ActionType) * NumberOfActions];
     };
 
     template<typename EnvironmentType, typename QLearnerQValuePolicy>

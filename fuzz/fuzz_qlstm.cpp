@@ -29,6 +29,7 @@
  */
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include "qlstm.hpp"
 #include "qactivations.hpp"
@@ -58,6 +59,17 @@ struct ByteReader
 
     uint8_t u8() { return (i < n) ? p[i++] : static_cast<uint8_t>(0); }
     int8_t  i8() { return static_cast<int8_t>(u8()); }
+
+    // count i8() reads in one go. A byte-at-a-time loop into a 32-byte array
+    // trips a false -Wstringop-overflow from GCC 15 at -O3.
+    void i8s(int8_t* dst, size_t count)
+    {
+        const size_t avail = (i < n) ? n - i : 0;
+        const size_t take = (count < avail) ? count : avail;
+        if (take > 0) { std::memcpy(dst, p + i, take); }
+        std::memset(dst + take, 0, count - take);
+        i += take;
+    }
 
     // Map a byte to a float in [lo, hi].
     float f(float lo, float hi) { return lo + (static_cast<float>(u8()) / 255.0f) * (hi - lo); }
@@ -101,8 +113,8 @@ void run(ByteReader& br)
 
     int8_t w_input[4 * H * I];
     int8_t w_recurrent[4 * H * H];
-    for (std::size_t k = 0; k < 4 * H * I; ++k) { w_input[k] = br.i8(); }
-    for (std::size_t k = 0; k < 4 * H * H; ++k) { w_recurrent[k] = br.i8(); }
+    br.i8s(w_input, 4 * H * I);
+    br.i8s(w_recurrent, 4 * H * H);
 
     QLSTMCell<int8_t, int8_t, int32_t, int8_t, int8_t, CellT, I, H> cell;
     cell.w_input           = w_input;
