@@ -601,6 +601,68 @@ BOOST_AUTO_TEST_CASE(requantizer_applies_zero_point)
     BOOST_TEST(static_cast<int>(r.apply(-200)) == -128);
 }
 
+namespace requantizer_rails_test {
+
+    // The saturating path (shift < 2 or a negative multiplier) can produce a
+    // rescaled value at the int32 rails. For storage narrower than int32,
+    // apply() clamps it to +-2^30 before adding the zero point rather than
+    // to the exact [qmin - zp, qmax - zp] window; the result must equal the
+    // exact one: the rescaled value plus the zero point, clamped, in int64.
+    template<typename Dst, int32_t Min, int32_t Max>
+    void check(std::size_t& cases, std::size_t& mismatches)
+    {
+        const int32_t accs[] = {INT32_MIN, INT32_MIN + 1, -(1 << 30) - 1, -(1 << 30), -(1 << 30) + 1,
+                                -70000, -1, 0, 1, 70000, (1 << 30) - 1, 1 << 30, (1 << 30) + 1,
+                                INT32_MAX - 1, INT32_MAX};
+        const int32_t multipliers[] = {0, 1, 1 << 30, kQ31One, -1, INT32_MIN};
+        const int32_t zeroPoints[] = {Min, Min + 1, 0, Max - 1, Max};
+        const int32_t mid = Min + (Max - Min) / 2;
+        const int32_t bounds[][2] = {{Min, Max}, {mid, Max}, {Min, mid}, {mid, mid}};
+        for (int32_t shift = -31; shift <= 1; ++shift)
+        {
+            for (const int32_t multiplier : multipliers)
+            {
+                for (const int32_t zp : zeroPoints)
+                {
+                    for (const auto& b : bounds)
+                    {
+                        Requantizer<int32_t, Dst> rq;
+                        rq.multiplier = multiplier;
+                        rq.shift = shift;
+                        rq.zero_point = static_cast<Dst>(zp);
+                        rq.qmin = static_cast<Dst>(b[0]);
+                        rq.qmax = static_cast<Dst>(b[1]);
+                        for (const int32_t acc : accs)
+                        {
+                            const int64_t sum = static_cast<int64_t>(
+                                tinymind::multiplyByQuantizedMultiplier(acc, multiplier, shift)) + zp;
+                            const int64_t expected = (sum < b[0]) ? b[0] : ((sum > b[1]) ? b[1] : sum);
+                            ++cases;
+                            if (static_cast<int64_t>(rq.apply(acc)) != expected)
+                            {
+                                ++mismatches;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+} // namespace requantizer_rails_test
+
+BOOST_AUTO_TEST_CASE(requantizer_saturating_path_at_int32_rails)
+{
+    std::size_t cases = 0;
+    std::size_t mismatches = 0;
+    requantizer_rails_test::check<int8_t, INT8_MIN, INT8_MAX>(cases, mismatches);
+    requantizer_rails_test::check<uint8_t, 0, UINT8_MAX>(cases, mismatches);
+    requantizer_rails_test::check<int16_t, INT16_MIN, INT16_MAX>(cases, mismatches);
+    requantizer_rails_test::check<uint16_t, 0, UINT16_MAX>(cases, mismatches);
+    BOOST_TEST(cases > 50000u);
+    BOOST_TEST(mismatches == 0u);
+}
+
 BOOST_AUTO_TEST_CASE(qaffine_tensor_holds_zero_point)
 {
     QAffineTensor<int8_t> t{};
