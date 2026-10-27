@@ -164,30 +164,43 @@ namespace tinymind {
         const int32_t left_shift  = (shift < 0) ? -shift : 0;
         const int32_t right_shift = (shift > 0) ?  shift : 0;
 
-        // Left-shift in 64-bit head room, then saturate back to int32 before
-        // the Q0.31 multiply. The previous `x * (1 << left_shift)` was
-        // signed-overflow UB: `1 << left_shift` itself overflows at
-        // left_shift >= 31, and the int32 product overflows for a large
-        // accumulator at moderate left_shift. In int64 the shift is
-        // well-defined and the saturation clamps to the int32 rails -- so the
-        // result is unchanged for in-contract (small left_shift) inputs and
-        // merely saturates instead of invoking UB for out-of-contract ones.
-        // |x| << 31 fits int64, and a distance past 31 can only saturate a
-        // non-zero x, so cap the distance to keep the shift defined.
-        int64_t shifted = static_cast<int64_t>(x);
-        if (left_shift > 0)
+        // Left-shift, saturating to the int32 rails before the Q0.31
+        // multiply. The plain `x * (1 << left_shift)` was signed-overflow
+        // UB: `1 << left_shift` itself overflows at left_shift >= 31, and the
+        // int32 product overflows for a large accumulator at moderate
+        // left_shift. Saturation leaves in-contract (small left_shift)
+        // inputs unchanged and only replaces the UB of out-of-contract ones.
+        //
+        // The range test is done in int32 rather than by shifting in int64:
+        // the result is the same, but Cortex-M0+ has no 32x32->64 multiply,
+        // so the int64 form costs a libgcc __aeabi_lmul plus 64-bit compares
+        // on every left-shifting call.
+        int32_t shifted = x;
+        if (left_shift > 30)
         {
-            // Multiply rather than `<<`: shifting a negative value is itself
-            // UB. (1 << sh) with sh <= 31 is a positive int64; |x| * 2^31
-            // fits int64, so the product is well-defined for any sign.
-            const int32_t sh = (left_shift < 31) ? left_shift : 31;
-            shifted *= (static_cast<int64_t>(1) << sh);
+            // Any non-zero x saturates; 2^31 itself is not representable.
+            shifted = (x > 0) ? INT32_MAX : ((x < 0) ? INT32_MIN : 0);
         }
-        if (shifted > static_cast<int64_t>(INT32_MAX)) { shifted = INT32_MAX; }
-        if (shifted < static_cast<int64_t>(INT32_MIN)) { shifted = INT32_MIN; }
+        else if (left_shift > 0)
+        {
+            // x * 2^left_shift fits int32 exactly when x lies in
+            // [-2^(31 - left_shift), 2^(31 - left_shift) - 1].
+            const int32_t limit = INT32_MAX >> left_shift;
+            if (x > limit)
+            {
+                shifted = INT32_MAX;
+            }
+            else if (x < -limit - 1)
+            {
+                shifted = INT32_MIN;
+            }
+            else
+            {
+                shifted = x * (static_cast<int32_t>(1) << left_shift);
+            }
+        }
 
-        const int32_t mul = saturatingRoundingDoublingHighMul(
-            static_cast<int32_t>(shifted), multiplier);
+        const int32_t mul = saturatingRoundingDoublingHighMul(shifted, multiplier);
         return roundingDivideByPOT(mul, right_shift);
     }
 
@@ -254,17 +267,33 @@ namespace tinymind {
                 scaled = multiplyByQuantizedMultiplier(static_cast<int32_t>(acc), multiplier, shift);
 
                 // This path can return values near the int32 rails, where
-                // adding the zero point below would overflow. Clamping to
-                // [qmin - zp, qmax - zp] first gives the same final result.
-                const int64_t lo = static_cast<int64_t>(qmin) - static_cast<int64_t>(zero_point);
-                const int64_t hi = static_cast<int64_t>(qmax) - static_cast<int64_t>(zero_point);
-                if (static_cast<int64_t>(scaled) < lo)
+                // adding the zero point below would overflow, so clamp first.
+                // Storage narrower than int32 has |zero_point|, |qmin| and
+                // |qmax| below 2^16, so clamping to +-2^30 keeps the sum in
+                // int32 and still lands outside [qmin, qmax] whenever it
+                // bites: the final clamp gives the same result. Constant
+                // bounds matter on Cortex-M0+: bounds built from qmin, qmax
+                // and zero_point stay live across the caller's output loop
+                // and cost it registers (+12% on the L031 MLP bench) even
+                // when this branch never runs. 32-bit storage keeps the
+                // exact [qmin - zp, qmax - zp] window, in int64.
+                if (sizeof(DstStorageType) < sizeof(int32_t))
                 {
-                    scaled = static_cast<int32_t>(lo);
+                    const int32_t rail = static_cast<int32_t>(1) << 30;
+                    scaled = (scaled > rail) ? rail : ((scaled < -rail) ? -rail : scaled);
                 }
-                else if (static_cast<int64_t>(scaled) > hi)
+                else
                 {
-                    scaled = static_cast<int32_t>(hi);
+                    const int64_t lo = static_cast<int64_t>(qmin) - static_cast<int64_t>(zero_point);
+                    const int64_t hi = static_cast<int64_t>(qmax) - static_cast<int64_t>(zero_point);
+                    if (static_cast<int64_t>(scaled) < lo)
+                    {
+                        scaled = static_cast<int32_t>(lo);
+                    }
+                    else if (static_cast<int64_t>(scaled) > hi)
+                    {
+                        scaled = static_cast<int32_t>(hi);
+                    }
                 }
             }
             int32_t with_zp = scaled + static_cast<int32_t>(zero_point);
