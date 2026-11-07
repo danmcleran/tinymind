@@ -94,7 +94,7 @@ jobs:
         run: make sanitize-avx2
 
   simd-arm:
-    # The Arm A-profile SIMD backends (NEON, NEON dot product, NEON fp16, SVE)
+    # HARD GATE. The Arm A-profile SIMD backends (NEON, NEON dot product, NEON fp16, SVE)
     # never execute on the x64 runners, so without this job they ship
     # untested. GitHub's arm64 runner runs the dispatch-consumer suites under
     # ASan+UBSan with NEON and with the dot-product backend active, a clang
@@ -484,7 +484,7 @@ jobs:
     name: Helium backends on emulated Cortex-M55
     runs-on: ubuntu-latest
     needs: changes
-    # The Helium (MVE) backends are Armv8.1-M only, so no runner executes
+    # HARD GATE. The Helium (MVE) backends are Armv8.1-M only, so no runner executes
     # them. The SMLAD job's test, built with TINYMIND_ENABLE_SIMD_HELIUM_MVE_I
     # and _MVE_F, runs on QEMU's mps3-an547 (Cortex-M55): int8 bit-exact
     # against the scalar reference (per lane, every length 0..80, every
