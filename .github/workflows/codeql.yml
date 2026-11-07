@@ -10,7 +10,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   # See analysis.yml for the docs-only gate rationale: "Analyze C++" is a
@@ -52,6 +51,11 @@ jobs:
     name: Analyze C++
     runs-on: ubuntu-latest
     needs: changes
+    # Write access is scoped to the one job that uploads results, not the whole
+    # workflow (OpenSSF Scorecard Token-Permissions).
+    permissions:
+      contents: read
+      security-events: write   # upload CodeQL results to code scanning
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: needs.changes.outputs.code == 'true'
