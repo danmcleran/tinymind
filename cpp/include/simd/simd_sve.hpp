@@ -71,7 +71,7 @@ namespace tinymind { namespace simd { namespace sve {
             const svint8_t ones = svdup_n_s8_z(pg, 1);
             acc_wx = svdot_s32(acc_wx, wv, xv);
             acc_w  = svdot_s32(acc_w,  wv, ones);
-            i += svcntb();
+            i += 16;
         }
 
         const svbool_t all_lanes = svptrue_b32();

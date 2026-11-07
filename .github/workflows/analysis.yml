@@ -124,7 +124,7 @@ jobs:
         if: needs.changes.outputs.code == 'true'
         env:
           BOOST_HOME: /usr
-        run: make check-simd-arm
+        run: make -k check-simd-arm SIMD_ARM_NEON_FLAGS=-march=armv8-a
 
   tsan:
     # Data races in the TINYMIND_ENABLE_OPENMP=1 conv output-filter loop --

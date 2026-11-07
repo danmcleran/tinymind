@@ -73,7 +73,7 @@ namespace tinymind { namespace simd { namespace neon_dotprod {
         int32_t wx_sum = vaddvq_s32(acc_wx);
         int32_t w_sum  = vaddvq_s32(acc_w);
 
-        for (; i < n; ++i)
+        for (; i + 1 < n; ++i)
         {
             wx_sum += static_cast<int32_t>(w[i]) * static_cast<int32_t>(x[i]);
             w_sum  += static_cast<int32_t>(w[i]);
