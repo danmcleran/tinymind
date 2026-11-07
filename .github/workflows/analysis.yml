@@ -124,16 +124,7 @@ jobs:
         if: needs.changes.outputs.code == 'true'
         env:
           BOOST_HOME: /usr
-        run: |
-          # TEMPORARY diagnostic: per-test timings for the NEON exhaustive build.
-          set -x
-          cd unit_test/exhaustive
-          make clean
-          make CC="g++ -march=armv8-a -DTINYMIND_ENABLE_SIMD_NEON=1"
-          (cd output && timeout 600 ./exhaustive_unit_test --log_level=test_suite 2>&1 | grep -E "Entering test case|Leaving test case|int8 dot|error" ) || true
-          make clean
-          make CC="g++ -fsanitize=address,undefined -fno-sanitize-recover=all -O1 -march=armv8-a -DTINYMIND_ENABLE_SIMD_NEON=1" WARN="-Wall -Wextra -Wpedantic -g"
-          (cd output && timeout 900 ./exhaustive_unit_test --log_level=test_suite 2>&1 | grep -E "Entering test case|Leaving test case|int8 dot|error" ) || true
+        run: make check-simd-arm
 
   tsan:
     # Data races in the TINYMIND_ENABLE_OPENMP=1 conv output-filter loop --
