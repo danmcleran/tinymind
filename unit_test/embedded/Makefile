@@ -298,7 +298,7 @@ arm_crosscompile_clang:
 # TINYMIND_ENABLE_SIMD_ARM_DSP is the one SIMD backend no CI host can run: its
 # instructions (SMLAD / SXTB16 / SSUB16) are AArch32-only, so the hosted
 # suites never touch it and arm_crosscompile only proves it assembles. This
-# links arm_dsp/arm_dsp_qemu_test.cpp into a bare-metal image for QEMU's
+# links qemu_m/simd_qemu_test.cpp into a bare-metal image for QEMU's
 # mps2-an386 machine (a Cortex-M4) and runs it under semihosting. The test
 # sweeps every length 0..80, every x/w byte misalignment and the int8
 # extremes against the scalar reference, for the dot product and the 2x2
@@ -326,8 +326,8 @@ arm_crosscompile_clang:
 # before instrumenting it), one whose result is used is caught by both.
 QEMU_ARM        ?= qemu-system-arm
 ARM_OBJDUMP     ?= arm-none-eabi-objdump
-ARM_DSP_DIR      = arm_dsp
-ARM_DSP_SRC      = $(ARM_DSP_DIR)/arm_dsp_qemu_test.cpp $(ARM_DSP_DIR)/startup_mps2.cpp
+ARM_DSP_DIR      = qemu_m
+ARM_DSP_SRC      = $(ARM_DSP_DIR)/simd_qemu_test.cpp $(ARM_DSP_DIR)/startup_mps.cpp
 ARM_DSP_DEFS     = -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_ARM_DSP=1
 ARM_DSP_CFLAGS   = $(ARM_STD) $(ARM_WARN) -O2 -ffreestanding -fno-exceptions -fno-rtti \
                    $(INCLUDES) -I$(ARM_DSP_DIR) $(ARM_DSP_DEFS)
@@ -345,20 +345,20 @@ arm_dsp_qemu:
 	$(ARM_CXX) $(ARM_DSP_CFLAGS) $(ARM_M4) $(ARM_DSP_SRC) $(ARM_DSP_LDFLAGS) -o ./output/arm_dsp_gcc.elf
 	@for mode in unaligned strict; do \
 	  align=$$( [ $$mode = unaligned ] && echo -munaligned-access ); \
-	  for src in arm_dsp_qemu_test startup_mps2; do \
+	  for src in simd_qemu_test startup_mps; do \
 	    $(ARM_CLANG) --target=arm-none-eabi $(ARM_M4) $(ARM_CLANG_INC) $(ARM_DSP_CFLAGS) $$align \
 	      -c $(ARM_DSP_DIR)/$$src.cpp -o ./output/arm_dsp_clang_$${mode}_$$src.o || exit 1; \
 	  done; \
-	  $(ARM_CXX) ./output/arm_dsp_clang_$${mode}_*.o $(ARM_DSP_LDFLAGS) -o ./output/arm_dsp_clang_$$mode.elf || exit 1; \
+	  $(ARM_CXX) ./output/arm_dsp_clang_$${mode}_simd_qemu_test.o ./output/arm_dsp_clang_$${mode}_startup_mps.o $(ARM_DSP_LDFLAGS) -o ./output/arm_dsp_clang_$$mode.elf || exit 1; \
 	done
-	$(ARM_CXX) $(ARM_DSP_CFLAGS) $(ARM_M4) $(ARM_DSP_UBSAN) -c $(ARM_DSP_DIR)/arm_dsp_qemu_test.cpp -o ./output/arm_dsp_gcc_ubsan_test.o
-	$(ARM_CXX) $(ARM_DSP_CFLAGS) $(ARM_M4) -c $(ARM_DSP_DIR)/startup_mps2.cpp -o ./output/arm_dsp_gcc_ubsan_startup.o
-	$(ARM_CXX) ./output/arm_dsp_gcc_ubsan_*.o $(ARM_DSP_LDFLAGS) -o ./output/arm_dsp_gcc_ubsan.elf
+	$(ARM_CXX) $(ARM_DSP_CFLAGS) $(ARM_M4) $(ARM_DSP_UBSAN) -c $(ARM_DSP_DIR)/simd_qemu_test.cpp -o ./output/arm_dsp_gcc_ubsan_test.o
+	$(ARM_CXX) $(ARM_DSP_CFLAGS) $(ARM_M4) -c $(ARM_DSP_DIR)/startup_mps.cpp -o ./output/arm_dsp_gcc_ubsan_startup.o
+	$(ARM_CXX) ./output/arm_dsp_gcc_ubsan_test.o ./output/arm_dsp_gcc_ubsan_startup.o $(ARM_DSP_LDFLAGS) -o ./output/arm_dsp_gcc_ubsan.elf
 	$(ARM_CLANG) --target=arm-none-eabi $(ARM_M4) $(ARM_CLANG_INC) $(ARM_DSP_CFLAGS) -munaligned-access $(ARM_DSP_UBSAN) \
-	  -c $(ARM_DSP_DIR)/arm_dsp_qemu_test.cpp -o ./output/arm_dsp_clang_ubsan_test.o
+	  -c $(ARM_DSP_DIR)/simd_qemu_test.cpp -o ./output/arm_dsp_clang_ubsan_test.o
 	$(ARM_CLANG) --target=arm-none-eabi $(ARM_M4) $(ARM_CLANG_INC) $(ARM_DSP_CFLAGS) -munaligned-access \
-	  -c $(ARM_DSP_DIR)/startup_mps2.cpp -o ./output/arm_dsp_clang_ubsan_startup.o
-	$(ARM_CXX) ./output/arm_dsp_clang_ubsan_*.o $(ARM_DSP_LDFLAGS) -o ./output/arm_dsp_clang_ubsan.elf
+	  -c $(ARM_DSP_DIR)/startup_mps.cpp -o ./output/arm_dsp_clang_ubsan_startup.o
+	$(ARM_CXX) ./output/arm_dsp_clang_ubsan_test.o ./output/arm_dsp_clang_ubsan_startup.o $(ARM_DSP_LDFLAGS) -o ./output/arm_dsp_clang_ubsan.elf
 	@for img in gcc clang_unaligned clang_strict gcc_ubsan clang_ubsan; do \
 	  elf=./output/arm_dsp_$$img.elf; \
 	  $(ARM_OBJDUMP) -d $$elf | grep -q -w smlad || { echo "ARM_DSP GATE FAIL ($$img): no SMLAD in image -- backend not compiled in"; exit 1; }; \
@@ -366,6 +366,65 @@ arm_dsp_qemu:
 	  timeout 120 $(QEMU_ARM) $(QEMU_ARM_FLAGS) -kernel $$elf || { echo "ARM_DSP GATE FAIL ($$img)"; exit 1; }; \
 	done
 	@echo "arm_dsp_qemu: SMLAD backend bit-exact with scalar on emulated Cortex-M4 (gcc, clang, clang strict-align), no UB under gcc/clang UBSan"
+
+# -----------------------------------------------------------------------------
+# Helium (MVE) backends executed on an emulated Cortex-M55. HARD gate.
+#
+# TINYMIND_ENABLE_SIMD_HELIUM_MVE_I / _MVE_F are Armv8.1-M only, so like the
+# SMLAD path no CI host can run them. The same test translation unit as
+# arm_dsp_qemu is built with both Helium gates on and run on QEMU's
+# mps3-an547 (Cortex-M55) under semihosting: the int8 dot product (dispatched
+# to helium_mve_i) gets the per-lane sweep over one 16-lane vector, the
+# length/misalignment sweep and the end-to-end layers; the fp32 dot product
+# (helium_mve_f, which nothing dispatches to) is called directly and checked
+# bit-exactly against a model of its lane arithmetic. The startup code turns
+# on coprocessors 10/11 first, without which the first MVE instruction faults.
+#
+# GCC and Clang images, plus a UBSan trap-mode image from each (see
+# arm_dsp_qemu). Each image must contain VMLADAVA (which objdump prints as its
+# alias VMLAVA) and a vector VFMA, so a silent scalar fallback fails; objdump
+# needs -m armv8.1-m.main or it leaves MVE undecoded. The MVE loads here are
+# byte and word element loads with no alignment requirement beyond the
+# element, so there is no strict-alignment variant.
+ARM_M55          = -mcpu=cortex-m55 -mfloat-abi=hard -mthumb
+HELIUM_DEFS      = -DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_SIMD_HELIUM_MVE_I=1 \
+                   -DTINYMIND_ENABLE_SIMD_HELIUM_MVE_F=1
+HELIUM_CFLAGS    = $(ARM_STD) $(ARM_WARN) -O2 -ffreestanding -fno-exceptions -fno-rtti \
+                   $(INCLUDES) -I$(ARM_DSP_DIR) $(HELIUM_DEFS)
+HELIUM_LDFLAGS   = $(ARM_M55) -nostdlib -T $(ARM_DSP_DIR)/mps3_an547.ld -Wl,-z,noexecstack -lgcc
+QEMU_M55_FLAGS   = -M mps3-an547 -nographic -monitor none -serial none \
+                   -semihosting-config enable=on,target=native
+HELIUM_IMAGES    = gcc clang gcc_ubsan clang_ubsan
+
+.PHONY: helium_qemu
+helium_qemu:
+	@command -v $(ARM_CXX) >/dev/null 2>&1 || { echo "ERROR: $(ARM_CXX) not found. sudo apt install gcc-arm-none-eabi"; exit 1; }
+	@command -v $(ARM_CLANG) >/dev/null 2>&1 || { echo "ERROR: $(ARM_CLANG) not found. sudo apt install clang"; exit 1; }
+	@command -v $(QEMU_ARM) >/dev/null 2>&1 || { echo "ERROR: $(QEMU_ARM) not found. sudo apt install qemu-system-arm"; exit 1; }
+	$(MKDIR)
+	@for img in $(HELIUM_IMAGES); do \
+	  san=$$(case $$img in *_ubsan) echo "$(ARM_DSP_UBSAN)";; esac); \
+	  case $$img in \
+	    gcc*)   cxx="$(ARM_CXX) $(HELIUM_CFLAGS) $(ARM_M55)";; \
+	    clang*) cxx="$(ARM_CLANG) --target=arm-none-eabi $(ARM_M55) $(ARM_CLANG_INC) $(HELIUM_CFLAGS)";; \
+	  esac; \
+	  echo "[build] helium_$$img"; \
+	  $$cxx $$san -c $(ARM_DSP_DIR)/simd_qemu_test.cpp -o ./output/helium_$${img}_test.o || exit 1; \
+	  $$cxx -c $(ARM_DSP_DIR)/startup_mps.cpp -o ./output/helium_$${img}_startup.o || exit 1; \
+	  $(ARM_CXX) ./output/helium_$${img}_test.o ./output/helium_$${img}_startup.o $(HELIUM_LDFLAGS) \
+	    -o ./output/helium_$$img.elf || exit 1; \
+	done
+	@for img in $(HELIUM_IMAGES); do \
+	  elf=./output/helium_$$img.elf; \
+	  $(ARM_OBJDUMP) -d -m armv8.1-m.main $$elf > ./output/helium_$$img.dis || exit 1; \
+	  grep -q -E '[[:space:]]vmlava\.s8[[:space:]]' ./output/helium_$$img.dis || \
+	    { echo "HELIUM GATE FAIL ($$img): no VMLADAVA in image -- MVE-I backend not compiled in"; exit 1; }; \
+	  grep -q -E '[[:space:]]vfma\.f32[[:space:]]+q' ./output/helium_$$img.dis || \
+	    { echo "HELIUM GATE FAIL ($$img): no vector VFMA in image -- MVE-F backend not compiled in"; exit 1; }; \
+	  echo "[qemu mps3-an547] $$img"; \
+	  timeout 600 $(QEMU_ARM) $(QEMU_M55_FLAGS) -kernel $$elf || { echo "HELIUM GATE FAIL ($$img)"; exit 1; }; \
+	done
+	@echo "helium_qemu: MVE-I bit-exact and MVE-F matching its lane model on emulated Cortex-M55 (gcc, clang), no UB under gcc/clang UBSan"
 
 # -----------------------------------------------------------------------------
 # Heap-free guarantee (build-only). HARD gate.
