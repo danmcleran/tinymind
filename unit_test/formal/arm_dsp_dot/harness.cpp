@@ -3,6 +3,15 @@
  * the same int32 as the scalar reference, for every input of length
  * 0..TM_MAX_N, every zero point, and every buffer alignment.
  */
+
+// CBMC 5.95's newest C++ front end is C++11 (--cpp11), but tinymind refuses to
+// build below its C++14 floor. tinymind_platform.hpp takes the language level
+// from _MSVC_LANG when that is defined (MSVC reports a stale __cplusplus), so
+// declaring C++14 here gets past the guard. This is sound only while the
+// headers the harness includes use no C++14-only syntax: CBMC's parser would
+// reject any, so a header that starts needing C++14 fails this proof loudly
+// rather than passing silently. Nothing else in those headers reads _MSVC_LANG.
+#define _MSVC_LANG 201402L
 #include "include/tinymind_platform.hpp"
 #include <cstddef>
 #include <cstdint>

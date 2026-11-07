@@ -1014,6 +1014,7 @@ Every push and pull request runs the [Static & Dynamic Analysis](.github/workflo
 | Property-check reachability | Every fuzz property check must execute on the committed corpus (gcov) | **Blocking** | `make -C fuzz check-coverage` |
 | Uninitialized reads | Clang MemorySanitizer over the embedded gate corners and the fuzz corpus, `-O0` | **Blocking** | `make check-msan` |
 | Cortex-M4 SMLAD path | QEMU `mps2-an386`: bit-exact vs scalar, plus GCC and Clang UBSan images in trap mode | **Blocking** | `make -C unit_test/embedded arm_dsp_qemu` |
+| SMLAD equivalence proof | CBMC proves the SMLAD `int8DotWithZeroPoint` equals the scalar reference for every input (lengths 0-8, misaligned, big-endian; 4 planted defects must be caught). Needs Bitwuzla; see its README | Opt-in (not in CI) | `make -C unit_test/formal/arm_dsp_dot` |
 | Second toolchain | Clang build + run of the embedded matrix and the Boost suites | **Blocking** | `make check-clang` |
 | Second toolchain (SIMD) | Clang build + run with the AVX2 backend active | **Blocking** | `make check-clang-avx2` |
 | Cross-compiler bit-exactness | int8 exemplars built with Clang must reproduce the committed golden bytes | **Blocking** | `make check-clang-integration` |
