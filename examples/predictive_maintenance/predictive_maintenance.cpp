@@ -110,8 +110,6 @@ typedef tinymind::MultilayerPerceptron<
     NUMBER_OF_OUTPUTS,
     TransferFunctionsType> NeuralNetworkType;
 
-static NeuralNetworkType gNet;
-
 // ---------------------------------------------------------------------------
 // Sample + float<->Q helpers
 // ---------------------------------------------------------------------------
@@ -336,10 +334,20 @@ static void toInput(const Sample& s, const FeatureStats& st, ValueType* in)
 // Main
 // ---------------------------------------------------------------------------
 
+static const unsigned WEIGHT_INIT_SEED = 1U; // see main()
+
 int main(int argc, char* argv[])
 {
     (void)argc;
     (void)argv;
+
+    // Two seeds: the initial weights come from WEIGHT_INIT_SEED and everything
+    // else (data, shuffles, training samples) from the seed set just below.
+    // WEIGHT_INIT_SEED = 1 reproduces this example's published results: the
+    // network used to be a global, constructed before main() seeded rand(), so it
+    // drew from glibc's default seed of 1.
+    std::srand(WEIGHT_INIT_SEED);
+    static NeuralNetworkType net;
 
     std::srand(7U);
     std::mt19937 rng(7U);
@@ -402,11 +410,11 @@ int main(int argc, char* argv[])
         toInput(s, st, input);
         target[0] = toQ(s.predictable ? 1.0 : 0.0);
 
-        gNet.feedForward(input);
-        const ValueType err = gNet.calculateError(target);
+        net.feedForward(input);
+        const ValueType err = net.calculateError(target);
         if (!NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(err))
         {
-            gNet.trainNetwork(target);
+            net.trainNetwork(target);
         }
         errSum += std::fabs(fromQ(err));
 
@@ -427,8 +435,8 @@ int main(int argc, char* argv[])
     for (const auto& s : test)
     {
         toInput(s, st, input);
-        gNet.feedForward(input);
-        gNet.getLearnedValues(learned);
+        net.feedForward(input);
+        net.getLearnedValues(learned);
         const bool predFail = fromQ(learned[0]) >= 0.5;
         const bool realFail = s.label != 0;
         if (predFail && realFail)      ++tp;

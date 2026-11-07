@@ -59,8 +59,6 @@ typedef tinymind::GruNeuralNetwork<
     1,
     TransferFunctionsType> GruNetworkType;
 
-GruNetworkType gruNet;
-
 static inline ValueType toQ(double v)
 {
     static const double scale = static_cast<double>(1ULL << ValueType::NumberOfFractionalBits);
@@ -79,7 +77,7 @@ static const int XOR_CASES[4][3] = { {0,0,0}, {0,1,1}, {1,0,1}, {1,1,0} };
 
 // Deterministic error over the four canonical XOR cases (real units). A clean
 // convergence signal. State reset before each case (cases are independent).
-static double evaluateXorError()
+static double evaluateXorError(GruNetworkType& gruNet)
 {
     double sum = 0.0;
     ValueType in[2];
@@ -97,13 +95,24 @@ static double evaluateXorError()
     return sum / 4.0;
 }
 
+static const unsigned WEIGHT_INIT_SEED = 1U; // see main()
+
 int main(int argc, char* argv[])
 {
+    // Two seeds: the initial weights come from WEIGHT_INIT_SEED and everything
+    // else (data, shuffles, training samples) from the seed set just below.
+    // WEIGHT_INIT_SEED = 1 reproduces this example's published results: the
+    // network used to be a global, constructed before main() seeded rand(), so it
+    // drew from glibc's default seed of 1.
+    srand(WEIGHT_INIT_SEED);
+    static GruNetworkType gruNet;
+
     srand(RANDOM_SEED);
 
     // Optional CLI overrides: ./gru_xor [learningRate] [momentum]
     const double lr  = (argc > 1) ? std::atof(argv[1]) : 0.5;
     const double mom = (argc > 2) ? std::atof(argv[2]) : 0.9;
+
     gruNet.setLearningRate(toQ(lr));
     gruNet.setMomentumRate(toQ(mom));
     gruNet.setAccelerationRate(toQ(0.0));
@@ -134,12 +143,12 @@ int main(int argc, char* argv[])
 
         if ((i + 1) % REPORT_EVERY == 0)
         {
-            curve << (i + 1) << "," << evaluateXorError() << std::endl;
+            curve << (i + 1) << "," << evaluateXorError(gruNet) << std::endl;
         }
     }
 
     std::cout << "GRU XOR training complete. Final 4-case XOR error: "
-              << evaluateXorError() << std::endl;
+              << evaluateXorError(gruNet) << std::endl;
 
     // Per-case report: confirm every pattern lands on the correct side of 0.5.
     unsigned correct = 0;

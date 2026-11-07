@@ -110,8 +110,6 @@ typedef tinymind::MultilayerPerceptron<
     NUMBER_OF_OUTPUTS,
     TransferFunctionsType> NeuralNetworkType;
 
-static NeuralNetworkType gNet;
-
 // ---------------------------------------------------------------------------
 // Sample + float<->Q helpers
 // ---------------------------------------------------------------------------
@@ -272,10 +270,20 @@ static bool loadCsv(const std::string& path, std::vector<Sample>& out)
     return !out.empty();
 }
 
+static const unsigned WEIGHT_INIT_SEED = 1U; // see main()
+
 int main(int argc, char* argv[])
 {
     (void)argc;
     (void)argv;
+
+    // Two seeds: the initial weights come from WEIGHT_INIT_SEED and everything
+    // else (data, shuffles, training samples) from the seed set just below.
+    // WEIGHT_INIT_SEED = 1 reproduces this example's published results: the
+    // network used to be a global, constructed before main() seeded rand(), so it
+    // drew from glibc's default seed of 1.
+    std::srand(WEIGHT_INIT_SEED);
+    static NeuralNetworkType net;
 
     std::srand(7U);
 
@@ -309,9 +317,9 @@ int main(int argc, char* argv[])
     // stable regression fit. (The default nonzero momentum + acceleration terms
     // accumulate independently of the learning rate and slowly destabilize a
     // linear-output regressor.)
-    gNet.setLearningRate(toQ(0.02));
-    gNet.setMomentumRate(toQ(0.0));
-    gNet.setAccelerationRate(toQ(0.0));
+    net.setLearningRate(toQ(0.02));
+    net.setMomentumRate(toQ(0.0));
+    net.setAccelerationRate(toQ(0.0));
 
     // ---- Training ----------------------------------------------------------
     const unsigned iterations  = 40000U;
@@ -330,11 +338,11 @@ int main(int argc, char* argv[])
         toInput(s, input);
         toTarget(s, target);
 
-        gNet.feedForward(input);
-        const ValueType err = gNet.calculateError(target);
+        net.feedForward(input);
+        const ValueType err = net.calculateError(target);
         if (!NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(err))
         {
-            gNet.trainNetwork(target);
+            net.trainNetwork(target);
         }
         errSum += std::fabs(fromQ(err));
 
@@ -363,8 +371,8 @@ int main(int argc, char* argv[])
     {
         const Sample& s = test[i];
         toInput(s, input);
-        gNet.feedForward(input);
-        gNet.getLearnedValues(learned);
+        net.feedForward(input);
+        net.getLearnedValues(learned);
 
         double yPred[2];
         for (size_t t = 0; t < 2; ++t)

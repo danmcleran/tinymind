@@ -44,13 +44,11 @@ static void generateXorTrainingValue(ValueType& x, ValueType& y, ValueType& z)
     z = ValueType(result, 0);
 }
 
-extern NeuralNetworkType testNeuralNet;
-
 // Deterministic validation error over the four canonical XOR cases (real units).
 // Far cleaner than averaging the noisy random training samples -- it measures
 // "how well does the network solve XOR right now". Pure forward passes; does not
 // alter training.
-static double evaluateXorError()
+static double evaluateXorError(NeuralNetworkType& net)
 {
     static const int cases[4][3] = { {0,0,0}, {0,1,1}, {1,0,1}, {1,1,0} };
     const double fracScale = static_cast<double>(1 << ValueType::NumberOfFractionalBits);
@@ -61,8 +59,8 @@ static double evaluateXorError()
     {
         in[0] = ValueType(cases[c][0], 0);
         in[1] = ValueType(cases[c][1], 0);
-        testNeuralNet.feedForward(&in[0]);
-        testNeuralNet.getLearnedValues(&out[0]);
+        net.feedForward(&in[0]);
+        net.getLearnedValues(&out[0]);
         const double pred = static_cast<double>(out[0].getValue()) / fracScale;
         const double e = pred - static_cast<double>(cases[c][2]);
         sum += (e < 0.0) ? -e : e;
@@ -70,11 +68,19 @@ static double evaluateXorError()
     return sum / 4.0;
 }
 
-extern NeuralNetworkType testNeuralNet;
+static const unsigned WEIGHT_INIT_SEED = 1U; // see main()
 
 int main(const int argc, char *argv[])
 {
     using namespace std;
+
+    // Two seeds: the initial weights come from WEIGHT_INIT_SEED and everything
+    // else (data, shuffles, training samples) from the seed set just below.
+    // WEIGHT_INIT_SEED = 1 reproduces this example's published results: the
+    // network used to be a global, constructed before main() seeded rand(), so it
+    // drew from glibc's default seed of 1.
+    srand(WEIGHT_INIT_SEED);
+    NeuralNetworkType& net = xorNetwork();
 
     srand(RANDOM_SEED); // seed random number generator
 
@@ -82,12 +88,12 @@ int main(const int argc, char *argv[])
     if (argc > 1)
     {
         ValueType lr; lr.setValue(static_cast<FullWidthValueType>(atof(argv[1]) * (1 << ValueType::NumberOfFractionalBits)));
-        testNeuralNet.setLearningRate(lr);
+        net.setLearningRate(lr);
     }
     if (argc > 2)
     {
         ValueType mom; mom.setValue(static_cast<FullWidthValueType>(atof(argv[2]) * (1 << ValueType::NumberOfFractionalBits)));
-        testNeuralNet.setMomentumRate(mom);
+        net.setMomentumRate(mom);
     }
 
     char const* const path = "nn_fixed_xor.txt";
@@ -109,15 +115,15 @@ int main(const int argc, char *argv[])
     {
         generateXorTrainingValue(values[0], values[1], output[0]);
 
-        testNeuralNet.feedForward(&values[0]);
-        error = testNeuralNet.calculateError(&output[0]);
+        net.feedForward(&values[0]);
+        error = net.calculateError(&output[0]);
         if (!NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
         {
-            testNeuralNet.trainNetwork(&output[0]);
+            net.trainNetwork(&output[0]);
         }
-        testNeuralNet.getLearnedValues(&learnedValues[0]);
+        net.getLearnedValues(&learnedValues[0]);
 
-        tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkProperties(testNeuralNet, results, &output[0], &learnedValues[0]);
+        tinymind::NetworkPropertiesFileManager<NeuralNetworkType>::storeNetworkProperties(net, results, &output[0], &learnedValues[0]);
         results << error << std::endl;
 
         // Accumulate |error| in raw LSBs; the average divides it back down.
@@ -127,7 +133,7 @@ int main(const int argc, char *argv[])
             avgError = avgError / ValueType(NUM_SAMPLES_AVG_ERROR, 0);
             cout << "Iteration: " << (i + 1) << " Average Error: " << avgError << endl;
             // Log the deterministic 4-case XOR error (clean convergence signal).
-            curve << (i + 1) << "," << evaluateXorError() << std::endl;
+            curve << (i + 1) << "," << evaluateXorError(net) << std::endl;
             lastAvgError = avgError;
             avgError = ValueType(0U);
         }
@@ -146,8 +152,8 @@ int main(const int argc, char *argv[])
     {
         ValueType in[2] = { ValueType(cases[c][0], 0), ValueType(cases[c][1], 0) };
         ValueType out[NeuralNetworkType::NumberOfOutputLayerNeurons];
-        testNeuralNet.feedForward(&in[0]);
-        testNeuralNet.getLearnedValues(&out[0]);
+        net.feedForward(&in[0]);
+        net.getLearnedValues(&out[0]);
         const double pred = static_cast<double>(out[0].getValue()) / fracScale;
         const bool ok = (pred >= 0.5) == (cases[c][2] == 1);
         correct += ok ? 1 : 0;
@@ -155,7 +161,7 @@ int main(const int argc, char *argv[])
              << "  pred=" << pred << (ok ? "  ok" : "  WRONG") << endl;
     }
     cout << correct << "/4 patterns classified correctly. Final 4-case error: "
-         << evaluateXorError() << endl;
+         << evaluateXorError(net) << endl;
 
     results.close();
 
@@ -176,8 +182,8 @@ int main(const int argc, char *argv[])
                 in[0].setValue(static_cast<FullWidthValueType>(x0 * fracScale));
                 in[1].setValue(static_cast<FullWidthValueType>(x1 * fracScale));
                 ValueType out[NeuralNetworkType::NumberOfOutputLayerNeurons];
-                testNeuralNet.feedForward(&in[0]);
-                testNeuralNet.getLearnedValues(&out[0]);
+                net.feedForward(&in[0]);
+                net.getLearnedValues(&out[0]);
                 const double prob = static_cast<double>(out[0].getValue()) / fracScale;
                 surf << x0 << "," << x1 << "," << prob << std::endl;
             }

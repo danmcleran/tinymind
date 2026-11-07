@@ -67,8 +67,6 @@ typedef tinymind::LstmNeuralNetwork<
     1,
     TransferFunctionsType> LstmNetworkType;
 
-LstmNetworkType lstmNet;
-
 static inline ValueType toQ(double v)
 {
     static const double scale = static_cast<double>(1ULL << ValueType::NumberOfFractionalBits);
@@ -89,8 +87,18 @@ static inline double trueSample(size_t i)
     return (std::sin(2.0 * M_PI * static_cast<double>(i) / static_cast<double>(SAMPLES_PER_PERIOD)) + 1.0) / 2.0;
 }
 
+static const unsigned WEIGHT_INIT_SEED = 1U; // see main()
+
 int main()
 {
+    // Two seeds: the initial weights come from WEIGHT_INIT_SEED and everything
+    // else (data, shuffles, training samples) from the seed set just below.
+    // WEIGHT_INIT_SEED = 1 reproduces this example's published results: the
+    // network used to be a global, constructed before main() seeded rand(), so it
+    // drew from glibc's default seed of 1.
+    srand(WEIGHT_INIT_SEED);
+    static LstmNetworkType lstmNet;
+
     srand(RANDOM_SEED);
 
     static const size_t NUM_SAMPLES = SAMPLES_PER_PERIOD;

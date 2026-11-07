@@ -106,8 +106,6 @@ typedef tinymind::LstmNeuralNetwork<
     1,
     TransferFunctionsType> LstmNetworkType;
 
-LstmNetworkType lstmNet;
-
 // Convert a [0, 1] double into a Q16.16 ValueType.
 static ValueType toQ(double v)
 {
@@ -219,8 +217,18 @@ static void synthSeries(std::vector<double>& out)
     }
 }
 
+static const unsigned WEIGHT_INIT_SEED = 1U; // see main()
+
 int main(int argc, char** argv)
 {
+    // Two seeds: the initial weights come from WEIGHT_INIT_SEED and everything
+    // else (data, shuffles, training samples) from the seed set just below.
+    // WEIGHT_INIT_SEED = 1 reproduces this example's published results: the
+    // network used to be a global, constructed before main() seeded rand(), so it
+    // drew from glibc's default seed of 1.
+    srand(WEIGHT_INIT_SEED);
+    static LstmNetworkType lstmNet;
+
     srand(RANDOM_SEED);
 
     // Optional CLI overrides for quick experimentation:

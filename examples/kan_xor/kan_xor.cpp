@@ -59,7 +59,7 @@ static void generateDenseTrainingValue(ValueType& x, ValueType& y, ValueType& z)
     z = ValueType(result, 0);
 }
 
-extern KanNetworkType testKanNet;
+static const unsigned WEIGHT_INIT_SEED = 1U; // see main()
 
 int main(const int argc, char *argv[])
 {
@@ -68,6 +68,14 @@ int main(const int argc, char *argv[])
     // --dense: train over the whole input region for a smooth surface; default
     // trains on the four crisp XOR corners (the apples-to-apples comparison).
     const bool dense = (argc > 1 && std::strcmp(argv[1], "--dense") == 0);
+
+    // Two seeds: the initial weights come from WEIGHT_INIT_SEED and everything
+    // else (data, shuffles, training samples) from the seed set just below.
+    // WEIGHT_INIT_SEED = 1 reproduces this example's published results: the
+    // network used to be a global, constructed before main() seeded rand(), so it
+    // drew from glibc's default seed of 1.
+    srand(WEIGHT_INIT_SEED);
+    static KanNetworkType kanNet;
 
     srand(RANDOM_SEED);
 
@@ -95,13 +103,13 @@ int main(const int argc, char *argv[])
         else
             generateXorTrainingValue(values[0], values[1], output[0]);
 
-        testKanNet.feedForward(&values[0]);
-        error = testKanNet.calculateError(&output[0]);
+        kanNet.feedForward(&values[0]);
+        error = kanNet.calculateError(&output[0]);
         if (!KanNetworkType::KanTransferFunctionsPolicy::isWithinZeroTolerance(error))
         {
-            testKanNet.trainNetwork(&output[0]);
+            kanNet.trainNetwork(&output[0]);
         }
-        testKanNet.getLearnedValues(&learnedValues[0]);
+        kanNet.getLearnedValues(&learnedValues[0]);
 
         results << error << std::endl;
 
@@ -122,20 +130,21 @@ int main(const int argc, char *argv[])
         }
     }
 
-    if (!KanNetworkType::KanTransferFunctionsPolicy::isWithinZeroTolerance(lastAvgError))
-    {
-        cout << "Training did not complete successfully after " << TRAINING_ITERATIONS << " iterations." << endl;
-    }
-    else
-    {
-        cout << "Training completed successfully." << endl;
-    }
-
     results.close();
 
     // Decision-surface CSV: sweep the trained KAN over the [0,1]^2 input grid
     // so plot.py renders predicted vs actual the same way as the other XOR
-    // examples.
+    // examples. The same sweep scores the network as a classifier.
+    //
+    // Corner training has four exact targets, so it must also drive the
+    // training error to (near) zero. Dense training is judged by classification
+    // instead: its labels step from 0 to 1 at x = 0.5 and y = 0.5, which a
+    // piecewise-linear spline cannot represent exactly, so samples near that
+    // boundary keep a squared-error floor (~0.02-0.03) however well the network
+    // classifies.
+    unsigned cornersCorrect = 0;
+    unsigned gridCorrect = 0;
+    unsigned gridScored = 0;
     {
         ofstream surf(dense ? "kan_xor_dense_decision_surface.csv" : "kan_xor_decision_surface.csv");
         surf << "x0,x1,prob" << std::endl;
@@ -150,12 +159,43 @@ int main(const int argc, char *argv[])
                 in[0].setValue(static_cast<ValueType::FullWidthValueType>(x0 * fracScale));
                 in[1].setValue(static_cast<ValueType::FullWidthValueType>(x1 * fracScale));
                 ValueType outv[KanNetworkType::NumberOfOutputLayerNeurons];
-                testKanNet.feedForward(&in[0]);
-                testKanNet.getLearnedValues(&outv[0]);
+                kanNet.feedForward(&in[0]);
+                kanNet.getLearnedValues(&outv[0]);
                 const double prob = static_cast<double>(outv[0].getValue()) / fracScale;
                 surf << x0 << "," << x1 << "," << prob << std::endl;
+
+                // Points exactly on the x = 0.5 or y = 0.5 boundary have no
+                // well-defined label, so they are not scored.
+                if ((2 * a == G - 1) || (2 * b == G - 1))
+                {
+                    continue;
+                }
+                const bool expected = ((x0 > 0.5) != (x1 > 0.5));
+                const bool correct = ((prob >= 0.5) == expected);
+                ++gridScored;
+                gridCorrect += correct ? 1U : 0U;
+                const bool isCorner = ((a == 0) || (a == G - 1)) && ((b == 0) || (b == G - 1));
+                cornersCorrect += (isCorner && correct) ? 1U : 0U;
             }
         }
+    }
+
+    const double gridAccuracy = static_cast<double>(gridCorrect) / static_cast<double>(gridScored);
+    cout << cornersCorrect << "/4 XOR corners classified correctly." << endl;
+    cout << "Grid accuracy: " << gridCorrect << "/" << gridScored
+         << " (41x41 sweep of [0,1]^2, boundary points excluded)." << endl;
+
+    static const double MIN_DENSE_GRID_ACCURACY = 0.95;
+    const bool converged = dense ? (gridAccuracy >= MIN_DENSE_GRID_ACCURACY)
+                                 : KanNetworkType::KanTransferFunctionsPolicy::isWithinZeroTolerance(lastAvgError);
+    const bool success = (cornersCorrect == 4U) && converged;
+    if (success)
+    {
+        cout << "Training completed successfully." << endl;
+    }
+    else
+    {
+        cout << "Training did not complete successfully after " << TRAINING_ITERATIONS << " iterations." << endl;
     }
 
     return 0;

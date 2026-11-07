@@ -95,8 +95,6 @@ typedef tinymind::MultilayerPerceptron<
     NUMBER_OF_OUTPUTS,
     TransferFunctionsType> NeuralNetworkType;
 
-static NeuralNetworkType gNet;
-
 // ---------------------------------------------------------------------------
 // Sample + float<->Q helpers
 // ---------------------------------------------------------------------------
@@ -214,10 +212,20 @@ static bool loadCsv(const std::string& path, std::vector<Sample>& out)
     return !out.empty();
 }
 
+static const unsigned WEIGHT_INIT_SEED = 1U; // see main()
+
 int main(int argc, char* argv[])
 {
     (void)argc;
     (void)argv;
+
+    // Two seeds: the initial weights come from WEIGHT_INIT_SEED and everything
+    // else (data, shuffles, training samples) from the seed set just below.
+    // WEIGHT_INIT_SEED = 1 reproduces this example's published results: the
+    // network used to be a global, constructed before main() seeded rand(), so it
+    // drew from glibc's default seed of 1.
+    std::srand(WEIGHT_INIT_SEED);
+    static NeuralNetworkType net;
 
     std::srand(7U);
 
@@ -262,11 +270,11 @@ int main(int argc, char* argv[])
             target[k] = toQ(s.label == static_cast<int>(k) ? 1.0 : 0.0);
         }
 
-        gNet.feedForward(input);
-        const ValueType err = gNet.calculateError(target);
+        net.feedForward(input);
+        const ValueType err = net.calculateError(target);
         if (!NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(err))
         {
-            gNet.trainNetwork(target);
+            net.trainNetwork(target);
         }
         errSum += std::fabs(fromQ(err));
 
@@ -293,8 +301,8 @@ int main(int argc, char* argv[])
     {
         const Sample& s = test[i];
         toInput(s, input);
-        gNet.feedForward(input);
-        gNet.getLearnedValues(learned);
+        net.feedForward(input);
+        net.getLearnedValues(learned);
         int pred = 0;
         double best = fromQ(learned[0]);
         for (size_t k = 1; k < NUMBER_OF_OUTPUTS; ++k)
