@@ -461,7 +461,10 @@ QEMU_AARCH64        ?= qemu-aarch64
 # $(1) target name, $(2) CC for the int8 suites and the exhaustive suite's
 # dot-product cases, $(3) its WARN, $(4) environment for those runs, $(5) CC for
 # the full exhaustive run, $(6) the backend labels (as the exhaustive suite
-# prints them after "int8 dot, ") that must appear in its logs.
+# prints them after "int8 dot, ") that must appear in each exhaustive log, $(7)
+# an extra recipe line run on the dot-product log before the full run's
+# `make clean` deletes it. Each log is checked right after its run for that
+# reason.
 #
 # The full exhaustive suite runs without sanitizers: under ASan+UBSan on arm64
 # its LUT case (470 million inputs, independent of the SIMD backend, and run
@@ -469,6 +472,8 @@ QEMU_AARCH64        ?= qemu-aarch64
 # The dot-product cases, where a backend's tail code could read past the end of
 # a buffer, still run under the sanitizers.
 SIMD_ARM_DOT_FILTER = test_suite_exhaustive/int8_dot_*:test_suite_exhaustive/fp16_dot_*
+SIMD_ARM_FP16_CHECK = @grep -q "fp16 dot, neon_fp16-direct:" unit_test/exhaustive/output/simd-arm-dot.log || \
+                        { echo "FAIL: the neon_fp16 case did not run"; exit 1; }
 
 define simd_arm_suites
 	@test "$$(uname -m)" = aarch64 || { echo "$(1): needs an aarch64 host (uname -m is $$(uname -m))"; exit 1; }
@@ -485,6 +490,11 @@ define simd_arm_suites
 	  { cd output && $(4) BOOST_TEST_RUN_FILTERS='$(SIMD_ARM_DOT_FILTER)' ./exhaustive_unit_test \
 	      > simd-arm-dot.log 2>&1; status=$$?; cat simd-arm-dot.log; exit $$status; } \
 	  || { echo "$(1) FAIL: unit_test/exhaustive (dot-product cases)"; exit 1; }
+	@for b in $(6); do \
+		grep -q "int8 dot, $$b:" unit_test/exhaustive/output/simd-arm-dot.log || \
+		  { echo "$(1) FAIL: backend $$b did not run (dot-product cases)"; exit 1; }; \
+	done
+	$(7)
 	@echo "=== $(1): unit_test/exhaustive, full suite ==="
 	@cd unit_test/exhaustive && $(MAKE) clean >/dev/null 2>&1 && \
 	  $(MAKE) CC="$(5)" >/dev/null && \
@@ -492,10 +502,8 @@ define simd_arm_suites
 	    cat simd-arm-full.log; exit $$status; } \
 	  || { echo "$(1) FAIL: unit_test/exhaustive (full suite)"; exit 1; }
 	@for b in $(6); do \
-		for log in simd-arm-dot.log simd-arm-full.log; do \
-			grep -q "int8 dot, $$b:" unit_test/exhaustive/output/$$log || \
-			  { echo "$(1) FAIL: backend $$b did not run ($$log)"; exit 1; }; \
-		done; \
+		grep -q "int8 dot, $$b:" unit_test/exhaustive/output/simd-arm-full.log || \
+		  { echo "$(1) FAIL: backend $$b did not run (full suite)"; exit 1; }; \
 	done
 	@echo "$(1): checked $(6)"
 endef
@@ -504,16 +512,12 @@ check-simd-arm-neon :
 	$(call simd_arm_suites,check-simd-arm-neon,g++ $(SIMD_ARM_SAN) $(SIMD_ARM_NEON_FLAGS),$(SAN_WARN),$(SAN_ENV),g++ $(SIMD_ARM_NEON_FLAGS),neon neon-direct)
 
 check-simd-arm-dotprod :
-	$(call simd_arm_suites,check-simd-arm-dotprod,g++ $(SIMD_ARM_SAN) $(SIMD_ARM_DOT_FLAGS),$(SAN_WARN),$(SAN_ENV),g++ $(SIMD_ARM_DOT_FLAGS),neon_dotprod neon_dotprod-direct neon-direct)
-	@for log in simd-arm-dot.log simd-arm-full.log; do \
-		grep -q "fp16 dot, neon_fp16-direct:" unit_test/exhaustive/output/$$log || \
-		  { echo "check-simd-arm-dotprod FAIL: the neon_fp16 case did not run ($$log)"; exit 1; }; \
-	done
+	$(call simd_arm_suites,check-simd-arm-dotprod,g++ $(SIMD_ARM_SAN) $(SIMD_ARM_DOT_FLAGS),$(SAN_WARN),$(SAN_ENV),g++ $(SIMD_ARM_DOT_FLAGS),neon_dotprod neon_dotprod-direct neon-direct,$(SIMD_ARM_FP16_CHECK))
 
 check-simd-arm-clang :
 	@command -v $(CLANG_CXX) >/dev/null 2>&1 || \
 	  { echo "ERROR: $(CLANG_CXX) not found. sudo apt install clang"; exit 1; }
-	$(call simd_arm_suites,check-simd-arm-clang,$(CLANG_CXX) $(SIMD_ARM_DOT_FLAGS),-Wall -Wextra -Werror -Wpedantic,,$(CLANG_CXX) $(SIMD_ARM_DOT_FLAGS),neon_dotprod neon_dotprod-direct neon-direct)
+	$(call simd_arm_suites,check-simd-arm-clang,$(CLANG_CXX) $(SIMD_ARM_DOT_FLAGS),-Wall -Wextra -Werror -Wpedantic,,$(CLANG_CXX) $(SIMD_ARM_DOT_FLAGS),neon_dotprod neon_dotprod-direct neon-direct,$(SIMD_ARM_FP16_CHECK))
 
 check-simd-arm-sve :
 	@test "$$(uname -m)" = aarch64 || { echo "check-simd-arm-sve: needs an aarch64 host"; exit 1; }
