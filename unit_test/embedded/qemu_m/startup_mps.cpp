@@ -20,8 +20,9 @@
 * SOFTWARE.
 */
 
-// Bare-metal startup for QEMU mps2-an386 (Cortex-M4), plus the two Arm
-// semihosting calls the test needs: print a string and exit with a status.
+// Bare-metal startup for QEMU mps2-an386 (Cortex-M4) and mps3-an547
+// (Cortex-M55), plus the two Arm semihosting calls the test needs: print a
+// string and exit with a status.
 // No newlib: the test links -nostdlib, so memcpy/memset are supplied here
 // for any calls the compiler emits on its own.
 
@@ -68,6 +69,15 @@ extern "C"
 
     [[noreturn]] void Reset_Handler()
     {
+        // Grant full access to coprocessors 10 and 11 (the FPU and, on
+        // Armv8.1-M, MVE). They reset disabled, and the first FP or MVE
+        // instruction would otherwise take a NOCP UsageFault. Done before
+        // the copy loops below, which the compiler may vectorize with MVE;
+        // the memory clobbers keep them from being hoisted above it.
+        volatile uint32_t* const cpacr = reinterpret_cast<volatile uint32_t*>(0xE000ED88u);
+        *cpacr = *cpacr | (0xFu << 20);
+        __asm__ volatile("dsb\n\tisb" ::: "memory");
+
         const uint32_t* src = &__data_load;
         for (uint32_t* dst = &__data_start; dst < &__data_end; )
         {

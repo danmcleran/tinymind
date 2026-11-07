@@ -31,7 +31,9 @@
  *
  * Provides a fp32 vector dot product using vfmaq_f32 (Vector Floating
  * point Multiply-Accumulate). The tail is predicated via vctp32q. The
- * accumulator is reduced with vaddvq_f32.
+ * four lane accumulators are then summed as (l0 + l1) + (l2 + l3): MVE has
+ * no floating-point add-across-vector instruction, so the reduction is
+ * done on scalar lanes in a fixed order.
  *
  * Float SIMD reductions are not bit-exact with scalar; the Phase 14
  * bit-exactness invariant applies to integer paths only.
@@ -67,7 +69,8 @@ namespace tinymind { namespace simd { namespace helium_mve_f {
             i         += 4;
             remaining -= 4;
         }
-        return vaddvq_f32(acc);
+        return (vgetq_lane_f32(acc, 0) + vgetq_lane_f32(acc, 1)) +
+               (vgetq_lane_f32(acc, 2) + vgetq_lane_f32(acc, 3));
     }
 
 } } } // namespace tinymind::simd::helium_mve_f
