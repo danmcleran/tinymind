@@ -36,8 +36,11 @@
 //     gemmlowp form, and FastRequantizer equals Requantizer, for every
 //     accumulator in the range, every shift the fast path takes.
 //   - int8 dot product: the scalar reference against an int64 sum for every
-//     (x, w, zero point) triple; the active SIMD backend against the scalar
-//     reference for every (x, w) in every vector lane.
+//     (x, w, zero point) triple; the active SIMD backend, and every compiled-in
+//     Arm backend called directly, against the scalar reference for every
+//     (x, w) in every vector lane and for every length 0..300 at every buffer
+//     offset 0..15. The NEON fp16 dot product against a model of its
+//     arithmetic for every length 0..300.
 //   - QSoftmax1D: every int8 row of 2 and of 3 features; exact rounding of
 //     the LUT ratio, order, mass, accuracy against real softmax and shift
 //     invariance.
@@ -327,19 +330,21 @@ BOOST_AUTO_TEST_CASE(int8_dot_scalar_every_triple)
     BOOST_TEST(failures == 0);
 }
 
-BOOST_AUTO_TEST_CASE(int8_dot_backend_every_lane)
+namespace {
+
+typedef int32_t (*Int8DotFunction)(const int8_t*, const int8_t*, std::size_t, int8_t);
+
+// Every (x, w) pair in every lane of a 64-element dot product (wide enough for
+// the 512-bit backends' blocks, and every residue of the narrower ones),
+// against the scalar reference. The other lanes hold a fixed non-zero
+// background so lane sums and the zero-point term are exercised. Lane 0 takes
+// every zero point; the other lanes take the rails and their neighbours.
+long long int8DotEveryLaneMismatches(Int8DotFunction dot, long long& calls)
 {
-    // Every (x, w) pair in every lane of a 64-element dot product (wide
-    // enough for the 512-bit backends' blocks, and every residue of the
-    // narrower ones), against the scalar reference. The other lanes hold a
-    // fixed non-zero background so lane sums and the zero-point term are
-    // exercised. Lane 0 takes every zero point; the other lanes take the
-    // rails and their neighbours.
     const std::size_t n = 64;
     int8_t xs[n];
     int8_t ws[n];
     long long failures = 0;
-    long long calls = 0;
     const int edgeZeroPoints[] = { -128, -127, -1, 0, 1, 126, 127 };
     for (std::size_t lane = 0; lane < n; ++lane)
     {
@@ -358,7 +363,7 @@ BOOST_AUTO_TEST_CASE(int8_dot_backend_every_lane)
                 for (int w = -128; w <= 127; ++w)
                 {
                     ws[lane] = static_cast<int8_t>(w);
-                    const int32_t got = tinymind::simd::int8DotWithZeroPoint(xs, ws, n, static_cast<int8_t>(zp));
+                    const int32_t got = dot(xs, ws, n, static_cast<int8_t>(zp));
                     const int32_t want = tinymind::simd::int8DotWithZeroPointScalar(xs, ws, n, static_cast<int8_t>(zp));
                     failures += (got == want) ? 0 : 1;
                     ++calls;
@@ -366,10 +371,217 @@ BOOST_AUTO_TEST_CASE(int8_dot_backend_every_lane)
             }
         }
     }
-    std::printf("int8 dot, backend %s: %lld calls, %lld mismatches\n",
-                tinymind::simd::activeBackendName(), calls, failures);
+    return failures;
+}
+
+// Longest length the length sweep tries: past 256 lanes, the widest SVE
+// vector (2048 bits) of int8, plus a tail.
+const std::size_t kDotMaxLength = 300;
+
+// Every length 0..kDotMaxLength at every buffer offset 0..15, for four data
+// patterns (pseudo-random, both rails giving the largest positive and the
+// largest negative products, and alternating signs), against the scalar
+// reference. The every-lane sweep only uses n = 64, a whole number of blocks
+// for every backend, so it never reaches the tail code that handles the
+// leftover elements; this does. Each call gets heap buffers that end exactly
+// at element n, so under ASan a read past the last element is reported.
+long long int8DotEveryLengthMismatches(Int8DotFunction dot, long long& calls)
+{
+    const int zeroPoints[] = { -128, -1, 0, 1, 37, 127 };
+    long long failures = 0;
+    uint32_t state = 12345u;
+    for (int pattern = 0; pattern < 4; ++pattern)
+    {
+        for (std::size_t offset = 0; offset < 16; ++offset)
+        {
+            for (std::size_t n = 0; n <= kDotMaxLength; ++n)
+            {
+                int8_t* const xbuf = new int8_t[offset + n];
+                int8_t* const wbuf = new int8_t[offset + n];
+                int8_t* const x = xbuf + offset;
+                int8_t* const w = wbuf + offset;
+                for (std::size_t k = 0; k < n; ++k)
+                {
+                    switch (pattern)
+                    {
+                        case 0:
+                            state = state * 1664525u + 1013904223u;
+                            x[k] = static_cast<int8_t>(static_cast<int>(state >> 24) - 128);
+                            state = state * 1664525u + 1013904223u;
+                            w[k] = static_cast<int8_t>(static_cast<int>(state >> 24) - 128);
+                            break;
+                        case 1:
+                            x[k] = -128;
+                            w[k] = -128;
+                            break;
+                        case 2:
+                            x[k] = 127;
+                            w[k] = -128;
+                            break;
+                        default:
+                            x[k] = static_cast<int8_t>((k & 1u) ? 127 : -128);
+                            w[k] = static_cast<int8_t>((k & 2u) ? -128 : 127);
+                            break;
+                    }
+                }
+                for (std::size_t zi = 0; zi < sizeof(zeroPoints) / sizeof(zeroPoints[0]); ++zi)
+                {
+                    const int8_t zp = static_cast<int8_t>(zeroPoints[zi]);
+                    const int32_t got = dot(x, w, n, zp);
+                    const int32_t want = tinymind::simd::int8DotWithZeroPointScalar(x, w, n, zp);
+                    failures += (got == want) ? 0 : 1;
+                    ++calls;
+                }
+                delete[] xbuf;
+                delete[] wbuf;
+            }
+        }
+    }
+    return failures;
+}
+
+void checkInt8DotBackend(const char* name, Int8DotFunction dot)
+{
+    long long laneCalls = 0;
+    long long lengthCalls = 0;
+    const long long laneFailures = int8DotEveryLaneMismatches(dot, laneCalls);
+    const long long lengthFailures = int8DotEveryLengthMismatches(dot, lengthCalls);
+    std::printf("int8 dot, %s: every lane %lld calls, %lld mismatches; "
+                "every length 0..%zu x offset 0..15 %lld calls, %lld mismatches\n",
+                name, laneCalls, laneFailures, kDotMaxLength, lengthCalls, lengthFailures);
+    BOOST_TEST(laneFailures == 0);
+    BOOST_TEST(lengthFailures == 0);
+}
+
+} // namespace
+
+// The backend the dispatcher selects for this build (scalar when no SIMD gate
+// is on), as every layer calls it.
+BOOST_AUTO_TEST_CASE(int8_dot_backend_every_lane)
+{
+    checkInt8DotBackend(tinymind::simd::activeBackendName(), &tinymind::simd::int8DotWithZeroPoint);
+}
+
+// Every compiled-in Arm A-profile backend, called directly. The dispatcher
+// picks one backend per build, so the others would otherwise never run: SVE
+// in particular is unreachable through dispatch, because it requires NEON and
+// the NEON branch is tested first.
+#if TINYMIND_ENABLE_SIMD_NEON
+BOOST_AUTO_TEST_CASE(int8_dot_neon_direct)
+{
+    checkInt8DotBackend("neon-direct", &tinymind::simd::neon::int8DotWithZeroPoint);
+}
+#endif
+
+#if TINYMIND_ENABLE_SIMD_NEON_DOTPROD
+BOOST_AUTO_TEST_CASE(int8_dot_neon_dotprod_direct)
+{
+    checkInt8DotBackend("neon_dotprod-direct", &tinymind::simd::neon_dotprod::int8DotWithZeroPoint);
+}
+#endif
+
+#if TINYMIND_ENABLE_SIMD_SVE
+BOOST_AUTO_TEST_CASE(int8_dot_sve_direct)
+{
+    // SVE code is vector-length agnostic, so the length a run used matters:
+    // record it so a log shows which vector length was checked.
+    std::printf("sve vector length: %u bits\n", static_cast<unsigned>(svcntb() * 8u));
+    checkInt8DotBackend("sve-direct", &tinymind::simd::sve::int8DotWithZeroPoint);
+}
+#endif
+
+#if TINYMIND_ENABLE_SIMD_NEON_FP16
+namespace {
+
+// Round to the nearest fp16 value, ties to even. The inputs below keep every
+// intermediate a normal fp16 (or zero), so subnormals and overflow need no
+// handling.
+double roundToHalf(double v)
+{
+    if (v == 0.0)
+    {
+        return 0.0;
+    }
+    int e = 0;
+    (void)std::frexp(v, &e);
+    const double quantum = std::ldexp(1.0, e - 11); // fp16 carries 11 significant bits
+    return std::nearbyint(v / quantum) * quantum;
+}
+
+// A model of neon_fp16::fp16DotProduct's arithmetic: eight fp16 lanes, each
+// accumulated with a fused multiply-add (one rounding to fp16 per step), then
+// widened to float, folded high half onto low half, reduced, and the tail
+// added in float. Products of these inputs and the lane sums are exact in
+// double, so each fused step rounds once, as the hardware does. `magnitude`
+// bounds the float rounding the reduction order could change.
+float fp16DotModel(const __fp16* a, const __fp16* b, std::size_t n, double& magnitude)
+{
+    double lanes[8] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+    std::size_t i = 0;
+    for (; i + 8 <= n; i += 8)
+    {
+        for (std::size_t k = 0; k < 8; ++k)
+        {
+            lanes[k] = roundToHalf(lanes[k] + static_cast<double>(a[i + k]) * static_cast<double>(b[i + k]));
+        }
+    }
+    float folded[4];
+    magnitude = 0.0;
+    for (std::size_t k = 0; k < 4; ++k)
+    {
+        folded[k] = static_cast<float>(lanes[k]) + static_cast<float>(lanes[k + 4]);
+        magnitude += std::fabs(static_cast<double>(folded[k]));
+    }
+    float result = (folded[0] + folded[1]) + (folded[2] + folded[3]);
+    for (; i < n; ++i)
+    {
+        const float term = static_cast<float>(a[i]) * static_cast<float>(b[i]);
+        result += term;
+        magnitude += std::fabs(static_cast<double>(term));
+    }
+    return result;
+}
+
+} // namespace
+
+// Not bit-exact with a scalar loop by contract (fp16 lanes, reduction order),
+// so it is checked against the model above, allowing only the float rounding
+// a different reduction order could introduce. That is tight enough that a
+// dropped, doubled or mis-paired term fails.
+BOOST_AUTO_TEST_CASE(fp16_dot_neon_every_length)
+{
+    long long failures = 0;
+    long long calls = 0;
+    for (std::size_t offset = 0; offset < 8; ++offset)
+    {
+        for (std::size_t n = 0; n <= kDotMaxLength; ++n)
+        {
+            __fp16* const abuf = new __fp16[offset + n];
+            __fp16* const bbuf = new __fp16[offset + n];
+            __fp16* const a = abuf + offset;
+            __fp16* const b = bbuf + offset;
+            for (std::size_t k = 0; k < n; ++k)
+            {
+                // Multiples of 1/64 in [-1, 1]: exact in fp16, and every
+                // product is a multiple of 2^-12, well above fp16's subnormals.
+                a[k] = static_cast<__fp16>(static_cast<double>(static_cast<int>((k * 13u + 7u + offset) % 129u) - 64) / 64.0);
+                b[k] = static_cast<__fp16>(static_cast<double>(static_cast<int>((k * 29u + 3u) % 129u) - 64) / 64.0);
+            }
+            double magnitude = 0.0;
+            const float want = fp16DotModel(a, b, n, magnitude);
+            const float got = tinymind::simd::neon_fp16::fp16DotProduct(a, b, n);
+            const double tolerance = 8.0 * 1.1920928955078125e-07 * (magnitude + 1.0);
+            failures += (std::fabs(static_cast<double>(got) - static_cast<double>(want)) <= tolerance) ? 0 : 1;
+            ++calls;
+            delete[] abuf;
+            delete[] bbuf;
+        }
+    }
+    std::printf("fp16 dot, neon_fp16-direct: every length 0..%zu x offset 0..7, %lld calls, %lld outside the model's rounding bound\n",
+                kDotMaxLength, calls, failures);
     BOOST_TEST(failures == 0);
 }
+#endif
 
 namespace {
 
