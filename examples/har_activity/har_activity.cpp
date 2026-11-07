@@ -92,7 +92,7 @@ struct RandomNumberGenerator
         const FullWidthValueType quarter =
             tinymind::Constants<ValueType>::one().getValue() / 4;
         const FullWidthValueType weight =
-            (static_cast<FullWidthValueType>(rand()) % (2 * quarter + 1)) - quarter;
+            static_cast<FullWidthValueType>((rand() % (2 * quarter + 1)) - quarter);
         return ValueType(weight);
     }
 };

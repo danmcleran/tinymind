@@ -49,7 +49,7 @@ struct RandomGen
         const typename VT::FullWidthValueType half =
             tinymind::Constants<VT>::one().getValue() / 2;
         const typename VT::FullWidthValueType raw =
-            (static_cast<typename VT::FullWidthValueType>(rand()) % (2 * half + 1)) - half;
+            static_cast<typename VT::FullWidthValueType>((rand() % (2 * half + 1)) - half);
         return VT(raw);
     }
 };
