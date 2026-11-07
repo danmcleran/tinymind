@@ -438,17 +438,19 @@ check-clang-avx2 :
 #                           exhaustive suite also calls neon and neon_fp16
 #                           directly.
 #   check-simd-arm-clang    the dot-product configuration built with clang++.
-#   check-simd-arm-sve      the exhaustive suite's direct SVE case, natively
-#                           when the host has SVE and under qemu-aarch64 at
-#                           every vector length in SVE_VECTOR_BYTES. SVE code
-#                           is vector-length agnostic, so one hardware length
-#                           is not enough; the case prints the length it ran
-#                           at and the target checks it.
+#   check-simd-arm-sve      SIMD_SUITES with SVE on as well, on the host's
+#                           own SVE (check-simd-arm-sve-native; layers
+#                           dispatch to sve), then under qemu-aarch64 at every
+#                           vector length in SVE_VECTOR_BYTES: the exhaustive
+#                           suite's dispatched and direct SVE cases and the
+#                           quantization suite. SVE code is vector-length
+#                           agnostic, so one hardware length is not enough;
+#                           the direct case prints the length it ran at and
+#                           the target checks it. Fails on a host without
+#                           SVE unless SVE_NATIVE=0.
 #
 # Each target checks the exhaustive suite's log for every backend it meant to
 # run, so a build that silently falls back to scalar fails instead of passing.
-# The SVE backend is unreachable through dispatch (it requires NEON, and the
-# NEON branch is tested first), so only the direct case exercises it.
 SIMD_ARM_SAN        ?= -fsanitize=address,undefined -fno-sanitize-recover=all -O1
 SIMD_ARM_NEON_FLAGS ?= -march=armv8-a -DTINYMIND_ENABLE_SIMD_NEON=1
 SIMD_ARM_DOT_FLAGS  ?= -march=armv8.2-a+dotprod+fp16 -DTINYMIND_ENABLE_SIMD_NEON=1 \
@@ -457,6 +459,8 @@ SIMD_ARM_SVE_FLAGS  ?= -march=armv8.2-a+dotprod+fp16+sve -DTINYMIND_ENABLE_SIMD_
                        -DTINYMIND_ENABLE_SIMD_NEON_DOTPROD=1 -DTINYMIND_ENABLE_SIMD_NEON_FP16=1 \
                        -DTINYMIND_ENABLE_SIMD_SVE=1
 SVE_VECTOR_BYTES    ?= 16 32 64 256
+SVE_NATIVE          ?= 1
+SIMD_ARM_SVE_FILTER  = test_suite_exhaustive/int8_dot_backend_every_lane:test_suite_exhaustive/int8_dot_sve_direct
 QEMU_AARCH64        ?= qemu-aarch64
 # $(1) target name, $(2) CC for the int8 suites and the exhaustive suite's
 # dot-product cases, $(3) its WARN, $(4) environment for those runs, $(5) CC for
@@ -523,30 +527,39 @@ check-simd-arm-sve :
 	@test "$$(uname -m)" = aarch64 || { echo "check-simd-arm-sve: needs an aarch64 host"; exit 1; }
 	@command -v $(QEMU_AARCH64) >/dev/null 2>&1 || \
 	  { echo "ERROR: $(QEMU_AARCH64) not found. sudo apt install qemu-user"; exit 1; }
+	@grep -qw sve /proc/cpuinfo || \
+	  { echo "check-simd-arm-sve: host has no SVE (the arm64 CI runner does); set SVE_NATIVE=0 for qemu runs only"; \
+	    test "$(SVE_NATIVE)" = 0 || exit 1; }
+	@if [ "$(SVE_NATIVE)" != 0 ]; then \
+	  $(MAKE) --no-print-directory check-simd-arm-sve-native; fi
 	@cd unit_test/exhaustive && $(MAKE) clean >/dev/null 2>&1 && \
 	  $(MAKE) CC="g++ $(SIMD_ARM_SVE_FLAGS)" >/dev/null
-	@cd unit_test/exhaustive/output && \
-	if grep -qw sve /proc/cpuinfo; then \
-		echo "=== check-simd-arm-sve: native ==="; \
-		./exhaustive_unit_test --run_test=test_suite_exhaustive/int8_dot_sve_direct > sve-native.log 2>&1; \
-		status=$$?; cat sve-native.log; test $$status -eq 0 || exit 1; \
-		grep -q "int8 dot, sve-direct:" sve-native.log || \
-		  { echo "check-simd-arm-sve FAIL: the SVE case did not run natively"; exit 1; }; \
-	else \
-		echo "check-simd-arm-sve: host has no SVE; qemu runs only"; \
-	fi; \
-	for vl in $(SVE_VECTOR_BYTES); do \
+	@cd unit_test/quantization && $(MAKE) clean >/dev/null 2>&1 && \
+	  $(MAKE) CC="g++ $(SIMD_ARM_SVE_FLAGS)" >/dev/null
+	@for vl in $(SVE_VECTOR_BYTES); do \
 		bits=$$((vl * 8)); \
+		qemu="$(QEMU_AARCH64) -cpu max,sve-default-vector-length=$$vl"; \
 		echo "=== check-simd-arm-sve: qemu-aarch64, $$bits-bit vectors ==="; \
-		$(QEMU_AARCH64) -cpu max,sve-default-vector-length=$$vl ./exhaustive_unit_test \
-		  --run_test=test_suite_exhaustive/int8_dot_sve_direct > sve-$$bits.log 2>&1; \
-		status=$$?; cat sve-$$bits.log; test $$status -eq 0 || exit 1; \
-		grep -q "sve vector length: $$bits bits" sve-$$bits.log || \
+		log=unit_test/exhaustive/output/sve-$$bits.log; \
+		( cd unit_test/exhaustive/output && $$qemu ./exhaustive_unit_test \
+		  --run_test='$(SIMD_ARM_SVE_FILTER)' ) > $$log 2>&1; \
+		status=$$?; cat $$log; test $$status -eq 0 || exit 1; \
+		grep -q "sve vector length: $$bits bits" $$log || \
 		  { echo "check-simd-arm-sve FAIL: expected $$bits-bit SVE vectors"; exit 1; }; \
-		grep -q "int8 dot, sve-direct:" sve-$$bits.log || \
-		  { echo "check-simd-arm-sve FAIL: the SVE case did not run at $$bits bits"; exit 1; }; \
+		for b in sve sve-direct; do \
+			grep -q "int8 dot, $$b:" $$log || \
+			  { echo "check-simd-arm-sve FAIL: backend $$b did not run at $$bits bits"; exit 1; }; \
+		done; \
+		echo "=== check-simd-arm-sve: unit_test/quantization, qemu-aarch64, $$bits-bit vectors ==="; \
+		( cd unit_test/quantization/output && $$qemu ./quantization_unit_test ) || \
+		  { echo "check-simd-arm-sve FAIL: unit_test/quantization at $$bits bits"; exit 1; }; \
 	done
-	@echo "check-simd-arm-sve: SVE checked at vector bytes $(SVE_VECTOR_BYTES)"
+	@echo "check-simd-arm-sve: SVE dispatched and checked at vector bytes $(SVE_VECTOR_BYTES)"
+
+# The SVE configuration through simd_arm_suites on the host's own SVE
+# implementation: every int8 layer dispatches to sve, under ASan+UBSan.
+check-simd-arm-sve-native :
+	$(call simd_arm_suites,check-simd-arm-sve-native,g++ $(SIMD_ARM_SAN) $(SIMD_ARM_SVE_FLAGS),$(SAN_WARN),$(SAN_ENV),g++ $(SIMD_ARM_SVE_FLAGS),sve sve-direct neon_dotprod-direct neon-direct)
 
 check-simd-arm : check-simd-arm-neon check-simd-arm-dotprod check-simd-arm-clang check-simd-arm-sve
 
@@ -791,7 +804,7 @@ check-ci-image :
 .PHONY : sanitize cppcheck misra tidy analyze coverage-check header-selfcheck warnings-strict check-cxx14 \
          check-clang check-clang-avx2 check-clang-integration check-clang-examples \
          check-msan check-msan-libcxx oracle-soak \
-         check-simd-arm check-simd-arm-neon check-simd-arm-dotprod check-simd-arm-clang check-simd-arm-sve
+         check-simd-arm check-simd-arm-neon check-simd-arm-dotprod check-simd-arm-clang check-simd-arm-sve check-simd-arm-sve-native
 
 # Recursively clean every unit test, example, and app (each subdir Makefile has
 # its own clean target), plus the coverage artifacts.

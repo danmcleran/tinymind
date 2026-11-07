@@ -463,9 +463,9 @@ BOOST_AUTO_TEST_CASE(int8_dot_backend_every_lane)
 }
 
 // Every compiled-in Arm A-profile backend, called directly. The dispatcher
-// picks one backend per build, so the others would otherwise never run: SVE
-// in particular is unreachable through dispatch, because it requires NEON and
-// the NEON branch is tested first.
+// picks one backend per build, so the others would otherwise never run: an
+// SVE build dispatches to sve, and its NEON and dot-product backends are
+// reached only here.
 #if TINYMIND_ENABLE_SIMD_NEON
 BOOST_AUTO_TEST_CASE(int8_dot_neon_direct)
 {
