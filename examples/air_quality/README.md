@@ -13,8 +13,8 @@ pollutant signal.
 - 1 hidden LSTM layer of 16 neurons (`HiddenLayers<16>`), tanh activation
 - 1 sigmoid output — the predicted next-hour concentration (target is in [0, 1])
 - Q16.16 fixed-point (`QValue<16, 16, true>`) end to end
-- `GradientClipByValue` for recurrent stability, learning rate 0.3
-- 8000 epochs over the sequential training pairs `series[t] -> series[t+1]`,
+- `GradientClipByValue` for recurrent stability, learning rate 0.5
+- 15000 epochs over the sequential training pairs `series[t] -> series[t+1]`,
   with the recurrent state reset every 24 hours so each BPTT segment is a clean
   one-day stretch (this keeps the daily-cycle gradient from washing out over the
   2000+ step series and prevents the net from collapsing to predicting the mean)
@@ -51,11 +51,11 @@ make run
 make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
-`make run` trains for 8000 epochs (~40 s in release mode). You can override the
+`make run` trains for 15000 epochs (~25 s in release mode). You can override the
 epoch count and learning rate for quick experiments:
 
 ```bash
-./output/air_quality 12000 0.3    # epochs, learning rate
+cd output && ./air_quality 8000 0.3    # epochs, learning rate
 ```
 
 ## Output
@@ -67,10 +67,10 @@ epoch count and learning rate for quick experiments:
   loss over epochs, and the forecast vs actual over the held-out hours (annotated
   with the mean absolute error)
 
-Expected (seed = 7, synthetic series): the loss falls from ~0.044 to ~0.026 and
+Expected (seed = 7, synthetic series): the loss falls from ~0.029 to ~0.002 and
 the predicted line clearly tracks the daily rise-and-fall of the true series
 (amplitude is mildly damped at the peaks, the classic RNN-on-noisy-series
-behavior), with a one-step-ahead MAE around 0.26 in concentration units over a
+behavior), with a one-step-ahead MAE around 0.13 in concentration units over a
 series spanning ~1.3–3.0.
 
 ## tinymind capability shown
