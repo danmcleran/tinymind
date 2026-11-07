@@ -24,4 +24,13 @@
 #include <ostream>
 #include "xornet.h"
 
-NeuralNetworkType testNeuralNet;
+// The network lives in its own translation unit so `size output/xornet.o`
+// measures it in isolation (see docs/getting-started/xor-under-4kb.md). It is a
+// function-local static, not a global: a global would be constructed -- and draw
+// its initial weights from rand() -- before main() calls srand().
+NeuralNetworkType& xorNetwork()
+{
+    static NeuralNetworkType net;
+
+    return net;
+}

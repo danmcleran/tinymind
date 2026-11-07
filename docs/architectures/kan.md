@@ -141,22 +141,26 @@ typedef tinymind::KolmogorovArnoldNetwork<ValueType,
 The KAN API is identical to `MultilayerPerceptron`:
 
 ```cpp
-KanNetworkType testKanNet;
+// Initial weights come from their own seed; data comes from RANDOM_SEED.
+srand(WEIGHT_INIT_SEED);
+static KanNetworkType kanNet;
+srand(RANDOM_SEED);
+
 ValueType values[2], output[1], learnedValues[1], error;
 
 for (unsigned i = 0; i < 20000; ++i)
 {
     generateXorTrainingValue(values[0], values[1], output[0]);
 
-    testKanNet.feedForward(&values[0]);
-    error = testKanNet.calculateError(&output[0]);
+    kanNet.feedForward(&values[0]);
+    error = kanNet.calculateError(&output[0]);
 
     if (!KanNetworkType::KanTransferFunctionsPolicy::isWithinZeroTolerance(error))
     {
-        testKanNet.trainNetwork(&output[0]);
+        kanNet.trainNetwork(&output[0]);
     }
 
-    testKanNet.getLearnedValues(&learnedValues[0]);
+    kanNet.getLearnedValues(&learnedValues[0]);
 }
 ```
 
@@ -197,11 +201,11 @@ typedef tinymind::KanNetworkPropertiesFileManager<KanNetworkType> FileManager;
 
 // Save
 std::ofstream outFile("kan_weights.txt");
-FileManager::storeNetworkWeights(testKanNet, outFile);
+FileManager::storeNetworkWeights(kanNet, outFile);
 
 // Load
 std::ifstream inFile("kan_weights.txt");
-FileManager::template loadNetworkWeights<ValueType, ValueType>(testKanNet, inFile);
+FileManager::template loadNetworkWeights<ValueType, ValueType>(kanNet, inFile);
 ```
 
 # When To Use KAN vs MLP

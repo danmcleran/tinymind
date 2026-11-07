@@ -3,7 +3,7 @@ MKDIR=mkdir -p ./output
 CC=g++
 WARN=-Wall -Wextra -Werror -Wpedantic
 OUT=./output/kan_xor
-SOURCES=kan_xor.cpp kan_xornet.cpp ../../cpp/lookupTables.cpp
+SOURCES=kan_xor.cpp ../../cpp/lookupTables.cpp
 INCLUDES=-I../../cpp -I../../cpp/include -I../../include/
 DEFINES=-DTINYMIND_ENABLE_OSTREAMS=1 -DTINYMIND_ENABLE_STD=1 -DTINYMIND_ENABLE_HOSTED_RAND=1 -DTINYMIND_USE_SIGMOID_16_16=1
 

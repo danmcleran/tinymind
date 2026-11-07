@@ -78,3 +78,6 @@ typedef tinymind::MultilayerPerceptron< ValueType,
                                         NUMBER_OF_NEURONS_PER_HIDDEN_LAYER,
                                         NUMBER_OF_OUTPUTS,
                                         TransferFunctionsType> NeuralNetworkType;
+
+// The XOR network, constructed on first call (call it after srand()).
+NeuralNetworkType& xorNetwork();

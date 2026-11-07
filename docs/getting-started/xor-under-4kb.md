@@ -96,16 +96,22 @@ static void generateXorTrainingValue(ValueType& x, ValueType& y, ValueType& z)
 We feed the data into the neural network, predict an output, and then train if we have an error outside of our zero-tolerance:
 
 ```cpp
+// Initial weights come from their own seed; data comes from RANDOM_SEED.
+// xorNetwork() (in xornet.cpp) constructs the network on its first call.
+srand(WEIGHT_INIT_SEED);
+NeuralNetworkType& net = xorNetwork();
+srand(RANDOM_SEED);
+
 for (unsigned i = 0; i < TRAINING_ITERATIONS; ++i)
 {
     generateXorTrainingValue(values[0], values[1], output[0]);
-    testNeuralNet.feedForward(&values[0]);
-    error = testNeuralNet.calculateError(&output[0]);
+    net.feedForward(&values[0]);
+    error = net.calculateError(&output[0]);
     if (!NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
     {
-        testNeuralNet.trainNetwork(&output[0]);
+        net.trainNetwork(&output[0]);
     }
-    testNeuralNet.getLearnedValues(&learnedValues[0]);
+    net.getLearnedValues(&learnedValues[0]);
 ```
 
 # Compiling The Example
@@ -159,11 +165,11 @@ size output/xornet.o output/lookupTables.o
 
 ```
 text   data    bss    dec    hex filename
-1542      8    580   2130    852 output/xornet.o
+1579      0    612   2191    88f output/xornet.o
  800      0      0    800    320 output/lookupTables.o
 ```
 
-The neural network object plus the Q16.16 tanh and sigmoid LUTs occupy roughly **2.3 KB of flash** (`text`) -- comfortably under 4KB. (`bss` is zero-initialized RAM; `data` is initialized RAM.) The exact bytes shift with compiler version and flags; the point is the order of magnitude.
+The neural network object plus the Q16.16 tanh and sigmoid LUTs occupy roughly **2.4 KB of flash** (`text`) -- comfortably under 4KB. (`bss` is zero-initialized RAM; `data` is initialized RAM.) The exact bytes shift with compiler version and flags; the point is the order of magnitude.
 
 # Trainable vs. Inference-Only Footprint
 

@@ -115,8 +115,6 @@ typedef tinymind::LstmNeuralNetwork<
     NUMBER_OF_OUTPUTS,
     TransferFunctionsType> NeuralNetworkType;
 
-static NeuralNetworkType gNet;
-
 // ---------------------------------------------------------------------------
 // float <-> Q helpers
 // ---------------------------------------------------------------------------
@@ -313,7 +311,7 @@ static bool loadCsv(const std::string& path, std::vector<Window>& out)
 // argmax prediction read at the LAST timestep, and accumulates |error|.
 // ---------------------------------------------------------------------------
 
-static int processWindow(const Window& w, bool train, double& errAccum)
+static int processWindow(NeuralNetworkType& net, const Window& w, bool train, double& errAccum)
 {
     ValueType input[NUMBER_OF_INPUTS];
     ValueType target[NUMBER_OF_OUTPUTS];
@@ -326,7 +324,7 @@ static int processWindow(const Window& w, bool train, double& errAccum)
 
     // CRITICAL: the LSTM is stateful across feedForward calls -- clear the
     // recurrent cell state at the start of every window.
-    gNet.resetState();
+    net.resetState();
 
     for (size_t t = 0; t < WINDOW_LENGTH; ++t)
     {
@@ -334,13 +332,13 @@ static int processWindow(const Window& w, bool train, double& errAccum)
         input[1] = toQ(w.ay[t]);
         input[2] = toQ(w.az[t]);
 
-        gNet.feedForward(input);
+        net.feedForward(input);
 
         // Supervise toward the (constant) window label at every timestep: this
         // gives the recurrent net a strong, repeated gradient signal and teaches
         // it to settle on the classification as evidence accumulates. The
         // reported prediction is still read at the LAST timestep below.
-        const ValueType err = gNet.calculateError(target);
+        const ValueType err = net.calculateError(target);
         if (t == WINDOW_LENGTH - 1)
         {
             errAccum += std::fabs(fromQ(err));
@@ -348,11 +346,11 @@ static int processWindow(const Window& w, bool train, double& errAccum)
         if (train &&
             !NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(err))
         {
-            gNet.trainNetwork(target);
+            net.trainNetwork(target);
         }
     }
 
-    gNet.getLearnedValues(learned);
+    net.getLearnedValues(learned);
     int pred = 0;
     double best = fromQ(learned[0]);
     for (size_t k = 1; k < NUMBER_OF_OUTPUTS; ++k)
@@ -363,10 +361,20 @@ static int processWindow(const Window& w, bool train, double& errAccum)
     return pred;
 }
 
+static const unsigned WEIGHT_INIT_SEED = 1U; // see main()
+
 int main(int argc, char* argv[])
 {
     (void)argc;
     (void)argv;
+
+    // Two seeds: the initial weights come from WEIGHT_INIT_SEED and everything
+    // else (data, shuffles, training samples) from the seed set just below.
+    // WEIGHT_INIT_SEED = 1 reproduces this example's published results: the
+    // network used to be a global, constructed before main() seeded rand(), so it
+    // drew from glibc's default seed of 1.
+    std::srand(WEIGHT_INIT_SEED);
+    static NeuralNetworkType net;
 
     std::srand(7U);
 
@@ -440,7 +448,7 @@ int main(int argc, char* argv[])
 
         for (const auto& w : train)
         {
-            processWindow(w, /*train=*/true, errSum);
+            processWindow(net, w, /*train=*/true, errSum);
             ++errCount;
         }
 
@@ -460,7 +468,7 @@ int main(int argc, char* argv[])
     size_t correct = 0;
     for (const auto& w : test)
     {
-        const int pred = processWindow(w, /*train=*/false, evalErr);
+        const int pred = processWindow(net, w, /*train=*/false, evalErr);
         ++confusion[w.label][pred];
         if (pred == w.label) ++correct;
     }
