@@ -38,7 +38,7 @@ Sweeping the trained KAN over the `[0,1]²` input grid gives the predicted-vs-ac
 
 ### KAN trained on dense samples
 
-The busy surface above is not a limitation of KANs — it is the consequence of constraining ~60 spline coefficients with only 4 data points. A KAN classifier is normally trained over its whole input region, not on isolated points. Run `./output/kan_xor --dense` to train the same `2->5->1` network on samples drawn uniformly from `[0,1]²` (labelled by the XOR of the two halves):
+The busy surface above is not a limitation of KANs — it is the consequence of constraining ~60 spline coefficients with only 4 data points. A KAN classifier is normally trained over its whole input region, not on isolated points. Run `cd output && ./kan_xor --dense` (`make run` runs both modes) to train the same `2->5->1` network on samples drawn uniformly from `[0,1]²` (labelled by the XOR of the two halves):
 
 ![KAN XOR decision surface from dense training, Q16.16 fixed-point]({{ site.baseurl }}/assets/plots/kan_xor_dense_decision_surface.png)
 

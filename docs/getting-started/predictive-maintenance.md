@@ -171,27 +171,27 @@ Sample output (synthetic path, seed = 7):
 
 ```
 ai4i2020.csv not found; synthesizing 10000 rows using the documented AI4I 2020 generative rules.
-Train: 8000 (pos=1305, neg=6695)  Test: 2000
-iter   2000   avg|err| = 0.1906
-iter   4000   avg|err| = 0.1349
-iter   8000   avg|err| = 0.1271
-iter  16000   avg|err| = 0.1106
-iter  24000   avg|err| = 0.0901
-iter  32000   avg|err| = 0.0802
-iter  40000   avg|err| = 0.0888
+Train: 8000 (pos=258, neg=7742, by training target)  Test: 2000
+iter   5000   avg|err| = 0.1414
+iter  10000   avg|err| = 0.0706
+iter  15000   avg|err| = 0.0502
+...
+iter 290000   avg|err| = 0.0152
+iter 295000   avg|err| = 0.0205
+iter 300000   avg|err| = 0.0134
 
 Confusion matrix (rows=actual, cols=predicted):
                pred no-fail   pred fail
-  actual no-fail     1456           227
-  actual fail          35           282
+  actual no-fail     1902            23
+  actual fail           9            66
 
-accuracy=0.8690  precision=0.5540  recall=0.8896  F1=0.6828
+accuracy=0.9840  precision=0.7416  recall=0.8800  F1=0.8049
 ```
 
 Reading the matrix:
 
-- **282 / 317** real failures caught (recall 89%). 35 failures slip through undetected.
-- **227 / 1683** good machines trigger false alarms (14%). That is the cost of the recall-biased threshold -- move the 0.5 threshold up to shift the tradeoff.
+- **66 / 75** real failures caught (recall 88%). 9 failures slip through undetected.
+- **23 / 1925** good machines trigger false alarms (1.2%). That is the cost of the recall-biased threshold -- move the 0.5 threshold up to shift the tradeoff.
 - **Accuracy is misleading** on a 3.4% positive class. A trivial "always no failure" classifier would score 96.6% accuracy on the real distribution. The numbers you should actually track are recall and F1.
 
 Using the real UCI CSV (put it in `output/` before running, which is the working directory `make run` uses) typically produces **higher** precision and F1 because the real failure distribution is less noisy than the synthetic fallback.
