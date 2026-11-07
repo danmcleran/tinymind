@@ -93,6 +93,39 @@ jobs:
           BOOST_HOME: /usr
         run: make sanitize-avx2
 
+  simd-arm:
+    # The Arm A-profile SIMD backends (NEON, NEON dot product, NEON fp16, SVE)
+    # never execute on the x64 runners, so without this job they ship
+    # untested. GitHub's arm64 runner runs the dispatch-consumer suites under
+    # ASan+UBSan with NEON and with the dot-product backend active, a clang
+    # build, and the exhaustive suite's direct per-backend cases; SVE also
+    # runs under qemu-aarch64 at several vector lengths, since one hardware
+    # length cannot show that vector-length-agnostic code is right at others.
+    name: Arm SIMD backends (aarch64)
+    runs-on: ubuntu-24.04-arm
+    needs: changes
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: needs.changes.outputs.code == 'true'
+      - name: Install Boost, clang and qemu-user
+        if: needs.changes.outputs.code == 'true'
+        uses: ./.github/actions/apt-install
+        with:
+          packages: libboost-dev libboost-test-dev clang qemu-user
+      - name: Host CPU
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          uname -m
+          grep -m1 -i '^Features' /proc/cpuinfo || true
+          g++ --version | head -1
+          clang++ --version | head -1
+          qemu-aarch64 --version | head -1
+      - name: Build and run the Arm SIMD backends
+        if: needs.changes.outputs.code == 'true'
+        env:
+          BOOST_HOME: /usr
+        run: make check-simd-arm
+
   tsan:
     # Data races in the TINYMIND_ENABLE_OPENMP=1 conv output-filter loop --
     # the library's only concurrent code. No other gate covers this class:
