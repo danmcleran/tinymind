@@ -22,11 +22,13 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **Feed-forward networks** with arbitrary depth and width
 - **1D convolution layer** for time-series feature extraction (sensor data, IMU, ECG)
 - **1D pooling layers** (`MaxPool1D`, `AvgPool1D`) for downsampling with multi-channel support and backpropagation
+- **1D upsampling layers** (`UpsampleNearest1D`, `UpsampleLinear1D`) for integer-factor upsampling with backpropagation -- the decoder-side counterpart to pooling, a cheap alternative to a transposed convolution
 - **2D convolution layer** (`Conv2D`) with NHWC layout (channel-last) for spectrograms, images, and time-frequency tiles -- MFCC/keyword-spotting and small vision workloads
 - **Depthwise-separable blocks** (`DepthwiseConv2D` + `PointwiseConv2D`) -- MobileNet-style ~8-9x MAC reduction vs. full 2D convolution at K=3
 - **2D pooling layers** (`MaxPool2D`, `AvgPool2D`, `GlobalAvgPool2D`) with backpropagation -- GAP replaces the flatten-to-dense matrix that dominates flash in small CNNs
 - **Linear self-attention** (`SelfAttention1D`) using ReLU kernel feature map -- O(N*P^2) instead of O(N^2*D), no softmax/exp required, works with Q-format fixed-point
 - **FFT layer** (`FFT1D`) with radix-2 decimation-in-time, compile-time bit-reversal tables, and scaled butterfly stages for fixed-point overflow prevention -- frequency-domain feature extraction for signal processing pipelines
+- **Mixture-of-Experts** (`MixtureOfExperts`, `TopKMixtureOfExperts` in `moe.hpp`) -- a linear router picks the top-1 or top-k experts per input; experts are pluggable through a template-template parameter. The int8 counterparts in `qmoe.hpp` are pure integer: `QMixtureOfExperts` routes by argmax over the int32 router logits (no softmax), so every expert stays resident but only the chosen one computes; `QTopKMixtureOfExperts` runs the k best and blends them with a softmax gate taken from an exp lookup table
 - **Kolmogorov-Arnold Networks (KAN)** with learnable B-spline activation functions on edges
 - **Neuro-fuzzy inference** (`Anfis`) -- Takagi-Sugeno ANFIS with triangular / trapezoidal / generalized-bell / Gaussian membership functions, an explicit prunable rule table, and readable per-rule firing strengths; inference only, one divide per output
 - **Recurrent neural networks** (Elman) with configurable recurrent connection depth
@@ -118,6 +120,7 @@ A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside*
 - **Normalization** -- `QBatchNorm1D` / `QBatchNorm2D` (per-channel (multiplier, shift, bias) triple), `QLayerNorm1D` (integer mean/variance per row, `qInvSqrtQ30` Newton iteration), `QSoftmax1D` (two-pass int8->int8 softmax via 256-entry int32 exp LUT, output 1/256, zp -128), `QSoftmaxFixedPoint1D` (bit-exact with the TFLite int8 softmax)
 - **Recurrent cells** -- `QLSTMCell` (4 gates, TFLite ordering, int8 or int16 cell state via `TINYMIND_ENABLE_INT16_ACCUM=1`), `QGRUCell` (3 gates, reset-before-multiply), and `QCfCCell` (closed-form continuous-time: backbone trunk + tanh heads + folded-`ts` time-gate + interpolation). Standalone single-step; caller owns time loop and hidden/cell buffers
 - **Attention + FFT** -- `QFFT1D` (radix-2 DIT on int16 buffers, Q1.15 twiddles, scaled butterflies), `QAttention1D` (int8 linear-attention with ReLU kernel), `QAttentionSoftmax1D` (standard softmax attention with `1/sqrt(d_k)` folded into score Requantizer), `QMultiHeadLinearAttention1D` (stacks N heads)
+- **Requantizer contract** -- `Requantizer` takes any multiplier, zero point and clamp bounds with a shift in -31..31, which `quantizeMultiplier` (and the PyTorch importer's `quantize_multiplier`) always returns. A CBMC proof (`unit_test/formal/requantizer`) shows `apply()` free of undefined behaviour and equal to gemmlowp's definition, computed exactly, for every input in that range
 - **Transformer input layers** -- `QEmbedding` (int8 token-id gather from a `[Vocab, E]` table, optional requantizer onto a downstream grid) and `QPositionalEncoding1D` (fused affine add of a sinusoidal or learned positional table; host `sinusoidalPositionalTable()` generator)
 - **Activations** -- `qrelu` / `qrelu6` plus `clampForRelu` / `clampForRelu6` helpers that fold the activation into the upstream Requantizer's saturation pass; 256-entry int8 sigmoid / tanh LUTs via `buildQSigmoidLUT` / `buildQTanhLUT` + `qApplyLUT` / `qApplyLUTBuffer` -- no `<cmath>` on the inference path
 - **Host-side calibration** (`cpp/include/qcalibration.hpp`, gated on `FLOAT && STD`) -- `RangeObserver`, `PercentileObserver`, `KLDivergenceObserver` (TensorRT entropy), `crossLayerEqualizeDense` / `crossLayerEqualizeConv2D` (Nagel CLE), `computeAffineParamsAsymmetric` / `Symmetric`, `computePerChannelSymmetricScales`, `quantizeBuffer`, `buildRequantizer`, `buildRescaler`, `buildQAddParams`, `buildQMulRequantizer`, `foldBatchNorm` (Conv2D+BN fusion), `buildQBatchNormChannelParams`, `buildQSoftmaxExpLUT`, `buildQSoftmaxFixedPointParams`, `buildQLSTMParams` / `quantizeQLSTMBiases`, `buildQGRUParams` / `quantizeQGRUBiases`, `buildQCfCParams` / `quantizeQCfCBias` / `quantizeQCfCTimeBias`, `buildQFFTTwiddles`, `qAttentionInvSqrt`
@@ -140,7 +143,7 @@ A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside*
   - [`examples/mixed_precision_mlp_int8_qformat/`](examples/mixed_precision_mlp_int8_qformat/) -- hybrid int8 affine <-> Q8.8 via Phase 17 pure-integer bridges. Deployable at `QUANT=1 FLOAT=0 STD=0`
   - [`examples/import_demo/`](examples/import_demo/) -- end-to-end Phase 15 importer flow. 3-8-4-2 MLP, three observers + CLE, ~0.004 max-abs error vs float
   - [`examples/perf_matrix/`](examples/perf_matrix/) -- SIMD gate bench. Same int8 conv + dense block under each enabled `TINYMIND_ENABLE_SIMD_*` combo, emits CSV per backend with invariant `output_checksum`
-  - [`unit_test/integration/`](unit_test/integration/) -- Phase 16/17 golden-byte regression suite. Locks five exemplars' int8 output byte-for-byte across SIMD gate combos
+  - [`unit_test/integration/`](unit_test/integration/) -- Phase 16/17 golden-byte regression suite. Locks twelve exemplars' output byte-for-byte across SIMD gate combos and compilers (the int8 exemplars plus the Q16.16 ANFIS one)
 
 ### Mixed-Precision Bridges (optional, `TINYMIND_ENABLE_FP16=1` and/or `TINYMIND_ENABLE_FLOAT=1`)
 
@@ -158,6 +161,7 @@ ISA-capability-gated SIMD specializations on the inner reduction loop of `QDense
 - **Prerequisite chain** -- each `simd_*.hpp` opens with a `static_assert` enforcing Arm's dependency table: `DOTPROD` requires `NEON`; `SVE`/`SVE2`/FP16-vector require `NEON`; `AVX_VNNI` requires `AVX2`; `AVX512_VNNI` requires `AVX512F`; the two Helium gates are M-profile only and mutually exclusive with `NEON`/`SVE`; `ARM_DSP` requires a target that defines `__ARM_FEATURE_DSP` (refused on Cortex-M0/M0+/M3/M23). Misconfiguration fails at compile time
 - **Dispatch** -- public entry point `tinymind::simd::int8DotWithZeroPoint` in `cpp/include/simd/simd_dispatch.hpp`. Backend precedence on x86: `AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 > scalar`; on Arm: `SVE > NEON_DOTPROD > NEON > HELIUM_MVE_I > ARM_DSP > scalar` (SVE requires the NEON gate, so it must come first to be selectable). `activeBackendName()` reports the resolved choice
 - **Bit-exactness** -- every integer backend is bit-exact with the scalar reference. AVX2 avoids `PMADDUBSW` (saturates); AVX-VNNI / AVX-512-VNNI use the uint8-shift trick so `VPDPBUSD` reduces exactly. Float SIMD reductions are not bit-exact -- invariant applies to integer paths only
+- **Validated by execution** -- every backend runs in CI, not just compiles: x86 backends on the x86 runner; NEON, NEON dot product, NEON fp16 and SVE on an arm64 runner (SVE also under `qemu-aarch64` at 128/256/512/2048-bit vectors); the Cortex-M SMLAD and Helium MVE-I / MVE-F backends on QEMU's Cortex-M4 and Cortex-M55 machines. Each is checked bit-exact against the scalar reference, and the SMLAD backend is also formally proven equal to it. See [Quality Gates](#quality-gates)
 - **Threading** -- `cpp/include/threading.hpp` exposes `TINYMIND_PARALLEL_FOR_OUTER` (expands to `#pragma omp parallel for` when `TINYMIND_ENABLE_OPENMP=1`, nothing otherwise). Wired on the output-filter loop of `QConv2D` / `QConv2DPerChannel`. Orthogonal to every SIMD gate; caller passes `-fopenmp`
 - **No runtime CPU dispatch** -- library compiles for one ISA per build; fat-binary dispatch is the caller's problem. No `__builtin_cpu_supports` / `getauxval` in library headers; the build system maps `-march=` flags to `TINYMIND_ENABLE_SIMD_*=1`
 
@@ -1018,12 +1022,19 @@ Every push and pull request runs the [Static & Dynamic Analysis](.github/workflo
 | Arm A-profile SIMD | NEON, NEON dot product, NEON fp16 and SVE on a GitHub arm64 runner: int8 suites and golden-output examples under ASan+UBSan with each backend dispatched, every backend also called directly against the scalar reference (every lane, every length 0-300, every offset), SVE additionally under `qemu-aarch64` at 128/256/512/2048-bit vectors (dispatched and direct, plus the quantization suite) | **Blocking** | `make check-simd-arm` (aarch64 host) |
 | SMLAD equivalence proof | CBMC proves the SMLAD `int8DotWithZeroPoint` equals the scalar reference for every input (lengths 0-8, misaligned, big-endian; 4 planted defects must be caught). Bitwuzla pinned by hash | **Blocking** | `make -C unit_test/formal/arm_dsp_dot ci` |
 | Requantizer proof | CBMC proves `Requantizer::apply` (int8, uint8, int16, int32 storage) and `multiplyByQuantizedMultiplier` free of undefined behaviour and equal to gemmlowp's definition computed exactly, for every accumulator, multiplier, zero point and clamp bound at every shift -31..31 (5 planted defects must be caught). Needs Bitwuzla; see its README | Opt-in (not in CI) | `make -C unit_test/formal/requantizer -j16` |
+| C++14 language floor | Every header at `-std=c++14 -pedantic-errors`; suites and examples built and run at C++14 | **Blocking** | `make check-cxx14` |
+| Header self-containment | Each `cpp/**/*.hpp` compiled on its own behind the platform header | **Blocking** | `make header-selfcheck` |
+| Heap-free guarantee | `nm` asserts the freestanding and quantized objects reference no `malloc` / `operator new` | **Blocking** | `make -C unit_test/embedded heapfree` |
+| Cortex-M cross-compile | Cortex-M0+/M4/M33, soft and hard float ABIs, with `arm-none-eabi-g++` and `clang++ --target=arm-none-eabi` | **Blocking** | `make -C unit_test/embedded arm_crosscompile arm_crosscompile_clang` |
 | Second toolchain | Clang build + run of the embedded matrix and the Boost suites | **Blocking** | `make check-clang` |
+| Second toolchain (examples) | Every example built with Clang (discovered from the tree) | **Blocking** | `make check-clang-examples` |
 | Second toolchain (SIMD) | Clang build + run with the AVX2 backend active | **Blocking** | `make check-clang-avx2` |
 | Cross-compiler bit-exactness | int8 exemplars built with Clang must reproduce the committed golden bytes | **Blocking** | `make check-clang-integration` |
 | Semantic code scan | GitHub CodeQL (C/C++) | **Blocking** | — (cloud) |
 | MISRA C:2012 | cppcheck MISRA addon (advisory against C++17 template code) | Advisory | `make misra` |
 | Lint + clang static analyzer | clang-tidy (`bugprone-*`, `cert-*`, `clang-analyzer-*`, narrowing/init) | Advisory | `make tidy` |
+| Conversion warnings | `-Wconversion` / `-Wsign-conversion` / `-Wdouble-promotion` over the fixed-point paths | Advisory | `make warnings-strict` |
+| Stack usage | `-fstack-usage` report of the deepest frames for the Cortex-M4 int8 shape | Advisory | `make -C unit_test/embedded stack_usage` |
 
 The jobs run on GitHub's `ubuntu-latest` image and use that Ubuntu release's compilers and analyzers, which can be newer than a developer machine's: the move to Ubuntu 26.04 brought GCC 15 (defaulting to `-march=x86-64-v3`) and cppcheck 2.19, and each reported failures the older tools did not. `make check-ci-image` runs `make check`, `cppcheck`, `header-selfcheck`, `check-cxx14`, `check-clang` and `make -C fuzz agree` inside a podman container built with the same packages (`tools/ci-image.sh`, `tools/ci-image/Containerfile`), on a copy of the working tree, so they fail locally before a push. `tools/ci-image.sh <command>` runs any other command there.
 
@@ -1129,12 +1140,25 @@ tinymind/
     kws_cortex_m/               # Depthwise-separable CNN pipeline with bench harness
     kws_cortex_m_int8/          # int8 quantized counterpart of kws_cortex_m (parallel Q* layers)
     predictive_maintenance/     # Binary classifier on AI4I 2020 dataset (Q16.16 MLP)
+    iris/                       # Iris species classifier (Q16.16 MLP)
+    energy_efficiency/          # Two-output building energy-load regressor (UCI, Q16.16 MLP)
+    optical_digits/             # Handwritten-digit classifier (UCI, Q16.16 MLP)
+    gas_sensor_drift/           # Six-way gas classifier showing sensor drift across batches (UCI, Q16.16 MLP)
+    air_quality/                # Next-hour pollutant forecaster (Q16.16 LSTM)
+    har_activity/               # Human-activity recognition from accelerometer sequences (Q16.16 LSTM)
+    ltc_sequence/               # Liquid Time-Constant cell fit to a leaky-integrator step response
+    cfc_sequence/               # CfC cell trained on an irregularly sampled target
+    qcfc_liquid_int8/           # int8 CfC liquid-cell deployment exemplar
+    pinn_heat1d/                # 1-D heat-equation residual via forward-mode autodiff (PINN building block)
+    anfis_mackey_glass_int8/    # The Mackey-Glass ANFIS through qanfis.hpp (a documented negative result)
     pytorch/                    # PyTorch weight import (MLP + GRU export, Q-format pipeline)
     pytorch_quant/xor/          # PyTorch -> int8 affine quantization end-to-end (XOR)
     resnet_block_int8/          # int8 residual block (Phase 10 per-channel + QAdd)
     resnet18_block_int8/        # int8 ResNet-18-shaped stem + basic block
     mobilenetv2_int8/           # int8 MobileNetV2 inverted-residual sequence
     transformer_encoder_int8/   # int8 transformer encoder block (LayerNorm + attention + dense)
+    transformer_encoder_stack_int8/         # int8 encoder stack from token ids (embedding + positions + N blocks)
+    transformer_encoder_stack_softmax_int8/ # The same stack with softmax self-attention
     seq2seq_int8/               # int8 encoder-decoder (causal self + cross-attn, O(1) KV-cache decode)
     seq2seq_softmax_int8/       # seq2seq with softmax decoder (growing KV cache + exp LUT)
     tiny_generate_int8/         # int8 decoder-only nano-LM, autoregressive greedy decode via step()
@@ -1143,16 +1167,32 @@ tinymind/
     mixed_precision_kws/        # int8 -> fp16 -> int8 KWS (Phase 9 qbridge)
     mixed_precision_mlp_int8_qformat/ # Hybrid int8 affine <-> Q8.8 (Phase 17 integer bridges)
     import_demo/                # End-to-end Phase 15 importer (3-8-4-2 MLP, three observers + CLE)
+    moe_regimes_int8/           # int8 top-1 Mixture-of-Experts: a linear router picks one of three experts
+    import_moe_demo/            # PyTorch importer -> QMixtureOfExperts, reproduced by the C++ runtime
     perf_matrix/                # SIMD gate bench (CSV per backend, invariant output_checksum)
   unit_test/
-    nn/                         # Neural network tests (250 test cases)
-    kan/                        # KAN tests (16 test cases)
+    nn/                         # Neural network tests (251 test cases)
+    kan/                        # KAN tests (20 test cases)
     qformat/                    # Fixed-point type tests (static_assert)
     qlearn/                     # Q-learning tests
     quantization/               # int8 path: Requantizer, calibration, Q* layer correctness, SIMD bit-exactness
     lookuptable/                # Activation lookup-table generator regressions
-    embedded/                   # Eight-corner (FLOAT, STD, QUANT, FP16, INT16_ACCUM, SIMD_*) regression matrix + simd_prereq_regressions
-    integration/                # Golden-byte regression suite for the Phase 16/17 exemplars
+    embedded/                   # Eight-corner (FLOAT, STD, QUANT, FP16, INT16_ACCUM, SIMD_*) regression matrix + simd_prereq_regressions;
+                                #   qemu_m/: bare-metal SMLAD (Cortex-M4) and Helium (Cortex-M55) tests run under QEMU
+    integration/                # Golden-byte regression suite (twelve exemplars, shared across compilers)
+    qformat_oracle/             # Differential oracle: QValue vs an exact 128-bit reference, plus a nightly seeded soak
+    exhaustive/                 # Every input of small domains (LUTs, requantizer fast paths, int8 dot per SIMD backend)
+    formal/                     # CBMC proofs: SMLAD dot product == scalar (CI), requantizer UB-free (opt-in)
+    dual/                       # Forward-mode autodiff (dual numbers)
+    pinn/                       # Physics-informed residuals and the reverse-mode trainer
+    ltc/                        # Liquid Time-Constant cell
+    cfc/                        # Closed-form Continuous-time cell
+  formal/                       # CBMC proofs over the fixed-point qformat kernels
+  fuzz/                         # libFuzzer int8 kernel harnesses, committed corpus, cross-build agreement, MSan replay
+  benchmarks/
+    framework_comparison_f411/  # tinymind vs TFLM (CMSIS-NN / reference) vs emlearn on a NUCLEO-F411RE
+  tools/                        # CI runner-image container (ci-image.sh), compile-commands filter, Pages generators
+  docs/                         # GitHub Pages site: architecture reference, example gallery, benchmarks
   apps/
     activation/                 # Lookup table generator tool
     import_pytorch/             # PyTorch -> tinymind int8 importer (numpy core)
@@ -1167,6 +1207,10 @@ tinymind/
 - [KAN.md](KAN.md) -- KAN implementation plan and summary
 - [LSTM.md](LSTM.md) -- LSTM implementation analysis and improvement roadmap
 - [QUANTIZATION.md](QUANTIZATION.md) -- Post-training int8 quantization plan and design notes
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) -- Long-form reference: every optional tier, the full test matrix, every example
+- [docs/benchmarks.md](docs/benchmarks.md) -- On-target comparison against TFLM and emlearn (Cortex-M4 and Cortex-M0+)
+- [SECURITY.md](SECURITY.md) -- How to report a vulnerability
+- [Project site](https://danmcleran.github.io/tinymind/) -- Documentation, architecture guides, and example gallery
 
 ## License
 
