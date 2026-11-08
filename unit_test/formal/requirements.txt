@@ -1,0 +1,10 @@
+# SMT solver for the CBMC proofs under unit_test/formal (CBMC's --bitwuzla).
+# Pinned by hash: one manylinux x86_64 wheel per CPython 3.9-3.14. Install with
+#   python3 -m venv .venv && .venv/bin/pip install --require-hashes --only-binary :all: -r ../requirements.txt
+bitwuzla==0.9.1 \
+    --hash=sha256:43e7962c7bf5460b56f7225e359bf89f5c3789f1f0347d9fa231e8950396f2b8 \
+    --hash=sha256:d82e1063c045ad7d4f46fc652c3f9e08e967d50f5819525f4d8ba470df4c7ea2 \
+    --hash=sha256:7d769b5d6d7b33c18eefe4ea459dcc7e7785a1ec9f15e3add01174a06de2ea19 \
+    --hash=sha256:99586f7b387997b570f7752eccb51d154f32263372bcd048b6b0dff074481bcf \
+    --hash=sha256:00f9e59e0e7fc49b2c2b443b67cb9ccf2bff2960e46507be6c1288c2271f77ff \
+    --hash=sha256:d6588a659c89a3cfe442112546f951399b4abc5aa4aee657323bf1ae697b3ea6

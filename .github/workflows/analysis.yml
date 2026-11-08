@@ -240,6 +240,30 @@ jobs:
         if: needs.changes.outputs.code == 'true'
         run: make -C formal prove
 
+  cbmc-smlad:
+    name: CBMC proof (SMLAD dot product)
+    runs-on: ubuntu-latest
+    needs: changes
+    # CBMC proves the SMLAD backend of int8DotWithZeroPoint returns the same
+    # int32 as the scalar reference for every input (lengths 0-8, misaligned
+    # buffers, big-endian), with no out-of-bounds access, signed overflow or
+    # undefined shift; `make all` then requires each of 4 planted defects to
+    # be reported, so a proof that cannot fail does not pass. The QEMU job
+    # tests this backend on samples; this covers every input. Bitwuzla comes
+    # from PyPI pinned by hash (unit_test/formal/requirements.txt): CBMC's
+    # built-in MiniSat cannot finish the multiplier equivalence.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: needs.changes.outputs.code == 'true'
+      - name: Install CBMC
+        if: needs.changes.outputs.code == 'true'
+        uses: ./.github/actions/apt-install
+        with:
+          packages: cbmc python3-venv
+      - name: Prove the SMLAD dot product
+        if: needs.changes.outputs.code == 'true'
+        run: make -C unit_test/formal/arm_dsp_dot ci -j"$(nproc)"
+
   misra:
     name: MISRA C:2012 (advisory)
     runs-on: ubuntu-latest

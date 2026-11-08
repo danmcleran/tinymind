@@ -4,6 +4,8 @@
 #   make            prove every configuration, then confirm every mutant is caught
 #   make prove      proofs only
 #   make mutants    planted defects only (each must be reported)
+#   make ci         build the pinned Bitwuzla venv (../requirements.txt),
+#                   then `make all` with it on PATH; what CI runs
 #
 # Needs cbmc and an SMT solver on PATH. MiniSat (CBMC's built-in SAT backend)
 # times out on the multiplier equivalence; a word-level bit-vector solver does
@@ -42,7 +44,9 @@ MUT_rotate   := 0,/(u >> 8) | (u << 24)/s,,(u << 8) | (u >> 24),
 MUTANTS := pairing zp_sign tail rotate
 MUTANT_N := 7
 
-.PHONY: all prove mutants clean
+VENV ?= .venv
+
+.PHONY: all prove mutants clean ci
 all: prove mutants
 
 prove: $(addprefix $(OUT)/,$(addsuffix .proved,$(PROOFS)))
@@ -79,6 +83,18 @@ $(OUT)/mutant-%.killed: $(DEPS) | $(OUT)
 	    echo "CAUGHT mutant $*"; touch $@; \
 	else \
 	    echo "FAIL   mutant $* survived (see $(OUT)/mutant-$*.log)"; exit 1; fi
+
+# The venv is rebuilt when the pinned requirements change. --require-hashes
+# and --only-binary keep pip to the exact wheels listed there.
+$(VENV)/.installed: ../requirements.txt
+	python3 -m venv $(VENV)
+	$(VENV)/bin/pip install --quiet --require-hashes --only-binary :all: -r ../requirements.txt
+	@touch $@
+
+ci: $(VENV)/.installed
+	@command -v $(CBMC) >/dev/null 2>&1 || { echo "ERROR: $(CBMC) not found. sudo apt install cbmc"; exit 1; }
+	$(CBMC) --version
+	PATH="$(CURDIR)/tools:$(CURDIR)/$(VENV)/bin:$$PATH" $(MAKE) all
 
 clean:
 	rm -rf $(OUT)
