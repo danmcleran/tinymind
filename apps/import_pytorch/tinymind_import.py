@@ -119,7 +119,14 @@ def quantize_multiplier(ratio: float) -> tuple[int, int]:
     if q == (1 << 31):
         q >>= 1
         exponent += 1
-    return int(q), -int(exponent)
+    shift = -int(exponent)
+    # Same clamp as the C++: keep the pair inside Requantizer's contract,
+    # -31 <= shift <= 31, without changing any result. A ratio below 2^-31
+    # rounds every int32 accumulator to 0, which multiplier 0 also says; a
+    # left shift of 31 or more saturates every non-zero accumulator.
+    if shift > 31:
+        return 0, 0
+    return int(q), max(shift, -31)
 
 
 def quantize_qformat_weights(w: np.ndarray, fractional_bits: int,
