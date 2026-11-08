@@ -89,6 +89,10 @@ _DTYPES = {
     "int16": (-32768, 32767, "int16_t"),
 }
 
+# quantizeFeatures clamps the rounded value to +-1e9 and adds the zero point
+# in int32, so |zero point| must leave room for it.
+_ZP_LIMIT = 2**31 - 1 - 10**9
+
 
 # ----------------------------------------------------------------------------
 # Feature quantization
@@ -114,6 +118,9 @@ class FeatureQuant:
         self.zero_point = np.asarray(self.zero_point, dtype=np.int64)
         if np.any(self.scale <= 0) or not np.all(np.isfinite(self.scale)):
             raise ValueError("every feature scale must be finite and > 0")
+        if np.any(np.abs(self.zero_point) > _ZP_LIMIT):
+            raise ValueError("every feature zero point must be within +-%d, or quantizeFeatures' "
+                             "int32 sum can overflow" % _ZP_LIMIT)
 
     @property
     def qmin(self) -> int:
@@ -144,10 +151,26 @@ class FeatureQuant:
         qmin, qmax, _ = _DTYPES[dtype]
         lo = X.min(axis=0)
         hi = X.max(axis=0)
+        scale, zp = cls._grid(lo, hi, qmin, qmax)
+        # The zero point is not clipped to [qmin, qmax]: a range that excludes 0
+        # needs one outside it, and clipping it would shift the grid so that
+        # everything above (qmax - qmin) * scale saturates. It only has to keep
+        # quantizeFeatures' int32 sum from overflowing. A feature far from 0
+        # with a tiny span (beyond float32's resolution anyway) falls back to a
+        # range widened to include 0, whose zero point is inside [qmin, qmax].
+        far = np.abs(zp) > _ZP_LIMIT
+        if np.any(far):
+            s0, z0 = cls._grid(np.minimum(lo, 0.0), np.maximum(hi, 0.0), qmin, qmax)
+            scale = np.where(far, s0, scale)
+            zp = np.where(far, z0, zp)
+        return cls(scale, zp, dtype, False)
+
+    @staticmethod
+    def _grid(lo, hi, qmin, qmax):
         span = hi - lo
         scale = np.where(span > 0, span / (qmax - qmin), 1.0).astype(np.float32)
-        zp = np.clip(np.round(qmin - lo / scale.astype(np.float64)), qmin, qmax).astype(np.int64)
-        return cls(scale, zp, dtype, False)
+        zp = np.round(qmin - lo / scale.astype(np.float64)).astype(np.int64)
+        return scale, zp
 
     def quantize(self, X) -> np.ndarray:
         """Quantize rows of X (float) the way the generated quantizeFeatures() does."""

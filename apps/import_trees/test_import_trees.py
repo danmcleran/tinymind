@@ -206,6 +206,50 @@ class CalibratedFloatFeatures(Base):
         self.run_float(lgb.LGBMClassifier(n_estimators=20, num_leaves=7, verbose=-1), load_wine, 0.97)
 
 
+class FeatureGrid(Base):
+    """from_data must spread each feature's calibration range over the whole
+    grid. Features whose range excludes 0 (every iris and wine feature) need a
+    zero point outside [qmin, qmax]; clipping it saturated most of the grid."""
+
+    def test_calibration_range_covers_the_whole_grid(self):
+        for loader in (load_iris, load_wine):
+            X, _ = loader(return_X_y=True)
+            for dtype in ("int8", "uint8", "int16"):
+                q = T.FeatureQuant.from_data(X, dtype)
+                Q = q.quantize(X)
+                np.testing.assert_array_equal(Q.min(axis=0), q.qmin, "%s %s" % (loader.__name__, dtype))
+                np.testing.assert_array_equal(Q.max(axis=0), q.qmax, "%s %s" % (loader.__name__, dtype))
+
+    def test_offset_features_keep_their_resolution(self):
+        # Petal width from the other three iris features: all strictly positive.
+        X, _ = load_iris(return_X_y=True)
+        Xr, yr = X[:, :3], X[:, 3]
+        m = RandomForestRegressor(n_estimators=8, max_depth=4, random_state=0).fit(Xr, yr)
+        e = self.export(m, Xr, quant=T.FeatureQuant.from_data(Xr, "int16"))
+        self.assertLess(e.agreement(Xr), 0.01 * float(yr.max() - yr.min()), e.report)
+        self.check_compiled(e, Xr[:40])
+
+    def test_far_offset_falls_back_to_a_range_with_zero(self):
+        # A zero point this far out would overflow quantizeFeatures' int32 sum,
+        # so that one feature is widened to include 0. The other keeps its grid.
+        rng = np.random.RandomState(0)
+        X = np.stack([1.0e6 + rng.uniform(0.0, 1.0e-3, 200), rng.uniform(5.0, 6.0, 200)], axis=1)
+        q = T.FeatureQuant.from_data(X, "int8")
+        self.assertTrue(q.qmin <= q.zero_point[0] <= q.qmax, q.zero_point)
+        self.assertEqual(q.quantize(X)[:, 0].max(), q.qmax)
+        self.assertLess(q.zero_point[1], q.qmin)
+        np.testing.assert_array_equal(q.quantize(X)[:, 1].min(), q.qmin)
+        y = (X[:, 1] > 5.5).astype(int)
+        e = self.export(DecisionTreeClassifier(max_depth=2, random_state=0).fit(X, y), X, quant=q)
+        self.check_compiled(e, X[:40])
+
+    def test_zero_point_limit(self):
+        T.FeatureQuant([1.0, 1.0], [T._ZP_LIMIT, -T._ZP_LIMIT])
+        for zp in (T._ZP_LIMIT + 1, -T._ZP_LIMIT - 1):
+            with self.assertRaises(ValueError):
+                T.FeatureQuant([1.0], [zp])
+
+
 class Regressors(Base):
     """Regressors return raw / kOutputScale. Error against the original is held
     to a small fraction of the target range on held-out data."""
