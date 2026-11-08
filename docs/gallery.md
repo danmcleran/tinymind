@@ -32,6 +32,18 @@ these exactly.
 **KAN XOR learning curve** — Kolmogorov-Arnold network with learnable B-spline edges.
 ![KAN XOR learning curve]({{ site.baseurl }}/assets/plots/kan_xor_learning_curve.png)
 
+**GRU XOR learning curve** — Q16.16 GRU; the four-case error falls from chance (~0.5) to ~0.09 and plateaus.
+![GRU XOR learning curve]({{ site.baseurl }}/assets/plots/gru_xor.png)
+
+**LSTM sinusoid** — one-step-ahead prediction tracks the sinusoid; the free-running auto-regressive rollout holds the period.
+![LSTM sinusoid prediction]({{ site.baseurl }}/assets/plots/lstm_sinusoid.png)
+
+**LSTM sinusoid, float vs Q16.16** — the same LSTM trained in double and in Q16.16, side by side.
+![LSTM sinusoid float vs Q16.16]({{ site.baseurl }}/assets/plots/lstm_sinusoid_float.png)
+
+**Elman vs MLP on temporal XOR** — the Elman network recovers x[t] XOR x[t-1] from its recurrent memory; the MLP, with no access to x[t-1], stays near 0.5.
+![Elman vs MLP on temporal XOR]({{ site.baseurl }}/assets/plots/elman_temporal_xor.png)
+
 ## Neuro-fuzzy inference
 
 **Mackey-Glass ANFIS** — Jang's benchmark, a 16-rule Takagi-Sugeno system in 448 bytes of Q16.16: held-out fit, hybrid training, the rule base read back, and what pruning an oversized 81-rule grid recovers.
@@ -85,6 +97,21 @@ these exactly.
 **MobileNetV2-shaped pipeline (int8)** — logit parity vs the float reference.
 ![MobileNetV2 int8 parity]({{ site.baseurl }}/assets/plots/mobilenetv2_int8_parity.png)
 
+**ResNet residual block (int8)** — int8 vs float output across 32 elements, with per-element error.
+![ResNet block int8 parity]({{ site.baseurl }}/assets/plots/resnet_block_int8.png)
+
+**ResNet-18 stem and block (int8)** — logit parity vs the float reference; per-element error stays under 0.01.
+![ResNet-18 block int8 parity]({{ site.baseurl }}/assets/plots/resnet18_block_int8.png)
+
+**Mixed-precision KWS** — int8 frontend, fp16 attention head, int8 classifier; output parity vs float.
+![Mixed-precision KWS parity]({{ site.baseurl }}/assets/plots/mixed_precision_kws.png)
+
+**Hybrid int8 + Q-format MLP** — int8 affine and Q8.8 layers joined by pure-integer bridges; per-element error under ~0.0043.
+![Hybrid int8 + Q-format MLP parity]({{ site.baseurl }}/assets/plots/mixed_precision_mlp.png)
+
+**Importer round trip (int8)** — a 3-8-4-2 MLP calibrated with three observers and cross-layer equalization; int8 vs float parity, error near 0.004.
+![Importer int8 parity]({{ site.baseurl }}/assets/plots/import_demo_parity.png)
+
 ## Mixture-of-Experts
 
 **int8 MoE regime routing** — a top-1 router partitions the input domain into three regimes; one of three linear experts runs per inference (color blocks = the routing map).
@@ -105,6 +132,9 @@ for which example uses which dataset.
 **Optical digits** — Q16.16 MLP (64→32→10) on 8×8 handwritten-digit bitmaps; loss + 10×10 confusion.
 ![Optical digit classifier]({{ site.baseurl }}/assets/plots/optical_digits.png)
 
+**Optical digits, sample predictions** — sampled 8×8 test bitmaps titled with true and predicted labels, red when misclassified.
+![Optical digits sample predictions]({{ site.baseurl }}/assets/plots/optical_digits_grid.png)
+
 **Human activity recognition** — recurrent `LstmNeuralNetwork` (3→16→4) over tri-axial accelerometer windows.
 ![HAR activity classifier]({{ site.baseurl }}/assets/plots/har_activity.png)
 
@@ -122,6 +152,9 @@ for which example uses which dataset.
 **KWS pipeline per-layer cost** — compute cost + stacked weight/activation footprint per layer.
 ![KWS per-layer cost]({{ site.baseurl }}/assets/plots/kws_layer_cost.png)
 
+**KWS pipeline per-layer cost (int8)** — the int8 counterpart: per-layer compute cost and weight/activation footprint.
+![KWS int8 per-layer cost]({{ site.baseurl }}/assets/plots/kws_cortex_m_int8.png)
+
 **SIMD backends** — int8 QConv2D / QDense throughput across backends (output checksum identical — bit-exact).
 ![SIMD backend comparison]({{ site.baseurl }}/assets/plots/simd_backends.png)
 
@@ -130,8 +163,26 @@ for which example uses which dataset.
 **XOR decision surface** — PyTorch-trained weights, pure-integer tinymind inference; learned boundary as a heatmap.
 ![int8 XOR decision surface]({{ site.baseurl }}/assets/plots/xor_decision_surface.png)
 
+**XOR decision surface, Q16.16** — tinymind-trained fixed-point MLP swept over the input grid; heatmap is P(XOR=1).
+![XOR Q16.16 decision surface]({{ site.baseurl }}/assets/plots/xor_q16_decision_surface.png)
+
+**PyTorch XOR, Q16.16** — PyTorch-trained weights, fixed-point tinymind inference.
+![PyTorch XOR Q16.16 decision surface]({{ site.baseurl }}/assets/plots/pytorch_xor.png)
+
+**GRU XOR decision surface** — the trained GRU swept over the input grid, state reset at each point.
+![GRU XOR decision surface]({{ site.baseurl }}/assets/plots/gru_xor_decision_surface.png)
+
+**KAN XOR decision surface** — trained on the four XOR points only: every corner is right, but ~60 spline coefficients constrained by 4 points give a busy surface.
+![KAN XOR decision surface]({{ site.baseurl }}/assets/plots/kan_xor_decision_surface.png)
+
+**KAN XOR, dense training** — trained over the whole input region, the KAN recovers the clean four-quadrant XOR map.
+![KAN XOR dense-training decision surface]({{ site.baseurl }}/assets/plots/kan_xor_dense_decision_surface.png)
+
 **Predictive maintenance** — training loss + test confusion matrix (machine-failure classifier).
 ![Predictive maintenance]({{ site.baseurl }}/assets/plots/predictive_maintenance.png)
 
 **Q-learning maze** — per-start-state navigation trajectories.
 ![Maze trajectories]({{ site.baseurl }}/assets/plots/maze_trajectories.png)
+**DQN maze** — greedy rollouts of the trained value network from every start room.
+![DQN maze trajectories]({{ site.baseurl }}/assets/plots/dqn_maze.png)
+

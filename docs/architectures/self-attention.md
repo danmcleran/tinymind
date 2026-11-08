@@ -9,7 +9,7 @@ nav_order: 5
 
 > **Real-world use:** a wearable gesture sensor fuses several IMU channels over a short motion window, learning which channel matters at each timestep. The ReLU-kernel linear attention does this at O(N) cost instead of the quadratic cost of softmax attention, so a Cortex-M0 keeps up at sensor rates with no exponential or division on the inference path.
 
-Tinymind provides `SelfAttention1D`, a standalone composable layer that implements linear self-attention for sequence processing. It uses a ReLU kernel feature map instead of softmax, reducing complexity from O(N^2 * D) to O(N * D * P + N * P^2) and eliminating the need for exponential or division operations -- making it practical for fixed-point targets.
+tinymind provides `SelfAttention1D`, a standalone composable layer that implements linear self-attention for sequence processing. It uses a ReLU kernel feature map instead of softmax, reducing complexity from O(N^2 * D) to O(N * D * P + N * P^2) and eliminating the need for exponential or division operations -- making it practical for fixed-point targets.
 
 ## Why Linear Attention?
 
@@ -30,7 +30,7 @@ Linear:    phi(Q) * (phi(K)^T * V)    -- O(N * P^2) -- P x P intermediate
 
 By computing `K^T * V` first (a P x P matrix, where P = ProjectionDim), the N x N matrix is never formed. When P << N, this is a massive reduction.
 
-Tinymind uses `phi(x) = ReLU(x)`, which:
+tinymind uses `phi(x) = ReLU(x)`, which:
 - Is already a native activation function in the library
 - Requires no lookup tables, no exp, no division
 - Works identically for both float and Q-format fixed-point types

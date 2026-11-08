@@ -61,7 +61,7 @@ Misconfiguration like `DOTPROD=1, NEON=0` fails at compile time with a readable 
 The public entry point is `tinymind::simd::int8DotWithZeroPoint` in [`cpp/include/simd/simd_dispatch.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/include/simd/simd_dispatch.hpp), plus a templated `dotProductWithZeroPoint<Input, Weight, Accum>` that specializes on `int8_t / int8_t / int32_t`. When multiple gates are enabled in the same build, dispatch resolves to the strongest:
 
 - **x86:** `AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 > scalar`
-- **Arm:** `NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > ARM_DSP > scalar` (every Helium core also has the DSP extension, and MVE's 16-lane reduction beats SMLAD's two lanes)
+- **Arm:** `SVE > NEON_DOTPROD > NEON > HELIUM_MVE_I > ARM_DSP > scalar`. SVE comes first because its gate requires the NEON gate, so anywhere later it could never be selected. Every Helium core also has the DSP extension, and MVE's 16-lane reduction beats SMLAD's two lanes
 
 `tinymind::simd::activeBackendName()` returns the resolved choice as a `const char*` for benchmark reports.
 
@@ -70,6 +70,21 @@ The public entry point is `tinymind::simd::int8DotWithZeroPoint` in [`cpp/includ
 The integer SIMD backends produce byte-identical output to the scalar reference for any input. The integration suite (`unit_test/integration/`) leans on this: each exemplar's `make golden` mode emits an int8 byte stream, and the integration test asserts that stream matches a baked-in expected string. Because the inference path is deterministic and the SIMD backends are bit-exact, the same expected string passes regardless of which gate combination the example binary was built with. Any silent drift in `qaffine.hpp`, `qcalibration.hpp`, or any SIMD specialization that claims bit-exactness trips the test.
 
 The AVX2 backend deliberately avoids `PMADDUBSW`: that instruction saturates on the pair-sum step, which would break the bit-exactness guarantee on pathological inputs. AVX-VNNI and AVX-512-VNNI use the canonical uint8-shift trick so `VPDPBUSD` reduces a uint8 / int8 product exactly.
+
+## How the backends are validated
+
+Every Arm backend and AVX2 is executed in CI, not just compiled, and each is checked bit-exact against the scalar reference (the float gates against a model of their own lane arithmetic). These are blocking checks on every pull request:
+
+| Backends | Where they run | What is checked |
+|---|---|---|
+| AVX2 | GitHub x86 runner | int8 suites under ASan+UBSan with the backend dispatched, a scalar-vs-AVX2 differential fuzz harness, and a Clang build |
+| NEON, NEON dot product, NEON fp16, SVE | GitHub arm64 runner; SVE also under `qemu-aarch64` at 128-, 256-, 512- and 2048-bit vectors | int8 suites and golden-output examples under ASan+UBSan with each backend dispatched; every backend also called directly against the scalar reference for every lane, every length 0-300 and every offset |
+| `ARM_DSP` (SMLAD) | QEMU `mps2-an386` (Cortex-M4), bare metal | Bit-exact sweep built with GCC and with Clang, plus UBSan images in trap mode; the image must contain an `smlad`, so a silent scalar fallback fails. A CBMC proof also shows it equals the scalar reference for every input |
+| `HELIUM_MVE_I`, `HELIUM_MVE_F` | QEMU `mps3-an547` (Cortex-M55), bare metal | MVE-I int8 dot product dispatched and bit-exact; MVE-F fp32 dot product bit-exact against a model of its lane arithmetic; GCC, Clang and UBSan images |
+
+The AVX-512 backends are compiled in CI (the Clang build of every example builds `perf_matrix`'s AVX-512 variants) but run only on a host that has the instructions, and AVX-VNNI is not run in CI.
+
+Each job checks that the backend it meant to test actually ran, so a build that quietly fell back to scalar fails rather than passing. Each job was also shown to fail on planted defects before it was trusted. QEMU checks correctness only; it is not cycle-accurate. See the [README's Quality Gates](https://github.com/danmcleran/tinymind#quality-gates) for the `make` target that reproduces each one.
 
 ## Bench harness — `examples/perf_matrix/`
 

@@ -33,7 +33,7 @@ Most ML frameworks assume abundant resources: gigabytes of RAM, a GPU, an operat
 
 Because tinymind is a header-only template library, there is no runtime library to link. The compiler generates code only for the specific network topology, value type, and activation functions you use. Unused features are never compiled.
 
-Preprocessor capability gates control optional dependencies on the FPU, the C++ stdlib (`<cmath>` / `<type_traits>` / `namespace std`), file I/O, ostreams, `rand()`, the [int8 affine quantization]({{ site.baseurl }}/architectures/int8-quantization) layer family, the [fp16/bf16 storage tier]({{ site.baseurl }}/architectures/mixed-precision), the int16 cell-state variant of `QLSTMCell`, OpenMP outer-loop parallelism, and per-ISA [SIMD specializations]({{ site.baseurl }}/architectures/simd-backends) (NEON / NEON_DOTPROD / NEON_FP16 / SVE / SVE2 / Helium MVE_I / MVE_F / AVX2 / AVX_VNNI / AVX512F / AVX512_VNNI). All default off — a freestanding build pulls in only `<cstddef>` and `<cstdint>` with byte-identical output to the scalar reference. See the [README's Platform Feature Gates](https://github.com/danmcleran/tinymind#platform-feature-gates) section for the full matrix.
+Preprocessor capability gates control optional dependencies on the FPU, the C++ stdlib (`<cmath>` / `<type_traits>` / `namespace std`), file I/O, ostreams, `rand()`, the [int8 affine quantization]({{ site.baseurl }}/architectures/int8-quantization) layer family, the [fp16/bf16 storage tier]({{ site.baseurl }}/architectures/mixed-precision), the int16 cell-state variant of `QLSTMCell`, OpenMP outer-loop parallelism, and per-ISA [SIMD specializations]({{ site.baseurl }}/architectures/simd-backends) (NEON / NEON_DOTPROD / NEON_FP16 / SVE / SVE2 / Helium MVE_I / MVE_F / ARM_DSP / AVX2 / AVX_VNNI / AVX512F / AVX512_VNNI). All default off — a freestanding build pulls in only `<cstddef>` and `<cstdint>` with byte-identical output to the scalar reference. See the [README's Platform Feature Gates](https://github.com/danmcleran/tinymind#platform-feature-gates) section for the full matrix.
 
 ## What Fits Where?
 
@@ -51,7 +51,16 @@ tinymind networks are small enough to deploy on the most constrained microcontro
 [![CodeQL](https://github.com/danmcleran/tinymind/actions/workflows/codeql.yml/badge.svg)](https://github.com/danmcleran/tinymind/actions/workflows/codeql.yml)
 [![Fuzz (nightly exploratory)](https://github.com/danmcleran/tinymind/actions/workflows/fuzz-nightly.yml/badge.svg)](https://github.com/danmcleran/tinymind/actions/workflows/fuzz-nightly.yml)
 
-Every push and pull request is gated. **Blocking** gates (must pass to merge): Clang ASan + UBSan sanitizers, Clang TSan over the OpenMP conv path, ASan+UBSan with the AVX2 SIMD backend active plus a scalar-vs-AVX2 differential fuzz harness, cppcheck static analysis, an lcov coverage floor, CBMC formal proofs of the fixed-point kernels, libFuzzer harnesses over the int8 kernels whose property checks run on every committed corpus input, a cross-compiler and cross-optimization-level output agreement check over the same corpus, UndefinedBehaviorSanitizer on an emulated Cortex-M4, and a CodeQL semantic scan. **Advisory** gates (surfaced as report artifacts, never blocking): MISRA C:2012 and clang-tidy (which also runs the Clang Static Analyzer via its `clang-analyzer-*` checks). See the [README's Quality Gates](https://github.com/danmcleran/tinymind#quality-gates) section for the full matrix and the `make` target that reproduces each one locally.
+Every push and pull request is gated. **Blocking** gates (must pass to merge):
+
+- **Sanitizers:** Clang ASan + UBSan over every runtime suite and the int8 examples, TSan over the OpenMP conv path, and MemorySanitizer over the embedded corners and the fuzz corpus.
+- **Formal proofs:** CBMC proofs of the fixed-point kernels, and a CBMC proof that the Cortex-M SMLAD int8 dot product equals the scalar reference for every input. A further proof, that the requantizer is free of undefined behaviour for every input, is run by hand (about 11 CPU-hours).
+- **Fuzzing and exhaustive checks:** libFuzzer harnesses over the int8 kernels whose property checks run on every committed corpus input, a cross-compiler and cross-optimization-level output agreement check over the same corpus, and exhaustive sweeps over every input of small domains.
+- **SIMD backends, executed:** AVX2 under ASan+UBSan plus a scalar-vs-AVX2 differential fuzz harness; NEON, NEON dot product, NEON fp16 and SVE on an arm64 runner (SVE also at four vector lengths under QEMU); the SMLAD and Helium backends on emulated Cortex-M4 and Cortex-M55 bare-metal targets. See [how the backends are validated]({{ site.baseurl }}/architectures/simd-backends#how-the-backends-are-validated).
+- **Portability:** a second compiler (Clang) for the suites, the golden-byte exemplars and every example; Cortex-M0+/M4/M33 cross-compiles with GCC and Clang; the C++14 language floor; each header compiling on its own; and a check that the freestanding build never allocates from the heap.
+- **Static analysis and coverage:** cppcheck, an lcov coverage floor, and a CodeQL semantic scan.
+
+**Advisory** gates (surfaced as report artifacts, never blocking): MISRA C:2012, clang-tidy (which also runs the Clang Static Analyzer via its `clang-analyzer-*` checks), conversion warnings and a stack-usage report. See the [README's Quality Gates](https://github.com/danmcleran/tinymind#quality-gates) section for the full matrix and the `make` target that reproduces each one locally.
 
 ## Network Architectures
 
@@ -70,6 +79,13 @@ Every push and pull request is gated. **Blocking** gates (must pass to merge): C
 | Int8 Attention + FFT | [`QFFT1D`, `QAttention1D`, `QAttentionSoftmax1D`, `QMultiHeadLinearAttention1D`]({{ site.baseurl }}/architectures/int8-quantization) | Q1.15 twiddle FFT, linear and softmax attention, multi-head stack |
 | Mixed Precision | [`qbridge`, `fp16_t`, `bf16_t`]({{ site.baseurl }}/architectures/mixed-precision) | Pointwise converters between int8 affine / Q-format / float / fp16 / bf16 |
 | SIMD Backends | [NEON / SVE / Helium / AVX2 / AVX-512]({{ site.baseurl }}/architectures/simd-backends) | ISA-capability gates, byte-identical to scalar |
+| Linear Self-Attention | [`SelfAttention1D`]({{ site.baseurl }}/architectures/self-attention) | ReLU-kernel attention, no softmax; float or Q-format |
+| 1D Upsampling | [`UpsampleNearest1D`, `UpsampleLinear1D`]({{ site.baseurl }}/architectures/conv-pooling) | Integer-factor upsampling; the decoder-side counterpart to pooling |
+| Mixture of Experts | [`MixtureOfExperts`, `QMixtureOfExperts`, ...]({{ site.baseurl }}/architectures/mixture-of-experts) | A router picks the top-1 or top-k experts; int8 top-1 routes by argmax over int32 logits |
+| Int8 Transformer Decoder | [`QCausalAttention1D`, `QCrossAttention1D`, ...]({{ site.baseurl }}/architectures/transformer-decoder) | Causal self-attention, cross-attention and an incremental KV-cache decode (O(1) state with linear attention) |
+| Int8 State-Space | [`QStateSpace1D`, `QSelectiveStateSpace1D`]({{ site.baseurl }}/architectures/state-space) | Diagonal S4-lite streaming filter with O(1) state |
+| Int8 Decision Trees / GBDT | [`QDecisionTree`, `QGBDT`, `QStaticGBDT`]({{ site.baseurl }}/architectures/decision-trees) | Compare-and-branch inference, no MACs; importer for scikit-learn / XGBoost / LightGBM |
+| ANFIS | [`Anfis`]({{ site.baseurl }}/architectures/anfis) | Takagi-Sugeno neuro-fuzzy inference with readable rules |
 | KAN | [`KolmogorovArnoldNetwork`]({{ site.baseurl }}/architectures/kan) | Learnable B-spline activations |
 | FFT | [`FFT1D`]({{ site.baseurl }}/architectures/fft) | Frequency-domain feature extraction for signal processing |
 | Elman RNN | [`ElmanNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | Simple recurrent feedback |

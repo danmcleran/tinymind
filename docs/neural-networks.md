@@ -18,7 +18,7 @@ Neural networks within [tinymind](https://github.com/danmcleran/tinymind) are im
 
 Traditional ML frameworks (TensorFlow Lite, ONNX Runtime, etc.) ship a runtime interpreter that supports every possible layer type, activation function, and data type. You link this entire runtime even if you only use a fraction of it. On embedded systems with 16-64 KB of flash, this overhead alone can consume the entire budget.
 
-Tinymind takes the opposite approach. Because everything is a C++ template, the compiler generates machine code only for the exact configuration you instantiate:
+tinymind takes the opposite approach. Because everything is a C++ template, the compiler generates machine code only for the exact configuration you instantiate:
 
 - **Using only tanh activation?** Only the tanh lookup table is compiled (192 bytes for Q8.8). Sigmoid, exp, and log tables are excluded entirely.
 - **Inference only (no training)?** Set `IsTrainable=false` and all backpropagation code, gradient storage, and delta weight tracking are eliminated. A 1,008-byte trainable MLP becomes a 360-byte inference engine -- a 64% reduction.
@@ -60,7 +60,7 @@ class NeuralNetwork
 
 **TransferFunctionsPolicy** - Policy class which provides certain functionality the neural network needs: Random number generation, initial weight values, neural network activation functions, etc.
 
-**IsTrainable** - Compile time flag to indicate whether or not the neural network is trainable. Non-trainable neural networks consume less space as code and data required for trainable neural networks is not compiled into the binary image. Tinymind neural networks can have their weights, biases, etc. loaded from the outside world so that non-trainable neural networks can have their values initialized to trained ones. Training neural networks offline and instantiating untrainable neural networks within the embedded device can save a lot of code and data space.
+**IsTrainable** - Compile time flag to indicate whether or not the neural network is trainable. Non-trainable neural networks consume less space as code and data required for trainable neural networks is not compiled into the binary image. tinymind neural networks can have their weights, biases, etc. loaded from the outside world so that non-trainable neural networks can have their values initialized to trained ones. Training neural networks offline and instantiating untrainable neural networks within the embedded device can save a lot of code and data space.
 
 **BatchSize** - Batch size for trainable neural networks who want to accumulate a BatchSize amount of samples before back-propagating the error thru the network.
 
@@ -131,7 +131,7 @@ See the [Advanced Training Techniques]({{ site.baseurl }}/training/training-tech
 
 # Activation Functions
 
-Tinymind supports the following activation functions, all available for both fixed-point (via lookup tables) and floating-point:
+tinymind supports the following activation functions, all available for both fixed-point (via lookup tables) and floating-point:
 
 | Function | Policy Class | Range |
 |----------|-------------|-------|

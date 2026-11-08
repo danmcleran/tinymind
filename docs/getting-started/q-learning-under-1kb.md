@@ -17,7 +17,7 @@ At 869 bytes total, this Q-learner fits comfortably on even the smallest microco
 
 # The Maze Problem
 
-A common table-based Q-learning problem is to train a virtual mouse to find its way out of a maze to get the cheese (reward). Tinymind contains an [example](https://github.com/danmcleran/tinymind/blob/master/examples/maze/maze.cpp) program which demonstrates how the Q-learning template library works.
+A common table-based Q-learning problem is to train a virtual mouse to find its way out of a maze to get the cheese (reward). tinymind contains an [example](https://github.com/danmcleran/tinymind/blob/master/examples/maze/maze.cpp) program which demonstrates how the Q-learning template library works.
 
 ![maze]({{ site.baseurl }}/assets/diagrams/200389435-ee70c325-9031-41cf-982c-f4ebfbef6831.png)
 

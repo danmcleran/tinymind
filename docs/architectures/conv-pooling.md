@@ -9,9 +9,9 @@ nav_order: 3
 
 > **Real-world use:** a wrist-worn fall detector turns a raw 50 Hz accelerometer stream into discriminative features before a tiny classifier ever sees it. A `Conv1D -> MaxPool1D -> Dropout` pipeline in 1,825 bytes of Q8.8 runs on a coin-cell wearable, catching the impact signature without a learned Fourier or feature stage burning model capacity.
 
-Tinymind provides standalone composable signal processing layers for both 1D time-series and 2D spatial feature extraction:
+tinymind provides standalone composable signal processing layers for both 1D time-series and 2D spatial feature extraction:
 
-- **1D:** `Conv1D`, `MaxPool1D`, `AvgPool1D`, `BatchNorm1D`, `Dropout`
+- **1D:** `Conv1D`, `MaxPool1D`, `AvgPool1D`, `UpsampleNearest1D`, `UpsampleLinear1D`, `BatchNorm1D`, `Dropout`
 - **2D:** `Conv2D`, `DepthwiseConv2D`, `PointwiseConv2D`, `MaxPool2D`, `AvgPool2D`, `GlobalAvgPool2D`
 
 These layers sit outside the neural network template and can be chained together into a feature extraction pipeline whose output feeds into a standard neural network for classification or regression.
@@ -115,6 +115,29 @@ pool.forward(input, output);
 // output[0] = 2.0, output[1] = 4.0, output[2] = 6.0
 ```
 
+# UpsampleNearest1D / UpsampleLinear1D - 1D Upsampling
+
+The decoder-side counterpart to pooling: each channel grows by an integer `ScaleFactor`. Upsampling followed by a `Conv1D` is a cheap alternative to a transposed convolution, and avoids the checkerboard artifacts a learned upsampling can introduce. Both layers are stateless, use the same channel-major layout as `Conv1D` and the pooling layers, and provide `backward()` for training.
+
+- **`UpsampleNearest1D`** repeats each element `ScaleFactor` times. It does no arithmetic, so it works for every `ValueType`, including at `TINYMIND_ENABLE_FLOAT=0` / `STD=0`.
+- **`UpsampleLinear1D`** interpolates linearly between neighbouring elements; the last element is held at the end.
+
+```cpp
+#include "upsample1d.hpp"
+
+// Template: <ValueType, InputLength, ScaleFactor, NumChannels = 1>
+tinymind::UpsampleNearest1D<double, 3, 2> nearest;
+tinymind::UpsampleLinear1D<double, 3, 2> linear;
+double input[3] = {1.0, 3.0, 2.0};
+double output[6];
+
+nearest.forward(input, output);
+// output = {1.0, 1.0, 3.0, 3.0, 2.0, 2.0}
+
+linear.forward(input, output);
+// output = {1.0, 2.0, 3.0, 2.5, 2.0, 2.0}
+```
+
 # BatchNorm1D - 1D Batch Normalization
 
 BatchNorm1D normalizes each feature to zero mean and unit variance, then applies learnable affine parameters (gamma, beta).
@@ -150,7 +173,7 @@ bn.forward(input, output);
 
 # Dropout - Inverted Dropout Regularization
 
-Dropout randomly zeros elements during training to prevent overfitting. Tinymind uses inverted dropout: surviving elements are scaled by `1/(1-p)` during training so that no scaling is needed at inference time.
+Dropout randomly zeros elements during training to prevent overfitting. tinymind uses inverted dropout: surviving elements are scaled by `1/(1-p)` during training so that no scaling is needed at inference time.
 
 ```cpp
 template<

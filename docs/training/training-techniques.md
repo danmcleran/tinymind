@@ -7,7 +7,7 @@ nav_order: 1
 
 # Advanced Training Techniques
 
-Tinymind provides several training policies that can be composed via template parameters to customize how neural networks learn. All policies are optional -- existing code that doesn't use them compiles unchanged with null/no-op defaults. Policies are extracted from the `TransferFunctionsPolicy` via SFINAE traits.
+tinymind provides several training policies that can be composed via template parameters to customize how neural networks learn. All policies are optional -- existing code that doesn't use them compiles unchanged with null/no-op defaults. Policies are extracted from the `TransferFunctionsPolicy` via SFINAE traits.
 
 ## Why Training Policies Matter for Fixed-Point
 

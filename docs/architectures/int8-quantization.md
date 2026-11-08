@@ -94,6 +94,8 @@ Note that `scale` is compiled out under `TINYMIND_ENABLE_FLOAT=0` — the freest
 
 The two helpers `saturatingRoundingDoublingHighMul` and `roundingDivideByPOT` follow the gemmlowp / TFLite reference semantics bit-for-bit; tests in `unit_test/quantization/` lock that down. For the common case of `multiplier >= 0` and `shift >= 2` (a scale ratio below 0.25, which covers typical conv and dense layers), `Requantizer::apply` computes both roundings as one: `roundingHighMulDivideByPOT` adds a sign-dependent constant to the 64-bit product and shifts its high word. That is an `SMLAL` and an `ASR` on Cortex-M4, and the result is bit-identical to the two-step form, ties included.
 
+`Requantizer` accepts any multiplier, zero point and clamp bounds with a shift from -31 to 31, and `quantizeMultiplier` always returns a pair in that range: a ratio below 2^-31 rounds every int32 accumulator to 0, so it becomes multiplier 0, and a left shift beyond 31 would saturate every non-zero accumulator anyway. A CBMC proof ([`unit_test/formal/requantizer`](https://github.com/danmcleran/tinymind/tree/master/unit_test/formal/requantizer)) shows `Requantizer::apply` (int8, uint8, int16 and int32 storage) and `multiplyByQuantizedMultiplier` free of undefined behaviour and equal to gemmlowp's two-step definition, computed exactly in int64, for every accumulator, multiplier, zero point and clamp bound at every shift in that range. Writing it found two out-of-contract cases that were undefined behaviour before v16.7.
+
 ## Layer Family
 
 All layers are templated on `<InputType, WeightType, AccumType, OutputType>` (plus shape/size constants). Each carries its own `Requantizer` and accepts caller-owned weight / bias / lookup-table buffers — the same model can be built once on the host and re-used across many MCU targets.
@@ -292,7 +294,7 @@ A side-by-side comparison runs in [`examples/kws_cortex_m_int8/`](https://github
 
 ## SIMD acceleration
 
-ISA-capability-gated SIMD specializations live inside the inner reduction loop of `QDense`, `QConv2D`, `QConv2DPerChannel`, and both `QPointwiseConv2D` variants. Every gate defaults to `0`; with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the scalar reference. Backend precedence: x86 `AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 > scalar`; Arm `NEON_DOTPROD > NEON > SVE > HELIUM_MVE_I > ARM_DSP > scalar`. The orthogonal `TINYMIND_ENABLE_OPENMP=1` gate adds outer-loop parallelism on the output-filter axis. See [SIMD Backends]({{ site.baseurl }}/architectures/simd-backends) for the gate matrix, prerequisite chain, bit-exactness invariant, and the `examples/perf_matrix/` bench harness.
+ISA-capability-gated SIMD specializations live inside the inner reduction loop of `QDense`, `QConv2D`, `QConv2DPerChannel`, and both `QPointwiseConv2D` variants. Every gate defaults to `0`; with all gates off the layer bodies fall back to a scalar dispatch that emits **byte-identical** output to the scalar reference. Backend precedence: x86 `AVX512_VNNI > AVX512F > AVX_VNNI > AVX2 > scalar`; Arm `SVE > NEON_DOTPROD > NEON > HELIUM_MVE_I > ARM_DSP > scalar`. The orthogonal `TINYMIND_ENABLE_OPENMP=1` gate adds outer-loop parallelism on the output-filter axis. See [SIMD Backends]({{ site.baseurl }}/architectures/simd-backends) for the gate matrix, prerequisite chain, bit-exactness invariant, and the `examples/perf_matrix/` bench harness.
 
 ## Mixed precision and fp16 storage
 
