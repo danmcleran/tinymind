@@ -31,6 +31,6 @@ Built with `-DTINYMIND_ENABLE_QUANTIZATION=1` (plus `FLOAT=1 STD=1` for host cal
 
 ![int8 GBDT decision regions]({{ site.baseurl }}/assets/plots/gbdt_tabular_int8.png)
 
-The 2D map colors each feature-grid cell by the int8 GBDT's argmax class — three bands (class 0 / 1 / 2) split on feature 0, with feature 1 nudging the boundaries through the additive `f1` trees. That additive combination of shallow trees is exactly what gradient boosting builds.
+The 2D map colors each feature-grid cell by the int8 GBDT's argmax class — three vertical bands (class 0 / 1 / 2) split on feature 0. The two `f1` trees still add their votes to the class 0 and class 2 logits, but in this hand-built ensemble those votes never outweigh the feature-0 margin, so the boundaries do not move with feature 1; they are there to exercise a second feature in the shared node pool. Summing shallow trees into per-class logits is exactly what gradient boosting builds; a trained ensemble's trees interact more, and its regions bend accordingly.
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/gbdt_tabular_int8)
