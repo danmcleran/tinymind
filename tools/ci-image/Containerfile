@@ -27,7 +27,7 @@ RUN echo 'APT::Architecture-Variants "amd64v3";' > /etc/apt/apt.conf.d/99-archit
 
 RUN apt-get update \
  && apt-get install -y \
-        build-essential make python3 \
+        build-essential make python3 python3-venv \
         libboost-dev libboost-test-dev \
         clang libomp-dev clang-tidy bear \
         cppcheck lcov cbmc \

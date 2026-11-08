@@ -62,16 +62,19 @@ so the prover was right and the mutant was replaced.
 ## Running
 
 ```
-make -j16          # 15 proofs + 4 mutants, about 100 s on 16 cores
+make ci -j16       # 15 proofs + 4 mutants, about 100 s on 16 cores
 ```
 
-Needs `cbmc` (tested 5.95.1) and an SMT solver on `PATH`. Default
-`SOLVER=--bitwuzla`; `SOLVER=--z3` works but is about 5x slower. The
-`bitwuzla` PyPI package ships only Python bindings, so `tools/bitwuzla` is a
-small command-line wrapper that CBMC can call:
+This is what the CI job "CBMC proof (SMLAD dot product)" runs. `make ci`
+creates `.venv` with Bitwuzla pinned by hash from
+[`../requirements.txt`](../requirements.txt), then runs `make all` with the
+solver on `PATH`. Needs `cbmc` (tested 5.95.1 locally, 6.6.0 in CI) and
+`python3-venv`. The `bitwuzla` PyPI package ships only Python bindings, so
+`tools/bitwuzla` is a small command-line wrapper that CBMC can call. To run
+by hand with another solver, put one on `PATH` yourself; `SOLVER=--z3` works
+but is about 5x slower:
 
 ```
-python3 -m venv .venv && .venv/bin/pip install bitwuzla   # or z3-solver
 PATH=$PWD/tools:$PWD/.venv/bin:$PATH make -j16
 ```
 
