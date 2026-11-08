@@ -64,12 +64,37 @@ with the helpers in `cpp/include/qcalibration.hpp`:
   output_zero_point)` into the integer `(multiplier, shift)` pair the
   Requantizer consumes at runtime
 
-A real deployment would feed observed activation ranges from a
-representative dataset through `RangeObserver` /
-`computeAffineParamsAsymmetric` to fit per-tensor activation scales.
-This runner uses fixed scales (`1/127` for activations, `0.1/127` for
-weights) since the demo cares about footprint and cycle counts, not
-accuracy.
+* `RangeObserver` + `computeAffineParamsSymmetric` — per-layer
+  activation scales
+
+Weights use a fixed per-tensor scale of `0.1/127` (they are drawn from
+`[-0.1, 0.1]`), except the depthwise layer's per-channel scales. Each
+activation scale comes from the float model: the runner runs the same
+weights in float over 32 random calibration inputs, records every
+layer's output range with a `RangeObserver`, and gives that layer the
+symmetric int8 scale that covers it. Max pooling and global average
+pooling have no requantizer, so their outputs keep their input's scale.
+A real deployment does the same with a representative dataset in place
+of the random inputs.
+
+One activation scale for every layer does not work here: weights this
+small shrink the signal several times over at each layer, and with a
+shared `1/127` scale the logits all round to 0.
+
+After the CSV, the runner prints the int8 logits next to the float
+model's on the same input:
+
+```
+Logits (int8 -> dequantized, float reference):
+  class 0:  115 ->  0.001697   float  0.001709
+  class 1:  -30 -> -0.000443   float -0.000460
+  ...
+max |int8 - float| = 0.000020 (0.6% of the float logits' range)
+argmax (untrained weights): int8 0, float 0
+```
+
+The weights are untrained, so the predicted class means nothing; the
+comparison shows that the int8 pipeline tracks the float one.
 
 ## Porting to a Cortex-M target
 
