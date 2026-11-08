@@ -663,6 +663,48 @@ BOOST_AUTO_TEST_CASE(requantizer_saturating_path_at_int32_rails)
     BOOST_TEST(mismatches == 0u);
 }
 
+// 32-bit storage with a zero point near the int32 rails, on both requantizer
+// paths. The one-rounding path used to add the zero point in int32, which
+// overflowed (undefined behaviour) once scaled + zero_point left int32; it is
+// now added and clamped in int64. Found by unit_test/formal/requantizer.
+BOOST_AUTO_TEST_CASE(requantizer_int32_storage_zero_point_near_rails)
+{
+    struct Case
+    {
+        int32_t multiplier;
+        int32_t shift;
+        int32_t zero_point;
+        int32_t acc;
+    };
+    const Case cases[] =
+    {
+        {1 << 30, 2, INT32_MAX - 5, 2000000000},   // one-rounding path, high
+        {1 << 30, 2, INT32_MIN + 5, -2000000000},  // one-rounding path, low
+        {1 << 30, 2, INT32_MAX - 5, -2000000000},  // in range: zp - 2.5e8
+        {1 << 30, -3, INT32_MAX - 5, 1000},        // saturating path, high
+        {1 << 30, -3, INT32_MIN + 5, -1000},       // saturating path, low
+    };
+    for (const Case& c : cases)
+    {
+        Requantizer<int32_t, int32_t> r;
+        r.multiplier = c.multiplier;
+        r.shift = c.shift;
+        r.zero_point = c.zero_point;
+        r.qmin = INT32_MIN;
+        r.qmax = INT32_MAX;
+        // Exact: acc * 2^-shift * multiplier / 2^31 + zp. Every case's scale
+        // is a power of two and every accumulator divides evenly, so no
+        // rounding is involved.
+        const int64_t scaled = (c.shift >= 0)
+            ? (static_cast<int64_t>(c.acc) * c.multiplier) / (static_cast<int64_t>(1) << (31 + c.shift))
+            : (static_cast<int64_t>(c.acc) * c.multiplier * (static_cast<int64_t>(1) << -c.shift)) /
+                  (static_cast<int64_t>(1) << 31);
+        int64_t want = scaled + c.zero_point;
+        want = (want < INT32_MIN) ? INT32_MIN : ((want > INT32_MAX) ? INT32_MAX : want);
+        BOOST_TEST(static_cast<int64_t>(r.apply(c.acc)) == want);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(qaffine_tensor_holds_zero_point)
 {
     QAffineTensor<int8_t> t{};
@@ -742,6 +784,58 @@ BOOST_AUTO_TEST_CASE(quantize_multiplier_round_trip_small)
     BOOST_TEST(static_cast<int>(r.apply(80)) == 10);   // 80 * 0.125
     BOOST_TEST(static_cast<int>(r.apply(800)) == 100); // 800 * 0.125
     BOOST_TEST(static_cast<int>(r.apply(-80)) == -10);
+}
+
+// quantizeMultiplier keeps the shift inside Requantizer's contract,
+// -31 <= shift <= 31, without changing any result. A ratio below 2^-32 used
+// to come back with a shift of 32 or more, and apply() then shifted a 32-bit
+// value by that much (undefined behaviour). Such a ratio scales every int32
+// accumulator to under 1/2, so the result is the zero point; a ratio of 2^31
+// or more saturates every non-zero accumulator, as a shift of -31 does.
+BOOST_AUTO_TEST_CASE(quantize_multiplier_stays_in_shift_contract)
+{
+    const double tiny[] = {1e-12, 1.5 / 8589934592.0 /* 1.5 * 2^-33 */, 1.0 / 17179869184.0 /* 2^-34 */};
+    for (const double ratio : tiny)
+    {
+        int32_t m = 1;
+        int32_t s = 1;
+        quantizeMultiplier(ratio, m, s);
+        BOOST_TEST(m == 0);
+        BOOST_TEST(s == 0);
+
+        Requantizer<int32_t, int8_t> r;
+        r.multiplier = m;
+        r.shift = s;
+        r.zero_point = 3;
+        r.qmin = -128;
+        r.qmax = 127;
+        BOOST_TEST(static_cast<int>(r.apply(INT32_MAX)) == 3);
+        BOOST_TEST(static_cast<int>(r.apply(INT32_MIN)) == 3);
+    }
+
+    // 2^-32 is the smallest ratio that still fits: shift 31.
+    int32_t m = 0;
+    int32_t s = 0;
+    quantizeMultiplier(1.0 / 4294967296.0, m, s);
+    BOOST_TEST(s == 31);
+    BOOST_TEST(m == (static_cast<int32_t>(1) << 30));
+
+    const double huge[] = {2147483648.0 /* 2^31 */, 1e12};
+    for (const double ratio : huge)
+    {
+        quantizeMultiplier(ratio, m, s);
+        BOOST_TEST(s == -31);
+
+        Requantizer<int32_t, int8_t> r;
+        r.multiplier = m;
+        r.shift = s;
+        r.zero_point = 0;
+        r.qmin = -128;
+        r.qmax = 127;
+        BOOST_TEST(static_cast<int>(r.apply(1)) == 127);
+        BOOST_TEST(static_cast<int>(r.apply(-1)) == -128);
+        BOOST_TEST(static_cast<int>(r.apply(0)) == 0);
+    }
 }
 
 // ---------------------------------------------------------------------------
