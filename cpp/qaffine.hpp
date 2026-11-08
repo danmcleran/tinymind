@@ -234,6 +234,14 @@ namespace tinymind {
      *
      * The qmin/qmax fields drive saturation to the destination domain
      * (e.g. -128/127 for symmetric int8, 0/255 for uint8).
+     *
+     * Contract: -31 <= shift <= 31 (quantizeMultiplier always returns such
+     * a pair). A larger right shift is undefined behaviour in the shifts
+     * below; a left shift of 31 or more already saturates every non-zero
+     * accumulator, so -31 loses nothing. Every multiplier, zero point and
+     * clamp bound is allowed. unit_test/formal/requantizer proves apply()
+     * free of undefined behaviour and equal to gemmlowp's two-step
+     * definition, computed exactly, over that whole domain.
      */
     template<typename SrcAccum_, typename DstStorage_>
     struct Requantizer
@@ -275,27 +283,32 @@ namespace tinymind {
                 // bounds matter on Cortex-M0+: bounds built from qmin, qmax
                 // and zero_point stay live across the caller's output loop
                 // and cost it registers (+12% on the L031 MLP bench) even
-                // when this branch never runs. 32-bit storage keeps the
-                // exact [qmin - zp, qmax - zp] window, in int64.
+                // when this branch never runs. 32-bit storage adds the zero
+                // point in int64 below instead.
                 if (sizeof(DstStorageType) < sizeof(int32_t))
                 {
                     const int32_t rail = static_cast<int32_t>(1) << 30;
                     scaled = (scaled > rail) ? rail : ((scaled < -rail) ? -rail : scaled);
                 }
-                else
-                {
-                    const int64_t lo = static_cast<int64_t>(qmin) - static_cast<int64_t>(zero_point);
-                    const int64_t hi = static_cast<int64_t>(qmax) - static_cast<int64_t>(zero_point);
-                    if (static_cast<int64_t>(scaled) < lo)
-                    {
-                        scaled = static_cast<int32_t>(lo);
-                    }
-                    else if (static_cast<int64_t>(scaled) > hi)
-                    {
-                        scaled = static_cast<int32_t>(hi);
-                    }
-                }
             }
+
+            if (sizeof(DstStorageType) >= sizeof(int32_t))
+            {
+                // A 32-bit zero point can take scaled + zero_point past the
+                // int32 range on either path (the one-rounding path returns
+                // up to about 2^29 in magnitude), so add and clamp in int64.
+                int64_t wide = static_cast<int64_t>(scaled) + static_cast<int64_t>(zero_point);
+                if (wide < static_cast<int64_t>(qmin))
+                {
+                    wide = static_cast<int64_t>(qmin);
+                }
+                if (wide > static_cast<int64_t>(qmax))
+                {
+                    wide = static_cast<int64_t>(qmax);
+                }
+                return static_cast<DstStorageType>(wide);
+            }
+
             int32_t with_zp = scaled + static_cast<int32_t>(zero_point);
 
             if (with_zp < static_cast<int32_t>(qmin))
@@ -483,6 +496,8 @@ namespace tinymind {
      *   shift < 0: accumulator is left-shifted before multiply (ratio > 1)
      *   shift > 0: result is right-shifted after multiply (ratio < 1)
      *   shift == 0: multiplier alone scales the accumulator
+     * The shift always lies in [-31, 31]; a ratio too small to move any
+     * int32 accumulator off zero comes back as multiplier 0.
      *
      * Caller passes ratio = (input_scale * weight_scale) / output_scale
      * computed during calibration; the result is stable across runs.
@@ -522,6 +537,21 @@ namespace tinymind {
 
         multiplier = static_cast<int32_t>(q);
         shift = -exponent;
+
+        // Keep the pair inside Requantizer's contract, -31 <= shift <= 31,
+        // without changing any result. A ratio below 2^-31 (shift >= 32)
+        // scales every int32 accumulator to under 1/2 in magnitude, which
+        // rounds to 0: multiplier 0 says the same thing. A left shift of 31
+        // or more saturates every non-zero accumulator, as -31 does.
+        if (shift > 31)
+        {
+            multiplier = 0;
+            shift = 0;
+        }
+        else if (shift < -31)
+        {
+            shift = -31;
+        }
     }
 
 } // namespace tinymind
