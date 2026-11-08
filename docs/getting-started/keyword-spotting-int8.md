@@ -48,8 +48,11 @@ The host runner generates synthetic float weights and converts them with the hel
 - `quantize` / `quantizeBuffer` — symmetric int8 weight quantization
 - `computePerChannelSymmetricScales` — per-channel scale fit for the depthwise weights
 - `buildRequantizer` — combines `(input_scale, weight_scale, output_scale, output_zero_point)` into the integer `(multiplier, shift)` pair the `Requantizer` consumes at runtime
+- `RangeObserver` + `computeAffineParamsSymmetric` — per-layer activation scales
 
-A real deployment would feed observed activation ranges from a representative dataset through `RangeObserver` + `computeAffineParamsAsymmetric` to fit per-tensor activation scales (see the [PyTorch -> tinymind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) tutorial for that flow end-to-end). This runner uses fixed scales (`1/127` for activations, `0.1/127` for weights) since the demo's job is footprint and cycle counts, not classification accuracy.
+Weights use a fixed per-tensor scale of `0.1/127` (they are drawn from `[-0.1, 0.1]`), except the depthwise layer's per-channel scales. Each activation scale comes from the float model: the runner runs the same weights in float over 32 random calibration inputs, records every layer's output range with a `RangeObserver`, and gives that layer the symmetric int8 scale that covers it. Max pooling and global average pooling have no requantizer, so their outputs keep their input's scale. A real deployment does the same with a representative dataset in place of the random inputs (see the [PyTorch -> tinymind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) tutorial for that flow end-to-end).
+
+One activation scale for every layer does not work here: weights this small shrink the signal several times over at each layer, and with a shared `1/127` scale the logits all round to 0.
 
 ## Build and Run
 
@@ -71,6 +74,19 @@ qglobal_avgpool2d,...
 qdense_16x10,...
 ```
 
+After the summary, the runner prints the int8 logits next to the float model's on the same input:
+
+```
+Logits (int8 -> dequantized, float reference):
+  class 0:  115 ->  0.001697   float  0.001709
+  class 1:  -30 -> -0.000443   float -0.000460
+  ...
+max |int8 - float| = 0.000020 (0.6% of the float logits' range)
+argmax (untrained weights): int8 0, float 0
+```
+
+The weights are untrained, so the predicted class means nothing; the comparison shows that the int8 pipeline tracks the float one.
+
 ## Comparing Against the Float Runner
 
 `weight_bytes` here counts the **external** int8 weight buffers, the int32 bias arrays, and the per-layer `Requantizer` tables. The float runner in [`examples/kws_cortex_m/`](https://github.com/danmcleran/tinymind/tree/master/examples/kws_cortex_m) reports `sizeof(layer)` for layers that embed their weights internally. Compare the totals at the bottom of each runner's summary block:
@@ -91,7 +107,7 @@ For the most direct comparison, run both runners on the same host with the same 
 ## What This Example Demonstrates
 
 - A complete MobileNet-style 2D pipeline runs end-to-end in **pure integer**.
-- Per-channel depthwise calibration plus per-tensor calibration for everything else matches the TFLite reference shape exactly.
+- Per-channel depthwise calibration plus per-tensor calibration for everything else matches the TFLite reference shape exactly, and per-layer activation scales fitted from the float model keep the int8 logits within 0.6% of the float ones.
 - The `quant_freestanding` corner of `unit_test/embedded` proves the same code builds with `FLOAT=0, STD=0, QUANT=1` — i.e. the deployable inference shape on a small MCU.
 - The bench harness produces CSV that's directly diffable against the float runner's, so you can quote real numbers when you write up "we shrank flash by Nx and cycles by Mx by going to int8".
 
