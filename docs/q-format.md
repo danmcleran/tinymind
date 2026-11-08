@@ -6,7 +6,7 @@ nav_order: 4
 
 # Q-Format (Fixed-Point Arithmetic)
 
-[Q-Format](https://en.wikipedia.org/wiki/Q_(number_format)) is a binary, fixed-point number format. Tinymind contains a template library which allows us to specify the number of integer as well as the number of fractional bits as template parameters. Q-Format can be used in lieu of floating point numbers when fixed-point precision is adequate (or when we don't have an FPU at all!). See [Q-Format](https://en.wikipedia.org/wiki/Q_(number_format)) for a deep dive.
+[Q-Format](https://en.wikipedia.org/wiki/Q_(number_format)) is a binary, fixed-point number format. tinymind contains a template library which allows us to specify the number of integer as well as the number of fractional bits as template parameters. Q-Format can be used in lieu of floating point numbers when fixed-point precision is adequate (or when we don't have an FPU at all!). See [Q-Format](https://en.wikipedia.org/wiki/Q_(number_format)) for a deep dive.
 
 # Why Fixed-Point for Embedded?
 
@@ -23,11 +23,11 @@ Beyond speed, fixed-point also saves memory. Each value is stored in the minimum
 
 For neural networks, Q8.8 resolution (0.004) is sufficient for many classification and control tasks, at 2 bytes per value vs 8 bytes for `double` -- a 4x memory reduction across all weights, biases, and gradients.
 
-Embedded systems also frequently lack standard math libraries. Functions like `exp()`, `tanh()`, and `sigmoid()` are simply not available. Tinymind solves this with pre-computed lookup tables (LUTs) for all activation functions. A LUT evaluation is a single indexed memory access -- no floating-point math required. The [activation table generator](https://github.com/danmcleran/tinymind/blob/master/apps/activation/activationTableGenerator.cpp) produces LUTs for every supported Q-format resolution, and preprocessor switches ensure you only compile the tables you actually use.
+Embedded systems also frequently lack standard math libraries. Functions like `exp()`, `tanh()`, and `sigmoid()` are simply not available. tinymind solves this with pre-computed lookup tables (LUTs) for all activation functions. A LUT evaluation is a single indexed memory access -- no floating-point math required. The [activation table generator](https://github.com/danmcleran/tinymind/blob/master/apps/activation/activationTableGenerator.cpp) produces LUTs for every supported Q-format resolution, and preprocessor switches ensure you only compile the tables you actually use.
 
-# Tinymind QValue
+# tinymind QValue
 
-Tinymind contains a C++ template library for defining and using Q format values. The template class is called QValue. The template declaration is here:
+tinymind contains a C++ template library for defining and using Q format values. The template class is called QValue. The template declaration is here:
 
 ```cpp
 template<
@@ -47,7 +47,7 @@ struct QValue
 
 **QValueIsSigned** - true - 1 bit reserved in the integer portion for the sign bit, false - no sign bit
 
-**QValueRoundingPolicy** - A [template template parameter](https://riptutorial.com/cplusplus/example/10838/template-template-parameters) which specifies a policy class to handle rounding. Tinymind provides 2 options but you can define your own as well. One option which tinymind provides is TruncatePolicy. This rounds the Q format value by dropping the lower bits (e.g. integer division does this). The other option which tinymind provides is RoundUpPolicy. RoundUpPolicy rounds up to the nearest fractional value.
+**QValueRoundingPolicy** - A [template template parameter](https://riptutorial.com/cplusplus/example/10838/template-template-parameters) which specifies a policy class to handle rounding. tinymind provides 2 options but you can define your own as well. One option which tinymind provides is TruncatePolicy. This rounds the Q format value by dropping the lower bits (e.g. integer division does this). The other option which tinymind provides is RoundUpPolicy. RoundUpPolicy rounds up to the nearest fractional value.
 
 # Example Use
 

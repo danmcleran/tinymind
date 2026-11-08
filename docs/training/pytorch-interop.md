@@ -7,7 +7,7 @@ nav_order: 2
 
 # Weight Import/Export and PyTorch Interoperability
 
-Tinymind provides weight serialization for all network types (MLP, LSTM, GRU, KAN), enabling a powerful workflow: **train in PyTorch** on a powerful workstation, **export weights** to a text file, and **deploy in tinymind C++** on an embedded device with no training overhead.
+tinymind provides weight serialization for all network types (MLP, LSTM, GRU, KAN), enabling a powerful workflow: **train in PyTorch** on a powerful workstation, **export weights** to a text file, and **deploy in tinymind C++** on an embedded device with no training overhead.
 
 ## Why This Matters for Embedded
 
@@ -25,7 +25,7 @@ This approach also provides **on-device privacy** (sensor data never leaves the 
 
 # Weight File Managers
 
-Tinymind provides three file manager templates, one for each network family:
+tinymind provides three file manager templates, one for each network family:
 
 | File Manager | Network Types | Header |
 |---|---|---|
@@ -164,7 +164,7 @@ Source code: [examples/pytorch/gru/gru_export.py](https://github.com/danmcleran/
 
 GRU export is more complex because PyTorch and tinymind use different gate orderings:
 - **PyTorch gate order**: r (reset), z (update), n (new/candidate)
-- **Tinymind gate order**: z (update), r (reset), n (candidate)
+- **tinymind gate order**: z (update), r (reset), n (candidate)
 
 The export script handles this reordering:
 

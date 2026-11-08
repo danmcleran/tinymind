@@ -15,11 +15,11 @@ To demonstrate what a tinymind neural network can do, I chose to implement a cla
 
 On a microcontroller like the STM32L0 (ARM Cortex-M0+) with 16 KB of flash and 2 KB of RAM, a 4KB trainable neural network consumes 25% of flash -- leaving room for the application, peripherals, and communication stack. And that is the *trainable* figure: a deployed inference-only build (`IsTrainable=false`) is far smaller still, since the backprop code and the per-weight gradient/delta state both disappear.
 
-For comparison, the minimum footprint of TensorFlow Lite Micro is ~50-100 KB -- it won't fit on this device at all, let alone leave room for anything else. Tinymind makes neural networks feasible on hardware where no other framework can run.
+For comparison, the minimum footprint of TensorFlow Lite Micro is ~50-100 KB -- it won't fit on this device at all, let alone leave room for anything else. tinymind makes neural networks feasible on hardware where no other framework can run.
 
 # Q Format
 
-To make the neural network small and fast, we can't afford the luxury of floating point numbers. Also, when I was developing tinymind the hardware I had didn't have a floating point unit, which makes using floating point even more difficult and expensive. We need to use fixed-point numbers to solve this problem. [Tinymind](https://github.com/danmcleran/tinymind) contains a C++ template library to help us here, Q Format. See the [Q-Format]({{ site.baseurl }}/q-format) page for a full explanation of how it works.
+To make the neural network small and fast, we can't afford the luxury of floating point numbers. Also, when I was developing tinymind the hardware I had didn't have a floating point unit, which makes using floating point even more difficult and expensive. We need to use fixed-point numbers to solve this problem. [tinymind](https://github.com/danmcleran/tinymind) contains a C++ template library to help us here, Q Format. See the [Q-Format]({{ site.baseurl }}/q-format) page for a full explanation of how it works.
 
 We declare the size and resolution of our Q-Format type like this:
 

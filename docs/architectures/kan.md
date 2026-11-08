@@ -9,7 +9,7 @@ nav_order: 2
 
 > **Real-world use:** an on-device soft sensor replaces a hand-tuned calibration lookup table. A small KAN learns the smooth, nonlinear response curve that maps a raw gas or temperature reading to a corrected value, fitting the curve in its B-spline edges in ~1.2 KB — adapting to the part instead of shipping a fixed table.
 
-Tinymind implements [Kolmogorov-Arnold Networks](https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Arnold_representation_theorem) (KAN), a neural network architecture where learnable activation functions are placed on the edges (connections) rather than at the nodes. In a KAN, each edge has its own B-spline activation function, and nodes simply sum their inputs. This is in contrast to standard MLPs where edges carry scalar weights and nodes apply a shared activation function.
+tinymind implements [Kolmogorov-Arnold Networks](https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Arnold_representation_theorem) (KAN), a neural network architecture where learnable activation functions are placed on the edges (connections) rather than at the nodes. In a KAN, each edge has its own B-spline activation function, and nodes simply sum their inputs. This is in contrast to standard MLPs where edges carry scalar weights and nodes apply a shared activation function.
 
 KAN can be more parameter-efficient than MLP for certain smooth, low-dimensional functions, learning the activation shape rather than relying on fixed activations with learned weights.
 
@@ -73,7 +73,7 @@ Each edge stores `2 + GridSize + SplineDegree` learnable parameters. For `GridSi
 
 # B-Spline Evaluation
 
-Tinymind uses the De Boor algorithm for efficient B-spline evaluation. The `UniformKnotVector` template generates evenly spaced knot vectors at initialization.
+tinymind uses the De Boor algorithm for efficient B-spline evaluation. The `UniformKnotVector` template generates evenly spaced knot vectors at initialization.
 
 ```cpp
 template<typename ValueType, size_t GridSize, size_t SplineDegree>
