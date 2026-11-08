@@ -68,7 +68,11 @@ raw scores back to the model's units.
   (ties away from zero, clamped), in `int8`, `uint8` or `int16`.
   `FeatureQuant.integer(n)` is for features that already are integers (ADC
   counts, pixels, bins): scale 1, and every split is reproduced exactly.
-  `FeatureQuant.from_data(X, dtype)` calibrates each feature's min/max.
+  `FeatureQuant.from_data(X, dtype)` calibrates each feature's min/max onto
+  the whole grid. A range that excludes 0 needs a zero point outside
+  `[qmin, qmax]`, and it gets one (it is `int32` in the header). Only a
+  feature so far from 0 that `quantizeFeatures`' int32 sum could overflow
+  (`|zero_point| > 2^31 - 1 - 10^9`) is widened to a range that includes 0.
 * **Thresholds.** A split `x <= t` (scikit-learn, LightGBM) becomes
   `q <= floor(t/scale + zp)`, and XGBoost's `x < t` becomes
   `q <= ceil(t/scale + zp) - 1`, which is exact on the grid. A rounding grid
