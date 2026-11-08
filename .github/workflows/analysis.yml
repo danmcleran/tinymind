@@ -244,7 +244,7 @@ jobs:
     name: CBMC proof (SMLAD dot product)
     runs-on: ubuntu-latest
     needs: changes
-    # CBMC proves the SMLAD backend of int8DotWithZeroPoint returns the same
+    # HARD GATE. CBMC proves the SMLAD backend of int8DotWithZeroPoint returns the same
     # int32 as the scalar reference for every input (lengths 0-8, misaligned
     # buffers, big-endian), with no out-of-bounds access, signed overflow or
     # undefined shift; `make all` then requires each of 4 planted defects to
