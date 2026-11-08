@@ -58,7 +58,9 @@ constexpr std::size_t G  = 48;  // grid resolution per axis
 struct FNode { int feature; float threshold; int left; int right; int32_t leaf; };
 
 // 5-tree additive ensemble over 2 features. Vertical bands by f0 (class 0 left,
-// class 1 middle, class 2 right) modulated by f1.
+// class 1 middle, class 2 right). The two f1 trees add to the class 0 and
+// class 2 logits but never outweigh the f0 margin, so the bands stay
+// vertical; they exercise a second feature in the shared node pool.
 //   t0 (class0): f0 <= -0.15 ? +12 : -4
 //   t1 (class1): f0 <= -0.15 ? -8 : (f0 <= 0.25 ? +12 : -8)
 //   t2 (class2): f0 <=  0.25 ? -4 : +12
