@@ -65,8 +65,9 @@ ranges = import_pytorch_model(
 If a `Conv2D` is immediately followed by a `BatchNorm2D` that names the
 Conv2D's output as its `input_name`, the importer folds the BN constants
 into the conv weights/bias before calibration. This matches the
-`foldBatchNorm` math in `cpp/include/qcalibration.hpp` so the fused float
-intermediate is what gets calibrated -- no late surprises.
+`foldBatchNorm` math in `cpp/include/qcalibration.hpp`. The fused layer's
+float `forward` runs the conv and then the BN, so calibration measures the
+range after the BN, which is what the fused int8 layer outputs.
 
 ## Observers
 
@@ -156,3 +157,13 @@ The hybrid int8 + Q-format flow above plugs into either entry point --
 the ONNX path emits the int8 layers' descriptors, then the caller
 inserts `QFormatDense` + `HybridBoundary` entries in the layer list
 before calling the emitter.
+
+## Tests
+
+```
+python3 -m venv .venv && .venv/bin/pip install numpy
+cd apps/import_pytorch && ../../.venv/bin/python -m unittest test_import_pytorch
+```
+
+Conv2D + BatchNorm2D fusion: the fused weights compute conv-then-BN, and
+calibration observes the range after the BN. These tests are not run in CI.

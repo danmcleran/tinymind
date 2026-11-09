@@ -485,13 +485,22 @@ def fold_conv_bn(conv: Conv2D, bn: BatchNorm2D) -> Conv2D:
         fused_b = (conv.bias - bn.mean) * sigma_eff + bn.beta
     else:
         fused_b = -bn.mean * sigma_eff + bn.beta
+    # Calibration observes the fused layer's output through `forward`, and
+    # the int8 layer computes conv-then-BN, so the float forward must too.
+    # conv.forward alone would fit the output scale to the range before BN.
+    forward = None
+    if conv.forward is not None:
+        conv_forward = conv.forward
+
+        def forward(x: np.ndarray) -> np.ndarray:
+            return (conv_forward(x) - bn.mean) * sigma_eff + bn.beta
     fused = Conv2D(
         name=bn.name,
         observer=bn.observer,
         weight=fused_w,
         bias=fused_b,
         input_name=conv.input_name,
-        forward=conv.forward,
+        forward=forward,
     )
     return fused
 
