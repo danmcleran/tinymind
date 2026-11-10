@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include "include/tinymind_traits.hpp"
+
 namespace tinymind {
     /**
      * No-op weight decay policy. No regularization applied.
@@ -42,17 +44,25 @@ namespace tinymind {
      * This prevents weights from growing unboundedly, which is especially
      * important for fixed-point where large weights cause overflow.
      *
-     * IntegerPart and FractionalPart are passed to the QValue(int, unsigned)
-     * constructor. For floating-point types, provide your own decay policy.
+     * The network applies it to connection weights, not biases, under every
+     * optimizer. With SGD this is exactly an L2 penalty (lambda/2)*w^2 in the
+     * loss. Under Adam and RMSprop the same shrink is applied to the weight
+     * before the adaptive step, so it is decoupled weight decay (AdamW,
+     * Loshchilov & Hutter), not an L2 term added to the gradient.
      *
-     * Example for Q8.8: L2WeightDecay<ValueType, 0, 1> gives lambda ≈ 1/256 ≈ 0.004
+     * IntegerPart and FractionalPart are passed to the QValue(int, fraction)
+     * constructor; FractionalPart is a raw count of LSBs in ValueType's own
+     * format. The default is lambda = 0.001 computed for ValueType's format
+     * by QFractionLsbs and kept at 1 LSB or more: 1/256 in Q8.8 (0.001 is
+     * below one LSB there), 66/65536 in Q16.16. For floating-point types,
+     * provide your own decay policy.
      */
-    template<typename ValueType, int IntegerPart = 0, unsigned FractionalPart = 1>
+    template<typename ValueType, int IntegerPart = 0, unsigned long long FractionalPart = QFractionLsbs<ValueType, 1, 1000>::value>
     struct L2WeightDecay
     {
         static ValueType applyDecay(const ValueType& weight, const ValueType& learningRate)
         {
-            static const ValueType lambda(IntegerPart, FractionalPart);
+            static const ValueType lambda(static_cast<typename ValueType::FixedPartFieldType>(IntegerPart), static_cast<typename ValueType::FractionalPartFieldType>(FractionalPart));
 
             return weight - (learningRate * lambda * weight);
         }

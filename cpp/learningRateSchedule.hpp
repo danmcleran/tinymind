@@ -24,6 +24,8 @@
 
 #include <cstddef>
 
+#include "include/tinymind_traits.hpp"
+
 namespace tinymind {
     /**
      * Fixed learning rate policy. No scheduling — the learning rate
@@ -49,14 +51,18 @@ namespace tinymind {
      * training steps.
      *
      * DecayIntegerPart and DecayFractionalPart are passed to the
-     * QValue(int, unsigned) constructor to create the decay factor.
-     * For floating-point types, provide your own schedule policy.
+     * QValue(int, fraction) constructor to create the decay factor;
+     * DecayFractionalPart is a raw count of LSBs in ValueType's own format.
+     * The default factor is 0.9 computed for ValueType's format by
+     * QFractionLsbs (230/256 in Q8.8, 58982/65536 in Q16.16). For
+     * floating-point types, provide your own schedule policy.
      *
-     * Example for Q8.8: StepDecaySchedule<ValueType, 1000, 0, 230>
-     *   gives factor ≈ 230/256 ≈ 0.9, applied every 1000 steps.
+     * Example: StepDecaySchedule<ValueType, 1000> multiplies the rate by
+     * 0.9 every 1000 steps in any Q format. StepDecaySchedule<Q8_8, 1000, 0, 192>
+     * spells a factor of 192/256 = 0.75 explicitly.
      */
     template<typename ValueType, size_t StepInterval = 1000,
-             int DecayIntegerPart = 0, unsigned DecayFractionalPart = 230>
+             int DecayIntegerPart = 0, unsigned long long DecayFractionalPart = QFractionLsbs<ValueType, 9, 10>::value>
     struct StepDecaySchedule
     {
         StepDecaySchedule() : mStepCount(0)
@@ -71,7 +77,7 @@ namespace tinymind {
 
         ValueType step(const ValueType& currentRate)
         {
-            static const ValueType decayFactor(DecayIntegerPart, DecayFractionalPart);
+            static const ValueType decayFactor(static_cast<typename ValueType::FixedPartFieldType>(DecayIntegerPart), static_cast<typename ValueType::FractionalPartFieldType>(DecayFractionalPart));
 
             ++mStepCount;
             if (mStepCount >= StepInterval)

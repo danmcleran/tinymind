@@ -40,19 +40,28 @@ namespace tinymind {
      * Prevents exploding gradients, which is especially critical for
      * fixed-point arithmetic where overflow is catastrophic.
      *
-     * IntegerPart and FractionalPart are passed to the QValue(int, unsigned)
-     * constructor. For floating-point types, provide your own clip policy.
+     * IntegerPart and FractionalPart are passed to the QValue(int, fraction)
+     * constructor (FractionalPart is a raw count of LSBs in ValueType's own
+     * format) to build the bound maxValue >= 0; the range is the symmetric
+     * [-maxValue, maxValue]. The network clips every weight and bias
+     * gradient with it. For floating-point types, provide your own clip
+     * policy.
      *
      * Usage:
      *   typedef GradientClipByValue<ValueType> MyClipPolicy; // clips to [-1.0, 1.0]
      */
-    template<typename ValueType, int IntegerPart = 1, unsigned FractionalPart = 0>
+    template<typename ValueType, int IntegerPart = 1, unsigned long long FractionalPart = 0>
     struct GradientClipByValue
     {
+        static_assert(IntegerPart >= 0, "The clip bound is a magnitude; the range is [-bound, bound].");
+
         static ValueType clip(const ValueType& gradient)
         {
-            static const ValueType maxValue(IntegerPart, FractionalPart);
-            static const ValueType minValue(-IntegerPart, FractionalPart);
+            static const ValueType maxValue(static_cast<typename ValueType::FixedPartFieldType>(IntegerPart), static_cast<typename ValueType::FractionalPartFieldType>(FractionalPart));
+            // Negate the whole bound. Building it as QValue(-IntegerPart,
+            // FractionalPart) gave -IntegerPart + fraction, so a bound of 1.5
+            // clipped to [-0.5, 1.5].
+            static const ValueType minValue = ValueType(static_cast<typename ValueType::FullWidthValueType>(0)) - maxValue;
 
             if (gradient > maxValue)
             {

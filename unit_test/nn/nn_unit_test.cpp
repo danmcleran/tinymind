@@ -5959,6 +5959,11 @@ BOOST_AUTO_TEST_CASE(test_case_rmsprop_float_xor)
     srand(RANDOM_SEED);
     NNType nn;
 
+    // RMSprop's step is about lr per parameter whatever the gradient's scale,
+    // so it needs a smaller rate than SGD's default 0.15. That default only
+    // passed here while RMSprop left every bias untouched.
+    nn.setLearningRate(0.01);
+
     static const double ERROR_LIMIT = ValueHelper<double>::getErrorLimit();
     ValueType values[2], output[1], error;
     std::deque<double> errors;
@@ -8862,3 +8867,5 @@ BOOST_AUTO_TEST_CASE(test_case_function_coverage_terminal_accessors_and_ops)
 
 #include "recurrent_extras_tests.hpp"
 BOOST_AUTO_TEST_SUITE_END()
+
+#include "optimizers_tests.hpp"

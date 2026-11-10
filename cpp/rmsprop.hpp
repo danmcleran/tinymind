@@ -46,30 +46,31 @@ namespace tinymind {
      *
      * The second moment reuses the existing mPreviousDeltaWeight storage in
      * TrainableConnection, so no additional per-connection memory is required.
-     * The mDeltaWeight (first moment) storage is unused by RMSprop.
+     * The mDeltaWeight (first moment) storage is unused by RMSprop. Bias
+     * connections are updated the same way, through updateBiasWeights().
      *
-     * Template parameters use the QValue(int, unsigned) constructor for
-     * fixed-point types. For floating-point, use RmsPropOptimizerFloat.
-     *
-     * Default hyperparameters:
+     * Each constant is an (IntegerPart, FractionalPart) pair for the
+     * QValue(int, fraction) constructor; FractionalPart is a raw count of
+     * LSBs in ValueType's own format. The defaults are computed for
+     * ValueType's format by QFractionLsbs (cpp/include/tinymind_traits.hpp):
      *   decay = 0.9, epsilon = 1e-8
-     *
-     * For fixed-point Q8.8:
-     *   decay ≈ 230/256 ≈ 0.898  -> (0, 230)
-     *   epsilon ≈ 1/256 ≈ 0.004  -> (0, 1)
+     * each rounded to the format and kept inside (0, 1): in Q8.8,
+     * decay = 230/256 and epsilon = 1/256; in Q16.16, decay = 58982/65536
+     * and epsilon = 1/65536. For floating-point, use RmsPropOptimizerFloat.
      *
      * Update rule:
      *   v = decay * v + (1 - decay) * gradient^2
      *   weight += lr * gradient / (sqrt(v) + epsilon)
      */
     template<typename ValueType,
-             int DecayInt = 0, unsigned DecayFrac = 230,
-             int EpsilonInt = 0, unsigned EpsilonFrac = 1>
+             int DecayInt = 0, unsigned long long DecayFrac = QFractionLsbs<ValueType, 9, 10>::value,
+             int EpsilonInt = 0, unsigned long long EpsilonFrac = QFractionLsbs<ValueType, 1, 100000000>::value>
     struct RmsPropOptimizer
     {
         // Reuse the Adam dispatch path in BackPropagationParent.
         // The AdamTag code path simply delegates to the optimizer's
-        // updateWeights method, which works for any adaptive optimizer.
+        // updateWeights/updateBiasWeights methods, which works for any
+        // adaptive optimizer.
         static const bool IsAdam = true;
 
         RmsPropOptimizer() : mTimestep(0)
@@ -91,41 +92,61 @@ namespace tinymind {
             return mTimestep;
         }
 
+        static ValueType decay()
+        {
+            static const ValueType value(static_cast<typename ValueType::FixedPartFieldType>(DecayInt), static_cast<typename ValueType::FractionalPartFieldType>(DecayFrac));
+            return value;
+        }
+
+        static ValueType epsilon()
+        {
+            static const ValueType value(static_cast<typename ValueType::FixedPartFieldType>(EpsilonInt), static_cast<typename ValueType::FractionalPartFieldType>(EpsilonFrac));
+            return value;
+        }
+
         template<typename LayerType, typename PreviousLayerType>
         void updateWeights(PreviousLayerType& previousLayer, const size_t neuron, const size_t conn, const ValueType& gradient, const ValueType& learningRate)
         {
-            static const ValueType decay(DecayInt, DecayFrac);
-            static const ValueType epsilon(EpsilonInt, EpsilonFrac);
-            static const ValueType one(1, 0);
-
-            // Get current second moment (running average of squared gradients)
             ValueType v = previousLayer.getSecondMomentForNeuronAndConnection(neuron, conn);
-
-            // Update second moment: v = decay * v + (1 - decay) * gradient^2
-            v = decay * v + (one - decay) * gradient * gradient;
-
-            // Store updated moment
+            const ValueType update = computeUpdate(v, gradient, learningRate);
             previousLayer.setSecondMomentForNeuronAndConnection(neuron, conn, v);
 
-            // Compute update: lr * gradient / (sqrt(v) + epsilon)
-            const ValueType sqrtV = SquareRootApproximation<ValueType>::sqrt(v);
-            const ValueType update = learningRate * gradient / (sqrtV + epsilon);
-
-            // Apply weight update
             const ValueType currentWeight = previousLayer.getWeightForNeuronAndConnection(neuron, conn);
             previousLayer.setWeightForNeuronAndConnection(neuron, conn, currentWeight + update);
         }
 
+        template<typename LayerType, typename PreviousLayerType>
+        void updateBiasWeights(PreviousLayerType& previousLayer, const size_t conn, const ValueType& gradient, const ValueType& learningRate)
+        {
+            ValueType v = previousLayer.getBiasNeuronSecondMomentForConnection(conn);
+            const ValueType update = computeUpdate(v, gradient, learningRate);
+            previousLayer.setBiasNeuronSecondMomentForConnection(conn, v);
+
+            const ValueType currentWeight = previousLayer.getBiasNeuronWeightForConnection(conn);
+            previousLayer.setBiasNeuronWeightForConnection(conn, currentWeight + update);
+        }
+
     private:
+        // Updates v in place and returns lr * gradient / (sqrt(v) + epsilon).
+        static ValueType computeUpdate(ValueType& v, const ValueType& gradient, const ValueType& learningRate)
+        {
+            const ValueType one(static_cast<typename ValueType::FixedPartFieldType>(1), static_cast<typename ValueType::FractionalPartFieldType>(0));
+
+            v = decay() * v + (one - decay()) * gradient * gradient;
+
+            const ValueType sqrtV = SquareRootApproximation<ValueType>::sqrt(v);
+            return learningRate * gradient / (sqrtV + epsilon());
+        }
+
         size_t mTimestep;
     };
 
 #if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
     /**
-     * Floating-point RMSprop optimizer with standard hyperparameters.
-     * Uses double-precision constants directly instead of QValue constructors.
-     * Requires TINYMIND_ENABLE_STD because std::sqrt is needed for the
-     * second-moment normalization.
+     * Floating-point RMSprop optimizer with standard hyperparameters
+     * (decay = 0.9, epsilon = 1e-8). Uses double-precision constants
+     * directly instead of QValue constructors. Requires TINYMIND_ENABLE_STD
+     * because std::sqrt is needed for the second-moment normalization.
      */
     template<typename ValueType>
     struct RmsPropOptimizerFloat
@@ -154,25 +175,34 @@ namespace tinymind {
         template<typename LayerType, typename PreviousLayerType>
         void updateWeights(PreviousLayerType& previousLayer, const size_t neuron, const size_t conn, const ValueType& gradient, const ValueType& learningRate)
         {
-            // Get current second moment
             ValueType v = previousLayer.getSecondMomentForNeuronAndConnection(neuron, conn);
-
-            // Update second moment: v = decay * v + (1 - decay) * gradient^2
-            v = static_cast<ValueType>(mDecay) * v + static_cast<ValueType>(1.0 - mDecay) * gradient * gradient;
-
-            // Store updated moment
+            const ValueType update = this->computeUpdate(v, gradient, learningRate);
             previousLayer.setSecondMomentForNeuronAndConnection(neuron, conn, v);
 
-            // Compute update: lr * gradient / (sqrt(v) + epsilon)
-            const ValueType sqrtV = static_cast<ValueType>(std::sqrt(static_cast<double>(v)));
-            const ValueType update = learningRate * gradient / (sqrtV + static_cast<ValueType>(mEpsilon));
-
-            // Apply weight update
             const ValueType currentWeight = previousLayer.getWeightForNeuronAndConnection(neuron, conn);
             previousLayer.setWeightForNeuronAndConnection(neuron, conn, currentWeight + update);
         }
 
+        template<typename LayerType, typename PreviousLayerType>
+        void updateBiasWeights(PreviousLayerType& previousLayer, const size_t conn, const ValueType& gradient, const ValueType& learningRate)
+        {
+            ValueType v = previousLayer.getBiasNeuronSecondMomentForConnection(conn);
+            const ValueType update = this->computeUpdate(v, gradient, learningRate);
+            previousLayer.setBiasNeuronSecondMomentForConnection(conn, v);
+
+            const ValueType currentWeight = previousLayer.getBiasNeuronWeightForConnection(conn);
+            previousLayer.setBiasNeuronWeightForConnection(conn, currentWeight + update);
+        }
+
     private:
+        ValueType computeUpdate(ValueType& v, const ValueType& gradient, const ValueType& learningRate) const
+        {
+            v = static_cast<ValueType>(mDecay) * v + static_cast<ValueType>(1.0 - mDecay) * gradient * gradient;
+
+            const ValueType sqrtV = static_cast<ValueType>(std::sqrt(static_cast<double>(v)));
+            return learningRate * gradient / (sqrtV + static_cast<ValueType>(mEpsilon));
+        }
+
         size_t mTimestep;
         double mDecay;
         double mEpsilon;
