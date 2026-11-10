@@ -138,7 +138,7 @@ for which example uses which dataset.
 **Human activity recognition** — recurrent `LstmNeuralNetwork` (3→16→4) over tri-axial accelerometer windows; upstairs and downstairs differ only in sample order.
 ![HAR activity classifier]({{ site.baseurl }}/assets/plots/har_activity.png)
 
-**Japanese Vowels** — recurrent `ElmanNeuralNetwork` (12→16→9) speaker ID; trained offline in float, then swept across fixed-point formats. Q8.8 matches double precision (96.76%) at 4× smaller weights.
+**Japanese Vowels** — recurrent `ElmanNeuralNetwork` (12→16→9) speaker ID; trained offline in float, then swept across fixed-point formats. Q8.8 matches double precision (92.97%) at 4× smaller weights.
 ![Elman Japanese Vowels accuracy vs format]({{ site.baseurl }}/assets/plots/elman_vowels.png)
 
 **Gas sensor array drift** — MLP (128→32→6) trained on batch 1; accuracy decays across later batches as sensors drift.

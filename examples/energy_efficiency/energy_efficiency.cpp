@@ -340,10 +340,12 @@ int main(int argc, char* argv[])
 
         net.feedForward(input);
         const ValueType err = net.calculateError(target);
-        if (!NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(err))
-        {
-            net.trainNetwork(target);
-        }
+        // Train on every sample. Skipping samples whose error is within the
+        // fixed-point zero tolerance (2^-7) would skip every residual under
+        // about half a standard deviation of the load -- most of the data once
+        // the fit is close -- and leave the regression worse than a straight
+        // line through the same features.
+        net.trainNetwork(target);
         errSum += std::fabs(fromQ(err));
 
         if ((it + 1) % reportEvery == 0)

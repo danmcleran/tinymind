@@ -18,6 +18,8 @@ Identical on both precision paths:
 - 1 sigmoid output — the predicted next sample `sin[t+1]`
 - 20 samples/period, 20000 epochs over the periodic stream `sin[t] -> sin[t+1]`,
   recurrent state carried across the period boundary
+- plain SGD at a learning rate of 0.2 (no momentum, no acceleration), training
+  on every step
 - both nets are seeded identically (`srand(7)`) before construction and their
   weight initializers both draw from `[-0.5, 0.5]`, so they start from
   comparable inits
@@ -56,14 +58,27 @@ make plot   # renders output/lstm_sinusoid_float.png (needs matplotlib)
 
 ## What the chart shows
 
-- **one-step-ahead:** both precisions track the sinusoid closely; the float
-  curve sits a hair tighter, the Q16.16 curve lags slightly at the peaks.
-  (Neither reaches exactly 0 or 1 — the sigmoid output saturates before the
-  rails, an activation artifact shared by both paths, not a precision effect.)
-- **free-run:** the float net keeps oscillating with roughly the right amplitude
-  through both periods, accumulating only a slow phase lag, while the Q16.16 net
-  collapses in the second period — the coarser fixed-point grid loses the phase
-  information the LSTM state needs to stay on the sinusoid.
+`make run` also prints the RMS error of each curve against the true sinusoid
+(seed 7):
+
+- **one-step-ahead:** double 0.0058, Q16.16 0.0044
+- **free-run:** double 0.0142, Q16.16 0.0116
+
+Both precisions lie on the sinusoid in both modes, and the free run holds
+amplitude and phase through both periods. Across seeds 1 to 8 the one-step RMS
+error stays between 0.003 and 0.018 for both, so at this size the Q16.16
+quantization cost is within the seed-to-seed spread. (Neither output reaches
+exactly 0 or 1: the sigmoid saturates before the rails, an activation artifact
+shared by both paths.)
+
+Two training details matter. The example trains on every step: an earlier
+version skipped any step whose error was within the zero tolerance, which
+stopped training once the hidden-to-output readout alone fit the stream to that
+tolerance, before the LSTM gates had learned the dynamics (one-step RMS 0.044
+double and 0.057 Q16.16, free-run 0.053 and 0.27). And it uses no momentum:
+with the library's default momentum (0.5) and acceleration, training on every
+step makes the Q16.16 network diverge, as rounding keeps feeding the momentum
+term.
 
 The matplotlib style comes from the shared
 [`examples/plotting/tinymind_plot.py`](../plotting) module; install it into an

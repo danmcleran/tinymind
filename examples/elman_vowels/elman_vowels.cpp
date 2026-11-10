@@ -466,21 +466,6 @@ static void normalize(std::vector<Utterance>& train, std::vector<Utterance>& tes
 }
 
 // ---------------------------------------------------------------------------
-// Recurrent context reset. The plain Elman network exposes no resetState()
-// (only the gated LSTM/GRU networks do), but the context is just the recurrent
-// layer's neuron output values -- zero them between utterances so one
-// speaker's trailing context never leaks into the next utterance.
-// ---------------------------------------------------------------------------
-template<typename NetworkType, typename VT>
-static void resetContext(NetworkType& net)
-{
-    for (size_t neuron = 0; neuron < HIDDEN_NEURONS; ++neuron)
-    {
-        net.getRecurrentLayer().setOutputValueForOutgoingConnection(neuron, VT());
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Evaluation: walk each utterance frame by frame, sum the per-frame class
 // scores, argmax. Returns accuracy; optionally fills a 9x9 confusion matrix
 // (row = true speaker, column = predicted).
@@ -496,7 +481,10 @@ static double evaluate(NetworkType& net,
 
     for (size_t utterance = 0; utterance < utterances.size(); ++utterance)
     {
-        resetContext<NetworkType, VT>(net);
+        // Every utterance starts from an empty context: resetState() clears
+        // the hidden layer's h_{t-1}, which the next feedForward copies into
+        // the context, so one speaker's trailing context cannot carry over.
+        net.resetState();
 
         double scores[NUM_CLASSES] = {0};
         for (size_t frame = 0; frame < utterances[utterance].frames.size(); ++frame)
@@ -570,7 +558,7 @@ static void trainFloat(FloatElmanNetwork& net,
         {
             const Utterance& utterance = train[order[utteranceIndex]];
 
-            resetContext<FloatElmanNetwork, double>(net);
+            net.resetState();
 
             for (size_t cls = 0; cls < NUM_CLASSES; ++cls)
             {

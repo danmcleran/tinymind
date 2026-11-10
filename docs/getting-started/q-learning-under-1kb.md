@@ -13,7 +13,7 @@ Q-learning is an algorithm in which an agent interacts with its environment and 
 
 The simplest implementation of Q-learning is referred to as tabular or table-based Q-learning. In this article, I will describe how tinymind implements Q-learning using C++ templates and fixed-point ([Q-Format]({{ site.baseurl }}/q-format)) numbers as well as go through the [maze](https://github.com/danmcleran/tinymind/blob/master/examples/maze/maze.cpp) example in the [tinymind](https://github.com/danmcleran/tinymind) repo.
 
-At 869 bytes total, this Q-learner fits comfortably on even the smallest microcontrollers -- an ARM Cortex-M0+ with 4 KB of RAM has room for this plus the full application. Reinforcement learning is typically associated with cloud computing and massive compute budgets, but tinymind brings it to the edge with zero runtime overhead and no floating-point requirement.
+At 653 bytes total, this Q-learner fits comfortably on even the smallest microcontrollers -- an ARM Cortex-M0+ with 4 KB of RAM has room for this plus the full application. Reinforcement learning is typically associated with cloud computing and massive compute budgets, but tinymind brings it to the edge with zero runtime overhead and no floating-point requirement.
 
 # The Maze Problem
 
@@ -64,6 +64,14 @@ typedef uint8_t action_t;
 
 We train the mouse by dropping it into a randomly-selected room. The mouse starts off by taking a random action from a list of available actions at each step. The mouse receives a reward only when he finds the cheese (makes it to position 5 outside the maze).
 
+After each move the learner updates one entry of the Q-table:
+
+```
+Q(s, a) = (1 - alpha) * Q(s, a) + alpha * (r + gamma * max over a' of Q(s', a'))
+```
+
+The max is over the actions available in the next room, whatever the mouse actually does next. That makes Q-learning off-policy: the mouse can keep exploring at random for almost all of training (4,900 of the 5,000 episodes in the example) and the table still converges to Q*, the optimal values. The example checks this at the end of training by computing Q* with value iteration and printing the distance; the learned table matches it to within 0.0007.
+
 # Building The Example
 
 ```bash
@@ -110,10 +118,10 @@ size output/mazelearner.o
 
 ```
    text	   data	    bss	    dec	    hex	filename
-    493	      8	    348	    849	    351	output/mazelearner.o
+    317	      8	    328	    653	    28d	output/mazelearner.o
 ```
 
-The total code + data footprint of the Q-learner is **869 bytes**. This should allow a table-based Q-learning implementation to fit in any embedded system available today.
+The total code + data footprint of the Q-learner is **653 bytes**. This should allow a table-based Q-learning implementation to fit in any embedded system available today.
 
 # Conclusion
 

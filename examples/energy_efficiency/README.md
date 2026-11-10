@@ -61,9 +61,15 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
   predicted-vs-actual scatter (with a y=x reference line) for each load, with
   MAE and R² in the subplot titles
 
-Expected (seed = 7): heating-load **R² ≈ 0.90** (MAE ≈ 2.8), cooling-load
-**R² ≈ 0.88** (MAE ≈ 2.8) — the two loads are highly predictable from the
-building geometry, so the fixed-point MLP tracks the held-out split closely.
+Expected (seed = 7): heating-load **R² ≈ 0.96** (MAE ≈ 1.7), cooling-load
+**R² ≈ 0.92** (MAE ≈ 1.9) on the held-out 20%. For scale, ordinary least
+squares on the same eight features and split reaches R² 0.92 / 0.89 (MAE 2.08 /
+2.21), so the hidden layer is earning its keep.
+
+The example trains on every sample. An earlier version skipped any sample whose
+error was within the fixed-point zero tolerance, which at this target scaling
+meant every residual under about 5 kWh/m², most of the data once the fit was
+close; it reached only R² 0.90 / 0.88, worse than the straight-line fit.
 
 ## tinymind capability shown
 

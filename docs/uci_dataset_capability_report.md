@@ -48,7 +48,7 @@ offline in float and then sweeps fixed-point formats to find the smallest one
 - **Dataset:** [UCI Energy Efficiency](https://archive.ics.uci.edu/dataset/242/energy+efficiency) — 768 inst · 8 features · 2-target regression.
 - **Model:** MLP 8→16→2, ReLU hidden, **2 linear** outputs (heating + cooling load). `LinearActivationPolicy` + `GradientClipByValue`.
 - **Data:** ships real data (`ENB2012_data.csv`, ~35 KB).
-- **Result:** heating R² ≈ 0.90, cooling R² ≈ 0.88. tinymind's smallest regression example.
+- **Result:** heating R² ≈ 0.96, cooling R² ≈ 0.92 (ordinary least squares on the same split: 0.92, 0.89). tinymind's smallest regression example.
 - [`examples/energy_efficiency`](https://github.com/danmcleran/tinymind/tree/master/examples/energy_efficiency) · [page]({{ site.baseurl }}/examples/energy_efficiency)
 
 ### Optical Handwritten Digits — 8×8 image classifier
@@ -76,7 +76,7 @@ offline in float and then sweeps fixed-point formats to find the smallest one
 - **Dataset:** [UCI Japanese Vowels](https://archive.ics.uci.edu/dataset/128/japanese+vowels) — 9 speakers · 12 LPC cepstrum coeffs · 7–29 frame sequences · 270 train / 370 test.
 - **Model:** `ElmanNeuralNetwork` 12→16 (tanh, recurrent)→9 sigmoid, per-frame scores summed over the utterance, argmax speaker. z-score/3 input scaling.
 - **Data:** ships real data (`ae.train` / `ae.test`).
-- **Result:** the deployment-flow demo — trained offline in **double**, then swept across fixed-point formats. **Q8.8 matches double-precision accuracy exactly (96.76%)** in 1.2 KB of weights (4× smaller); Q4.4 collapses. Above the Kudo et al. 1999 paper baseline (94.1%).
+- **Result:** the deployment-flow demo — trained offline in **double**, then swept across fixed-point formats. **Q8.8 matches double-precision accuracy exactly (92.97%)** in 1.2 KB of weights (4× smaller); Q4.4 collapses. About a point below the Kudo et al. 1999 paper baseline (94.1%).
 - [`examples/elman_vowels`](https://github.com/danmcleran/tinymind/tree/master/examples/elman_vowels) · [page]({{ site.baseurl }}/examples/elman_vowels)
 
 ### Air Quality Forecasting — recurrent (LSTM)
