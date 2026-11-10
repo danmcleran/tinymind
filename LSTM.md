@@ -95,7 +95,7 @@ The following additions to the library address previously documented issues:
 - **Learning rate scheduling** — `StepDecaySchedule` policy reduces the learning rate by a configurable factor every N training steps. Located in `cpp/learningRateSchedule.hpp`.
 
 ### API Improvements
-- **`LstmNeuralNetwork::resetState()`** — Public method to reset all LSTM hidden layer cell states to zero.
+- **`resetState()`** — Public method that resets h and the cell state of every hidden layer to zero.
 - **`Layer::getNeuron(index)`** — Public accessor to retrieve a pointer to an individual neuron by index.
 - **`LinearActivationPolicy` derivative fix** — Corrected `activationFunctionDerivative()` to return 1 instead of 0 (the mathematically correct derivative of f(x) = x).
 
@@ -108,11 +108,11 @@ The following additions to the library address previously documented issues:
 | Gradient clipping | Implemented (configurable policy) |
 | L2 weight decay | Implemented (configurable policy) |
 | Learning rate scheduling | Implemented (step decay) |
-| Multi-layer LSTM | Supported via `HiddenLayers<N0, N1, ...>` |
+| Multi-layer LSTM | Supported via `HiddenLayers<N0, N1, ...>`; every layer's weights train (gradients checked against finite differences) |
 | GRU alternative | Implemented (3-gate, ~25% less memory) |
 | Teacher forcing / scheduled sampling | Not implemented |
 | Adam optimizer | Implemented (`AdamOptimizerFloat`, `AdamOptimizer` for fixed-point) |
-| Truncated BPTT | Not implemented |
+| Truncated BPTT | One-step truncation only (h_{t-1} and c_{t-1} are inputs to each step's gradient); no multi-step window |
 | LSTM/GRU weight serialization | Implemented (`RecurrentNetworkPropertiesFileManager`) |
 | Early stopping | Implemented (`EarlyStopping<ValueType, Patience>`) |
 

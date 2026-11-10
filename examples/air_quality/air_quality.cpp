@@ -56,7 +56,6 @@
 #include "fixedPointTransferFunctions.hpp"
 #include "earlyStopping.hpp"
 #include "teacherForcing.hpp"
-#include "truncatedBPTT.hpp"
 
 #define TRAINING_EPOCHS 15000U
 #define NUM_SAMPLES 2400U     // 100 days of hourly samples

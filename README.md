@@ -37,7 +37,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **Binary neural networks** (`BinaryDense`) with XNOR+popcount forward pass -- 32x weight memory reduction via bit packing, no multiplication needed
 - **Ternary neural networks** (`TernaryDense`) with {-1, 0, +1} weights -- 16x weight memory reduction via 2-bit packing, multiply-free forward pass using conditional add/subtract/skip
 - **Heterogeneous hidden layers** via `HiddenLayers<N0, N1, ...>` for different neuron counts per layer (`MultilayerPerceptron` is a convenience alias for uniform layers)
-- **Batch training** with configurable batch size
+- **Mini-batch training** -- with `BatchSize` = B, the gradients of B samples are accumulated and the weights move once per batch by their mean (feed-forward and recurrent networks)
 - **Softmax output** for multi-class classification
 - **Xavier weight initialization** (uniform and normal distributions)
 - **Weight import/export** in CSV and binary formats for all network types (MLP, LSTM, GRU, KAN; interoperable with PyTorch)
@@ -52,7 +52,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **Learning rate scheduling** with `StepDecaySchedule` (multiply by decay factor every N steps) and `FixedLearningRatePolicy` (default)
 - **Early stopping** via `EarlyStopping<ValueType, Patience>` to detect convergence and save compute cycles
 - **Teacher forcing / scheduled sampling** via `ScheduledSampling` for recurrent training -- linearly decays from ground truth to model predictions
-- **Truncated BPTT** via `TruncatedBPTT<NNType, WindowSize>` -- accumulates recurrent state over K timesteps before weight update
+- **Recurrent training** truncates backpropagation through time to one step: each step's gradient treats h_{t-1} (and an LSTM's c_{t-1}) as inputs, so longer dependencies are carried by the recurrent state rather than by gradients flowing back through earlier steps
 - All policies are optional template parameters with null/no-op defaults for full backward compatibility
 - Policies are extracted from `TransferFunctionsPolicy` via SFINAE traits -- existing user code compiles unchanged
 
@@ -315,6 +315,8 @@ typedef tinymind::LstmNeuralNetwork<double, 2,
     tinymind::HiddenLayers<32, 16, 8>, 1,
     FloatTransferFunctions> DeeperLstmNetwork;
 ```
+
+Stacks work the same way for `GruNeuralNetwork` and `RecurrentNeuralNetwork` (Elman). Every hidden layer is recurrent, with its own recurrent weights and gates, and every weight trains: one training step matches central finite differences for every weight of an LSTM<4,3>, GRU<4,3>, Elman<4,3> and LSTM<3,4,2> (`test_suite_recurrent_extras` in `unit_test/nn`). `resetState()` clears h (and the LSTM cell state) of every layer, and `setWeights` and the weight files cover every layer.
 
 ### GRU Network
 
@@ -707,31 +709,6 @@ typedef tinymind::FixedPointTransferFunctions<
 > FixedPointTF;
 ```
 
-### Truncated BPTT (Recurrent Training)
-
-```cpp
-#include "truncatedBPTT.hpp"
-
-// LSTM with truncated BPTT over 5-step windows
-typedef tinymind::LstmNeuralNetwork<double, 1,
-    tinymind::HiddenLayers<16>, 1,
-    FloatTransferFunctions> LstmNetwork;
-
-LstmNetwork nn;
-tinymind::TruncatedBPTT<LstmNetwork, 5> trainer;
-
-for (int epoch = 0; epoch < 10000; ++epoch) {
-    nn.resetState();
-    trainer.reset();
-    for (int t = 0; t < sequenceLength - 1; ++t) {
-        input[0] = sequence[t];
-        target[0] = sequence[t + 1];
-        trainer.step(nn, input, target);  // trains every 5 steps
-    }
-    trainer.flush(nn);  // train on remaining steps
-}
-```
-
 ### Q-Learning (Maze)
 
 ```cpp
@@ -823,10 +800,10 @@ NeuralNetwork<
     NumberOfOutputs,        // compile-time output count
     TransferFunctionsPolicy,// activation + training policy
     IsTrainable,            // true/false (inference-only mode)
-    BatchSize,              // gradient accumulation batch size
+    BatchSize,              // samples per weight update (mean gradient)
     HasRecurrentLayer,      // enables recurrent connections
     HiddenLayerConfig,      // NonRecurrent/Recurrent/GRU/LSTM
-    RecurrentConnectionDepth,
+    RecurrentConnectionDepth, // 1 for recurrent networks (h_{t-1}); 0 otherwise
     OutputLayerConfiguration // FeedForward/Classifier(softmax)
 >
 ```
@@ -1106,7 +1083,6 @@ tinymind/
     learningRateSchedule.hpp    # Learning rate scheduling policies
     earlyStopping.hpp           # Early stopping convergence monitor
     teacherForcing.hpp          # Scheduled sampling for recurrent training
-    truncatedBPTT.hpp           # Truncated BPTT training utility
     networkStats.hpp            # Compile-time network statistics
     xavier.hpp                  # Xavier weight initialization
     lookupTables.cpp            # Pre-computed activation tables (~4.6 MB)

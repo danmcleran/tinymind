@@ -35,41 +35,52 @@
  *
  * One value per line. Fixed-point values are stored as their raw integer
  * representation (e.g. Q16.16 value 2.5 is stored as 163840). Floating-point
- * values are stored as decimal strings.
+ * values are stored as decimal strings with 17 significant digits, so a
+ * double reads back exactly.
  *
- * The values appear in the following order:
+ * The values appear in the following order (S_l = neurons in hidden layer l,
+ * G = connections per next-layer neuron: 1, or 4 for LSTM and 3 for GRU):
  *
  * 1. Input-to-first-hidden-layer weights
  *    For each input neuron i (0 .. NumberOfInputs-1):
- *      For each hidden neuron h (0 .. NumberOfHiddenNeurons-1):
+ *      For each connection h (0 .. G*S_0-1):
  *        weight[i][h]
- *    Count: NumberOfInputs * NumberOfHiddenNeurons
+ *    Count: NumberOfInputs * G * S_0
  *
- * 2. Input layer bias weights (one per first-hidden-layer neuron)
- *    For each hidden neuron h (0 .. NumberOfHiddenNeurons-1):
- *      bias[h]
- *    Count: NumberOfHiddenNeurons
+ * 2. Input layer bias weights (one per first-hidden-layer connection)
+ *    Count: G * S_0
  *
  * 3. Hidden-to-hidden layer weights (only when NumberOfHiddenLayers > 1)
  *    For each inner hidden layer l (0 .. NumberOfHiddenLayers-2):
- *      For each neuron h in layer l (0 .. NumberOfHiddenNeurons-1):
- *        For each neuron h1 in layer l+1 (0 .. NumberOfHiddenNeurons-1):
+ *      For each neuron h in layer l (0 .. S_l-1):
+ *        For each connection h1 into layer l+1 (0 .. G*S_{l+1}-1):
  *          weight[l][h][h1]
  *      Bias weights for layer l:
- *        For each neuron h1 in layer l+1 (0 .. NumberOfHiddenNeurons-1):
+ *        For each connection h1 into layer l+1 (0 .. G*S_{l+1}-1):
  *          bias[l][h1]
- *    Count per layer: NumberOfHiddenNeurons^2 + NumberOfHiddenNeurons
+ *    Count per layer: S_l * G * S_{l+1} + G * S_{l+1}
  *
  * 4. Last-hidden-layer-to-output weights
- *    For each hidden neuron h (0 .. NumberOfHiddenNeurons-1):
+ *    For each hidden neuron h (0 .. S_last-1):
  *      For each output neuron o (0 .. NumberOfOutputs-1):
  *        weight[h][o]
- *    Count: NumberOfHiddenNeurons * NumberOfOutputs
+ *    Count: S_last * NumberOfOutputs
  *
  * 5. Output layer bias weights
  *    For each output neuron o (0 .. NumberOfOutputs-1):
  *      bias[o]
  *    Count: NumberOfOutputs
+ *
+ * 6. Recurrent weights (recurrent networks only)
+ *    For each inner hidden layer l, then the last hidden layer:
+ *      For each neuron h (0 .. S_l-1):
+ *        For each connection h1 back into the same layer (0 .. G*S_l-1):
+ *          recurrent[l][h][h1]
+ *    Count per layer: S_l * G * S_l
+ *
+ * For a feed-forward network with equal hidden layer sizes this is the
+ * original layout. RecurrentNetworkPropertiesFileManager uses its own order
+ * (see below).
  *
  * === Weight File Format (binary) ===
  *
@@ -93,7 +104,7 @@
  * Line 13: bias -> output[0]
  *
  * Total values = I*H + H + H*O + O  (single hidden layer)
- * Total values = I*H + H + (L-1)*(H^2 + H) + H*O + O  (L hidden layers)
+ * Total values = I*H + H + (L-1)*(H^2 + H) + H*O + O  (L feed-forward hidden layers of H neurons)
  */
 
 #include "tinymind_platform.hpp"
@@ -249,10 +260,277 @@ namespace tinymind {
 #endif // TINYMIND_ENABLE_FLOAT
 
 #if TINYMIND_ENABLE_HOSTED_IO
+    namespace detail
+    {
+        // Where one value of a weight file lives in the network.
+        enum NetworkWeightKind
+        {
+            InputLayerWeight,
+            InputLayerBiasWeight,
+            HiddenLayerWeight,          // hidden layer `layer` -> next hidden layer or the output layer
+            HiddenLayerBiasWeight,
+            InnerRecurrentLayerWeight,  // h_{t-1} of inner hidden layer `layer` into its own gates
+            RecurrentLayerWeight        // h_{t-1} of the last hidden layer into its own gates
+        };
+
+        struct NetworkWeightLocation
+        {
+            NetworkWeightKind kind;
+            size_t layer;
+            size_t neuron;
+            size_t connection;
+        };
+
+        // Recurrent layer weights exist only on a recurrent network; a
+        // feed-forward network's NullRecurrentLayer has none.
+        template<bool HasRecurrentLayer>
+        struct RecurrentWeightAccess
+        {
+            template<typename NeuralNetworkType, typename ValueType>
+            static ValueType get(NeuralNetworkType& nn, const NetworkWeightLocation& loc)
+            {
+                if (InnerRecurrentLayerWeight == loc.kind)
+                {
+                    return nn.getInnerRecurrentLayerWeightForNeuronAndConnection(loc.layer, loc.neuron, loc.connection);
+                }
+                return nn.getRecurrentLayer().getWeightForNeuronAndConnection(loc.neuron, loc.connection);
+            }
+
+            template<typename NeuralNetworkType, typename ValueType>
+            static void set(NeuralNetworkType& nn, const NetworkWeightLocation& loc, const ValueType& value)
+            {
+                if (InnerRecurrentLayerWeight == loc.kind)
+                {
+                    nn.setInnerRecurrentLayerWeightForNeuronAndConnection(loc.layer, loc.neuron, loc.connection, value);
+                    return;
+                }
+                nn.getRecurrentLayer().setWeightForNeuronAndConnection(loc.neuron, loc.connection, value);
+            }
+        };
+
+        template<>
+        struct RecurrentWeightAccess<false>
+        {
+            template<typename NeuralNetworkType, typename ValueType>
+            static ValueType get(NeuralNetworkType&, const NetworkWeightLocation&)
+            {
+                return ValueType();
+            }
+
+            template<typename NeuralNetworkType, typename ValueType>
+            static void set(NeuralNetworkType&, const NetworkWeightLocation&, const ValueType&)
+            {
+            }
+        };
+
+        /**
+         * Order of the values in a weight file: every trainable weight of the
+         * network exactly once, using each hidden layer's own size and, for
+         * LSTM/GRU layers, one connection per gate.
+         *
+         * RecurrentWeightsLast = true (NetworkPropertiesFileManager):
+         *   input weights, input bias, [per inner layer: weights, bias],
+         *   last-hidden-to-output weights, output bias, then (recurrent nets)
+         *   [per inner layer: recurrent weights], last recurrent weights.
+         *   A feed-forward network keeps the long-standing layout.
+         *
+         * RecurrentWeightsLast = false (RecurrentNetworkPropertiesFileManager):
+         *   input weights, input bias, [per inner layer: weights, bias,
+         *   recurrent weights], last recurrent weights, last-hidden-to-output
+         *   weights, output bias. A single hidden layer keeps the long-standing
+         *   LSTM/GRU layout (input, input bias, recurrent, output, output bias).
+         */
+        template<typename NeuralNetworkType, bool RecurrentWeightsLast>
+        struct NetworkWeightLayout
+        {
+            typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
+            static const size_t NumberOfInputs = NeuralNetworkType::NumberOfInputLayerNeurons;
+            static const size_t NumberOfOutputs = NeuralNetworkType::NumberOfOutputLayerNeurons;
+            static const size_t NumberOfHiddenLayers = NeuralNetworkType::NeuralNetworkNumberOfHiddenLayers;
+            static const size_t Gates = NeuralNetworkType::HiddenLayerGateMultiplier;
+            static const bool HasRecurrentLayer = NeuralNetworkType::NeuralNetworkHasRecurrentLayer;
+
+            static size_t count()
+            {
+                size_t total = 0;
+                NetworkWeightLocation loc;
+                while (locate(total, loc))
+                {
+                    ++total;
+                }
+                return total;
+            }
+
+            // Map the k-th value of the file to its weight; false past the end.
+            static bool locate(size_t k, NetworkWeightLocation& loc)
+            {
+                const size_t lastLayer = NumberOfHiddenLayers - 1;
+                const size_t firstConnections = Gates * NeuralNetworkType::getHiddenLayerSize(0);
+
+                if (take(k, loc, InputLayerWeight, 0, NumberOfInputs, firstConnections)) return true;
+                if (take(k, loc, InputLayerBiasWeight, 0, 1, firstConnections)) return true;
+
+                for (size_t layer = 0; layer < lastLayer; ++layer)
+                {
+                    const size_t size = NeuralNetworkType::getHiddenLayerSize(layer);
+                    const size_t nextConnections = Gates * NeuralNetworkType::getHiddenLayerSize(layer + 1);
+
+                    if (take(k, loc, HiddenLayerWeight, layer, size, nextConnections)) return true;
+                    if (take(k, loc, HiddenLayerBiasWeight, layer, 1, nextConnections)) return true;
+                    if (!RecurrentWeightsLast && HasRecurrentLayer)
+                    {
+                        if (take(k, loc, InnerRecurrentLayerWeight, layer, size, Gates * size)) return true;
+                    }
+                }
+
+                const size_t lastSize = NeuralNetworkType::getHiddenLayerSize(lastLayer);
+
+                if (!RecurrentWeightsLast && HasRecurrentLayer)
+                {
+                    if (take(k, loc, RecurrentLayerWeight, lastLayer, lastSize, Gates * lastSize)) return true;
+                }
+
+                if (take(k, loc, HiddenLayerWeight, lastLayer, lastSize, NumberOfOutputs)) return true;
+                if (take(k, loc, HiddenLayerBiasWeight, lastLayer, 1, NumberOfOutputs)) return true;
+
+                if (RecurrentWeightsLast && HasRecurrentLayer)
+                {
+                    for (size_t layer = 0; layer < lastLayer; ++layer)
+                    {
+                        const size_t size = NeuralNetworkType::getHiddenLayerSize(layer);
+                        if (take(k, loc, InnerRecurrentLayerWeight, layer, size, Gates * size)) return true;
+                    }
+                    if (take(k, loc, RecurrentLayerWeight, lastLayer, lastSize, Gates * lastSize)) return true;
+                }
+
+                return false;
+            }
+
+            static ValueType get(NeuralNetworkType& nn, const NetworkWeightLocation& loc)
+            {
+                switch (loc.kind)
+                {
+                    case InputLayerWeight:
+                        return nn.getInputLayerWeightForNeuronAndConnection(loc.neuron, loc.connection);
+                    case InputLayerBiasWeight:
+                        return nn.getInputLayerBiasNeuronWeightForConnection(loc.connection);
+                    case HiddenLayerWeight:
+                        return nn.getHiddenLayerWeightForNeuronAndConnection(loc.layer, loc.neuron, loc.connection);
+                    case HiddenLayerBiasWeight:
+                        return nn.getHiddenLayerBiasNeuronWeightForConnection(loc.layer, loc.connection);
+                    default:
+                        return RecurrentWeightAccess<HasRecurrentLayer>::template get<NeuralNetworkType, ValueType>(nn, loc);
+                }
+            }
+
+            static void set(NeuralNetworkType& nn, const NetworkWeightLocation& loc, const ValueType& value)
+            {
+                switch (loc.kind)
+                {
+                    case InputLayerWeight:
+                        nn.setInputLayerWeightForNeuronAndConnection(loc.neuron, loc.connection, value);
+                        break;
+                    case InputLayerBiasWeight:
+                        nn.setInputLayerBiasWeightForConnection(loc.connection, value);
+                        break;
+                    case HiddenLayerWeight:
+                        nn.setHiddenLayerWeightForNeuronAndConnection(loc.layer, loc.neuron, loc.connection, value);
+                        break;
+                    case HiddenLayerBiasWeight:
+                        nn.setHiddenLayerBiasNeuronWeightForConnection(loc.layer, loc.connection, value);
+                        break;
+                    default:
+                        RecurrentWeightAccess<HasRecurrentLayer>::template set<NeuralNetworkType, ValueType>(nn, loc, value);
+                        break;
+                }
+            }
+
+            // Column name for the CSV header (the long-standing names for
+            // feed-forward weights).
+            static void writeName(std::ofstream& outFile, const NetworkWeightLocation& loc)
+            {
+                const size_t lastLayer = NumberOfHiddenLayers - 1;
+                switch (loc.kind)
+                {
+                    case InputLayerWeight:
+                        outFile << "Input" << loc.neuron << loc.connection << "Weight,";
+                        break;
+                    case InputLayerBiasWeight:
+                        outFile << "InputBias" << 0 << loc.connection << "Weight,";
+                        break;
+                    case HiddenLayerWeight:
+                        outFile << "Hidden" << loc.layer << loc.neuron << loc.connection << "Weight,";
+                        break;
+                    case HiddenLayerBiasWeight:
+                        if (loc.layer == lastLayer)
+                        {
+                            outFile << "Hidden" << loc.layer << "Bias" << loc.connection << "Weight,";
+                        }
+                        else
+                        {
+                            outFile << "Hidden" << loc.layer << "ToHidden" << (loc.layer + 1) << "Bias" << loc.connection << "Weight,";
+                        }
+                        break;
+                    default:
+                        outFile << "Recurrent" << loc.layer << loc.neuron << loc.connection << "Weight,";
+                        break;
+                }
+            }
+
+        private:
+            // Consume a rows x columns block: if k falls inside it, fill loc,
+            // otherwise skip past it.
+            static bool take(size_t& k, NetworkWeightLocation& loc, const NetworkWeightKind kind, const size_t layer, const size_t rows, const size_t columns)
+            {
+                const size_t blockSize = rows * columns;
+                if (k < blockSize)
+                {
+                    loc.kind = kind;
+                    loc.layer = layer;
+                    loc.neuron = k / columns;
+                    loc.connection = k % columns;
+                    return true;
+                }
+                k -= blockSize;
+                return false;
+            }
+        };
+
+        // Floating-point weights are written with enough digits to read back
+        // the same value (max_digits10 of double); the stream's precision is
+        // restored afterwards. Fixed-point values print as raw integers.
+        struct FullPrecisionStreamGuard
+        {
+            explicit FullPrecisionStreamGuard(std::ofstream& stream) : mStream(stream), mPrecision(stream.precision())
+            {
+                mStream.precision(17);
+            }
+
+            ~FullPrecisionStreamGuard()
+            {
+                mStream.precision(mPrecision);
+            }
+
+        private:
+            std::ofstream& mStream;
+            std::streamsize mPrecision;
+
+            FullPrecisionStreamGuard(const FullPrecisionStreamGuard&) = delete;
+            FullPrecisionStreamGuard& operator=(const FullPrecisionStreamGuard&) = delete;
+        };
+    } // namespace detail
+
+    /**
+     * Text and binary weight files for any NeuralNetwork: every weight of
+     * every hidden layer (with its own size, and one connection per gate for
+     * LSTM/GRU), then, for a recurrent network, every recurrent layer's
+     * weights. See detail::NetworkWeightLayout for the order.
+     */
     template<typename NeuralNetworkType>
     struct NetworkPropertiesFileManager
     {
         typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
+        typedef detail::NetworkWeightLayout<NeuralNetworkType, true> LayoutType;
         static const size_t NumberOfInputLayerNeurons = NeuralNetworkType::NumberOfInputLayerNeurons;
         static const size_t NumberOfHiddenLayers = NeuralNetworkType::NeuralNetworkNumberOfHiddenLayers;
         static const size_t NumberOfHiddenLayerNeurons = NeuralNetworkType::NumberOfHiddenLayerNeurons;
@@ -266,72 +544,13 @@ namespace tinymind {
             typedef typename ValueParserType::ParsedValueType ParsedValueType;
             char buffer[256];
             ParsedValueType weight;
-            ValueType weightValue;
-            unsigned hiddenLayer = 0;
+            detail::NetworkWeightLocation loc;
 
-            for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
-            {
-                for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-                {
-                    inFile.getline(buffer, 255);
-                    weight = ValueParserType::parseValue(buffer);
-                    weightValue = ValueConverterType::convertToDestinationType(weight);
-                    neuralNetwork.setInputLayerWeightForNeuronAndConnection(i, h, weightValue);
-                }
-            }
-
-            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
+            for (size_t k = 0; LayoutType::locate(k, loc); ++k)
             {
                 inFile.getline(buffer, 255);
                 weight = ValueParserType::parseValue(buffer);
-                weightValue = ValueConverterType::convertToDestinationType(weight);
-                neuralNetwork.setInputLayerBiasWeightForConnection(h, weightValue);
-            }
-
-            if (NumberOfHiddenLayers > 1)
-            {
-                for (hiddenLayer = 0; hiddenLayer < (NumberOfHiddenLayers - 1); ++hiddenLayer)
-                {
-                    for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-                    {
-                        for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                        {
-                            inFile.getline(buffer, 255);
-                            weight = ValueParserType::parseValue(buffer);
-                            weightValue = ValueConverterType::convertToDestinationType(weight);
-                            neuralNetwork.setHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1, weightValue);
-                        }
-                    }
-
-                    for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                    {
-                        inFile.getline(buffer, 255);
-                        weight = ValueParserType::parseValue(buffer);
-                        weightValue = ValueConverterType::convertToDestinationType(weight);
-                        neuralNetwork.setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1, weightValue);
-                    }
-                }
-            }
-
-            hiddenLayer = NumberOfHiddenLayers - 1;
-
-            for (uint32_t hiddenNeuron = 0; hiddenNeuron < NumberOfHiddenLayerNeurons; ++hiddenNeuron)
-            {
-                for (uint32_t outputNeuron = 0; outputNeuron < NumberOfOutputLayerNeurons; ++outputNeuron)
-                {
-                    inFile.getline(buffer, 255);
-                    weight = ValueParserType::parseValue(buffer);
-                    weightValue = ValueConverterType::convertToDestinationType(weight);
-                    neuralNetwork.setHiddenLayerWeightForNeuronAndConnection(hiddenLayer, hiddenNeuron, outputNeuron, weightValue);
-                }
-            }
-
-            for (uint32_t outputNeuron = 0; outputNeuron < NumberOfOutputLayerNeurons; ++outputNeuron)
-            {
-                inFile.getline(buffer, 255);
-                weight = ValueParserType::parseValue(buffer);
-                weightValue = ValueConverterType::convertToDestinationType(weight);
-                neuralNetwork.setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, outputNeuron, weightValue);
+                LayoutType::set(neuralNetwork, loc, ValueConverterType::convertToDestinationType(weight));
             }
         }
 
@@ -377,53 +596,12 @@ namespace tinymind {
 
         static void storeNetworkWeights(NeuralNetworkType& neuralNetwork, std::ofstream& outFile, char const* const delimiter = "\n")
         {
-            unsigned hiddenLayer = 0;
+            const detail::FullPrecisionStreamGuard precisionGuard(outFile);
+            detail::NetworkWeightLocation loc;
 
-            for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
+            for (size_t k = 0; LayoutType::locate(k, loc); ++k)
             {
-                for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-                {
-                    outFile << neuralNetwork.getInputLayerWeightForNeuronAndConnection(i, h) << delimiter;
-                }
-            }
-
-            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-            {
-                outFile << neuralNetwork.getInputLayerBiasNeuronWeightForConnection(h) << delimiter;
-            }
-
-            if (NumberOfHiddenLayers > 1)
-            {
-                for (hiddenLayer = 0; hiddenLayer < (NumberOfHiddenLayers - 1); ++hiddenLayer)
-                {
-                    for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-                    {
-                        for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                        {
-                            outFile << neuralNetwork.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1) << delimiter;
-                        }
-                    }
-
-                    for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                    {
-                        outFile << neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1) << delimiter;
-                    }
-                }
-            }
-
-            hiddenLayer = NumberOfHiddenLayers - 1;
-
-            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-            {
-                for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
-                {
-                    outFile << neuralNetwork.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, o) << delimiter;
-                }
-            }
-
-            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
-            {
-                outFile << neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, o) << delimiter;
+                outFile << LayoutType::get(neuralNetwork, loc) << delimiter;
             }
         }
 
@@ -432,111 +610,22 @@ namespace tinymind {
             typedef typename NeuralNetworkType::NeuralNetworkValueType::FullWidthValueType FullWidthValueType;
             std::ofstream outFile(binaryFilePath, std::ios::binary);
             FullWidthValueType value;
-            unsigned hiddenLayer = 0;
+            detail::NetworkWeightLocation loc;
 
-            for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
+            for (size_t k = 0; LayoutType::locate(k, loc); ++k)
             {
-                for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-                {
-                    value = neuralNetwork.getInputLayerWeightForNeuronAndConnection(i, h).getValue();
-                    outFile.write(reinterpret_cast<char*>(&value), sizeof(value));
-                }
-            }
-
-            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-            {
-                value = neuralNetwork.getInputLayerBiasNeuronWeightForConnection(h).getValue();
-                outFile.write(reinterpret_cast<char*>(&value), sizeof(value));
-            }
-
-            if (NumberOfHiddenLayers > 1)
-            {
-                for (hiddenLayer = 0; hiddenLayer < (NumberOfHiddenLayers - 1); ++hiddenLayer)
-                {
-                    for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-                    {
-                        for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                        {
-                            value = neuralNetwork.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1).getValue();
-                            outFile.write(reinterpret_cast<char*>(&value), sizeof(value));
-                        }
-                    }
-
-                    for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                    {
-                        value = neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1).getValue();
-                        outFile.write(reinterpret_cast<char*>(&value), sizeof(value));
-                    }
-                }
-            }
-
-            hiddenLayer = NumberOfHiddenLayers - 1;
-
-            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-            {
-                for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
-                {
-                    value = neuralNetwork.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, o).getValue();
-                    outFile.write(reinterpret_cast<char*>(&value), sizeof(value));
-                }
-            }
-
-            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
-            {
-                value = neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, o).getValue();
+                value = LayoutType::get(neuralNetwork, loc).getValue();
                 outFile.write(reinterpret_cast<char*>(&value), sizeof(value));
             }
         }
 
         static void writeHeader(std::ofstream& outFile)
         {
-            unsigned hiddenLayer = 0;
+            detail::NetworkWeightLocation loc;
 
-            for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
+            for (size_t k = 0; LayoutType::locate(k, loc); ++k)
             {
-                for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-                {
-                    outFile << "Input" << i << h << "Weight,";
-                }
-            }
-
-            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-            {
-                outFile << "InputBias" << hiddenLayer << h << "Weight,";
-            }
-
-            if (NumberOfHiddenLayers > 1)
-            {
-                for (hiddenLayer = 0; hiddenLayer < (NumberOfHiddenLayers - 1); ++hiddenLayer)
-                {
-                    for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-                    {
-                        for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                        {
-                            outFile << "Hidden" << hiddenLayer << h << h1 << "Weight,";
-                        }
-                    }
-
-                    for (uint32_t h1 = 0; h1 < NumberOfHiddenLayerNeurons; ++h1)
-                    {
-                        outFile << "Hidden" << hiddenLayer << "ToHidden" << (hiddenLayer + 1) << "Bias" << h1 << "Weight,";
-                    }
-                }
-            }
-
-            hiddenLayer = NumberOfHiddenLayers - 1;
-
-            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-            {
-                for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
-                {
-                    outFile << "Hidden" << hiddenLayer << h << o << "Weight,";
-                }
-            }
-
-            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
-            {
-                outFile << "Hidden" << hiddenLayer << "Bias" << o << "Weight,";
+                LayoutType::writeName(outFile, loc);
             }
 
             for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
@@ -556,35 +645,36 @@ namespace tinymind {
     };
 
     /**
-     * Weight serialization for gated recurrent networks (LSTM, GRU).
+     * Weight serialization for recurrent networks (LSTM, GRU, Elman).
      *
-     * Weight file format (text, one value per line):
+     * Weight file format (text, one value per line; G = gates per neuron:
+     * 4 for LSTM, 3 for GRU, 1 for Elman; S_l = size of hidden layer l):
      *
-     * 1. Input-to-hidden weights (gated: each input neuron has H*G connections)
-     *    Count: NumberOfInputs * NumberOfHiddenNeurons * GateMultiplier
+     * 1. Input-to-first-hidden weights: NumberOfInputs * G * S_0
+     * 2. Input layer bias weights: G * S_0
+     * 3. For each inner hidden layer l (stacked networks only):
+     *      weights into hidden layer l+1: S_l * G * S_{l+1}
+     *      bias weights into hidden layer l+1: G * S_{l+1}
+     *      recurrent weights of layer l: S_l * G * S_l
+     * 4. Recurrent weights of the last hidden layer: S_last * G * S_last
+     * 5. Last-hidden-to-output weights (not gated): S_last * NumberOfOutputs
+     * 6. Output bias weights: NumberOfOutputs
      *
-     * 2. Input layer bias weights (gated)
-     *    Count: NumberOfHiddenNeurons * GateMultiplier
-     *
-     * 3. Recurrent-to-hidden weights (gated: each recurrent neuron has H*G connections)
-     *    Count: NumberOfHiddenNeurons * NumberOfHiddenNeurons * GateMultiplier
-     *
-     * 4. Last-hidden-to-output weights (NOT gated)
-     *    Count: NumberOfHiddenNeurons * NumberOfOutputs
-     *
-     * 5. Output layer bias weights (from last hidden layer bias, if present)
-     *    Count: NumberOfOutputs
+     * A single hidden layer has no step 3, which is the original layout.
      */
     template<typename NeuralNetworkType>
     struct RecurrentNetworkPropertiesFileManager
     {
         typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
+        typedef detail::NetworkWeightLayout<NeuralNetworkType, false> LayoutType;
         static const size_t NumberOfInputLayerNeurons = NeuralNetworkType::NumberOfInputLayerNeurons;
         static const size_t NumberOfHiddenLayerNeurons = NeuralNetworkType::NumberOfHiddenLayerNeurons;
         static const size_t NumberOfOutputLayerNeurons = NeuralNetworkType::NumberOfOutputLayerNeurons;
         static const size_t InputToHiddenConnections = NeuralNetworkType::InputToHiddenConnections;
         static const size_t RecurrentToHiddenConnections = NeuralNetworkType::RecurrentToHiddenConnections;
         static const size_t GateMultiplier = NeuralNetworkType::HiddenLayerGateMultiplier;
+
+        static_assert(NeuralNetworkType::NeuralNetworkHasRecurrentLayer, "RecurrentNetworkPropertiesFileManager needs a recurrent network; use NetworkPropertiesFileManager.");
 
         template<typename SourceType, typename DestinationType>
         static void loadNetworkWeights(NeuralNetworkType& neuralNetwork, std::ifstream& inFile)
@@ -594,104 +684,24 @@ namespace tinymind {
             typedef typename ValueParserType::ParsedValueType ParsedValueType;
             char buffer[256];
             ParsedValueType weight;
-            ValueType weightValue;
+            detail::NetworkWeightLocation loc;
 
-            // 1. Input-to-hidden weights (gated)
-            for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
-            {
-                for (uint32_t conn = 0; conn < InputToHiddenConnections; ++conn)
-                {
-                    inFile.getline(buffer, 255);
-                    weight = ValueParserType::parseValue(buffer);
-                    weightValue = ValueConverterType::convertToDestinationType(weight);
-                    neuralNetwork.setInputLayerWeightForNeuronAndConnection(i, conn, weightValue);
-                }
-            }
-
-            // 2. Input layer bias weights (gated)
-            for (uint32_t conn = 0; conn < InputToHiddenConnections; ++conn)
+            for (size_t k = 0; LayoutType::locate(k, loc); ++k)
             {
                 inFile.getline(buffer, 255);
                 weight = ValueParserType::parseValue(buffer);
-                weightValue = ValueConverterType::convertToDestinationType(weight);
-                neuralNetwork.setInputLayerBiasWeightForConnection(conn, weightValue);
-            }
-
-            // 3. Recurrent-to-hidden weights (gated)
-            for (uint32_t r = 0; r < NumberOfHiddenLayerNeurons; ++r)
-            {
-                for (uint32_t conn = 0; conn < RecurrentToHiddenConnections; ++conn)
-                {
-                    inFile.getline(buffer, 255);
-                    weight = ValueParserType::parseValue(buffer);
-                    weightValue = ValueConverterType::convertToDestinationType(weight);
-                    neuralNetwork.getRecurrentLayer().setWeightForNeuronAndConnection(r, conn, weightValue);
-                }
-            }
-
-            // 4. Last-hidden-to-output weights (not gated)
-            const size_t hiddenLayer = neuralNetwork.NeuralNetworkNumberOfHiddenLayers - 1;
-            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-            {
-                for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
-                {
-                    inFile.getline(buffer, 255);
-                    weight = ValueParserType::parseValue(buffer);
-                    weightValue = ValueConverterType::convertToDestinationType(weight);
-                    neuralNetwork.setHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, o, weightValue);
-                }
-            }
-
-            // 5. Output bias weights
-            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
-            {
-                inFile.getline(buffer, 255);
-                weight = ValueParserType::parseValue(buffer);
-                weightValue = ValueConverterType::convertToDestinationType(weight);
-                neuralNetwork.setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, o, weightValue);
+                LayoutType::set(neuralNetwork, loc, ValueConverterType::convertToDestinationType(weight));
             }
         }
 
         static void storeNetworkWeights(NeuralNetworkType& neuralNetwork, std::ofstream& outFile, char const* const delimiter = "\n")
         {
-            // 1. Input-to-hidden weights (gated)
-            for (uint32_t i = 0; i < NumberOfInputLayerNeurons; ++i)
-            {
-                for (uint32_t conn = 0; conn < InputToHiddenConnections; ++conn)
-                {
-                    outFile << neuralNetwork.getInputLayerWeightForNeuronAndConnection(i, conn) << delimiter;
-                }
-            }
+            const detail::FullPrecisionStreamGuard precisionGuard(outFile);
+            detail::NetworkWeightLocation loc;
 
-            // 2. Input layer bias weights (gated)
-            for (uint32_t conn = 0; conn < InputToHiddenConnections; ++conn)
+            for (size_t k = 0; LayoutType::locate(k, loc); ++k)
             {
-                outFile << neuralNetwork.getInputLayerBiasNeuronWeightForConnection(conn) << delimiter;
-            }
-
-            // 3. Recurrent-to-hidden weights (gated)
-            for (uint32_t r = 0; r < NumberOfHiddenLayerNeurons; ++r)
-            {
-                for (uint32_t conn = 0; conn < RecurrentToHiddenConnections; ++conn)
-                {
-                    outFile << neuralNetwork.getRecurrentLayer().getWeightForNeuronAndConnection(r, conn) << delimiter;
-                }
-            }
-
-            // 4. Last-hidden-to-output weights (not gated)
-            const size_t hiddenLayer = NeuralNetworkType::NeuralNetworkNumberOfHiddenLayers - 1;
-            for (uint32_t h = 0; h < NumberOfHiddenLayerNeurons; ++h)
-            {
-                for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
-                {
-                    outFile << neuralNetwork.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, o) << delimiter;
-                }
-            }
-
-            // 5. Output bias weights
-            for (uint32_t o = 0; o < NumberOfOutputLayerNeurons; ++o)
-            {
-                outFile << neuralNetwork.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, o) << delimiter;
+                outFile << LayoutType::get(neuralNetwork, loc) << delimiter;
             }
         }
     };

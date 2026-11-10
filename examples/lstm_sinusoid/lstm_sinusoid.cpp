@@ -24,7 +24,6 @@
 #include "fixedPointTransferFunctions.hpp"
 #include "earlyStopping.hpp"
 #include "teacherForcing.hpp"
-#include "truncatedBPTT.hpp"
 
 #define TRAINING_EPOCHS 20000U
 #define SAMPLES_PER_PERIOD 20U
