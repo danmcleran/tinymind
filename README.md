@@ -1092,6 +1092,7 @@ tinymind/
       tinymind_traits.hpp       # Minimal in-house enable_if / is_floating_point for STD=0 builds
       tinymind_fp16.hpp         # fp16_t / bf16_t storage structs + float converters
       threading.hpp             # TINYMIND_PARALLEL_FOR_OUTER OpenMP macro
+      tinymind_rounding.hpp     # SGD step rounding: learning rate x gradient to nearest, momentum toward zero (QValue overloads in qformat.hpp)
       nnproperties.hpp          # Weight file manager (MLP, LSTM, GRU, KAN)
       qcalibration.hpp          # Host-only int8 calibration (RangeObserver, PercentileObserver, KLDivergenceObserver, CLE, fold, ...)
       constants.hpp, limits.hpp, random.hpp, ...
