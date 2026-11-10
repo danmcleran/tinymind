@@ -24,6 +24,8 @@
 
 #include <cstddef>
 
+#include "include/tinymind_rounding.hpp"
+
 namespace tinymind {
     /**
      * 1D convolution layer for time-series feature extraction.
@@ -153,7 +155,7 @@ namespace tinymind {
         {
             for (size_t i = 0; i < TotalWeights; ++i)
             {
-                mWeights[i] += learningRate * mGradients[i];
+                mWeights[i] += multiplyRoundNearest(learningRate, mGradients[i]);
             }
         }
 

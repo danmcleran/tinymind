@@ -8577,3 +8577,4 @@ BOOST_AUTO_TEST_SUITE_END()
 
 #include "optimizers_tests.hpp"
 #include "momentum_rounding_tests.hpp"
+#include "sgd_step_rounding_tests.hpp"

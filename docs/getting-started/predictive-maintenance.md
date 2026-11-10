@@ -172,29 +172,29 @@ Sample output (synthetic path, seed = 7):
 ```
 ai4i2020.csv not found; synthesizing 10000 rows using the documented AI4I 2020 generative rules.
 Train: 8000 (pos=258, neg=7742, by training target)  Test: 2000
-iter   5000   avg|err| = 0.1424
-iter  10000   avg|err| = 0.0768
-iter  15000   avg|err| = 0.0556
+iter   5000   avg|err| = 0.1459
+iter  10000   avg|err| = 0.0780
+iter  15000   avg|err| = 0.0559
 ...
-iter 290000   avg|err| = 0.0155
-iter 295000   avg|err| = 0.0221
-iter 300000   avg|err| = 0.0168
+iter 290000   avg|err| = 0.0207
+iter 295000   avg|err| = 0.0227
+iter 300000   avg|err| = 0.0175
 
 Confusion matrix (rows=actual, cols=predicted):
                pred no-fail   pred fail
-  actual no-fail     1905            20
-  actual fail          12            63
+  actual no-fail     1890            35
+  actual fail          11            64
 
-accuracy=0.9840  precision=0.7590  recall=0.8400  F1=0.7975
+accuracy=0.9770  precision=0.6465  recall=0.8533  F1=0.7356
 ```
 
 Reading the matrix:
 
-- **63 / 75** real failures caught (recall 84%). 12 failures slip through undetected.
-- **20 / 1925** good machines trigger false alarms (1.0%). That is the cost of the recall-biased threshold -- move the 0.5 threshold up to shift the tradeoff.
+- **64 / 75** real failures caught (recall 85%). 11 failures slip through undetected.
+- **35 / 1925** good machines trigger false alarms (1.8%). That is the cost of the recall-biased threshold -- move the 0.5 threshold up to shift the tradeoff.
 - **Accuracy is misleading** on a 3.4% positive class. A trivial "always no failure" classifier would score 96.6% accuracy on the real distribution. The numbers you should actually track are recall and F1.
 
-Using the real UCI CSV (put it in `output/` before running, which is the working directory `make run` uses) gives somewhat **lower** precision and F1 than the synthetic fallback: over seeds 1 to 10, F1 0.72 ± 0.04 on the real CSV against 0.75 ± 0.07 on synthetic data. About 15% of the real failures come only from the random TWF/RNF modes, which no sensor reading predicts.
+Using the real UCI CSV (put it in `output/` before running, which is the working directory `make run` uses) gives somewhat **lower** precision and F1 than the synthetic fallback: over seeds 1 to 10, F1 0.71 ± 0.05 on the real CSV against 0.74 ± 0.05 on synthetic data. About 15% of the real failures come only from the random TWF/RNF modes, which no sensor reading predicts.
 
 ## Footprint
 

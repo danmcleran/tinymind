@@ -819,4 +819,88 @@ BOOST_AUTO_TEST_CASE(kan_fixed_point_momentum_decays)
     BOOST_TEST(drift == 0.0);
 }
 
+// With no momentum every coefficient, base weight and spline weight must move
+// by exactly learning rate x gradient rounded to nearest (ties away from
+// zero). A floor (the default TruncatePolicy) turned a sub-LSB negative step
+// into -1 LSB, so every parameter with a small negative gradient drifted down;
+// rounding toward zero instead loses every step below one LSB.
+BOOST_AUTO_TEST_CASE(kan_fixed_point_step_rounds_to_nearest)
+{
+    typedef tinymind::QValue<8, 8, true> Q88;
+    typedef tinymind::KanTransferFunctions<Q88, QSmallRandom<Q88>, 1> Q88TransferFunctions;
+    typedef tinymind::KolmogorovArnoldNetwork<Q88, 2, 1, 5, 1, Q88TransferFunctions, true, 1, 5, 1> KanType;
+    typedef KanType::InputLayerType::LayerNeuronType InputNeuronType;
+    typedef KanType::LastHiddenLayerType::LayerNeuronType HiddenNeuronType;
+
+    static KanType kan;
+    const Q88 learningRate(0, 64);
+    kan.setLearningRate(learningRate);
+    kan.setMomentumRate(Q88(0));
+    kan.setAccelerationRate(Q88(0));
+
+    Q88 inputs[2] = {Q88(0, 128), Q88(0, 64)};
+    Q88 target[1] = {Q88(0, 192)};
+
+    size_t mismatches = 0;
+    size_t negativeSubLsb = 0;
+    size_t roundedUpHalves = 0;
+    auto check = [&](const int64_t before, const int64_t after, const int64_t gradient)
+    {
+        const int64_t product = static_cast<int64_t>(learningRate.getValue()) * gradient;
+        const int64_t magnitude = (product < 0) ? -product : product;
+        const int64_t rounded = (magnitude + 128) / 256;
+        const int64_t expected = (product < 0) ? -rounded : rounded;
+        mismatches += ((after - before) != expected) ? 1u : 0u;
+        negativeSubLsb += ((product < 0) && (product > -256)) ? 1u : 0u;
+        roundedUpHalves += ((magnitude % 256) >= 128) ? 1u : 0u;
+    };
+
+    for (size_t step = 0; step < 20; ++step)
+    {
+        const std::vector<double> before = kanParameters(kan);
+        kan.feedForward(inputs);
+        kan.trainNetwork(target);
+        const std::vector<double> after = kanParameters(kan);
+
+        // Same order as kanParameters(): per connection, the coefficients,
+        // then the base and spline weights; input layer, then hidden layer.
+        size_t index = 0;
+        for (size_t n = 0; n < KanType::InputLayerType::NumberOfNeuronsInLayer; ++n)
+        {
+            for (size_t c = 0; c < InputNeuronType::NumberOfOutgoingConnectionsFromNeuron; ++c)
+            {
+                const auto* connection = kan.getInputLayer().getNeuron(n)->getConnection(c);
+                for (size_t k = 0; k < InputNeuronType::NumberOfCoefficientsPerConnection; ++k, ++index)
+                {
+                    check(static_cast<int64_t>(before[index]), static_cast<int64_t>(after[index]), connection->getCoefficientGradient(k).getValue());
+                }
+                check(static_cast<int64_t>(before[index]), static_cast<int64_t>(after[index]), connection->getBaseWeightGradient().getValue());
+                ++index;
+                check(static_cast<int64_t>(before[index]), static_cast<int64_t>(after[index]), connection->getSplineWeightGradient().getValue());
+                ++index;
+            }
+        }
+        for (size_t n = 0; n < KanType::LastHiddenLayerType::NumberOfNeuronsInLayer; ++n)
+        {
+            for (size_t c = 0; c < HiddenNeuronType::NumberOfOutgoingConnectionsFromNeuron; ++c)
+            {
+                const auto* connection = kan.getLastHiddenLayer().getNeuron(n)->getConnection(c);
+                for (size_t k = 0; k < HiddenNeuronType::NumberOfCoefficientsPerConnection; ++k, ++index)
+                {
+                    check(static_cast<int64_t>(before[index]), static_cast<int64_t>(after[index]), connection->getCoefficientGradient(k).getValue());
+                }
+                check(static_cast<int64_t>(before[index]), static_cast<int64_t>(after[index]), connection->getBaseWeightGradient().getValue());
+                ++index;
+                check(static_cast<int64_t>(before[index]), static_cast<int64_t>(after[index]), connection->getSplineWeightGradient().getValue());
+                ++index;
+            }
+        }
+        BOOST_TEST(index == before.size());
+    }
+
+    BOOST_TEST(mismatches == 0u);
+    BOOST_TEST(negativeSubLsb > 0u);
+    BOOST_TEST(roundedUpHalves > 0u);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

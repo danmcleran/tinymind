@@ -24,6 +24,8 @@
 
 #include <cstddef>
 
+#include "include/tinymind_rounding.hpp"
+
 namespace tinymind {
     /**
      * 2D convolution layer for spatial feature extraction (images,
@@ -187,7 +189,7 @@ namespace tinymind {
         {
             for (size_t i = 0; i < TotalWeights; ++i)
             {
-                mWeights[i] += learningRate * mGradients[i];
+                mWeights[i] += multiplyRoundNearest(learningRate, mGradients[i]);
             }
         }
 

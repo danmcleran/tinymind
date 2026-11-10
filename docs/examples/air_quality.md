@@ -31,6 +31,6 @@ By default the example runs fully offline on a synthetic hourly series (determin
 
 ![Air-quality training loss and one-step-ahead forecast vs actual over the held-out hours]({{ site.baseurl }}/assets/plots/air_quality_forecast.png)
 
-The loss converges within a few dozen epochs and the predicted line tracks the daily rise-and-fall of the true series closely, hitting the rush-hour peaks and overnight troughs (the very tallest peaks are shaved slightly — the residual cost of one-step prediction from a single scalar). The one-step-ahead **MAE is around 0.069** in concentration units over a series spanning roughly 1.3–3.0.
+The loss converges within a few dozen epochs and the predicted line tracks the daily rise-and-fall of the true series closely, hitting the rush-hour peaks and overnight troughs (the very tallest peaks are shaved slightly — the residual cost of one-step prediction from a single scalar). The one-step-ahead **MAE is around 0.070** in concentration units over a series spanning roughly 1.3–3.0.
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/air_quality)

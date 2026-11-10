@@ -30,7 +30,7 @@ The full 768-row dataset (~35&nbsp;KB) ships with the example as `ENB2012_data.c
 
 ![Energy efficiency training loss and predicted-vs-actual scatter for heating and cooling load]({{ site.baseurl }}/assets/plots/energy_efficiency.png)
 
-The loss falls quickly in the standardized target domain, and both predicted-vs-actual scatters hug the y=x reference line. On the held-out split the fixed-point MLP reaches heating-load **R² ≈ 0.96** (MAE ≈ 1.7) and cooling-load **R² ≈ 0.92** (MAE ≈ 1.9). Ordinary least squares on the same features and split reaches R² 0.92 and 0.89 (MAE 2.08 and 2.21), so the nonlinear hidden layer adds real accuracy.
+The loss falls quickly in the standardized target domain, and both predicted-vs-actual scatters hug the y=x reference line. On the held-out split the fixed-point MLP reaches heating-load **R² ≈ 0.95** (MAE ≈ 1.7) and cooling-load **R² ≈ 0.93** (MAE ≈ 1.8). Ordinary least squares on the same features and split reaches R² 0.92 and 0.89 (MAE 2.08 and 2.21), so the nonlinear hidden layer adds real accuracy.
 
 The example trains on every sample. An earlier version skipped samples whose error was within the fixed-point zero tolerance, which at this target scaling meant every residual under about 5 kWh/m²; it reached only R² 0.90 and 0.88, worse than the straight-line fit.
 

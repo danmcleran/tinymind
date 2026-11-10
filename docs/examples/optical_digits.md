@@ -30,7 +30,7 @@ Both data files ship with the example — `optdigits.tra` (3823 train rows) and 
 
 ![Optical digits training loss and 10x10 test confusion matrix]({{ site.baseurl }}/assets/plots/optical_digits.png)
 
-The loss converges to ~0.001 average error and the confusion matrix is strongly diagonal, giving **~96% test accuracy** (1732/1797). The residual off-diagonal mass is the expected hard cases — 7s read as 5s/9s, a few 8s read as 1s — pairs that are genuinely ambiguous at 8×8 resolution.
+The loss converges to ~0.001 average error and the confusion matrix is strongly diagonal, giving **~96% test accuracy** (1729/1797). The residual off-diagonal mass is the expected hard cases — 7s read as 5s/9s, a few 8s read as 1s — pairs that are genuinely ambiguous at 8×8 resolution.
 
 ### Sample predictions
 

@@ -27,14 +27,14 @@ see still count against recall.
 training: enough to learn the failure regions, without the decision boundary a
 50/50 split pushes deep into healthy space. On the real CSV, 50/50 sampling
 with every failure mode as the target gave precision 0.29 and F1 0.43. The
-current setup gives precision 0.67 and F1 0.72 (10-seed means).
+current setup gives precision 0.65 and F1 0.71 (10-seed means).
 
 **Product features.** The AI4I failure modes are *products* of inputs
 (mechanical power for PWF, tool-wear × torque for OSF). A small ReLU MLP cannot
 synthesize a product from raw features, so feeding the products in directly
 lifted precision from 0.59 to 0.66 and F1 from 0.67 to 0.72 on the real CSV
 (10-seed means, measured before the fixed-point momentum terms were made to
-round toward zero; the current setup gives 0.67 and 0.72).
+round toward zero and SGD steps to nearest; the current setup gives 0.65 and 0.71).
 
 ## Build and run
 
@@ -63,13 +63,13 @@ Expected output (seed = 7):
 
 ```
 synthetic: Train: 8000 (pos=258, neg=7742, by training target)  Test: 2000
-           accuracy 0.984   precision 0.759   recall 0.840   F1 0.798
+           accuracy 0.977   precision 0.646   recall 0.853   F1 0.736
 real CSV:  Train: 8000 (pos=239, neg=7761, by training target)  Test: 2000
-           accuracy 0.980   precision 0.643   recall 0.750   F1 0.692
+           accuracy 0.982   precision 0.667   recall 0.767   F1 0.713
 ```
 
 The test split holds only ~60 real failures, so a single seed is noisy. Over
-seeds 1 to 10 the real CSV gives precision 0.67 ± 0.07, recall 0.78 ± 0.03 and
-F1 0.72 ± 0.04. The synthetic set matches the real CSV's base rate, variant
+seeds 1 to 10 the real CSV gives precision 0.65 ± 0.07, recall 0.80 ± 0.06 and
+F1 0.71 ± 0.05. The synthetic set matches the real CSV's base rate, variant
 mix, rpm/torque correlation and tool-replacement window, and gives F1
-0.75 ± 0.07.
+0.74 ± 0.05.

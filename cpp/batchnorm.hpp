@@ -23,6 +23,7 @@
 #pragma once
 
 #include "include/tinymind_traits.hpp"
+#include "include/tinymind_rounding.hpp"
 
 #include <cstddef>
 
@@ -282,8 +283,8 @@ namespace tinymind {
         {
             for (size_t i = 0; i < Size; ++i)
             {
-                mGamma[i] += learningRate * mGammaGradient[i];
-                mBeta[i] += learningRate * mBetaGradient[i];
+                mGamma[i] += multiplyRoundNearest(learningRate, mGammaGradient[i]);
+                mBeta[i] += multiplyRoundNearest(learningRate, mBetaGradient[i]);
 
                 mGammaGradient[i] = zero();
                 mBetaGradient[i] = zero();

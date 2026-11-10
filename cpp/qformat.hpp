@@ -32,6 +32,7 @@
 #endif // TINYMIND_ENABLE_OSTREAMS
 
 #include "typeChooser.hpp"
+#include "include/tinymind_rounding.hpp"
 
 #ifndef UINT64_MAX
 #define UINT64_MAX 0xFFFFFFFFFFFFFFFFULL
@@ -960,26 +961,72 @@ namespace tinymind {
                 return value >> NumberOfFractionalBits;
             }
         };
+
+        // value / 2^NumberOfFractionalBits rounded to nearest, ties away from zero.
+        template<typename T, unsigned NumberOfFractionalBits, bool IsSigned>
+        struct ShiftNearest
+        {
+            static T shift(const T& value)
+            {
+                const T half = static_cast<T>(1) << (NumberOfFractionalBits - 1);
+
+                if (value < 0)
+                {
+                    return -(((-value) + half) >> NumberOfFractionalBits);
+                }
+
+                return (value + half) >> NumberOfFractionalBits;
+            }
+        };
+
+        template<typename T, unsigned NumberOfFractionalBits>
+        struct ShiftNearest<T, NumberOfFractionalBits, false>
+        {
+            static T shift(const T& value)
+            {
+                const T half = static_cast<T>(1) << (NumberOfFractionalBits - 1);
+
+                return (value + half) >> NumberOfFractionalBits;
+            }
+        };
     }
 
-    /**
-     * left * right rounded toward zero, whatever the format's rounding policy.
-     *
-     * SGD's momentum terms (momentum x the last delta weight, acceleration x
-     * the one before) must shrink a delta that no gradient refreshes. Under
-     * RoundUpPolicy, 0.5 x (+1 LSB) rounds back up to +1 LSB, and under
-     * TruncatePolicy 0.5 x (-1 LSB) rounds back down to -1 LSB, so a one-LSB
-     * delta reproduces itself forever and the weight moves by an LSB on every
-     * training step whatever the gradient. Rounding these products toward zero
-     * makes an undriven delta decay to exactly 0, as it does in floating point.
-     * Floating-point types multiply as usual.
-     */
-    template<typename ValueType>
-    ValueType multiplyRoundTowardZero(const ValueType& left, const ValueType& right)
+    namespace detail
     {
-        return left * right;
+        // left * right with the same widening, sign extension and saturation
+        // as operator*=, the final shift done by ShiftPolicy instead of the
+        // format's rounding policy.
+        template<template<typename, unsigned, bool> class ShiftPolicy,
+            unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned,
+            template<typename, unsigned> class QValueRoundingPolicy,
+            template<typename> class QValueSaturatePolicy>
+        QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy> multiplyWithShift(
+            const QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy>& left,
+            const QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy>& right)
+        {
+            typedef QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy> QValueType;
+            typedef typename QValueType::MultiplicationResultFullWidthValueType WideType;
+
+            const WideType scale = static_cast<WideType>(1) << NumFractionalBits;
+            const WideType min = static_cast<WideType>(QValueType::QFormatMinValue()) * scale;
+            const WideType max = static_cast<WideType>(QValueType::QFormatMaxValue()) * scale;
+            WideType leftValue = static_cast<WideType>(left.getValue());
+            WideType rightValue = static_cast<WideType>(right.getValue());
+
+            SignExtender<WideType, NumFixedBits, NumFractionalBits, QValueIsSigned>::signExtend(leftValue);
+            SignExtender<WideType, NumFixedBits, NumFractionalBits, QValueIsSigned>::signExtend(rightValue);
+
+            const WideType product = QValueType::MultiplicationSaturatePolicy::saturate(leftValue, rightValue, min, max, MultiplicationOp);
+            QValueType result;
+
+            result.setValue(static_cast<typename QValueType::FullWidthValueType>(ShiftPolicy<WideType, NumFractionalBits, QValueIsSigned>::shift(product)));
+
+            return result;
+        }
     }
 
+    // QValue overloads of the SGD products declared in tinymind_rounding.hpp,
+    // which says why SGD needs them and holds the floating-point overloads.
     template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned,
         template<typename, unsigned> class QValueRoundingPolicy,
         template<typename> class QValueSaturatePolicy>
@@ -987,26 +1034,17 @@ namespace tinymind {
         const QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy>& left,
         const QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy>& right)
     {
-        typedef QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy> QValueType;
-        typedef typename QValueType::MultiplicationResultFullWidthValueType WideType;
+        return detail::multiplyWithShift<detail::ShiftTowardZero>(left, right);
+    }
 
-        // Same widening, sign extension and saturation as operator*=; only the
-        // final rounding differs.
-        const WideType scale = static_cast<WideType>(1) << NumFractionalBits;
-        const WideType min = static_cast<WideType>(QValueType::QFormatMinValue()) * scale;
-        const WideType max = static_cast<WideType>(QValueType::QFormatMaxValue()) * scale;
-        WideType leftValue = static_cast<WideType>(left.getValue());
-        WideType rightValue = static_cast<WideType>(right.getValue());
-
-        SignExtender<WideType, NumFixedBits, NumFractionalBits, QValueIsSigned>::signExtend(leftValue);
-        SignExtender<WideType, NumFixedBits, NumFractionalBits, QValueIsSigned>::signExtend(rightValue);
-
-        const WideType product = QValueType::MultiplicationSaturatePolicy::saturate(leftValue, rightValue, min, max, MultiplicationOp);
-        QValueType result;
-
-        result.setValue(static_cast<typename QValueType::FullWidthValueType>(detail::ShiftTowardZero<WideType, NumFractionalBits, QValueIsSigned>::shift(product)));
-
-        return result;
+    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned,
+        template<typename, unsigned> class QValueRoundingPolicy,
+        template<typename> class QValueSaturatePolicy>
+    QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy> multiplyRoundNearest(
+        const QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy>& left,
+        const QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy>& right)
+    {
+        return detail::multiplyWithShift<detail::ShiftNearest>(left, right);
     }
 
     template<bool Condition, typename T>
