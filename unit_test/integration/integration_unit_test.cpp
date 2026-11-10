@@ -181,7 +181,7 @@ const char* kGoldenStateSpace =
 const char* kGoldenAnfisMackeyGlassInt8 =
     "# anfis_mackey_glass_int8 golden output\n"
     "# rules=16 inputs=4 mfs=2\n"
-    "int8: 63 -23 -34 -11 -47 28 82 -4\n"
+    "int8: 62 -23 -34 -12 -47 27 80 -4\n"
     "rule: 8 12 12 12 12 13 4 12\n"
     "bytes: qformat=448 int8=4428 lut=4096\n";
 

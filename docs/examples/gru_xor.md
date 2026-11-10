@@ -36,4 +36,8 @@ The 4-case XOR error falls smoothly from ~0.5 (chance) to ~0.06 and plateaus. Al
 
 Sweeping the trained GRU over the `[0,1]²` input grid — resetting the recurrent state at each point — gives the predicted-vs-actual view: the heatmap is `P(XOR=1)`, the line is the 0.5 boundary, and the four corner markers are the ground-truth targets (red = 1, blue = 0). The surface is the clean XOR saddle, with each corner firmly inside the matching region — the same presentation as the [fixed-point]({{ site.baseurl }}/examples/xor.html) and [PyTorch]({{ site.baseurl }}/examples/pytorch_xor.html) XOR examples.
 
+## What this example does and does not show
+
+Because the state is reset before every sample, h<sub>t-1</sub> is always zero here: the GRU's recurrent weights never affect the output, and the network behaves as a gated feed-forward net. The example exercises GRU training mechanics on a task small enough to check by hand, not recurrence. It is also easy for the gates: with the input, gate and recurrent weights frozen at their random initial values and only the hidden-to-output weights trained, the GRU still classifies all four cases (four-case error 0.088, against 0.061 when everything trains). For tasks that only a trained recurrent state can solve, see [Elman temporal XOR]({{ site.baseurl }}/examples/elman_temporal_xor.html) and [human activity recognition]({{ site.baseurl }}/examples/har_activity.html).
+
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/gru_xor)

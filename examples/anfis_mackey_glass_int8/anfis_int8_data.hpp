@@ -9,8 +9,8 @@ namespace anfis_int8_data {
     constexpr std::size_t NumberOfTestSamples = 500;
     constexpr double InputMin  = 0.376557971;
     constexpr double InputMax  = 1.3331372;
-    constexpr double OutputMin = 0.384343926;
-    constexpr double OutputMax = 1.32438261;
+    constexpr double OutputMin = 0.376557971;
+    constexpr double OutputMax = 1.3331372;
 
     constexpr double TestInputs[2000] = {
         0.931324404, 0.726669447, 0.545705245, 0.691538312,

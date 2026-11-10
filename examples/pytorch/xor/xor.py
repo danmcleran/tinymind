@@ -7,6 +7,8 @@ calculations use native floating-point; the previous fixed-point
 quantization utilities have been removed for simplicity.
 """
 
+import os
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -149,21 +151,41 @@ def evaluate(
     return acc, raw, binary
 
 
+# A 3-unit ReLU net fails to solve XOR from about half of all initializations
+# (ReLU units that start dead never recover; 11 of 20 seeds succeed), and a
+# different optimizer does not change that. main() retries the next seed until
+# the trained model gets all four cases right, so the exported weights always
+# solve XOR.
+SEED = 42
+MAX_SEED_ATTEMPTS = 10
+
+
 def main():
-    torch.manual_seed(42)
-    np.random.seed(42)
-
-    model = XORNet(hidden_size=3)
-    print("Model architecture:\n", model)
-
+    np.random.seed(SEED)
     X, y = create_xor_data()
-    losses = train(model, X, y, epochs=1000, learning_rate=0.1)
+
+    model = None
+    losses: list[float] = []
+    for attempt in range(MAX_SEED_ATTEMPTS):
+        torch.manual_seed(SEED + attempt)
+        candidate = XORNet(hidden_size=3)
+        losses = train(candidate, X, y, epochs=1000, learning_rate=0.1)
+        acc, _, _ = evaluate(candidate, X, y)
+        if acc == 100.0:
+            model = candidate
+            print(f"seed {SEED + attempt}: solved XOR")
+            break
+        print(f"seed {SEED + attempt}: {acc:.0f}% on XOR, retrying with the next seed")
+    if model is None:
+        raise SystemExit(f"no seed in {SEED}..{SEED + MAX_SEED_ATTEMPTS - 1} solved XOR")
+    print("Model architecture:\n", model)
 
     acc, raw, binary = evaluate(model, X, y)
     print(f"Accuracy on training data: {acc:.2f}%")
     print("Raw outputs:\n", raw.numpy())
     print("Binary predictions:\n", binary.numpy())
 
+    os.makedirs("input", exist_ok=True)
     model.save_to_tinymind_format("input/xor_weights_q16_16.txt")
 
     # plot loss curve

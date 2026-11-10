@@ -47,8 +47,14 @@ make clean && make && make run
 
 The committed `weights.hpp` ships an exact textbook 2-4-1 ReLU+Sigmoid
 solver so the example runs without requiring PyTorch. Re-running
-`xor_quant.py` overwrites the file with whatever the SGD trainer
-converges to.
+`xor_quant.py` overwrites the file with a trained model instead.
+
+Training a 4-unit ReLU net on XOR depends on the initialization: with the
+script's settings (SGD, learning rate 0.1, 4000 epochs) 15 of 20 seeds solve
+it, and the rest get stuck with ReLU units that start dead and never recover.
+The script starts at seed 42 and retries the next seed until the trained
+model gets all four cases right, so the header it writes always solves XOR
+(seed 42 does on the first try).
 
 Expected output:
 

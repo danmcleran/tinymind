@@ -23,21 +23,20 @@ SOFTWARE.
 from __future__ import annotations
 
 """
-Phase 15 import_demo: full PyTorch -> tinymind importer round-trip.
+Phase 15 import_demo: PyTorch -> tinymind importer round-trip.
 
 Trains a tiny 3-8-4-2 MLP with sigmoid output on a deterministic synthetic
-regression task, then drives the apps/import_pytorch/tinymind_import
-module to emit weights.hpp + float_reference.hpp. The C++ side
-(import_demo.cpp) consumes weights.hpp, runs a pure-integer forward
-through the q*.hpp layer family, and checks parity against the float
-reference stored in float_reference.hpp.
+regression task, scores it on held-out samples against a predict-the-mean
+baseline, then drives the apps/import_pytorch/tinymind_import module to emit
+output/weights.hpp (the int8 model) and output/float_reference.hpp (held-out
+inputs with the float model's outputs).
 
-This script is the regenerate-weights entry point only; the C++ binary
-shipped in this directory builds against the checked-in weights.hpp and
-float_reference.hpp without needing PyTorch installed.
+Those headers show what the importer produces for a real trained model.
+import_demo.cpp does NOT include them: it carries its own float weights and
+calibration so that `make check` runs it without PyTorch.
 
-Dependencies: torch, numpy. Use pyenv to isolate the install (the system
-Python is PEP 668-managed).
+Dependencies: torch, numpy. Use a venv or pyenv to isolate the install (the
+system Python is PEP 668-managed).
 """
 
 import os
@@ -64,7 +63,8 @@ N_H1 = 8
 N_H2 = 4
 N_OUT = 2
 EPOCHS = 3000
-LR = 0.05
+LR = 1e-2  # Adam. Plain SGD at lr 0.05 barely moved this model (held-out R^2 ~0.1).
+OUT_DIR = os.path.join(HERE, "output")
 
 
 class MLP(nn.Module):
@@ -83,9 +83,9 @@ class MLP(nn.Module):
         return self.sigmoid(self.fc3(h2))
 
 
-def synthetic_dataset(n: int) -> tuple[torch.Tensor, torch.Tensor]:
+def synthetic_dataset(n: int, seed: int = SEED) -> tuple[torch.Tensor, torch.Tensor]:
     """Deterministic regression-style task: f(x) = sigmoid(linear)."""
-    rng = np.random.default_rng(SEED)
+    rng = np.random.default_rng(seed)
     X = rng.uniform(-1.0, 1.0, size=(n, N_IN)).astype(np.float32)
     Wgt = np.array([[1.2, -0.5, 0.3, 0.7],
                     [-0.4, 1.1, 0.6, -0.9],
@@ -96,7 +96,7 @@ def synthetic_dataset(n: int) -> tuple[torch.Tensor, torch.Tensor]:
 
 def train(model: nn.Module, X: torch.Tensor, y: torch.Tensor) -> None:
     crit = nn.MSELoss()
-    opt = optim.SGD(model.parameters(), lr=LR)
+    opt = optim.Adam(model.parameters(), lr=LR)
     for epoch in range(EPOCHS):
         opt.zero_grad()
         loss = crit(model(X), y)
@@ -153,6 +153,14 @@ def main() -> None:
     Xtr, ytr = synthetic_dataset(256)
     train(model, Xtr, ytr)
 
+    # Held-out evaluation: fresh samples from the same generator.
+    Xte, yte = synthetic_dataset(4096, seed=SEED + 1)
+    with torch.no_grad():
+        test_mse = float(((model(Xte) - yte) ** 2).mean())
+    mean_mse = float(((ytr.mean(dim=0) - yte) ** 2).mean())
+    print(f"held-out MSE {test_mse:.6g}  (predict-the-training-mean baseline {mean_mse:.6g})")
+    os.makedirs(OUT_DIR, exist_ok=True)
+
     # Pull numpy weights out of the state dict. The importer module
     # takes plain numpy and does NOT depend on torch.
     fc1_w = model.fc1.weight.detach().numpy()
@@ -185,22 +193,20 @@ def main() -> None:
         layers, input_name="input",
         input_observer=MinMaxObserver(),
         dataset=dataset,
-        output_path=os.path.join(HERE, "weights.hpp"),
+        output_path=os.path.join(OUT_DIR, "weights.hpp"),
         namespace="import_demo",
         meta={"NumInputs": N_IN, "Hidden1": N_H1, "Hidden2": N_H2,
               "NumOutputs": N_OUT},
     )
-    print("wrote weights.hpp")
+    print("wrote output/weights.hpp")
     print("ranges:")
     for k, v in ranges.items():
         print(f"  {k:<8s}  scale={v[0]: .6g}  zp={v[1]}")
 
-    # Write reference inputs + float predictions for the C++ parity check.
-    test_idx = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7], dtype=torch.long)
-    X_test = Xtr.index_select(0, test_idx)
-    write_float_reference(os.path.join(HERE, "float_reference.hpp"),
-                          model, X_test)
-    print("wrote float_reference.hpp")
+    # Reference inputs + float predictions, from the held-out set.
+    write_float_reference(os.path.join(OUT_DIR, "float_reference.hpp"),
+                          model, Xte[:8])
+    print("wrote output/float_reference.hpp")
 
 
 if __name__ == "__main__":

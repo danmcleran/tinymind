@@ -35,7 +35,7 @@ these exactly.
 **GRU XOR learning curve** — Q16.16 GRU; the four-case error falls from chance (~0.5) to ~0.06 and plateaus.
 ![GRU XOR learning curve]({{ site.baseurl }}/assets/plots/gru_xor.png)
 
-**LSTM sinusoid** — one-step-ahead prediction tracks the sinusoid; the free-running auto-regressive rollout holds the first period, then lags in phase.
+**LSTM sinusoid** — Q16.16 LSTM on a held-out, half-sample-shifted sinusoid: one-step-ahead RMS error 0.0076 and auto-regressive free-run 0.011, against 0.111 for persistence.
 ![LSTM sinusoid prediction]({{ site.baseurl }}/assets/plots/lstm_sinusoid.png)
 
 **LSTM sinusoid, float vs Q16.16** — the same LSTM trained in double and in Q16.16, side by side.
@@ -57,7 +57,7 @@ these exactly.
 **LTC** — fused ODE-solver cell trained to a leaky-integrator step response via reverse-mode autodiff.
 ![LTC behavior]({{ site.baseurl }}/assets/plots/ltc_behavior.png)
 
-**CfC** — closed-form continuous-time cell on an irregularly-sampled target (per-step `ts` into the time-gate).
+**CfC** — closed-form continuous-time cell on irregularly sampled held-out data, against the same cell blind to the elapsed time `ts`.
 ![CfC behavior]({{ site.baseurl }}/assets/plots/cfc_behavior.png)
 
 **int8 QCfC** — pure-integer CfC cell tracking the float reference, with per-step quantization error.
@@ -135,7 +135,7 @@ for which example uses which dataset.
 **Optical digits, sample predictions** — sampled 8×8 test bitmaps titled with true and predicted labels, red when misclassified.
 ![Optical digits sample predictions]({{ site.baseurl }}/assets/plots/optical_digits_grid.png)
 
-**Human activity recognition** — recurrent `LstmNeuralNetwork` (3→16→4) over tri-axial accelerometer windows.
+**Human activity recognition** — recurrent `LstmNeuralNetwork` (3→16→4) over tri-axial accelerometer windows; upstairs and downstairs differ only in sample order.
 ![HAR activity classifier]({{ site.baseurl }}/assets/plots/har_activity.png)
 
 **Japanese Vowels** — recurrent `ElmanNeuralNetwork` (12→16→9) speaker ID; trained offline in float, then swept across fixed-point formats. Q8.8 matches double precision (96.76%) at 4× smaller weights.

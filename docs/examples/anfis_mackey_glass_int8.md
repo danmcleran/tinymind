@@ -19,10 +19,14 @@ The same model as [Mackey-Glass ANFIS]({{ site.baseurl }}/examples/anfis_mackey_
 |---|---|---|
 | float reference | 0.003997 | — |
 | Q16.16 | 0.003994 | **448** |
-| int8 | 0.008584 | **4428 (9.9x)** |
-| int8, no ridge | 0.025452 | — |
+| int8 | 0.008566 | **4428 (9.9x)** |
+| int8, no ridge | 0.025336 | — |
 
 Accuracy holds — int8 costs about 2.1x the float reference's error on a target spanning 0.94. Memory does not.
+
+Every int8 range (inputs, outputs, and the shared consequent grid) is
+calibrated from the 500 training samples only; the 500 held-out samples are
+used for scoring and nothing else.
 
 ## Why int8 is bigger
 
@@ -40,8 +44,8 @@ Not for footprint — for **pipeline consistency**. An int8 frontend (a quantize
 
 | consequent solve | largest coefficient | int8 test RMSE |
 |---|---|---|
-| ridge = 1e-6 | 9.58 | 0.008584 |
-| ordinary least squares | 168.98 | 0.025452 |
+| ridge = 1e-6 | 9.58 | 0.008566 |
+| ordinary least squares | 168.98 | 0.025336 |
 
 Unregularized least squares produces large coefficients that nearly cancel. In float that is harmless — both fits score about 0.004. In int8 it is not: the input carries half a quantization step of error, and a coefficient of 169 amplifies it past the output quantum, breaking the cancellation the fit depends on. This is why `apps/anfis_train` carries a `ridge` parameter.
 

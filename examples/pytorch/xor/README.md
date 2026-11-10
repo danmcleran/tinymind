@@ -7,7 +7,8 @@ for inference.
 ## Workflow
 
 1. **Train in PyTorch** (`xor.py`): Trains a 2-3-1 network on the XOR problem
-   and exports the weights as Q16.16 fixed-point integers.
+   and exports the weights as Q16.16 fixed-point integers to
+   `input/xor_weights_q16_16.txt`.
 2. **Run inference in C++** (`xor.cpp`): Loads the exported weights into an
    untrainable tinymind `MultilayerPerceptron` and runs 1000 random XOR
    evaluations.
@@ -121,9 +122,21 @@ byte order, with `sizeof(FullWidthValueType)` bytes per value.
 ## Building and Running
 
 ```bash
-# Export weights from PyTorch
+# Export weights from PyTorch (creates input/xor_weights_q16_16.txt)
 python3 xor.py
 
 # Build and run C++ inference
 make clean && make && cd output && ./xor
 ```
+
+The weight file is not committed (`input/` is gitignored), so run `xor.py`
+first; a hand-written file in the same format works too, and the C++ side
+cannot tell the difference. When you run it, check the script's output says
+the model solved XOR.
+
+Training a 3-unit ReLU net on XOR depends on the initialization: with the
+script's settings (SGD, learning rate 0.1, 1000 epochs) only 11 of 20 seeds
+solve it, and switching to Adam does not help (10 of 20); the failures have
+ReLU units that start dead and never recover. The script starts at seed 42 and
+retries the next seed until the trained model gets all four cases right, so the
+file it writes always solves XOR (seed 42 does on the first try).

@@ -137,7 +137,16 @@ This example trains an LSTM to predict the next value in a sinusoidal sequence. 
 ## Network Definition
 
 ```cpp
-typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> ValueType;
+typedef tinymind::QValue<16, 16, true, tinymind::RoundUpPolicy> ValueType;
+
+// Learning rate 0.1, no momentum (see the example source for why).
+template<typename VT>
+struct SinusoidNetworkInitializer : public tinymind::DefaultNetworkInitializer<VT>
+{
+    static VT initialLearningRate() { static const VT rate(0, 6554); return rate; }
+    static VT initialMomentumRate() { return tinymind::Constants<VT>::zero(); }
+    static VT initialAccelerationRate() { return tinymind::Constants<VT>::zero(); }
+};
 
 typedef tinymind::FixedPointTransferFunctions<
     ValueType,
@@ -145,7 +154,7 @@ typedef tinymind::FixedPointTransferFunctions<
     tinymind::TanhActivationPolicy<ValueType>,
     tinymind::SigmoidActivationPolicy<ValueType>,
     1,
-    tinymind::DefaultNetworkInitializer<ValueType>,
+    SinusoidNetworkInitializer<ValueType>,
     tinymind::MeanSquaredErrorCalculator<ValueType, 1>,
     tinymind::ZeroToleranceCalculator<ValueType>,
     tinymind::GradientClipByValue<ValueType>> TransferFunctionsType;
@@ -161,25 +170,22 @@ typedef tinymind::LstmNeuralNetwork<
 
 ```cpp
 LstmNetworkType lstmNet;
-ValueType input[1], target[1], error;
+ValueType input[1], target[1];
 
 for (unsigned epoch = 0; epoch < TRAINING_EPOCHS; ++epoch)
 {
-    for (size_t t = 0; t < NUM_SAMPLES - 1; ++t)
+    for (size_t t = 0; t < NUM_SAMPLES; ++t)
     {
         input[0] = sinSamples[t];
-        target[0] = sinSamples[t + 1];
+        target[0] = sinSamples[(t + 1) % NUM_SAMPLES];
 
         lstmNet.feedForward(&input[0]);
-        error = lstmNet.calculateError(&target[0]);
-
-        if (!TransferFunctionsType::isWithinZeroTolerance(error))
-        {
-            lstmNet.trainNetwork(&target[0]);
-        }
+        lstmNet.trainNetwork(&target[0]);   // train on every step
     }
 }
 ```
+
+Training on every step matters. An earlier version skipped steps whose error was inside the fixed-point zero tolerance; that kept training stable at the default learning rate but left the gates barely trained, with a one-step error about five times worse.
 
 `trainNetwork` backpropagates one step through time: h_{t-1} (and the LSTM's c_{t-1}) are treated as inputs to the step, not traced back further. Every weight trains: the input, bias and recurrent weights of each gate, through that gate's own delta from the cell equations, and the hidden-to-output weights and bias.
 

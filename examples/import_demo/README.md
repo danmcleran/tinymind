@@ -11,10 +11,16 @@ path. Two complementary entry points share this directory:
     and the pure-integer int8 forward and reports max-abs error. Stands
     alone; no Python / PyTorch needed.
   * **`demo.py`** -- production importer flow. Trains the same shape MLP
-    in PyTorch, pulls numpy weights from `torch.state_dict`, then drives
-    `apps/import_pytorch/tinymind_import.import_pytorch_model` to emit a
-    real `weights.hpp`. Run via `make regenerate-pytorch` (requires
-    torch + numpy via pyenv).
+    in PyTorch (Adam, 3000 full-batch epochs), scores it on 4096 held-out
+    samples (MSE 2.3e-6, against 0.029 for predicting the training mean),
+    pulls numpy weights from `torch.state_dict`, then drives
+    `apps/import_pytorch/tinymind_import.import_pytorch_model` to emit
+    `output/weights.hpp` and `output/float_reference.hpp`. Run via
+    `make regenerate-pytorch` (requires torch + numpy in a venv or pyenv).
+    `import_demo.cpp` does not include those headers; they show what the
+    importer produces for a trained model. (Before this fix the script trained
+    with plain SGD at lr 0.05 and its model barely beat the mean: held-out MSE
+    0.0265 against 0.0294.)
 
 ## Build & run
 
