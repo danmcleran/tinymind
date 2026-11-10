@@ -67,11 +67,11 @@ cd output && ./air_quality 8000 0.3    # epochs, learning rate
   loss over epochs, and the forecast vs actual over the held-out hours (annotated
   with the mean absolute error)
 
-Expected (seed = 7, synthetic series): the loss falls from ~0.029 to ~0.002 and
-the predicted line clearly tracks the daily rise-and-fall of the true series
-(amplitude is mildly damped at the peaks, the classic RNN-on-noisy-series
-behavior), with a one-step-ahead MAE around 0.13 in concentration units over a
-series spanning ~1.3–3.0.
+Expected (seed = 7, synthetic series): the loss falls from ~0.016 to ~0.0015
+within a few dozen epochs and the predicted line clearly tracks the daily
+rise-and-fall of the true series (amplitude is mildly damped at the tallest
+peaks, the classic RNN-on-noisy-series behavior), with a one-step-ahead MAE
+around 0.067 in concentration units over a series spanning ~1.3–3.0.
 
 ## tinymind capability shown
 

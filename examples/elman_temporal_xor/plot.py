@@ -37,7 +37,7 @@ def main():
     fig, ax = tp.new_fig(
         "Temporal XOR: Elman (recurrent) vs feed-forward MLP",
         "target[t] = x[t] XOR x[t-1]; the net sees only x[t]. "
-        "Elman recovers it from memory (~98%); the memoryless MLP sits at ~0.5 (~51%)")
+        "Elman recovers it from memory (100%); the memoryless MLP sits near 0.5 (51%)")
     tp.line(ax, cols["step"],
             {"target (x[t] XOR x[t-1])": cols["target"],
              "Elman (recurrent)": cols["elman"],

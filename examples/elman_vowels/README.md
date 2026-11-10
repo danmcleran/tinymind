@@ -35,22 +35,21 @@ speaker is the argmax.
 
 | Format  | Weight storage | Test accuracy |
 |---------|---------------:|--------------:|
-| float64 |        4936 B  |        94.05% |
-| Q16.16  |        2468 B  |        94.32% |
-| Q8.8    |     **1234 B** |    **94.05%** |
-| Q4.4    |         617 B  |        48.38% |
+| float64 |        4936 B  |        96.76% |
+| Q16.16  |        2468 B  |        96.76% |
+| Q8.8    |     **1234 B** |    **96.76%** |
+| Q4.4    |         617 B  |        34.59% |
 
 **Q8.8 matches double-precision accuracy exactly** with 4× smaller weights —
 the entire 617-weight network fits in 1.2 KB, with no FPU required at
 inference. Q4.4 (1/16 resolution, ±8 range) is below what this network needs:
 none of the weights clip, but the accumulated resolution loss through the
 recurrent loop collapses accuracy. The original paper's baseline on this
-dataset is 94.1% (Kudo, Toyama & Shimbo, 1999) — the Q8.8 Elman network lands
-on it.
+dataset is 94.1% (Kudo, Toyama & Shimbo, 1999); the Q8.8 Elman network is above
+it.
 
-For reference, the float accuracy matches the Q16.16/Q8.8 results within one
-utterance (±0.27%), so the fixed-point networks are not merely "close" — they
-reproduce the float model's decisions.
+Q16.16 and Q8.8 score exactly what the float model scores, so the fixed-point
+networks are not merely "close": they reproduce the float model's decisions.
 
 ## Network
 

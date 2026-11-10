@@ -32,10 +32,10 @@ these exactly.
 **KAN XOR learning curve** — Kolmogorov-Arnold network with learnable B-spline edges.
 ![KAN XOR learning curve]({{ site.baseurl }}/assets/plots/kan_xor_learning_curve.png)
 
-**GRU XOR learning curve** — Q16.16 GRU; the four-case error falls from chance (~0.5) to ~0.09 and plateaus.
+**GRU XOR learning curve** — Q16.16 GRU; the four-case error falls from chance (~0.5) to ~0.06 and plateaus.
 ![GRU XOR learning curve]({{ site.baseurl }}/assets/plots/gru_xor.png)
 
-**LSTM sinusoid** — one-step-ahead prediction tracks the sinusoid; the free-running auto-regressive rollout holds the period.
+**LSTM sinusoid** — one-step-ahead prediction tracks the sinusoid; the free-running auto-regressive rollout holds the first period, then lags in phase.
 ![LSTM sinusoid prediction]({{ site.baseurl }}/assets/plots/lstm_sinusoid.png)
 
 **LSTM sinusoid, float vs Q16.16** — the same LSTM trained in double and in Q16.16, side by side.
@@ -138,7 +138,7 @@ for which example uses which dataset.
 **Human activity recognition** — recurrent `LstmNeuralNetwork` (3→16→4) over tri-axial accelerometer windows.
 ![HAR activity classifier]({{ site.baseurl }}/assets/plots/har_activity.png)
 
-**Japanese Vowels** — recurrent `ElmanNeuralNetwork` (12→16→9) speaker ID; trained offline in float, then swept across fixed-point formats. Q8.8 matches double precision at 4× smaller weights.
+**Japanese Vowels** — recurrent `ElmanNeuralNetwork` (12→16→9) speaker ID; trained offline in float, then swept across fixed-point formats. Q8.8 matches double precision (96.76%) at 4× smaller weights.
 ![Elman Japanese Vowels accuracy vs format]({{ site.baseurl }}/assets/plots/elman_vowels.png)
 
 **Gas sensor array drift** — MLP (128→32→6) trained on batch 1; accuracy decays across later batches as sensors drift.

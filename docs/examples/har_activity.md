@@ -30,6 +30,6 @@ By default the example synthesizes physically-motivated tri-axial accelerometer 
 
 ![HAR training loss, 4x4 test confusion matrix, and per-activity accelerometer traces]({{ site.baseurl }}/assets/plots/har_activity.png)
 
-The loss converges to ~0.027 average error and the confusion matrix is almost perfectly diagonal at **~97.5% test accuracy** (195/200). The only residual confusion is a few WALKING_UPSTAIRS windows read as WALKING — the genuinely harder frequency-discrimination case — while the static SITTING/STANDING classes are nailed, as the per-activity accelerometer traces make visually clear.
+The loss converges to ~0.0006 average error and the confusion matrix is fully diagonal at **100% test accuracy** (200/200): every window is classified correctly, including the harder WALKING vs WALKING_UPSTAIRS frequency discrimination, as well as the static SITTING/STANDING classes the per-activity accelerometer traces separate visually.
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/har_activity)

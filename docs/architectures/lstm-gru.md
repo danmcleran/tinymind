@@ -47,7 +47,7 @@ class ElmanNeuralNetwork
 The [Temporal XOR]({{ site.baseurl }}/examples/elman_temporal_xor) example
 ([elman_temporal_xor.cpp](https://github.com/danmcleran/tinymind/blob/master/examples/elman_temporal_xor/elman_temporal_xor.cpp))
 shows what the recurrent connection buys: trained to predict `x[t] XOR x[t-1]`
-from a stream that only ever exposes `x[t]`, the Elman network reaches ~98% while
+from a stream that only ever exposes `x[t]`, the Elman network reaches 100% while
 a feed-forward MLP of the same shape — having no memory of `x[t-1]` — is stuck at
 chance.
 
@@ -181,6 +181,8 @@ for (unsigned epoch = 0; epoch < TRAINING_EPOCHS; ++epoch)
 }
 ```
 
+`trainNetwork` backpropagates one step through time: h_{t-1} (and the LSTM's c_{t-1}) are treated as inputs to the step, not traced back further. Every weight trains: the input, bias and recurrent weights of each gate, through that gate's own delta from the cell equations, and the hidden-to-output weights and bias.
+
 ## Building The Example
 
 ```bash
@@ -193,7 +195,7 @@ cd output
 
 ## Floating-Point vs Q16.16
 
-A companion example, [lstm_sinusoid_float.cpp](https://github.com/danmcleran/tinymind/blob/master/examples/lstm_sinusoid_float/lstm_sinusoid_float.cpp), trains the *same* LSTM twice on this task — once with `ValueType = double`, once with `QValue<16, 16>` — from identical seeds and inits, and overlays both on one chart. It is the only example that runs a recurrent network in floating-point. In free-run the float net holds the oscillation across both periods while the Q16.16 net collapses in the second, making the quantization cost visible directly. See the [LSTM Sinusoid (Float vs Q16.16)]({{ site.baseurl }}/examples/lstm_sinusoid_float) example page.
+A companion example, [lstm_sinusoid_float.cpp](https://github.com/danmcleran/tinymind/blob/master/examples/lstm_sinusoid_float/lstm_sinusoid_float.cpp), trains the *same* LSTM twice on this task — once with `ValueType = double`, once with `QValue<16, 16>` — from identical seeds and inits, and overlays both on one chart. It is the only example that runs a recurrent network in floating-point. In free-run the float net holds the oscillation across both periods while the Q16.16 net lags in phase in the second, making the quantization cost visible directly. See the [LSTM Sinusoid (Float vs Q16.16)]({{ site.baseurl }}/examples/lstm_sinusoid_float) example page.
 
 # GRU Example: XOR
 
@@ -240,8 +242,9 @@ GRU uses ~25% less memory than LSTM (3 gates vs 4 gates). Even a trainable LSTM 
 Recurrent networks accumulate internal state across time steps. When starting a new sequence, reset the state:
 
 ```cpp
-lstmNet.resetState();  // clears cell state and hidden state
-gruNet.resetState();   // clears hidden state
+lstmNet.resetState();   // clears cell state and hidden state
+gruNet.resetState();    // clears hidden state
+elmanNet.resetState();  // clears hidden state (also RecurrentNeuralNetwork)
 ```
 
 # Weight Import/Export

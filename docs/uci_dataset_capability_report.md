@@ -69,21 +69,21 @@ offline in float and then sweeps fixed-point formats to find the smallest one
 - **Dataset:** [UCI HAR Using Smartphones](https://archive.ics.uci.edu/dataset/240) — tri-axial accelerometer · activity classes.
 - **Model:** Q16.16 **LSTM** 3→16 (tanh)→4 sigmoid, stateful per 32-step window, argmax at final step. Classes: WALKING / WALKING_UPSTAIRS / SITTING / STANDING.
 - **Data:** optional real data (long-format `har.csv`); else synthesizes physically-motivated accelerometer windows.
-- **Result:** ~97.5% test accuracy (195/200). `LstmNeuralNetwork<>` for sequence classification.
+- **Result:** 100% test accuracy (200/200). `LstmNeuralNetwork<>` for sequence classification.
 - [`examples/har_activity`](https://github.com/danmcleran/tinymind/tree/master/examples/har_activity) · [page]({{ site.baseurl }}/examples/har_activity)
 
 ### Japanese Vowels — recurrent (Elman), offline-float → fixed-point sweep
 - **Dataset:** [UCI Japanese Vowels](https://archive.ics.uci.edu/dataset/128/japanese+vowels) — 9 speakers · 12 LPC cepstrum coeffs · 7–29 frame sequences · 270 train / 370 test.
 - **Model:** `ElmanNeuralNetwork` 12→16 (tanh, recurrent)→9 sigmoid, per-frame scores summed over the utterance, argmax speaker. z-score/3 input scaling.
 - **Data:** ships real data (`ae.train` / `ae.test`).
-- **Result:** the deployment-flow demo — trained offline in **double**, then swept across fixed-point formats. **Q8.8 matches double-precision accuracy exactly (94.05%)** in 1.2 KB of weights (4× smaller); Q4.4 collapses. Lands on the Kudo et al. 1999 paper baseline (94.1%).
+- **Result:** the deployment-flow demo — trained offline in **double**, then swept across fixed-point formats. **Q8.8 matches double-precision accuracy exactly (96.76%)** in 1.2 KB of weights (4× smaller); Q4.4 collapses. Above the Kudo et al. 1999 paper baseline (94.1%).
 - [`examples/elman_vowels`](https://github.com/danmcleran/tinymind/tree/master/examples/elman_vowels) · [page]({{ site.baseurl }}/examples/elman_vowels)
 
 ### Air Quality Forecasting — recurrent (LSTM)
 - **Dataset:** [UCI Air Quality](https://archive.ics.uci.edu/dataset/360) — hourly pollutant series.
 - **Model:** Q16.16 **LSTM** 1→16 (tanh)→1 sigmoid, next-hour forecaster. 24-hour state reset per BPTT segment, series normalized to [0.1, 0.9].
 - **Data:** optional real data (`AirQualityUCI.csv`, `CO(GT)` column, `;`-separated, decimal comma, `-200` = missing); else a synthetic daily-cycle CO series.
-- **Result:** one-step-ahead MAE ≈ 0.13 over a 1.3–3.0 range.
+- **Result:** one-step-ahead MAE ≈ 0.067 over a 1.3–3.0 range.
 - [`examples/air_quality`](https://github.com/danmcleran/tinymind/tree/master/examples/air_quality) · [page]({{ site.baseurl }}/examples/air_quality)
 
 ### Gas Sensor Array Drift — drift demonstration
