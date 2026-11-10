@@ -20,7 +20,7 @@
 # SOFTWARE.
 #
 
-"""CfC liquid-cell behavior: training loss + irregular-ts sequence fit."""
+"""CfC cell: training loss + held-out irregularly-sampled fit, with and without ts."""
 
 import os
 import sys
@@ -39,7 +39,7 @@ def main():
 
     tp.apply_style()
     fig, (ax1, ax2) = tp.plt.subplots(1, 2, figsize=(12, 4.6))
-    fig.suptitle("Closed-form Continuous-time (CfC) cell behavior",
+    fig.suptitle("Closed-form Continuous-time (CfC) cell: irregular sampling",
                  fontsize=14, fontweight="bold")
 
     tp.line(ax1, loss["epoch"], {"training loss": loss["loss"]},
@@ -47,9 +47,12 @@ def main():
     ax1.set_title("reverse-mode autodiff training", fontsize=10, color=tp.MUTED)
 
     tp.line(ax2, fit["t"],
-            {"target": fit["target"], "predicted": fit["predicted"]},
-            xlabel="time step", ylabel="output", markers=True)
-    ax2.set_title("irregularly-sampled target fit (ts varies per step)", fontsize=10, color=tp.MUTED)
+            {"target": fit["target"],
+             "CfC (ts into time-gate)": fit["predicted"],
+             "CfC, ts-blind": fit["predicted_ts_blind"]},
+            xlabel="time (irregular samples)", ylabel="output", markers=True)
+    ax2.set_title("held-out sequence: first-order response, ts varies 0.1 to 2.5",
+                  fontsize=10, color=tp.MUTED)
 
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     out = tp.png_for(FIT, "_behavior")

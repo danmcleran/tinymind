@@ -101,7 +101,7 @@ Continuous-time recurrent cells from the MIT liquid-network line of work. Both a
 - **Liquid Time-Constant (LTC)** -- `LtcCell<NumInputs, NumState, Act>` (`cpp/ltc.hpp`), the fused (semi-implicit Euler) ODE solver from Hasani et al., *Liquid Time-constant Networks* (AAAI 2021). Per-neuron `dx/dt = -[1/tau + f]*x + f*A`; the fused step `x(t+dt) = (x + dt*f*A) / (1 + dt*(1/tau + f))` is unconditionally stable (denominator > 1) with no inner iteration. `step<S>` infers in `double`/`float`/`QValue` and differentiates through `Dual`/`MultiDual`/`RevVar` (reverse-mode training behind `-DTINYMIND_LTC_REVERSE_TRAINING=1`). The float / fixed-point liquid tier
 - **Closed-form Continuous-time (CfC)** -- `CfCCell<NumInputs, NumState, BackboneDim, ...>` (`cpp/cfc.hpp`), the solver-free sibling from Hasani et al., *Closed-form continuous-time neural networks* (Nature MI 2022). Backbone trunk over `[input ++ h_prev]`, two tanh heads, a time-gate `t = sigmoid(tA*ts + tB)`, and the interpolation `h' = (1-t)*ff1 + t*ff2`. The per-step elapsed time `ts` is a runtime scalar, so **irregular sampling** is supported directly. Same scalar-templated autodiff story as LTC (training behind `-DTINYMIND_CFC_REVERSE_TRAINING=1`)
 - **int8 deployable CfC** -- `QCfCCell<...>` (`cpp/qcfc.hpp`), the pure-integer counterpart (regular-sampling form: `ts` folded into the time-A requantizer at calibration). Each MAC carries its own `Requantizer` into the shared sigmoid/tanh LUT input scale; freestanding-safe under `FLOAT=0 STD=0`. Host calibration via `QCfCScales` / `buildQCfCParams` / `quantizeQCfCBias` / `quantizeQCfCTimeBias`. (LTC's continuous `1/tau` dynamics deliberately stay float / fixed-point; CfC is the int8 tier)
-- Demos: [`examples/ltc_sequence/`](examples/ltc_sequence/) (LTC trained to a leaky-integrator step response, ~100x loss reduction) and [`examples/cfc_sequence/`](examples/cfc_sequence/) (CfC trained on an irregularly-sampled target, varying `ts` into the time-gate), both through `pinn::sgdStepReverse`; [`examples/qcfc_liquid_int8/`](examples/qcfc_liquid_int8/) is the int8 deployment exemplar (host calibration → pure-integer `QCfCCell` forward, `make run`/`bench`/`golden`)
+- Demos: [`examples/ltc_sequence/`](examples/ltc_sequence/) (LTC trained to a leaky-integrator step response, loss down about 257,000x) and [`examples/cfc_sequence/`](examples/cfc_sequence/) (CfC trained on irregularly sampled sequences where the elapsed time `ts` matters; 11.4x lower held-out MSE than the same cell blind to `ts`), both through `pinn::sgdStepReverse`; [`examples/qcfc_liquid_int8/`](examples/qcfc_liquid_int8/) is the int8 deployment exemplar (host calibration → pure-integer `QCfCCell` forward, `make run`/`bench`/`golden`)
 
 ### Fixed-Point Arithmetic
 
@@ -224,8 +224,10 @@ XorNetwork nn;
 ValueType inputs[2], target[1];
 
 // Training loop
+// QValue(integer, fraction): ValueType(1, 0) is 1.0. Assigning a bare integer
+// (inputs[0] = 1) would set the raw value, i.e. 1/256 in Q8.8.
 for (int epoch = 0; epoch < 10000; ++epoch) {
-    inputs[0] = 1; inputs[1] = 0; target[0] = 1;
+    inputs[0] = ValueType(1, 0); inputs[1] = ValueType(0, 0); target[0] = ValueType(1, 0);
     nn.feedForward(inputs);
     nn.trainNetwork(target);
 }
@@ -241,8 +243,9 @@ nn.getLearnedValues(output);
 ```cpp
 #include "kan.hpp"
 
-// Define a Q8.8 fixed-point KAN
-typedef tinymind::QValue<8, 8, true> ValueType;
+// Define a Q16.16 fixed-point KAN (B-spline training saturates in Q8.8;
+// see examples/kan_xor)
+typedef tinymind::QValue<16, 16, true> ValueType;
 typedef tinymind::KanTransferFunctions<
     ValueType,
     RandomNumberGenerator,
@@ -254,7 +257,7 @@ typedef tinymind::KolmogorovArnoldNetwork<
     ValueType, 2, 1, 5, 1,
     TransferFunctions,
     true,  // trainable
-    1,     // batch size
+    1,     // batch size (must be 1: weights update on every trainNetwork call)
     5,     // grid size
     1      // spline degree
 > KanNetwork;
@@ -264,7 +267,7 @@ ValueType inputs[2], target[1], output[1];
 
 // Training loop (same API as MultilayerPerceptron)
 for (int epoch = 0; epoch < 10000; ++epoch) {
-    inputs[0] = 1; inputs[1] = 0; target[0] = 1;
+    inputs[0] = ValueType(1, 0); inputs[1] = ValueType(0, 0); target[0] = ValueType(1, 0);
     kan.feedForward(inputs);
     kan.trainNetwork(target);
 }
@@ -1147,7 +1150,7 @@ tinymind/
     air_quality/                # Next-hour pollutant forecaster (Q16.16 LSTM)
     har_activity/               # Human-activity recognition from accelerometer sequences (Q16.16 LSTM)
     ltc_sequence/               # Liquid Time-Constant cell fit to a leaky-integrator step response
-    cfc_sequence/               # CfC cell trained on an irregularly sampled target
+    cfc_sequence/               # CfC cell on irregularly sampled sequences (vs a ts-blind ablation)
     qcfc_liquid_int8/           # int8 CfC liquid-cell deployment exemplar
     pinn_heat1d/                # 1-D heat-equation residual via forward-mode autodiff (PINN building block)
     anfis_mackey_glass_int8/    # The Mackey-Glass ANFIS through qanfis.hpp (a documented negative result)

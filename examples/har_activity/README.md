@@ -13,42 +13,46 @@ This is a recurrent classifier, not a feed-forward one:
 - **1 LSTM hidden layer of 16 tanh neurons** (`HiddenLayers<16>`)
 - **4 sigmoid outputs** — a one-hot encoding of the activity; predicted class is
   argmax read at the **last timestep** of the window
-- Q16.16 fixed-point throughout, with `GradientClipByValue` to keep the
-  recurrent training stable in fixed point
+- Q16.16 fixed-point throughout, with `GradientClipByValue`, a learning rate of
+  0.05 and no momentum (the library default of 0.25 with momentum 0.5
+  oscillates on this task in Q16.16)
 
 Each window is **32 timesteps** long. For every window the network:
 
-1. **resets its recurrent cell state** (`gNet.resetState()`) — the LSTM is
+1. **resets its recurrent cell state** (`net.resetState()`) — the LSTM is
    stateful across `feedForward` calls, so the state must be cleared at the start
    of each window or windows bleed into each other
-2. feeds all 32 timesteps through `feedForward`, supervising toward the
-   (constant) window label at every step so the recurrent net gets a strong,
-   repeated gradient and learns to *settle* on the classification as evidence
-   accumulates
+2. feeds all 32 timesteps through `feedForward`, training toward the
+   (constant) window label at every step
 3. reads the prediction (argmax of `getLearnedValues`) at the final timestep
 
-45 epochs of shuffled passes over the training split.
+60 epochs of shuffled passes over the training split.
 
 ## Activities
 
-| label | activity          | accelerometer signature                                            |
-|-------|-------------------|--------------------------------------------------------------------|
-| 0     | WALKING           | ~2 Hz periodic oscillation on all axes + harmonic, gravity on x    |
-| 1     | WALKING_UPSTAIRS  | lower freq, larger amplitude, strong vertical (z) swing, forward-lean gravity split between x and z |
-| 2     | SITTING           | near-flat, small noise, gravity on the y axis                      |
-| 3     | STANDING          | near-flat, small noise, gravity on the z axis (different orientation) |
+| label | activity            | accelerometer signature |
+|-------|---------------------|-------------------------|
+| 0     | WALKING             | sinusoidal vertical (z) acceleration, three steps per window |
+| 1     | WALKING_UPSTAIRS    | per step, a sharp vertical rise and then a slow decline (sawtooth) |
+| 2     | WALKING_DOWNSTAIRS  | the upstairs waveform played backwards in time: a slow rise, then a sharp drop |
+| 3     | SITTING             | near-flat, small noise, gravity on the y axis |
+
+The three walking classes share the step rate, the lateral sway, the gravity
+direction, and the same per-axis mean and standard deviation. UPSTAIRS and
+DOWNSTAIRS are exact time reversals of each other, so every individual sample
+has the same distribution in both: the only thing that separates them is the
+order of the samples, which an LSTM reading one timestep at a time has to
+remember.
 
 ## Data
 
-The real HAR raw inertial signals are far too large to bundle, so — following
-the `predictive_maintenance` precedent — this example **synthesizes
-physically-motivated tri-axial accelerometer windows** by default
-(deterministic, `std::srand(7U)`). Each window is a sinusoid + harmonics + noise
-for the dynamic activities and a near-flat gravity vector for the static ones;
-accelerations are expressed in units of g and normalized by a 1.5 g divisor so
-both the ~1 g static component and the motion land roughly in `[-1, 1]` (the
-stable range for Q16.16 LSTM inputs). The default dataset is balanced: 200
-windows/class train, 50/class test.
+The real HAR raw inertial signals are far too large to bundle, so this
+example **synthesizes tri-axial accelerometer windows** by default
+(deterministic, `std::srand(7U)`), built as described above. Accelerations are
+expressed in units of g and normalized by a 1.5 g divisor so both the ~1 g
+static component and the motion land roughly in `[-1, 1]` (the stable range
+for Q16.16 LSTM inputs). The default dataset is balanced: 200 windows/class
+train and 50/class test, generated independently.
 
 ### Using a real CSV
 
@@ -68,7 +72,7 @@ window,t,ax,ay,az,label
 - `window` — integer window id (rows of the same window must be contiguous)
 - `t` — timestep index in `[0, 31]`
 - `ax, ay, az` — accelerations already normalized to roughly `[-1, 1]`
-- `label` — activity index `0..3` (constant within a window)
+- `label` — activity index `0..3` (0 walking, 1 upstairs, 2 downstairs, 3 sitting; constant within a window)
 
 The loader does an 80/20 deterministic shuffle + split. To convert the UCI raw
 signals, window the per-axis `total_acc_{x,y,z}` streams into 32-step windows,
@@ -85,15 +89,33 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 ## Output
 
 - `output/har_loss.csv` — training loss curve (`epoch, avg_err` at the last step)
-- `output/har_confusion.csv` — 4×4 test confusion matrix
+- `output/har_confusion.csv` — 4×4 test confusion matrix (rows: actual walking,
+  upstairs, downstairs, sitting)
 - `output/har_samples.csv` — example accelerometer windows (long format:
   `class, t, ax, ay, az`), one representative window per activity for the trace plot
 - `output/har_confusion_behavior.png` — `plot.py` renders loss + confusion +
   per-activity accelerometer traces
 
-Expected (seed = 7): convergence to ~0.0006 avg error and **100% test
-accuracy** (200/200): every window of every activity, including the harder
-WALKING vs WALKING_UPSTAIRS frequency discrimination, is classified correctly.
+## Results
+
+| model | test accuracy |
+|---|---|
+| LSTM, all weights trained | **91.5%** (183/200) |
+| LSTM, `--readout-only` (input, gate and recurrent weights frozen at their random initial values) | 50.0% |
+| nearest centroid on per-axis mean + standard deviation (ignores sample order) | 52.5% |
+| chance | 25% |
+
+`make run` prints the full model's accuracy and the nearest-centroid and chance baselines; run
+`./output/har_activity --readout-only` for the ablation. Training the LSTM's
+gates and recurrent weights is what reads the sample order. Recurrent training
+in Q16.16 is noisy on this task: across five weight-initialization seeds the
+full model scored 65.5%, 73%, 86.5%, 91.5% and 93%, always well above both
+order-blind baselines.
+
+An earlier version of this example (four classes separable by gravity
+direction and step frequency) scored 100%, but a nearest-centroid classifier
+on per-axis mean and standard deviation also scored 100% on it, so it showed
+nothing about recurrence.
 
 ## tinymind capability shown
 

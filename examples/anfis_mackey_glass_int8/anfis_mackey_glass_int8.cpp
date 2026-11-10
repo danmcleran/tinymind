@@ -212,14 +212,20 @@ namespace {
         return std::sqrt(s / static_cast<double>(n));
     }
 
-    // Pick the shared consequent grid from the widest rule output actually
-    // seen on the held-out set, so the rescale uses its full range.
+    // Pick the shared consequent grid from the widest rule output anywhere in
+    // the TRAINING split's input range. Each rule output is affine in the
+    // inputs, so its largest magnitude over the box [InputMin, InputMax]^NI
+    // is reached at one of the box's 2^NI corners. No held-out data is used.
     float pickConsequentScale(const double* consequent)
     {
         double peak = 0.0;
-        for (std::size_t s = 0; s < data::NumberOfTestSamples; ++s)
+        for (std::size_t corner = 0; corner < (static_cast<std::size_t>(1) << NI); ++corner)
         {
-            const double* x = &data::TestInputs[s * NI];
+            double x[NI];
+            for (std::size_t i = 0; i < NI; ++i)
+            {
+                x[i] = ((corner >> i) & 1U) ? data::InputMax : data::InputMin;
+            }
             for (std::size_t r = 0; r < NR; ++r)
             {
                 double f = consequent[(r * (NI + 1)) + NI];

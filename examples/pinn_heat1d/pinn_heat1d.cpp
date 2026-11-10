@@ -25,8 +25,7 @@
 // w.r.t. its INPUT coordinates -- the derivative a PDE residual needs and the
 // one tinymind's weight-gradient backprop cannot provide.
 //
-// This exemplar proves the differentiation machinery end-to-end, not a trained
-// solver:
+// The default run proves the differentiation machinery end-to-end:
 //   (1) On an exact heat solution u = x^2/2 + nu*t, the residual evaluates to
 //       ~0 to machine precision -- validating the residual operator and the
 //       autodiff derivatives (u_t via a first-order dual, u_xx via a nested
@@ -35,8 +34,10 @@
 //       match high-accuracy central finite differences -- showing the autodiff
 //       is exact (no step-size/truncation error) on a realistic PINN field.
 //
-// Training (optimizing weights so the residual vanishes) is the next milestone;
-// it additionally needs derivatives of the residual w.r.t. the WEIGHTS.
+// --train (make train) is a trained solver: it fits a PinnMlp to the heat
+// equation for 8000 epochs, with the weight gradients of the full PINN loss
+// (residual + boundary + initial terms) computed exactly in one pass by
+// MultiDual vector forward-mode -- see the section below.
 
 #include <cmath>
 #include <cstddef>

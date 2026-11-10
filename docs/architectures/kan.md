@@ -51,7 +51,7 @@ class KolmogorovArnoldNetwork
 - `NumberOfOutputs` - Number of output neurons
 - `TransferFunctionsPolicy` - `KanTransferFunctions<...>` policy class
 - `IsTrainable` - Enable/disable training (non-trainable mode saves memory)
-- `BatchSize` - Gradient accumulation batch size
+- `BatchSize` - Reserved; must be 1. Training does not accumulate gradients: every `trainNetwork` call updates the weights immediately, whatever this value is
 - `GridSize` - Number of B-spline grid intervals (default 5)
 - `SplineDegree` - B-spline polynomial degree (default 3)
 
@@ -84,6 +84,8 @@ struct UniformKnotVector
     // ...
 };
 ```
+
+The grid spans [-1, 1] in every layer and is not adapted during training. Inputs should be normalised into that range. Hidden-layer values are unbounded sums of edge outputs, so they can leave the grid; outside it the spline continues its end polynomial, which for degree 2 or 3 grows quickly (in a probe with inputs at 2.6x the grid edge, hidden values reached 12.8 and single training steps became very large). The gradient is still exact there, but a smaller learning rate or degree 1 keeps training stable.
 
 # KAN Transfer Functions
 
@@ -129,7 +131,7 @@ typedef tinymind::KolmogorovArnoldNetwork<ValueType,
                                           1,             // outputs
                                           TransferFunctionsType,
                                           true,          // trainable
-                                          1,             // batch size
+                                          1,             // batch size (reserved; must be 1)
                                           GRID_SIZE,
                                           SPLINE_DEGREE> KanNetworkType;
 ```

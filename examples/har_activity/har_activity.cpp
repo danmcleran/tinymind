@@ -29,10 +29,21 @@
 // tri-axial accelerometer samples (ax, ay, az) one timestep at a time and
 // classifies the whole window into one of four activities at the LAST timestep:
 //
-//   0 WALKING            periodic ~2 Hz oscillation, all axes, gravity baseline
-//   1 WALKING_UPSTAIRS   lower freq, larger amplitude, strong vertical (z)
-//   2 SITTING            near-flat, small noise, gravity on the y axis
-//   3 STANDING           near-flat, small noise, gravity on the x axis
+//   0 WALKING             symmetric vertical (z) oscillation
+//   1 WALKING_UPSTAIRS    per step, a sharp vertical rise then a slow decline
+//   2 WALKING_DOWNSTAIRS  per step, a slow vertical rise then a sharp drop
+//   3 SITTING             near-flat, small noise, gravity on the y axis
+//
+// The three gait classes share the same step rate, lateral sway, gravity
+// direction, and the same per-axis mean and standard deviation; UPSTAIRS and
+// DOWNSTAIRS are exact time reversals of each other, so every sample has the
+// same distribution in both. What separates them is the ORDER of the samples
+// (a sharp rise followed by a slow fall, or the reverse), which a classifier
+// that reads one timestep at a time can only see by remembering earlier
+// timesteps. The example reports a nearest-centroid baseline on per-axis
+// mean + standard deviation, which cannot separate the gait classes, and
+// `--readout-only` trains only the hidden-to-output weights (LSTM input,
+// gate and recurrent weights frozen at their random initial values).
 //
 // Network: 3 inputs -> LSTM hidden 16 (tanh) -> 4 sigmoid outputs (one-hot
 // activity), Q16.16 fixed-point. GradientClipByValue keeps the recurrent
@@ -73,7 +84,7 @@ static constexpr size_t TRAIN_PER_CLASS = 200;
 static constexpr size_t TEST_PER_CLASS  = 50;
 
 static const char* const CLASS_NAMES[NUMBER_OF_OUTPUTS] = {
-    "walking", "upstairs", "sitting", "standing"
+    "walking", "upstairs", "downstairs", "sitting"
 };
 
 // ---------------------------------------------------------------------------
@@ -97,13 +108,34 @@ struct RandomNumberGenerator
     }
 };
 
+// Learning rate 0.05 with no momentum. The library default (0.25 with
+// momentum 0.5) oscillates on this task in Q16.16.
+struct HarNetworkInitializer : public tinymind::DefaultNetworkInitializer<ValueType>
+{
+    static ValueType initialLearningRate()
+    {
+        static const ValueType rate(0, 3277); // 0.05 in Q16.16
+        return rate;
+    }
+
+    static ValueType initialMomentumRate()
+    {
+        return tinymind::Constants<ValueType>::zero();
+    }
+
+    static ValueType initialAccelerationRate()
+    {
+        return tinymind::Constants<ValueType>::zero();
+    }
+};
+
 typedef tinymind::FixedPointTransferFunctions<
     ValueType,
     RandomNumberGenerator,
     tinymind::TanhActivationPolicy<ValueType>,
     tinymind::SigmoidActivationPolicy<ValueType>,
     NUMBER_OF_OUTPUTS,
-    tinymind::DefaultNetworkInitializer<ValueType>,
+    HarNetworkInitializer,
     tinymind::MeanSquaredErrorCalculator<ValueType, NUMBER_OF_OUTPUTS>,
     tinymind::ZeroToleranceCalculator<ValueType>,
     tinymind::GradientClipByValue<ValueType> > TransferFunctionsType;
@@ -156,62 +188,57 @@ static inline double noise(double amp)
 // Accelerations are expressed in units of g and normalized by GSCALE so the
 // static gravity component (~1 g) and the dynamic motion both land roughly in
 // [-1, 1] -- the stable range for Q16.16 LSTM inputs.
+//
+// The gait classes use one step rate (3 steps per window), one lateral sway,
+// and a vertical waveform with zero mean and unit RMS scaled by the same
+// amplitude: a sinusoid for level walking and a sawtooth for stairs. The
+// downstairs sawtooth is the upstairs one reversed in time (equivalently,
+// negated), so the two classes differ only in sample order.
 static void synthesizeWindow(int label, Window& w)
 {
     static const double GSCALE = 1.5;            // normalization divisor (g)
     static const double TWO_PI = 2.0 * 3.14159265358979323846;
+    static const double STEPS_PER_WINDOW = 3.0;
+    static const double VERTICAL_AMPLITUDE = 0.45;
+    // RMS of a sawtooth spanning [-1, 1) is 1/sqrt(3).
+    static const double SAWTOOTH_RMS = 0.57735026918962576;
+    static const double SINE_RMS = 0.70710678118654752;
     const double phase = noise(TWO_PI);          // random window start phase
+    const double f = TWO_PI * STEPS_PER_WINDOW / static_cast<double>(WINDOW_LENGTH);
 
     for (size_t t = 0; t < WINDOW_LENGTH; ++t)
     {
-        const double tt = static_cast<double>(t);
+        const double theta = f * static_cast<double>(t) + phase;
         double ax = 0.0, ay = 0.0, az = 0.0;
 
-        switch (label)
+        if (label == 3)
         {
-        case 0: // WALKING: ~2 Hz periodic on all axes + 2nd harmonic, g on x
-        {
-            const double f = TWO_PI * 2.0 / static_cast<double>(WINDOW_LENGTH) * 2.0;
-            ax = 1.0 + 0.35 * std::sin(f * tt + phase)
-                     + 0.12 * std::sin(2.0 * f * tt + phase);
-            ay = 0.30 * std::sin(f * tt + phase + 1.0)
-                     + 0.10 * std::sin(2.0 * f * tt + phase);
-            az = 0.30 * std::cos(f * tt + phase)
-                     + 0.10 * std::cos(2.0 * f * tt + phase);
-            ax += noise(0.05); ay += noise(0.05); az += noise(0.05);
-            break;
+            // SITTING: near-flat, gravity on the y axis.
+            ax = noise(0.04);
+            ay = 1.0 + noise(0.04);
+            az = noise(0.04);
         }
-        case 1: // WALKING_UPSTAIRS: lower freq, bigger amplitude, strong z swing.
-                // Climbing leans the device forward, so gravity is shared
-                // between x and z rather than resting fully on x (as in flat
-                // walking) -- a distinct static signature plus distinct dynamics.
+        else
         {
-            const double f = TWO_PI * 1.0 / static_cast<double>(WINDOW_LENGTH) * 2.0;
-            ax = 0.55 + 0.25 * std::sin(f * tt + phase);
-            ay = 0.30 * std::sin(f * tt + phase + 0.5);
-            az = 0.55                                 // forward-lean gravity bias
-                     + 0.70 * std::sin(f * tt + phase) // dominant vertical swing
-                     + 0.20 * std::sin(2.0 * f * tt + phase);
-            ax += noise(0.06); ay += noise(0.06); az += noise(0.06);
-            break;
-        }
-        case 2: // SITTING: near-flat, gravity on y axis
-        {
-            ax = 0.0  + noise(0.04);
-            ay = 1.0  + noise(0.04);
-            az = 0.0  + noise(0.04);
-            break;
-        }
-        case 3: // STANDING: near-flat, gravity on z axis (different orientation
-                // from both SITTING's y and WALKING's x baseline)
-        {
-            ax = 0.0  + noise(0.04);
-            ay = 0.0  + noise(0.04);
-            az = 1.0  + noise(0.04);
-            break;
-        }
-        default:
-            break;
+            double vertical = 0.0;
+            if (label == 0)
+            {
+                vertical = std::sin(theta) / SINE_RMS;
+            }
+            else
+            {
+                // Sawtooth in [-1, 1): rises slowly through each step, then
+                // drops back in one sample. UPSTAIRS uses its negation (a sharp
+                // rise, then a slow decline), which is the same waveform played
+                // backwards in time.
+                const double cycles = theta / TWO_PI;
+                const double ramp = 2.0 * (cycles - std::floor(cycles)) - 1.0;
+                const double sawtooth = ramp / SAWTOOTH_RMS;
+                vertical = (label == 1) ? -sawtooth : sawtooth;
+            }
+            ax = 1.0 + 0.10 * std::sin(theta / 2.0 + 0.7) + noise(0.05);  // gravity + slow sway
+            ay = 0.25 * std::sin(theta / 2.0) + noise(0.05);              // lateral sway, half the step rate
+            az = VERTICAL_AMPLITUDE * vertical + noise(0.05);
         }
 
         w.ax[t] = ax / GSCALE;
@@ -221,6 +248,139 @@ static void synthesizeWindow(int label, Window& w)
 
     w.label = label;
 }
+
+// Nearest-centroid baseline on per-axis mean and standard deviation (six
+// features per window), with centroids from the training split. It ignores
+// sample order by construction, so it shows how much of the task can be done
+// without memory.
+static void windowStats(const Window& w, double* features)
+{
+    const double* axes[3] = { w.ax, w.ay, w.az };
+    for (size_t a = 0; a < 3; ++a)
+    {
+        double mean = 0.0;
+        for (size_t t = 0; t < WINDOW_LENGTH; ++t)
+        {
+            mean += axes[a][t];
+        }
+        mean /= static_cast<double>(WINDOW_LENGTH);
+        double var = 0.0;
+        for (size_t t = 0; t < WINDOW_LENGTH; ++t)
+        {
+            var += (axes[a][t] - mean) * (axes[a][t] - mean);
+        }
+        features[a] = mean;
+        features[3 + a] = std::sqrt(var / static_cast<double>(WINDOW_LENGTH));
+    }
+}
+
+static double nearestCentroidAccuracy(const std::vector<Window>& train, const std::vector<Window>& test)
+{
+    double centroid[NUMBER_OF_OUTPUTS][6] = { {0.0} };
+    size_t count[NUMBER_OF_OUTPUTS] = { 0 };
+    for (const auto& w : train)
+    {
+        double f[6];
+        windowStats(w, f);
+        for (size_t k = 0; k < 6; ++k)
+        {
+            centroid[w.label][k] += f[k];
+        }
+        ++count[w.label];
+    }
+    for (size_t c = 0; c < NUMBER_OF_OUTPUTS; ++c)
+    {
+        for (size_t k = 0; k < 6; ++k)
+        {
+            centroid[c][k] /= static_cast<double>(count[c] ? count[c] : 1);
+        }
+    }
+    size_t correct = 0;
+    for (const auto& w : test)
+    {
+        double f[6];
+        windowStats(w, f);
+        int best = 0;
+        double bestDist = 1e300;
+        for (size_t c = 0; c < NUMBER_OF_OUTPUTS; ++c)
+        {
+            double d = 0.0;
+            for (size_t k = 0; k < 6; ++k)
+            {
+                d += (f[k] - centroid[c][k]) * (f[k] - centroid[c][k]);
+            }
+            if (d < bestDist)
+            {
+                bestDist = d;
+                best = static_cast<int>(c);
+            }
+        }
+        correct += (best == w.label) ? 1U : 0U;
+    }
+    return static_cast<double>(correct) / static_cast<double>(test.size());
+}
+
+// --readout-only: snapshot the LSTM's input, input-bias and recurrent weights
+// and restore them after every training step, so only the hidden-to-output
+// readout learns. This is the ablation that exposed the v16.9 bug, where the
+// gates never trained and only the readout did.
+struct ReadoutOnlyFreezer
+{
+    static const size_t I = NeuralNetworkType::NumberOfInputLayerNeurons;
+    static const size_t G = NeuralNetworkType::InputToHiddenConnections;
+    static const size_t H = NeuralNetworkType::NumberOfHiddenLayerNeurons;
+    static const size_t R = NeuralNetworkType::RecurrentToHiddenConnections;
+    ValueType input[I][G];
+    ValueType inputBias[G];
+    ValueType recurrent[H][R];
+
+    void snapshot(NeuralNetworkType& net)
+    {
+        for (size_t i = 0; i < I; ++i)
+        {
+            for (size_t k = 0; k < G; ++k)
+            {
+                input[i][k] = net.getInputLayerWeightForNeuronAndConnection(i, k);
+            }
+        }
+        for (size_t k = 0; k < G; ++k)
+        {
+            inputBias[k] = net.getInputLayerBiasNeuronWeightForConnection(k);
+        }
+        for (size_t j = 0; j < H; ++j)
+        {
+            for (size_t k = 0; k < R; ++k)
+            {
+                recurrent[j][k] = net.getRecurrentLayer().getWeightForNeuronAndConnection(j, k);
+            }
+        }
+    }
+
+    void restore(NeuralNetworkType& net) const
+    {
+        for (size_t i = 0; i < I; ++i)
+        {
+            for (size_t k = 0; k < G; ++k)
+            {
+                net.setInputLayerWeightForNeuronAndConnection(i, k, input[i][k]);
+            }
+        }
+        for (size_t k = 0; k < G; ++k)
+        {
+            net.setInputLayerBiasWeightForConnection(k, inputBias[k]);
+        }
+        for (size_t j = 0; j < H; ++j)
+        {
+            for (size_t k = 0; k < R; ++k)
+            {
+                net.getRecurrentLayer().setWeightForNeuronAndConnection(j, k, recurrent[j][k]);
+            }
+        }
+    }
+};
+
+static ReadoutOnlyFreezer gFreezer;
+static bool gReadoutOnly = false;
 
 // ---------------------------------------------------------------------------
 // Optional CSV loader (long format -- see README). Returns false if absent.
@@ -343,10 +503,16 @@ static int processWindow(NeuralNetworkType& net, const Window& w, bool train, do
         {
             errAccum += std::fabs(fromQ(err));
         }
-        if (train &&
-            !NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(err))
+        // Train on every step. Skipping steps whose error is within the
+        // fixed-point zero tolerance stopped this network from learning the
+        // order-dependent classes at all (50% test accuracy).
+        if (train)
         {
             net.trainNetwork(target);
+            if (gReadoutOnly)
+            {
+                gFreezer.restore(net);
+            }
         }
     }
 
@@ -365,8 +531,7 @@ static const unsigned WEIGHT_INIT_SEED = 1U; // see main()
 
 int main(int argc, char* argv[])
 {
-    (void)argc;
-    (void)argv;
+    gReadoutOnly = (argc > 1) && (std::string(argv[1]) == "--readout-only");
 
     // Two seeds: the initial weights come from WEIGHT_INIT_SEED and everything
     // else (data, shuffles, training samples) from the seed set just below.
@@ -375,6 +540,11 @@ int main(int argc, char* argv[])
     // drew from glibc's default seed of 1.
     std::srand(WEIGHT_INIT_SEED);
     static NeuralNetworkType net;
+    gFreezer.snapshot(net);
+    if (gReadoutOnly)
+    {
+        std::cout << "--readout-only: LSTM input, gate and recurrent weights stay at their initial values." << std::endl;
+    }
 
     std::srand(7U);
 
@@ -430,7 +600,7 @@ int main(int argc, char* argv[])
     }
 
     // ---- Training ----------------------------------------------------------
-    const unsigned epochs      = 45U;
+    const unsigned epochs      = 60U;
     double errSum = 0.0;
     size_t errCount = 0;
 
@@ -475,7 +645,7 @@ int main(int argc, char* argv[])
 
     {
         std::ofstream cm("har_confusion.csv");
-        cm << "actual,pred_walk,pred_upstairs,pred_sitting,pred_standing" << std::endl;
+        cm << "actual,pred_walking,pred_upstairs,pred_downstairs,pred_sitting" << std::endl;
         for (int r = 0; r < static_cast<int>(NUMBER_OF_OUTPUTS); ++r)
         {
             cm << CLASS_NAMES[r];
@@ -490,6 +660,10 @@ int main(int argc, char* argv[])
     const double acc = static_cast<double>(correct) / static_cast<double>(test.size());
     std::cout << "\nTest accuracy: " << std::fixed << std::setprecision(4)
               << acc << "  (" << correct << "/" << test.size() << ")" << std::endl;
+    std::cout << "Baseline, nearest centroid on per-axis mean + std (ignores sample order): "
+              << std::fixed << std::setprecision(4) << nearestCentroidAccuracy(train, test) << std::endl;
+    std::cout << "Baseline, chance: " << std::fixed << std::setprecision(4)
+              << (1.0 / static_cast<double>(NUMBER_OF_OUTPUTS)) << std::endl;
 
     return 0;
 }

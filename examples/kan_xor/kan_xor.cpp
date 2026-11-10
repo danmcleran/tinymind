@@ -198,5 +198,7 @@ int main(const int argc, char *argv[])
         cout << "Training did not complete successfully after " << TRAINING_ITERATIONS << " iterations." << endl;
     }
 
-    return 0;
+    // Nonzero exit when the network failed to learn, so `make run` (and the
+    // top-level `make check`) fails instead of printing a message nobody reads.
+    return success ? 0 : 1;
 }

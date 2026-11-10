@@ -36,7 +36,7 @@ def main():
     cols, _ = tp.read_csv(CSV)
     fig, ax = tp.new_fig(
         "LSTM sinusoid prediction (Q16.16)",
-        "one-step-ahead tracks tightly; auto-regressive free-run drifts")
+        "held-out signal (shifted half a sample): one-step-ahead and auto-regressive free-run")
     tp.line(ax, cols["step"],
             {"ground truth": cols["true"],
              "one-step-ahead": cols["one_step"],

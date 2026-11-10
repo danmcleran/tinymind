@@ -135,13 +135,17 @@ quantum, breaking the cancellation the fit depends on.
 
 | ridge | largest coefficient | float test RMSE | int8 test RMSE |
 |---|---|---|---|
-| 0 | 168.98 | 0.004066 | 0.025542 |
-| 1e-6 | 16.12 | 0.004893 | **0.005462** |
-| 1e-5 | 5.92 | 0.005298 | 0.006009 |
-| 1e-4 | 3.28 | 0.005851 | 0.006339 |
-| 1e-3 | 2.07 | 0.007846 | 0.007951 |
+| 0 | 168.98 | 0.004066 | 0.025336 |
+| 1e-6 | 9.58 | 0.003997 | **0.008566** |
+| 1e-5 | 4.81 | 0.004078 | 0.006594 |
+| 1e-4 | 1.61 | 0.004689 | 0.005886 |
+| 1e-3 | 0.87 | 0.006023 | 0.007068 |
 
-`ridge=1e-6` costs about 20% float accuracy and buys **4.7x** int8 accuracy.
+Measured with numpy 2.4 on the bundled Mackey-Glass benchmark (int8 numbers
+from `examples/anfis_mackey_glass_int8` built against each model, calibrated
+on the training split). `ridge=1e-6` costs nothing in float here (it is
+slightly better than the unregularized fit) and buys **3.0x** int8 accuracy;
+the best int8 result is at `ridge=1e-4`, at about 17% float cost.
 Leave it at 0 for a float or Q-format deployment; set it if `cpp/qanfis.hpp` is
 the target.
 
@@ -177,6 +181,14 @@ leaving the shipped 16-rule model bit-stable. What is robust is the shape:
 the full grid overfits by two to three orders of magnitude, and pruning
 recovers it to roughly 0.005. The shipped model is a different regime
 entirely — rank 80 of 80, condition number 1.9e5, and reproducible exactly.
+
+"Reproducible exactly" holds for a fixed numpy. The tracked example headers
+were generated with numpy 2.4.6, which regenerates them byte for byte. Under
+numpy 2.5.4 the premises still come out identical but the consequents of the
+unregularized (`ridge=0`) fits differ, because the least-squares solution
+LAPACK picks for a near-degenerate system depends on its version; the test
+RMSE does not change. Regenerate with the same numpy if you need identical
+bytes.
 
 ## Two ways to lay out the rule base
 

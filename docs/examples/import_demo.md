@@ -24,7 +24,7 @@ make run
 make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
-`make run` prints the calibration ranges, the CLE drift, and the parity verdict (exit 0 on PASS). The C++ side needs no torch install. The production importer flow lives in `demo.py` — run it via `make regenerate-pytorch` (i.e. `python demo.py`), which trains the same-shape MLP in PyTorch, pulls numpy weights from `torch.state_dict`, and drives `apps/import_pytorch/tinymind_import.import_pytorch_model` to emit a `weights.hpp` (requires torch + numpy in an isolated env).
+`make run` prints the calibration ranges, the CLE drift, and the parity verdict (exit 0 on PASS). The C++ side needs no torch install. The production importer flow lives in `demo.py` — run it via `make regenerate-pytorch` (i.e. `python demo.py`), which trains the same-shape MLP in PyTorch (held-out MSE 2.3e-6, against 0.029 for predicting the training mean), pulls numpy weights from `torch.state_dict`, and drives `apps/import_pytorch/tinymind_import.import_pytorch_model` to emit `output/weights.hpp` and `output/float_reference.hpp` (requires torch + numpy in an isolated env). The C++ binary does not include those headers; it carries its own weights so it runs without torch.
 
 ## Output
 

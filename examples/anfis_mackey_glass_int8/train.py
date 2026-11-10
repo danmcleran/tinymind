@@ -78,7 +78,7 @@ def build_dataset():
     return X[:N_TRAIN], y[:N_TRAIN], X[N_TRAIN:], y[N_TRAIN:]
 
 
-def emit_data_header(path, X_te, y_te, X_tr):
+def emit_data_header(path, X_te, y_te, X_tr, y_tr):
     """Held-out set plus the calibration ranges the C++ side needs.
 
     The ranges come from the TRAINING split, never the held-out one --
@@ -100,8 +100,8 @@ def emit_data_header(path, X_te, y_te, X_tr):
         "    constexpr std::size_t NumberOfTestSamples = %d;\n" % n_test,
         "    constexpr double InputMin  = %.9g;\n" % X_tr.min(),
         "    constexpr double InputMax  = %.9g;\n" % X_tr.max(),
-        "    constexpr double OutputMin = %.9g;\n" % y_te.min(),
-        "    constexpr double OutputMax = %.9g;\n\n" % y_te.max(),
+        "    constexpr double OutputMin = %.9g;\n" % y_tr.min(),
+        "    constexpr double OutputMax = %.9g;\n\n" % y_tr.max(),
         "    constexpr double TestInputs[%d] = {\n%s\n    };\n\n"
         % (n_test * n_inputs, rows(X_te.reshape(-1), 4, "%.9g")),
         "    constexpr double TestTargets[%d] = {\n%s\n    };\n"
@@ -144,7 +144,7 @@ def main():
         namespace="anfis_int8_model_unregularized",
         comment=("Ordinary least squares, no ridge. Carried ONLY so the example can\n"
                  "show what large cancelling consequents cost in int8."))
-    emit_data_header(os.path.join(HERE, "anfis_int8_data.hpp"), X_te, y_te, X_tr)
+    emit_data_header(os.path.join(HERE, "anfis_int8_data.hpp"), X_te, y_te, X_tr, y_tr)
     print("wrote anfis_int8_model.hpp, anfis_int8_model_unregularized.hpp, anfis_int8_data.hpp")
 
 

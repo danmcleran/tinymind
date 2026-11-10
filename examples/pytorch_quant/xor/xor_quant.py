@@ -33,6 +33,10 @@ import torch.optim as optim
 
 HIDDEN_SIZE = 4
 SEED = 42
+# A 4-unit ReLU net fails to solve XOR from some initializations (ReLU units
+# that start dead never recover): 15 of 20 seeds succeed. main() retries the
+# next seed until the trained model gets all four cases right.
+MAX_SEED_ATTEMPTS = 10
 EPOCHS = 4000
 LR = 0.1
 
@@ -220,12 +224,23 @@ namespace pytorch_quant_xor {{
 
 
 def main() -> None:
-    torch.manual_seed(SEED)
     np.random.seed(SEED)
-
-    model = XORNet()
     X, y = xor_data()
-    train(model, X, y)
+
+    model = None
+    for attempt in range(MAX_SEED_ATTEMPTS):
+        torch.manual_seed(SEED + attempt)
+        candidate = XORNet()
+        train(candidate, X, y)
+        with torch.no_grad():
+            solved = bool(((candidate(X) > 0.5).float() == y).all())
+        if solved:
+            model = candidate
+            print(f"seed {SEED + attempt}: solved XOR")
+            break
+        print(f"seed {SEED + attempt}: did not solve XOR, retrying with the next seed")
+    if model is None:
+        raise SystemExit(f"no seed in {SEED}..{SEED + MAX_SEED_ATTEMPTS - 1} solved XOR")
 
     with torch.no_grad():
         cal = calibration_grid()

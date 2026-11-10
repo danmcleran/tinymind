@@ -33,7 +33,7 @@ import tinymind_plot as tp  # noqa: E402
 LOSS = os.path.join(HERE, "output", "har_loss.csv")
 CM = os.path.join(HERE, "output", "har_confusion.csv")
 SAMPLES = os.path.join(HERE, "output", "har_samples.csv")
-NAMES = ["walking", "upstairs", "sitting", "standing"]
+NAMES = ["walking", "upstairs", "downstairs", "sitting"]
 
 
 def main():

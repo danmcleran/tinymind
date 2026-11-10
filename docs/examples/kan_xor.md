@@ -24,7 +24,7 @@ make run
 make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
-`make run` runs the example twice — the default 4-corner training and `--dense` — writing the learning-curve CSV `output/kan_xor_training.csv`, the decision-surface CSV `output/kan_xor_decision_surface.csv` (a 41×41 sweep of the trained KAN over the input grid), the dense-training surface `output/kan_xor_dense_decision_surface.csv`, and a per-iteration error log `output/kan_fixed_xor.txt`; the plotted error is accumulated in floating point so the curve stays clean despite the fixed-point internals.
+`make run` runs the example twice — the default 4-corner training and `--dense` — writing the learning-curve CSV `output/kan_xor_training.csv`, the decision-surface CSV `output/kan_xor_decision_surface.csv` (a 41×41 sweep of the trained KAN over the input grid), the dense-training surface `output/kan_xor_dense_decision_surface.csv`, and a per-iteration error log `output/kan_fixed_xor.txt`; the plotted error is accumulated in floating point so the curve stays clean despite the fixed-point internals. Each run exits non-zero if the network did not learn (a misclassified corner, a corner-training error that did not reach the zero tolerance, or dense grid accuracy below 95%), and the top-level `make check` runs it, so a training regression fails the build.
 
 ## Output
 

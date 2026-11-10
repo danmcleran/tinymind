@@ -390,9 +390,11 @@ class Anfis:
         coefficient of 169 amplifies it into an error far larger than the
         output quantum, breaking the cancellation the fit depends on.
 
-        Measured on that benchmark, ridge = 1e-6 drops the largest coefficient
-        from 169 to 16, costs about 20% float accuracy, and improves int8
-        accuracy 4.7x. If the model is headed for cpp/qanfis.hpp, use it.
+        Measured on that benchmark (numpy 2.4), ridge = 1e-6 drops the
+        largest coefficient from 169 to 9.6, costs no float accuracy, and
+        improves int8 accuracy 3.0x; ridge = 1e-4 gives the best int8 result
+        at about 17% float cost. If the model is headed for cpp/qanfis.hpp,
+        use it.
         """
         A, _, _ = self.design_matrix(X)
         Y = np.asarray(y)
