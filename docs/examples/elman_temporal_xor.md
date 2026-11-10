@@ -31,12 +31,12 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 
 ```
 Held-out accuracy (599 bits):
-  Elman (recurrent) : 98.33%
+  Elman (recurrent) : 100%
   MLP   (no memory) : 51.09%
 ```
 
 ![Elman vs MLP on temporal XOR]({{ site.baseurl }}/assets/plots/elman_temporal_xor.png)
 
-The Elman output (orange) snaps to the 0/1 target as it recovers `x[t] XOR x[t-1]` from its recurrent memory, while the MLP output (green) is pinned near the dashed 0.5 line — with no access to `x[t-1]` it can only output the mean. The recurrent connection is the whole difference. The few Elman misses are the residual ~1.8%; the task is learnable but the small fixed-point net does not reach a perfect fit.
+The Elman output (orange) snaps to the 0/1 target as it recovers `x[t] XOR x[t-1]` from its recurrent memory, while the MLP output (green) is pinned near the dashed 0.5 line — with no access to `x[t-1]` it can only output the mean. The recurrent connection is the whole difference: the Elman network classifies every held-out bit correctly. It trains at a learning rate of 0.1; the default 0.25 learns this task on some seeds and not others.
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/elman_temporal_xor)

@@ -20,12 +20,12 @@ The full embedded deployment story for a recurrent network: **train offline in f
 
 | Format  | Weight storage | Test accuracy |
 |---------|---------------:|--------------:|
-| float64 |        4936 B  |        94.05% |
-| Q16.16  |        2468 B  |        94.32% |
-| Q8.8    |     **1234 B** |    **94.05%** |
-| Q4.4    |         617 B  |        48.38% |
+| float64 |        4936 B  |        96.76% |
+| Q16.16  |        2468 B  |        96.76% |
+| Q8.8    |     **1234 B** |    **96.76%** |
+| Q4.4    |         617 B  |        34.59% |
 
-**Q8.8 matches double-precision accuracy exactly** with 4× smaller weights — the entire 617-weight network fits in 1.2 KB, no FPU required at inference. Q4.4 is below what this network needs: no weights clip, but the accumulated resolution loss through the recurrent loop collapses accuracy. The original paper's baseline on this dataset is 94.1% (Kudo, Toyama & Shimbo, 1999) — the Q8.8 Elman network lands on it.
+**Q8.8 matches double-precision accuracy exactly** with 4× smaller weights — the entire 617-weight network fits in 1.2 KB, no FPU required at inference. Q4.4 is below what this network needs: no weights clip, but the accumulated resolution loss through the recurrent loop collapses accuracy. The original paper's baseline on this dataset is 94.1% (Kudo, Toyama & Shimbo, 1999); the Q8.8 Elman network is above it.
 
 ## Build and run
 
@@ -42,10 +42,10 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 
 ```
 Test accuracy (370 utterances, 9 speakers):
-  float64  accuracy 94.05%  weights 4936 bytes
-  Q16.16   accuracy 94.32%  weights 2468 bytes  clipped 0/617
-  Q8.8     accuracy 94.05%  weights 1234 bytes  clipped 0/617
-  Q4.4     accuracy 48.38%  weights 617 bytes  clipped 0/617
+  float64  accuracy 96.76%  weights 4936 bytes
+  Q16.16   accuracy 96.76%  weights 2468 bytes  clipped 0/617
+  Q8.8     accuracy 96.76%  weights 1234 bytes  clipped 0/617
+  Q4.4     accuracy 34.59%  weights 617 bytes  clipped 0/617
 ```
 
 ![Accuracy vs numeric format]({{ site.baseurl }}/assets/plots/elman_vowels.png)

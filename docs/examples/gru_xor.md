@@ -30,7 +30,7 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 
 ![GRU XOR learning curve]({{ site.baseurl }}/assets/plots/gru_xor.png)
 
-The 4-case XOR error falls smoothly from ~0.5 (chance) to ~0.09 and plateaus. All four patterns are classified correctly with clear margins (predictions ≈ 0.09 / 0.91); the residual ~0.09 is just the sigmoid output not fully saturating to 0/1 at this network size and fixed-point precision.
+The 4-case XOR error falls smoothly from ~0.5 (chance) to ~0.06 and plateaus. All four patterns are classified correctly with clear margins (predictions between 0.05 and 0.09 for the 0 cases, 0.94 and 0.96 for the 1 cases); the residual is the sigmoid output not fully saturating to 0/1 at this network size and fixed-point precision.
 
 ![GRU XOR decision surface, Q16.16 fixed-point]({{ site.baseurl }}/assets/plots/gru_xor_decision_surface.png)
 
