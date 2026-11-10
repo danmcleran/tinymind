@@ -32,6 +32,7 @@ examples/kws_cortex_m_int8/output/
 examples/predictive_maintenance/output/
 examples/pytorch/xor/input/
 examples/pytorch/xor/output/
+examples/pytorch/gru/output/
 unit_test/qformat/output/
 unit_test/qformat_oracle/output/
 unit_test/qlearn/output/
