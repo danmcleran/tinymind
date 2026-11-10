@@ -11,7 +11,7 @@ The floating-point counterpart to [LSTM Sinusoid](lstm_sinusoid.md). The **same*
 
 ## How it works
 
-- One input (`sin[t]` scaled to [0, 1]), a single hidden layer of 16 LSTM units, one sigmoid output — identical on both precision paths. 20 samples/period, 20000 epochs over the continuous stream `sin[t] -> sin[t+1]` with the recurrent state wrapping across the period boundary.
+- One input (`sin[t]` scaled to [0, 1]), a single hidden layer of 16 LSTM units, one sigmoid output — identical on both precision paths. 20 samples/period, 20000 epochs over the continuous stream `sin[t] -> sin[t+1]` with the recurrent state wrapping across the period boundary, trained on every step with plain SGD at a learning rate of 0.2 (no momentum).
 - Both nets are seeded identically (`srand(7)`) before construction, and both weight initializers draw from `[-0.5, 0.5]`, so they start from comparable inits — the only difference between the two runs is the numeric type.
 - The library only ships `FixedPointTransferFunctions`. The floating-point transfer-function bundle and the `double` activation specializations (`TanhActivationPolicy<double>`, `SigmoidActivationPolicy<double>`, `Constants<double>`, `ZeroToleranceCalculator<double>`) at the top of the source are the same ones `unit_test/nn/nn_unit_test.cpp` uses to exercise the float path. The LSTM cell internally hardcodes sigmoid gates and tanh cell-state, so those two `double` specializations are what the recurrent path actually calls.
 - **One-step-ahead** is always fed the true `sin[t]` — it measures how well the dynamics were learned. **Free-run** feeds each prediction back as the next input — the honest generation test, where small one-step errors compound into amplitude/phase drift.
@@ -31,7 +31,10 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 
 ![LSTM sinusoid: float vs Q16.16]({{ site.baseurl }}/assets/plots/lstm_sinusoid_float.png)
 
-- **One-step-ahead (top):** both precisions track the sinusoid closely; the float curve sits a hair tighter and the Q16.16 curve lags slightly at the peaks. Neither reaches exactly 0 or 1 — the sigmoid output saturates before the rails, an activation artifact shared by both paths, not a precision effect.
-- **Free-run (bottom):** the float net keeps oscillating with roughly the right amplitude through both periods, accumulating only a slow phase lag, while the Q16.16 net holds the first period and then lags in phase and loses some amplitude in the second — the coarser fixed-point grid carries less of the phase information the LSTM state needs to stay on the sinusoid.
+- **One-step-ahead (top):** RMS error 0.0058 (double) and 0.0044 (Q16.16). Neither reaches exactly 0 or 1 — the sigmoid output saturates before the rails, an activation artifact shared by both paths, not a precision effect.
+- **Free-run (bottom):** RMS error 0.0142 (double) and 0.0116 (Q16.16); both hold amplitude and phase through both periods.
+- Across seeds 1 to 8 the one-step RMS error stays between 0.003 and 0.018 for both precisions, so at this size the Q16.16 quantization cost is within the seed-to-seed spread.
+
+An earlier version skipped any training step whose error was within the zero tolerance. That stopped training once the hidden-to-output readout alone fit the stream to that tolerance, before the LSTM gates had learned the dynamics: one-step RMS 0.044 (double) and 0.057 (Q16.16), free-run 0.053 and 0.27. Training on every step needs the momentum turned off: with the library's default momentum and acceleration, the Q16.16 network diverges as rounding keeps feeding the momentum term.
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/lstm_sinusoid_float)

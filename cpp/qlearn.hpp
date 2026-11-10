@@ -149,9 +149,12 @@ namespace tinymind {
             return this->mLearningRate;
         }
 
+        // Both rates must lie in [0, 1]; 1 is valid (alpha = 1 replaces the
+        // old estimate outright, gamma = 1 is an undiscounted return). A value
+        // outside the range is ignored and the previous one is kept.
         void setDiscountFactor(const ValueType& discountFactor)
         {
-            if(discountFactor < tinymind::Constants<ValueType>::one())
+            if(isInUnitInterval(discountFactor))
             {
                 this->mDiscountFactor = discountFactor;
             }
@@ -159,12 +162,17 @@ namespace tinymind {
 
         void setLearningRate(const ValueType& learningRate)
         {
-            if(learningRate < tinymind::Constants<ValueType>::one())
+            if(isInUnitInterval(learningRate))
             {
                 this->mLearningRate = learningRate;
             }
         }
     private:
+        static bool isInUnitInterval(const ValueType& value)
+        {
+            return (!(value < tinymind::Constants<ValueType>::zero()) && !(tinymind::Constants<ValueType>::one() < value));
+        }
+
         ValueType mLearningRate;
         ValueType mDiscountFactor;
     };
@@ -299,8 +307,11 @@ namespace tinymind {
                 return true;
             }
 
-            value = this->mRandomNumberPolicy.randInt(0, 100);
-            chooseRandomAction = (value <= randomActionDecisionPoint);
+            // randInt is inclusive at both ends: 100 equally likely values
+            // 0..99, of which randomActionDecisionPoint are below the point,
+            // so a random action is chosen with probability exactly p/100.
+            value = this->mRandomNumberPolicy.randInt(0, 99);
+            chooseRandomAction = (value < randomActionDecisionPoint);
             
             return chooseRandomAction;
         }
@@ -343,16 +354,22 @@ namespace tinymind {
                     {
                         bestAction = actions[0];
                     }
-                    else
+                    else if(qValue1 > qValue0)
                     {
                         bestAction = actions[1];
+                    }
+                    else
+                    {
+                        // A tie is no preference, as below.
+                        bestAction = EnvironmentType::EnvironmentInvalidAction;
                     }
                     break;
                 default:
                     // Largest Q value, whatever its sign. Only when every valid
                     // action ties (e.g. an unvisited state of a zero-initialised
                     // Q table) is there no preference, and InvalidAction tells
-                    // the learner to pick a random action instead.
+                    // the learner to pick a random action instead (and its
+                    // bootstrap to use any of them, since all are the max).
                     bestAction = actions[0];
                     bestQValue = qValuePolicy.getQValue(state, bestAction);
                     allTied = true;
@@ -465,6 +482,9 @@ namespace tinymind {
 
         QValueNeuralNetworkPolicy() : mIterations(0), mFedState(0), mFedStateValid(false)
         {
+            // The target network starts as a copy of the online one, as in
+            // standard DQN, not as a second, independent random network.
+            this->copyNetworkWeights();
         }
 
         /**
@@ -515,7 +535,6 @@ namespace tinymind {
         {
             ValueType values[NumberOfActions];
             ValueType inputs[NumberOfInputLayerNeurons];
-            ValueType error;
 
             EnvironmentType::getInputValues(state, &inputs[0]);
 
@@ -525,11 +544,14 @@ namespace tinymind {
             this->mNeuralNet.getLearnedValues(&values[0]);
             this->mFedStateValid = false;
 
-            values[action] = value;
-
-            error = this->mNeuralNet.calculateError(&values[0]);
-            if (!NeuralNetworkType::NeuralNetworkTransferFunctionsPolicy::isWithinZeroTolerance(error))
+            // Train whenever the target differs from the current output. Only
+            // the taken action's output gets an error, and the learner's target
+            // already moves Q by alpha times the TD error, so a tolerance on the
+            // network's mean error over all outputs would skip every update
+            // whose TD error is small, and learning would stop early.
+            if (values[action] != value)
             {
+                values[action] = value;
                 this->mNeuralNet.trainNetwork(&values[0]);
                 ++mIterations;
                 if(mIterations >= NumberOfIterationsBeforeTargetNetworkUpdate)
@@ -641,49 +663,54 @@ namespace tinymind {
             ValueType futureQValue;
             ValueType qValue;
 
-            if(learningRate > 0)
+            // Q(s, a) += alpha * (r + gamma * max_a' Q(s', a') - Q(s, a)), for
+            // the transition's own state s = experience.state, whatever state
+            // the learner was last in (so a replayed or externally generated
+            // experience updates the right entry).
+            if((learningRate > 0) && (experience.state < NumberOfStates))
             {
                 oneMinusLearningRate = (tinymind::Constants<ValueType>::one() - learningRate);
                 discountFactor = this->mEnvironment.getDiscountFactor();
 
-                if(InvalidState == this->mState)
-                {
-                    oldQValue = 0;
-                }
-                else
-                {
-                    oldQValue = this->mQValuePolicy.getQValue(this->mState, experience.action);
-                }
+                oldQValue = this->mQValuePolicy.getQValue(experience.state, experience.action);
 
                 futureQValue = calculateFutureQValue(experience.newState);
 
                 qValue = ((oneMinusLearningRate * oldQValue) + (learningRate * (experience.reward + (discountFactor * futureQValue))));
 
-                if(InvalidState != this->mState)
-                {
-                    this->mQValuePolicy.setQValue(this->mState, experience.action, qValue);
-                }
+                this->mQValuePolicy.setQValue(experience.state, experience.action, qValue);
             }
 
             this->mState = experience.newState;
         }
     private:
         // Private methods
+
+        // max_a' Q(s', a') over the next state's valid actions: the greedy
+        // value, never the exploring policy's choice (which would make the
+        // update learn the value of the exploration policy instead of Q*).
+        // StateToActionPolicy selects the action, so a DQN picks it with the
+        // online network and evaluates it with the target network (Double
+        // DQN). A state with no valid actions is terminal and contributes 0.
         ValueType calculateFutureQValue(const StateType state)
         {
-            const ActionType action = this->chooseAction(state);
-            ValueType qValue;
+            ActionType* pActions = reinterpret_cast<ActionType*>(&this->mActionsBuffer[0]);
+            const size_t numberOfValidActions = this->mEnvironment.getValidActionsForState(state, pActions);
+            ActionType action;
 
+            if (0 == numberOfValidActions)
+            {
+                return 0;
+            }
+
+            action = StateToActionPolicy::selectBestActionForState(state, pActions, numberOfValidActions, this->mQValuePolicy);
             if (InvalidAction == action)
             {
-                qValue = 0;
-            }
-            else
-            {
-                qValue = this->mQValuePolicy.getFutureQValue(state, action);
+                // Every valid action ties, so each one's value is the max.
+                action = pActions[0];
             }
 
-            return qValue;
+            return this->mQValuePolicy.getFutureQValue(state, action);
         }
 
         ActionType chooseAction(const StateType state)

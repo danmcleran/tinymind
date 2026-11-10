@@ -1056,5 +1056,7 @@ BOOST_AUTO_TEST_CASE(test_qlearn_dqn_get_q_value_reads_the_requested_state)
     BOOST_TEST(differingStates == static_cast<size_t>(NUMBER_OF_STATES - 1));
 }
 
+#include "qlearn_correctness_tests.hpp"
+
 BOOST_AUTO_TEST_SUITE_END()
 

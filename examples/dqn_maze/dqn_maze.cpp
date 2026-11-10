@@ -51,6 +51,8 @@ The paths out of the maze:
 4->3->1->5
 */
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -59,10 +61,83 @@ The paths out of the maze:
 
 extern QLearnerType qLearner;
 
+// Exploration stays at 100% for all but the last 100 episodes. Q-learning is
+// off-policy (the update bootstraps from the best next action, whatever the
+// behaviour policy does), and with no replay buffer a long greedy phase lets
+// the network drift on the moves the greedy policy never takes: phasing
+// exploration out over the last 1000 episodes left Q(4,0) 0.9 above Q*.
 #define TOTAL_NUMBER_OF_EPISODES 10000U
-#define NUMBER_OF_PURE_RANDOM_TRAINING_EPISODES (TOTAL_NUMBER_OF_EPISODES - 1000U)
+#define NUMBER_OF_PURE_RANDOM_TRAINING_EPISODES (TOTAL_NUMBER_OF_EPISODES - 100U)
 #define NUMBER_OF_TEST_EPISODES 100U
 #define MAX_NUMBER_OF_STEPS_PER_EPISODE 100U
+
+static double toDouble(const QValueType& value)
+{
+    return static_cast<double>(value.getValue()) / 65536.0;
+}
+
+// Q* by value iteration: Q*(s, a) = r(s, a) + gamma * max_a' Q*(s', a'),
+// where the next room s' is the door a just taken. Comparing the network's
+// Q values with it shows whether the values are right, not only whether they
+// rank the actions in the right order (on this small maze a wrong network
+// can still pick every shortest path).
+static void reportDistanceFromOptimal(const char* const path)
+{
+    using namespace std;
+    MazeEnvironmentType& environment = qLearner.getEnvironment();
+    const double gamma = toDouble(environment.getDiscountFactor());
+    double qStar[NUMBER_OF_STATES][NUMBER_OF_ACTIONS] = {};
+
+    for (unsigned iteration = 0; iteration < 5000; ++iteration)
+    {
+        double next[NUMBER_OF_STATES][NUMBER_OF_ACTIONS] = {};
+        for (state_t s = 0; s < NUMBER_OF_STATES; ++s)
+        {
+            for (action_t a = 0; a < NUMBER_OF_ACTIONS; ++a)
+            {
+                if (!environment.isActionValidForState(s, a))
+                {
+                    continue;
+                }
+                double best = 0.0;
+                bool any = false;
+                for (action_t nextAction = 0; nextAction < NUMBER_OF_ACTIONS; ++nextAction)
+                {
+                    if (environment.isActionValidForState(a, nextAction) && (!any || (qStar[a][nextAction] > best)))
+                    {
+                        best = qStar[a][nextAction];
+                        any = true;
+                    }
+                }
+                next[s][a] = toDouble(environment.getRewardForStateAndAction(s, a)) + (gamma * best);
+            }
+        }
+        copy(&next[0][0], &next[0][0] + (NUMBER_OF_STATES * NUMBER_OF_ACTIONS), &qStar[0][0]);
+    }
+
+    ofstream qTableFile(path);
+    qTableFile << "state,action,q,q_star" << endl;
+    double maxError = 0.0;
+    double sumSquares = 0.0;
+    unsigned count = 0;
+    for (state_t s = 0; s < NUMBER_OF_STATES; ++s)
+    {
+        for (action_t a = 0; a < NUMBER_OF_ACTIONS; ++a)
+        {
+            if (!environment.isActionValidForState(s, a))
+            {
+                continue;
+            }
+            const double q = toDouble(qLearner.getQValue(s, a));
+            const double error = q - qStar[s][a];
+            qTableFile << static_cast<int>(s) << "," << static_cast<int>(a) << "," << q << "," << qStar[s][a] << endl;
+            maxError = max(maxError, fabs(error));
+            sumSquares += error * error;
+            ++count;
+        }
+    }
+    cout << "Q values vs Q*: max |error| " << maxError << ", RMS " << sqrt(sumSquares / count) << endl;
+}
 
 int main(const int argc, char *argv[])
 {
@@ -110,10 +185,11 @@ int main(const int argc, char *argv[])
     qLearner.getEnvironment().setRandomActionDecisionPoint(100);
     qLearner.getEnvironment().setGoalState(5);
 
-    // randomly search the maze for the reward, keep updating the Q table
+    // randomly search the maze for the reward, keep updating the Q values
     for (unsigned i = 0; i < TOTAL_NUMBER_OF_EPISODES; ++i)
     {
-        // after 400 random iterations, scale down the randomness on every iteration
+        // after the pure random episodes (all but the last 1000), scale down
+        // the randomness on every episode; it reaches 0 after 100 more
         if (i >= NUMBER_OF_PURE_RANDOM_TRAINING_EPISODES)
         {
             randomActionDecisionPoint = qLearner.getEnvironment().getRandomActionDecisionPoint();
@@ -166,6 +242,9 @@ int main(const int argc, char *argv[])
     }
 
     logFile.close();
+
+    reportDistanceFromOptimal("dqn_maze_qtable.csv");
+
     logFile.open("dqn_maze_test.csv");
     if(!logFile.is_open())
     {
@@ -173,7 +252,10 @@ int main(const int argc, char *argv[])
         return -1;
     }
 
-    // trainging is done, now run some test iterations
+    // Training is done. The test runs are greedy (no exploration) and learn
+    // nothing (learning rate 0), so they measure the trained network as it is.
+    qLearner.getEnvironment().setRandomActionDecisionPoint(0);
+    qLearner.getEnvironment().setLearningRate(QValueType(0));
     for (unsigned i = 0; i < NUMBER_OF_TEST_EPISODES; ++i)
     {
         qLearner.startNewEpisode();
@@ -216,7 +298,7 @@ int main(const int argc, char *argv[])
 
         logFile << logEntry << endl;
     }
-    
+
     if (qLearner.getState() == qLearner.getEnvironment().getGoalState())
     {
         cout << "Reached the goal state!" << endl;

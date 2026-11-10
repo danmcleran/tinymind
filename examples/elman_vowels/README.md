@@ -23,8 +23,8 @@ speaker is the argmax.
 
 1. **Offline float training.** An `ElmanNeuralNetwork<double, 12, 16, 9>` is
    trained on the host in double precision — per-frame backprop against the
-   utterance's one-hot speaker target, context reset at every utterance
-   boundary.
+   utterance's one-hot speaker target, context cleared with `resetState()`
+   at every utterance boundary.
 2. **Weight transfer.** The trained weights — input, recurrent, output, and
    biases — are copied into inference-only (`IsTrainable = false`) fixed-point
    networks, saturating each weight to the target format's range.
@@ -35,21 +35,30 @@ speaker is the argmax.
 
 | Format  | Weight storage | Test accuracy |
 |---------|---------------:|--------------:|
-| float64 |        4936 B  |        96.76% |
-| Q16.16  |        2468 B  |        96.76% |
-| Q8.8    |     **1234 B** |    **96.76%** |
-| Q4.4    |         617 B  |        34.59% |
+| float64 |        4936 B  |        92.97% |
+| Q16.16  |        2468 B  |        92.97% |
+| Q8.8    |     **1234 B** |    **92.97%** |
+| Q4.4    |         617 B  |        58.92% |
 
 **Q8.8 matches double-precision accuracy exactly** with 4× smaller weights —
 the entire 617-weight network fits in 1.2 KB, with no FPU required at
 inference. Q4.4 (1/16 resolution, ±8 range) is below what this network needs:
 none of the weights clip, but the accumulated resolution loss through the
 recurrent loop collapses accuracy. The original paper's baseline on this
-dataset is 94.1% (Kudo, Toyama & Shimbo, 1999); the Q8.8 Elman network is above
-it.
+dataset is 94.1% (Kudo, Toyama & Shimbo, 1999); this 617-weight Elman network
+comes within about a point of it.
 
-Q16.16 and Q8.8 score exactly what the float model scores, so the fixed-point
-networks are not merely "close": they reproduce the float model's decisions.
+Q16.16 and Q8.8 do not merely score what the float model scores: they make the
+same prediction as the float model on every one of the 370 test utterances.
+
+Across random seeds the float model scores 90.5% to 93.2% (seed 2, shipped, is
+92.97%); a 24-unit hidden layer or 120 epochs does no better. Earlier versions
+of this example reported a higher accuracy, but it was inflated: the per-utterance
+context reset the example did by hand stopped having any effect once the Elman
+network began restoring the previous step's hidden state before each step, so
+each utterance started from the previous speaker's trailing context, in
+training and at test time. The example now calls `resetState()`, and each
+utterance starts from an empty context.
 
 ## Network
 

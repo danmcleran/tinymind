@@ -41,7 +41,12 @@ def main():
     fig.suptitle("LSTM sinusoid: float (double) vs Q16.16 fixed-point",
                  fontsize=14, fontweight="bold", y=0.98)
 
-    ax_top.set_title("one-step-ahead (teacher forced) -- both track; float is tighter",
+    def rms(name):
+        errors = [p - t for p, t in zip(cols[name], cols["true"])]
+        return (sum(e * e for e in errors) / len(errors)) ** 0.5
+
+    ax_top.set_title("one-step-ahead (teacher forced) -- RMS error float %.4f, Q16.16 %.4f"
+                     % (rms("float_one_step"), rms("q_one_step")),
                      fontsize=10, color="#666666")
     tp.line(ax_top, cols["step"],
             {"ground truth": cols["true"],
@@ -49,8 +54,8 @@ def main():
              "Q16.16": cols["q_one_step"]},
             ylabel="value", markers=False)
 
-    ax_bot.set_title("auto-regressive free-run -- float holds the oscillation; "
-                     "Q16.16 lags in phase",
+    ax_bot.set_title("auto-regressive free-run -- RMS error float %.4f, Q16.16 %.4f"
+                     % (rms("float_free_run"), rms("q_free_run")),
                      fontsize=10, color="#666666")
     tp.line(ax_bot, cols["step"],
             {"ground truth": cols["true"],

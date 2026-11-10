@@ -284,7 +284,13 @@ template<typename NetType, typename VT, typename ToVal, typename ToReal>
 static void trainAndEvaluate(NetType& net, ToVal toVal, ToReal toReal,
                              double* oneStep, double* freeRun)
 {
-    typedef typename NetType::NeuralNetworkTransferFunctionsPolicy TF;
+    // Plain SGD at 0.2 on both paths. With the library's default momentum
+    // (0.5) and acceleration, training on every step makes the Q16.16 net
+    // diverge: rounding keeps feeding the momentum term. Without momentum
+    // both precisions converge for every seed tried (1-8).
+    net.setLearningRate(toVal(0.2));
+    net.setMomentumRate(toVal(0.0));
+    net.setAccelerationRate(toVal(0.0));
 
     static const size_t NUM_SAMPLES = SAMPLES_PER_PERIOD;
     VT sinSamples[NUM_SAMPLES];
@@ -296,7 +302,6 @@ static void trainAndEvaluate(NetType& net, ToVal toVal, ToReal toReal,
     VT input[1];
     VT target[1];
     VT learnedValues[1];
-    VT error = VT(0);
 
     // Continuous periodic stream: sin[t] -> sin[t+1]. Recurrent state carries
     // across epoch boundaries (sample N-1 wraps to sample 0).
@@ -307,13 +312,12 @@ static void trainAndEvaluate(NetType& net, ToVal toVal, ToReal toReal,
             input[0] = sinSamples[t];
             target[0] = sinSamples[(t + 1) % NUM_SAMPLES];
 
+            // Train on every step. Skipping steps whose error is within the
+            // zero tolerance stops training once the readout alone fits the
+            // stream to that tolerance, before the gates have learned the
+            // dynamics.
             net.feedForward(&input[0]);
-            error = net.calculateError(&target[0]);
-
-            if (!TF::isWithinZeroTolerance(error))
-            {
-                net.trainNetwork(&target[0]);
-            }
+            net.trainNetwork(&target[0]);
         }
     }
 
@@ -381,6 +385,23 @@ int main()
         results << p << "," << trueSample(WARMUP_STEPS + p) << ","
                 << fOneStep[p] << "," << fFreeRun[p] << ","
                 << qOneStep[p] << "," << qFreeRun[p] << std::endl;
+    }
+
+    // RMS error against the true sinusoid over the prediction horizon.
+    double sumSquares[4] = {0.0, 0.0, 0.0, 0.0};
+    for (size_t p = 0; p < PREDICTION_STEPS; ++p)
+    {
+        const double truth = trueSample(WARMUP_STEPS + p);
+        const double predictions[4] = {fOneStep[p], fFreeRun[p], qOneStep[p], qFreeRun[p]};
+        for (size_t i = 0; i < 4; ++i)
+        {
+            sumSquares[i] += (predictions[i] - truth) * (predictions[i] - truth);
+        }
+    }
+    const char* const names[4] = {"double one-step", "double free-run", "Q16.16 one-step", "Q16.16 free-run"};
+    for (size_t i = 0; i < 4; ++i)
+    {
+        std::cout << names[i] << " RMS error: " << std::sqrt(sumSquares[i] / PREDICTION_STEPS) << std::endl;
     }
 
     std::cout << "Prediction written to lstm_sinusoid_float.csv" << std::endl;
