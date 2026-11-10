@@ -70,10 +70,15 @@ namespace momentum_rounding_tests
 
         // The library's default rates: learning 0.25, momentum 0.5,
         // acceleration 0.0625. One real step leaves deltas of many LSBs.
+        // Write each parameter back to itself: the round trip through the
+        // setters must be exact, and it leaves the trajectory unchanged.
         std::vector<double> before;
         for (size_t i = 0; i < params.size(); ++i)
         {
-            before.push_back(params[i].get());
+            const double value = params[i].get();
+            params[i].set(value);
+            BOOST_TEST(params[i].get() == value);
+            before.push_back(value);
         }
         nn.feedForward(&inputs[0]);
         nn.trainNetwork(&target[0]);
