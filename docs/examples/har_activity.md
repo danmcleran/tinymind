@@ -31,12 +31,12 @@ By default the example synthesizes the accelerometer windows (deterministic, see
 
 | Model | Test accuracy |
 |---|---|
-| LSTM, all weights trained | **91.5%** (183/200) |
+| LSTM, all weights trained | **92.5%** (185/200) |
 | LSTM, `--readout-only` (input, gate and recurrent weights frozen at their random initial values) | 50.0% |
 | Nearest centroid on per-axis mean + standard deviation (ignores sample order) | 52.5% |
 | Chance | 25% |
 
-The two order-blind baselines both separate SITTING and lose most of the walking classes. Training the LSTM's gates and recurrent weights is what reads the sample order: it lifts accuracy from 50% to 91.5%. Recurrent training in Q16.16 is noisy on this task, though: across five weight-initialization seeds the full model scored 65.5%, 73%, 86.5%, 91.5% and 93%, always well above both baselines.
+The two order-blind baselines both separate SITTING and lose most of the walking classes. Training the LSTM's gates and recurrent weights is what reads the sample order: it lifts accuracy from 50% to 92.5%. Recurrent training in Q16.16 is noisy on this task, though: across five weight-initialization seeds the full model scored 71%, 73.5%, 89.5%, 92.5% and 94.5%, always well above both baselines.
 
 ## Output
 
