@@ -52,14 +52,14 @@ stream.
 
 ```
 Held-out accuracy (599 bits):
-  Elman (recurrent) : 98.33%
+  Elman (recurrent) : 100%
   MLP   (no memory) : 51.09%
 ```
 
 In the chart the Elman output snaps to the 0/1 target while the MLP output is
-pinned near 0.5 — the recurrent connection is the whole difference. The few Elman
-misses are the residual ~1.8%; the task is learnable but the small fixed-point net
-does not reach a perfect fit.
+pinned near 0.5 — the recurrent connection is the whole difference. The Elman
+network classifies every held-out bit correctly. It trains at a learning rate of
+0.1: the default 0.25 learns this task on some seeds and not others.
 
 The matplotlib style comes from the shared
 [`examples/plotting/tinymind_plot.py`](../plotting) module; install it into an

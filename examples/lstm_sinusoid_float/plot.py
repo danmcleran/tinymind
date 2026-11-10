@@ -50,7 +50,7 @@ def main():
             ylabel="value", markers=False)
 
     ax_bot.set_title("auto-regressive free-run -- float holds the oscillation; "
-                     "Q16.16 collapses",
+                     "Q16.16 lags in phase",
                      fontsize=10, color="#666666")
     tp.line(ax_bot, cols["step"],
             {"ground truth": cols["true"],

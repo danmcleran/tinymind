@@ -91,10 +91,9 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 - `output/har_confusion_behavior.png` — `plot.py` renders loss + confusion +
   per-activity accelerometer traces
 
-Expected (seed = 7): convergence to ~0.027 avg error and **~97.5% test
-accuracy** (195/200). The only residual confusion is a handful of
-WALKING_UPSTAIRS windows read as WALKING — the genuinely harder
-frequency-discrimination case; the static SITTING / STANDING classes are nailed.
+Expected (seed = 7): convergence to ~0.0006 avg error and **100% test
+accuracy** (200/200): every window of every activity, including the harder
+WALKING vs WALKING_UPSTAIRS frequency discrimination, is classified correctly.
 
 ## tinymind capability shown
 

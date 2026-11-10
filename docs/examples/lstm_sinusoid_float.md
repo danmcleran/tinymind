@@ -32,6 +32,6 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 ![LSTM sinusoid: float vs Q16.16]({{ site.baseurl }}/assets/plots/lstm_sinusoid_float.png)
 
 - **One-step-ahead (top):** both precisions track the sinusoid closely; the float curve sits a hair tighter and the Q16.16 curve lags slightly at the peaks. Neither reaches exactly 0 or 1 — the sigmoid output saturates before the rails, an activation artifact shared by both paths, not a precision effect.
-- **Free-run (bottom):** the float net keeps oscillating with roughly the right amplitude through both periods, accumulating only a slow phase lag, while the Q16.16 net collapses in the second period — the coarser fixed-point grid loses the phase information the LSTM state needs to stay on the sinusoid.
+- **Free-run (bottom):** the float net keeps oscillating with roughly the right amplitude through both periods, accumulating only a slow phase lag, while the Q16.16 net holds the first period and then lags in phase and loses some amplitude in the second — the coarser fixed-point grid carries less of the phase information the LSTM state needs to stay on the sinusoid.
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/lstm_sinusoid_float)

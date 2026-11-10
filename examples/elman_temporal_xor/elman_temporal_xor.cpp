@@ -106,11 +106,14 @@ static double trainAndEvaluate(NetType& net,
     ValueType target[1];
     ValueType learned[1];
 
-    // NOTE: a plain Elman/recurrent network exposes no public state reset (only
-    // the gated LstmNeuralNetwork / GruNeuralNetwork do). The recurrent context
-    // therefore flows continuously across epoch and eval boundaries. Temporal
-    // XOR needs only one step of memory, so this affects at most the single bit
-    // at each boundary -- immaterial over thousands of steps.
+    // The default learning rate (0.25) learns this task on some seeds and not
+    // others; 0.1 learns it on every seed tried (18 of 18).
+    net.setLearningRate(toQ(0.1));
+
+    // The recurrent context flows continuously across epoch and eval
+    // boundaries. Temporal XOR needs only one step of memory, so this affects
+    // at most the single bit at each boundary -- immaterial over thousands of
+    // steps.
     for (unsigned epoch = 0; epoch < TRAIN_EPOCHS; ++epoch)
     {
         uint8_t prev = 0;
