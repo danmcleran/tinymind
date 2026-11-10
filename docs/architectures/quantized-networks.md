@@ -52,7 +52,7 @@ class BinaryDense
 No multiplication is performed.
 
 ### Training (Straight-Through Estimator)
-During training, real-valued "latent" weights are maintained alongside the packed binary weights. The STE passes gradients through the `sign()` binarization as if it were the identity function, with gradients clipped to zero for latent weights outside [-1, +1].
+During training, real-valued "latent" weights are maintained alongside the packed binary weights. As in BinaryConnect, the STE passes gradients through the `sign()` binarization as if it were the identity function, zeroing the gradient of a latent weight outside [-1, +1], and `updateWeights()` clips every latent weight back into [-1, +1]. Without that clip a latent weight pushed past the edge would have its gradient zeroed from then on and could never change sign again. The input deltas are `delta * sign(weight)`, with no gate on the input.
 
 ## Example
 
@@ -100,6 +100,9 @@ Weights are quantized to {-1, 0, +1} based on a threshold:
 For each output neuron: weight = +1: add input; weight = -1: subtract input; weight = 0: skip.
 
 No multiplication is performed. Zero weights provide natural sparsity.
+
+### Training (Straight-Through Estimator)
+As in Ternary Weight Networks, the STE passes the gradient of each ternary weight, `delta * input`, straight to its latent weight, for every latent weight. The threshold scales with the mean absolute latent weight, so the latent weights are not clipped.
 
 ## Example
 

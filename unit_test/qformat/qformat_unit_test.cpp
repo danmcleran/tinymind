@@ -29,6 +29,7 @@
 #include <new>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "qformat.hpp"
 #include "compiler.h"
@@ -1653,6 +1654,37 @@ BOOST_AUTO_TEST_CASE(test_case_sign_extender_mask_covers_wide_intermediate)
     WideType value = static_cast<WideType>(0x00FF0000); // -1.0 as a raw 24-bit pattern
     ExtenderType::signExtend(value);
     BOOST_TEST(value == static_cast<WideType>(-65536));
+}
+
+// The free QValue operators are constrained to QValue operands. Unconstrained,
+// operator-(const QValueType&, int) was found by argument-dependent lookup for
+// std::vector<QValue> iterators and broke push_back at C++17 and later (this
+// test then fails to compile). Iterator arithmetic must keep its own meaning.
+BOOST_AUTO_TEST_CASE(test_case_qvalue_operators_leave_std_vector_iterators_alone)
+{
+    typedef tinymind::QValue<16, 16, true> QType;
+    std::vector<QType> values;
+    values.push_back(QType(1, 0));
+    values.push_back(QType(2, 0));
+    values.push_back(QType(3, 0));
+
+    std::vector<QType>::iterator last = values.end() - 1;
+    BOOST_TEST(last->getValue() == QType(3, 0).getValue());
+    BOOST_TEST((last - values.begin()) == 2);
+    BOOST_TEST((values.begin() + 1)->getValue() == QType(2, 0).getValue());
+
+    // The QValue/int operators still apply to QValues: whole numbers.
+    const QType three(3, 0);
+    BOOST_TEST((three - 1).getValue() == QType(2, 0).getValue());
+    BOOST_TEST((three + 1).getValue() == QType(4, 0).getValue());
+    BOOST_TEST(three > 2);
+    BOOST_TEST(three <= 3);
+    // Copied to locals: BOOST_TEST binds by reference, which would odr-use
+    // the static members.
+    const bool qvalueIsQValue = tinymind::IsQValue<QType>::value;
+    const bool iteratorIsQValue = tinymind::IsQValue<std::vector<QType>::iterator>::value;
+    BOOST_TEST(qvalueIsQValue);
+    BOOST_TEST(!iteratorIsQValue);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

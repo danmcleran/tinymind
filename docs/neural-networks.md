@@ -147,6 +147,10 @@ tinymind supports the following activation functions, all available for both fix
 
 ELU uses the exp lookup table. GELU approximates `x * sigmoid(1.702 * x)` using the existing sigmoid lookup table. SiLU computes `x * sigmoid(x)` and is used internally by KAN edge functions.
 
+- **Capped ReLU** takes the cap as a whole number, `CappedReluActivationPolicy<ValueType, 6>` for ReLU6, for fixed-point and floating-point types alike. Its derivative is 0 at and beyond the cap.
+- **GELU**'s derivative is a function of the pre-activation, not of the output (GELU is not one-to-one below zero). Feed-forward and Elman hidden layers and the feed-forward output layer keep each neuron's pre-activation when their policy is GELU and pass it to the derivative; LSTM layers reject GELU at compile time. Other policies' derivatives are taken at the output, and their layers store nothing extra.
+- **Softmax** is the output of `ClassifierOutputLayerConfiguration` and trains with cross-entropy loss: the output delta is `target - output`. GELU and Softmax use `std::exp` for `float`/`double`.
+
 # Additional Network Types
 
 Beyond the feed-forward and recurrent architectures described above, tinymind also provides:

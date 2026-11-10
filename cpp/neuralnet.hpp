@@ -326,7 +326,7 @@ namespace tinymind {
                     sum += (layer.getWeightForNeuronAndConnection(neuron, nextNeuron) * nextLayer.getNodeDeltaForNeuron(nextNeuron));
                 }
 
-                nodeDelta = sum * TransferFunctionsPolicy::hiddenNeuronActivationFunctionDerivative(layer.getOutputValueForNeuron(neuron));
+                nodeDelta = sum * TransferFunctionsPolicy::hiddenNeuronActivationFunctionDerivative(layer.getActivationDerivativeArgumentForNeuron(neuron));
 
                 layer.setNodeDeltaForNeuron(neuron, nodeDelta);
             }
@@ -393,7 +393,7 @@ namespace tinymind {
                     }
                 }
 
-                nodeDelta = sum * TransferFunctionsPolicy::hiddenNeuronActivationFunctionDerivative(layer.getOutputValueForNeuron(neuron));
+                nodeDelta = sum * TransferFunctionsPolicy::hiddenNeuronActivationFunctionDerivative(layer.getActivationDerivativeArgumentForNeuron(neuron));
 
                 layer.setNodeDeltaForNeuron(neuron, nodeDelta);
             }
@@ -416,7 +416,7 @@ namespace tinymind {
             {
                 outputValueForNeuron = outputLayer.getOutputValueForNeuron(neuron);
                 error = (targetValues[neuron] - outputValueForNeuron);
-                activationFunctionDerivative = TransferFunctionsPolicy::outputNeuronActivationFunctionDerivative(outputValueForNeuron);
+                activationFunctionDerivative = TransferFunctionsPolicy::outputNeuronActivationFunctionDerivative(outputLayer.getActivationDerivativeArgumentForNeuron(neuron));
                 nodeDelta = (error * activationFunctionDerivative);
                 
                 outputLayer.setNodeDeltaForNeuron(neuron, nodeDelta);
@@ -1785,6 +1785,68 @@ namespace tinymind {
         typedef BiasNeuron<ConnectionType, NumberOfOutgoingConnections, TransferFunctionsPolicy> BiasNeuronType;
     };
 
+    /**
+     * Each neuron's pre-activation, kept only for a layer whose activation
+     * policy takes its derivative at the pre-activation (GELU; see
+     * ActivationDerivativeTakesPreActivation). Otherwise the storage is an
+     * empty base class and costs nothing.
+     */
+    template<typename ValueType, size_t NumberOfNeurons, bool StorePreActivations>
+    struct PreActivationStorage
+    {
+        void setPreActivationForNeuron(const size_t neuron, const ValueType& value)
+        {
+            (void)neuron;
+            (void)value;
+        }
+    };
+
+    template<typename ValueType, size_t NumberOfNeurons>
+    struct PreActivationStorage<ValueType, NumberOfNeurons, true>
+    {
+        PreActivationStorage()
+        {
+            for (size_t neuron = 0; neuron < NumberOfNeurons; ++neuron)
+            {
+                this->mPreActivations[neuron] = static_cast<ValueType>(0);
+            }
+        }
+
+        void setPreActivationForNeuron(const size_t neuron, const ValueType& value)
+        {
+            this->mPreActivations[neuron] = value;
+        }
+
+        ValueType getPreActivationForNeuron(const size_t neuron) const
+        {
+            return this->mPreActivations[neuron];
+        }
+    private:
+        ValueType mPreActivations[NumberOfNeurons];
+    };
+
+    // The argument a layer passes to its activation derivative: the neuron's
+    // output, or its stored pre-activation.
+    template<bool UsePreActivation>
+    struct ActivationDerivativeArgumentSelector
+    {
+        template<typename LayerType>
+        static typename LayerType::ValueType get(const LayerType& layer, const size_t neuron)
+        {
+            return layer.getOutputValueForNeuron(neuron);
+        }
+    };
+
+    template<>
+    struct ActivationDerivativeArgumentSelector<true>
+    {
+        template<typename LayerType>
+        static typename LayerType::ValueType get(const LayerType& layer, const size_t neuron)
+        {
+            return layer.getPreActivationForNeuron(neuron);
+        }
+    };
+
     template<typename NeuronType, size_t NumberOfNeurons>
     struct Layer
     {
@@ -1819,6 +1881,13 @@ namespace tinymind {
             const size_t bufferIndex = neuron * sizeof(NeuronType);
             const NeuronType* pNeuron = reinterpret_cast<const NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
             return pNeuron->getOutputValue();
+        }
+
+        // What the hidden activation's derivative is evaluated at. Layers that
+        // keep pre-activations (HiddenLayer, OutputLayer) hide this.
+        ValueType getActivationDerivativeArgumentForNeuron(const size_t neuron) const
+        {
+            return this->getOutputValueForNeuron(neuron);
         }
 
         ValueType getOutputValueForOutgoingConnection(const size_t connection) const
@@ -2108,13 +2177,21 @@ namespace tinymind {
     };
 
     template<typename NeuronType, size_t NumberOfNeurons>
-    struct HiddenLayer : public LayerWithBias<NeuronType, NumberOfNeurons>
+    struct HiddenLayer : public LayerWithBias<NeuronType, NumberOfNeurons>,
+                         public PreActivationStorage<typename NeuronType::ValueType, NumberOfNeurons,
+                                                     HiddenActivationDerivativeTakesPreActivation<typename NeuronType::NeuronTransferFunctionsPolicy>::value>
     {
         typedef typename NeuronType::ValueType ValueType;
         typedef typename NeuronType::NeuronTransferFunctionsPolicy TransferFunctionsPolicy;
 
         static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
         static const size_t NumberOfBiasNeuronsInLayer = 1;
+        static const bool StoresPreActivations = HiddenActivationDerivativeTakesPreActivation<TransferFunctionsPolicy>::value;
+
+        ValueType getActivationDerivativeArgumentForNeuron(const size_t neuron) const
+        {
+            return ActivationDerivativeArgumentSelector<StoresPreActivations>::get(*this, neuron);
+        }
 
         // Fallback for non-LSTM hidden layers: gate deltas equal the node delta
         void computeGateDeltas() {}
@@ -2157,6 +2234,7 @@ namespace tinymind {
                 sum += previousLayer.getOutputValueForOutgoingConnection(neuron);
 
                 activation = TransferFunctionsPolicy::hiddenNeuronActivationFunction(sum);
+                this->setPreActivationForNeuron(neuron, sum);
                 
                 bufferIndex = neuron * sizeof(NeuronType);
                 pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
@@ -2198,6 +2276,7 @@ namespace tinymind {
                 sum += recurrentLayer.getOutputValueForOutgoingConnection(neuron);
 
                 activation = TransferFunctionsPolicy::hiddenNeuronActivationFunction(sum);
+                this->setPreActivationForNeuron(neuron, sum);
                 
                 bufferIndex = neuron * sizeof(NeuronType);
                 pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
@@ -2427,9 +2506,14 @@ namespace tinymind {
         typedef SigmoidActivationPolicy<ValueType> ForgetGateActivationPolicy;
         typedef SigmoidActivationPolicy<ValueType> OutputGateActivationPolicy;
         typedef TanhActivationPolicy<ValueType> CellStateActivationPolicy;
-        
+
         static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
         static const size_t NumberOfBiasNeuronsInLayer = 1;
+
+        // The candidate's derivative is taken at its output (cHat), which is
+        // wrong for a policy whose derivative needs the pre-activation.
+        static_assert(!HiddenActivationDerivativeTakesPreActivation<TransferFunctionsPolicy>::value,
+                      "LSTM candidate activation must take its derivative at the output (GELU is not supported in LSTM layers).");
 
         // Clear the cell state c and h.
         void resetState()
@@ -2690,7 +2774,9 @@ namespace tinymind {
     };
 
     template<typename NeuronType, size_t NumberOfNeurons>
-    struct OutputLayer : public Layer<NeuronType, NumberOfNeurons>
+    struct OutputLayer : public Layer<NeuronType, NumberOfNeurons>,
+                         public PreActivationStorage<typename NeuronType::NeuronTransferFunctionsPolicy::TransferFunctionsValueType, NumberOfNeurons,
+                                                     OutputActivationDerivativeTakesPreActivation<typename NeuronType::NeuronTransferFunctionsPolicy>::value>
     {
         typedef typename NeuronType::NeuronTransferFunctionsPolicy TransferFunctionsPolicy;
         typedef typename TransferFunctionsPolicy::TransferFunctionsValueType ValueType;
@@ -2698,6 +2784,12 @@ namespace tinymind {
         static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
         static const size_t NumberOfBiasNeuronsInLayer = 0;
         static const outputLayerConfiguration_e OutputLayerConfiguration = FeedForwardOutputLayerConfiguration;
+        static const bool StoresPreActivations = OutputActivationDerivativeTakesPreActivation<TransferFunctionsPolicy>::value;
+
+        ValueType getActivationDerivativeArgumentForNeuron(const size_t neuron) const
+        {
+            return ActivationDerivativeArgumentSelector<StoresPreActivations>::get(*this, neuron);
+        }
 
         template<typename PreviousLayerType>
         void feedForward(const PreviousLayerType& previousLayer)
@@ -2713,6 +2805,7 @@ namespace tinymind {
                 sum += previousLayer.getOutputValueForOutgoingConnection(neuron);
 
                 activation = TransferFunctionsPolicy::outputNeuronActivationFunction(sum);
+                this->setPreActivationForNeuron(neuron, sum);
 
                 bufferIndex = neuron * sizeof(NeuronType);
                 pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);

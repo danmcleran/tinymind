@@ -912,8 +912,42 @@ namespace tinymind {
 #endif // __SIZEOF_INT128__
     };
 
+    /**
+     * True only for QValue instantiations. The free arithmetic and comparison
+     * operators below are function templates over any type; unconstrained, they
+     * are found by argument-dependent lookup for unrelated types whose associated
+     * namespaces include tinymind (e.g. std::vector<QValue> iterators, where
+     * `it - 1` matched operator-(const QValueType&, int) and broke
+     * std::vector<QValue>::push_back under C++17). Constrained with this trait,
+     * they only participate for QValue operands.
+     */
+    template<typename T>
+    struct IsQValue
+    {
+        static const bool value = false;
+    };
+
+    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned,
+        template<typename, unsigned> class QValueRoundingPolicy,
+        template<typename> class QValueSaturatePolicy>
+    struct IsQValue<QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy> >
+    {
+        static const bool value = true;
+    };
+
+    template<bool Condition, typename T>
+    struct QValueOperatorEnableIf
+    {
+    };
+
+    template<typename T>
+    struct QValueOperatorEnableIf<true, T>
+    {
+        typedef T type;
+    };
+
     template<typename QValueType>
-    QValueType operator+(const QValueType& left, const QValueType& right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, QValueType>::type operator+(const QValueType& left, const QValueType& right)
     {
         QValueType result(left);
 
@@ -922,7 +956,7 @@ namespace tinymind {
     }
 
     template<typename QValueType>
-    QValueType operator+(const QValueType& left, const int right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, QValueType>::type operator+(const QValueType& left, const int right)
     {
         QValueType result(left);
 
@@ -931,7 +965,7 @@ namespace tinymind {
     }
 
     template<typename QValueType>
-    QValueType operator-(const QValueType& left, const QValueType& right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, QValueType>::type operator-(const QValueType& left, const QValueType& right)
     {
         QValueType result(left);
 
@@ -940,7 +974,7 @@ namespace tinymind {
     }
 
     template<typename QValueType>
-    QValueType operator-(const QValueType& left, const int right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, QValueType>::type operator-(const QValueType& left, const int right)
     {
         QValueType result(left);
 
@@ -949,7 +983,7 @@ namespace tinymind {
     }
 
     template<typename QValueType>
-    QValueType operator*(const QValueType& left, const QValueType& right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, QValueType>::type operator*(const QValueType& left, const QValueType& right)
     {
         QValueType result(left);
 
@@ -958,7 +992,7 @@ namespace tinymind {
     }
 
     template<typename QValueType>
-    QValueType operator*(const QValueType& left, const int right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, QValueType>::type operator*(const QValueType& left, const int right)
     {
         QValueType result(left);
 
@@ -967,7 +1001,7 @@ namespace tinymind {
     }
 
     template<typename QValueType>
-    QValueType operator/(const QValueType& left, const QValueType& right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, QValueType>::type operator/(const QValueType& left, const QValueType& right)
     {
         QValueType result(left);
 
@@ -976,7 +1010,7 @@ namespace tinymind {
     }
 
     template<typename QValueType>
-    QValueType operator/(const QValueType& left, const int right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, QValueType>::type operator/(const QValueType& left, const int right)
     {
         QValueType result(left);
 
@@ -986,49 +1020,49 @@ namespace tinymind {
     }
 
     template<typename QValueType>
-    bool operator>(const QValueType& left, const QValueType& right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, bool>::type operator>(const QValueType& left, const QValueType& right)
     {
         return (left.getValue() > right.getValue());
     }
 
     template<typename QValueType>
-    bool operator>(const QValueType& left, const int right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, bool>::type operator>(const QValueType& left, const int right)
     {
         return (left.compareInteger(right) > 0);
     }
 
     template<typename QValueType>
-    bool operator>=(const QValueType& left, const QValueType& right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, bool>::type operator>=(const QValueType& left, const QValueType& right)
     {
         return (left.getValue() >= right.getValue());
     }
 
     template<typename QValueType>
-    bool operator>=(const QValueType& left, const int right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, bool>::type operator>=(const QValueType& left, const int right)
     {
         return (left.compareInteger(right) >= 0);
     }
 
     template<typename QValueType>
-    bool operator<(const QValueType& left, const QValueType& right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, bool>::type operator<(const QValueType& left, const QValueType& right)
     {
         return (left.getValue() < right.getValue());
     }
 
     template<typename QValueType>
-    bool operator<(const QValueType& left, const int right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, bool>::type operator<(const QValueType& left, const int right)
     {
         return (left.compareInteger(right) < 0);
     }
 
     template<typename QValueType>
-    bool operator<=(const QValueType& left, const QValueType& right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, bool>::type operator<=(const QValueType& left, const QValueType& right)
     {
         return (left.getValue() <= right.getValue());
     }
 
     template<typename QValueType>
-    bool operator<=(const QValueType& left, const int right)
+    typename QValueOperatorEnableIf<IsQValue<QValueType>::value, bool>::type operator<=(const QValueType& left, const int right)
     {
         return (left.compareInteger(right) <= 0);
     }

@@ -146,15 +146,21 @@ public:
         return randomValue;
     }
 
+    // Glorot normal: N(0, sigma^2) with sigma = sqrt(2 / (fan_in + fan_out)),
+    // drawn with the Box-Muller transform from two rand() values per weight.
     double generateNormalWeight()
     {
+        static const double twoPi = 6.283185307179586;
         const double fanSum = static_cast<double>(Stages::stageFanSum(mStage));
-        const double limit = std::sqrt(2.0 / fanSum);
-        const double randomValue = ((static_cast<double>(rand()) / RAND_MAX) * 2.0 * limit) - limit;
+        const double sigma = std::sqrt(2.0 / fanSum);
+        // u1 in (0, 1] so log(u1) is finite; u2 in [0, 1).
+        const double u1 = (static_cast<double>(rand()) + 1.0) / (static_cast<double>(RAND_MAX) + 1.0);
+        const double u2 = static_cast<double>(rand()) / (static_cast<double>(RAND_MAX) + 1.0);
+        const double standardNormal = std::sqrt(-2.0 * std::log(u1)) * std::cos(twoPi * u2);
 
         advance();
 
-        return randomValue;
+        return sigma * standardNormal;
     }
 };
 
