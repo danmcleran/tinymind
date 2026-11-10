@@ -75,10 +75,13 @@ Two training details matter. The example trains on every step: an earlier
 version skipped any step whose error was within the zero tolerance, which
 stopped training once the hidden-to-output readout alone fit the stream to that
 tolerance, before the LSTM gates had learned the dynamics (one-step RMS 0.044
-double and 0.057 Q16.16, free-run 0.053 and 0.27). And it uses no momentum:
-with the library's default momentum (0.5) and acceleration, training on every
-step makes the Q16.16 network diverge, as rounding keeps feeding the momentum
-term.
+double and 0.057 Q16.16, free-run 0.053 and 0.27). And it uses no momentum.
+With momentum 0.5 and acceleration 0.0625 the Q16.16 network used to diverge
+when trained on every step: the fixed-point momentum product rounded a one-LSB
+delta weight back to itself, so every weight drifted by an LSB per step whatever
+the gradient. The momentum terms now round toward zero and the network
+converges with momentum as well, but at this learning rate it ends less
+accurate than plain SGD (Q16.16 one-step RMS 0.017 against 0.0044).
 
 The matplotlib style comes from the shared
 [`examples/plotting/tinymind_plot.py`](../plotting) module; install it into an

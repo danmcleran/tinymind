@@ -284,10 +284,13 @@ template<typename NetType, typename VT, typename ToVal, typename ToReal>
 static void trainAndEvaluate(NetType& net, ToVal toVal, ToReal toReal,
                              double* oneStep, double* freeRun)
 {
-    // Plain SGD at 0.2 on both paths. With the library's default momentum
-    // (0.5) and acceleration, training on every step makes the Q16.16 net
-    // diverge: rounding keeps feeding the momentum term. Without momentum
-    // both precisions converge for every seed tried (1-8).
+    // Plain SGD at 0.2 on both paths; both precisions converge for every
+    // seed tried (1-8). With momentum 0.5 and acceleration 0.0625 the Q16.16
+    // net used to diverge: the fixed-point momentum product rounded a
+    // one-LSB delta weight back to itself, so the weights drifted on every
+    // step. Now that the momentum terms round toward zero it converges with
+    // momentum too, but less accurately at this learning rate (one-step RMS
+    // 0.017 against 0.0044), so the example keeps plain SGD.
     net.setLearningRate(toVal(0.2));
     net.setMomentumRate(toVal(0.0));
     net.setAccelerationRate(toVal(0.0));

@@ -71,7 +71,7 @@ Expected (seed = 7, synthetic series): the loss falls from ~0.016 to ~0.0015
 within a few dozen epochs and the predicted line clearly tracks the daily
 rise-and-fall of the true series (amplitude is mildly damped at the tallest
 peaks, the classic RNN-on-noisy-series behavior), with a one-step-ahead MAE
-around 0.067 in concentration units over a series spanning ~1.3–3.0.
+around 0.069 in concentration units over a series spanning ~1.3–3.0.
 
 ## tinymind capability shown
 

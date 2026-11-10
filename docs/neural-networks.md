@@ -127,6 +127,8 @@ The new training policies include:
 - **Learning rate scheduling** (`StepDecaySchedule`) -- multiplicative decay at intervals
 - **Optimizers** (`AdamOptimizer`, `RmsPropOptimizer`) -- adaptive per-parameter learning rates
 
+With the default SGD optimizer each weight moves by `learningRate x gradient + momentumRate x (last delta) + accelerationRate x (the delta before)`; `DefaultNetworkInitializer` sets 0.25, 0.5 and 0.0625 in every Q format. In fixed point the two momentum products are rounded toward zero (`multiplyRoundTowardZero` in `qformat.hpp`), whatever the format's rounding policy, so a delta that no gradient refreshes decays to exactly zero. Rounded with the format's own policy, 0.5 x (+1 LSB) rounds back up to +1 LSB under `RoundUpPolicy` (and 0.5 x (-1 LSB) back down under `TruncatePolicy`), which kept every such weight drifting by an LSB per step and made long recurrent training runs saturate. Momentum is still a hyperparameter: an effective step of about `learningRate / (1 - momentumRate)` is too large for some tasks, and `har_activity`, `lstm_sinusoid` and `lstm_sinusoid_float` train with plain SGD.
+
 See the [Advanced Training Techniques]({{ site.baseurl }}/training/training-techniques) page for detailed documentation and examples.
 
 # Activation Functions

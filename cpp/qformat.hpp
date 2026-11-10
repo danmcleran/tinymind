@@ -935,6 +935,80 @@ namespace tinymind {
         static const bool value = true;
     };
 
+    namespace detail
+    {
+        // value / 2^NumberOfFractionalBits rounded toward zero.
+        template<typename T, unsigned NumberOfFractionalBits, bool IsSigned>
+        struct ShiftTowardZero
+        {
+            static T shift(const T& value)
+            {
+                if (value < 0)
+                {
+                    return -((-value) >> NumberOfFractionalBits);
+                }
+
+                return value >> NumberOfFractionalBits;
+            }
+        };
+
+        template<typename T, unsigned NumberOfFractionalBits>
+        struct ShiftTowardZero<T, NumberOfFractionalBits, false>
+        {
+            static T shift(const T& value)
+            {
+                return value >> NumberOfFractionalBits;
+            }
+        };
+    }
+
+    /**
+     * left * right rounded toward zero, whatever the format's rounding policy.
+     *
+     * SGD's momentum terms (momentum x the last delta weight, acceleration x
+     * the one before) must shrink a delta that no gradient refreshes. Under
+     * RoundUpPolicy, 0.5 x (+1 LSB) rounds back up to +1 LSB, and under
+     * TruncatePolicy 0.5 x (-1 LSB) rounds back down to -1 LSB, so a one-LSB
+     * delta reproduces itself forever and the weight moves by an LSB on every
+     * training step whatever the gradient. Rounding these products toward zero
+     * makes an undriven delta decay to exactly 0, as it does in floating point.
+     * Floating-point types multiply as usual.
+     */
+    template<typename ValueType>
+    ValueType multiplyRoundTowardZero(const ValueType& left, const ValueType& right)
+    {
+        return left * right;
+    }
+
+    template<unsigned NumFixedBits, unsigned NumFractionalBits, bool QValueIsSigned,
+        template<typename, unsigned> class QValueRoundingPolicy,
+        template<typename> class QValueSaturatePolicy>
+    QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy> multiplyRoundTowardZero(
+        const QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy>& left,
+        const QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy>& right)
+    {
+        typedef QValue<NumFixedBits, NumFractionalBits, QValueIsSigned, QValueRoundingPolicy, QValueSaturatePolicy> QValueType;
+        typedef typename QValueType::MultiplicationResultFullWidthValueType WideType;
+
+        // Same widening, sign extension and saturation as operator*=; only the
+        // final rounding differs.
+        const WideType scale = static_cast<WideType>(1) << NumFractionalBits;
+        const WideType min = static_cast<WideType>(QValueType::QFormatMinValue()) * scale;
+        const WideType max = static_cast<WideType>(QValueType::QFormatMaxValue()) * scale;
+        WideType leftValue = static_cast<WideType>(left.getValue());
+        WideType rightValue = static_cast<WideType>(right.getValue());
+
+        SignExtender<WideType, NumFixedBits, NumFractionalBits, QValueIsSigned>::signExtend(leftValue);
+        SignExtender<WideType, NumFixedBits, NumFractionalBits, QValueIsSigned>::signExtend(rightValue);
+
+        const WideType product = QValueType::MultiplicationSaturatePolicy::saturate(leftValue, rightValue, min, max, MultiplicationOp);
+        QValueType result;
+
+        result.setValue(static_cast<typename QValueType::FullWidthValueType>(detail::ShiftTowardZero<WideType, NumFractionalBits, QValueIsSigned>::shift(product)));
+
+        return result;
+    }
+
     template<bool Condition, typename T>
     struct QValueOperatorEnableIf
     {

@@ -51,8 +51,10 @@ struct RandomGen
 
 // Learning rate 0.1 with no momentum. With the library default (0.25 with
 // momentum 0.5) and training on every step, Q16.16 training saturated on 3 of
-// 5 weight seeds; skipping steps inside the zero-tolerance band avoided that
-// but left the gates barely trained (one-step error about 5x worse).
+// 5 weight seeds (measured before the fixed-point momentum terms were made to
+// round toward zero, which removed a per-step weight drift); skipping steps
+// inside the zero-tolerance band avoided that but left the gates barely
+// trained (one-step error about 5x worse).
 template<typename VT>
 struct SinusoidNetworkInitializer : public tinymind::DefaultNetworkInitializer<VT>
 {
