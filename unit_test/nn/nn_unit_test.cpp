@@ -46,7 +46,6 @@ TINYMIND_DISABLE_WARNING_POP
 #include "teacherForcing.hpp"
 #include "dual.hpp"
 #include "pinn.hpp"
-#include "truncatedBPTT.hpp"
 #include "conv1d.hpp"
 #include "pool1d.hpp"
 #include "upsample1d.hpp"
@@ -4945,40 +4944,6 @@ BOOST_AUTO_TEST_CASE(test_case_conv1d_gradient_fixed_point)
     BOOST_TEST(conv.getGradient(3).getValue() == ValueType( 3, 0).getValue());
 }
 
-BOOST_AUTO_TEST_CASE(test_case_truncated_bptt)
-{
-    // Test that TruncatedBPTT accumulates steps before training
-    typedef double ValueType;
-    typedef FloatingPointTransferFunctions<
-        ValueType,
-        UniformRealRandomNumberGenerator,
-        tinymind::TanhActivationPolicy,
-        tinymind::TanhActivationPolicy,
-        tinymind::SigmoidActivationPolicy> TF;
-    typedef tinymind::LstmNeuralNetwork<ValueType, 1, tinymind::HiddenLayers<4>, 1, TF> LstmType;
-
-    LstmType nn;
-    tinymind::TruncatedBPTT<LstmType, 3> trainer;
-
-    ValueType input[1] = {0.5};
-    ValueType target[1] = {0.8};
-
-    // Steps 1-2: accumulate, no training yet
-    trainer.step(nn, input, target);
-    BOOST_TEST(trainer.getStepCount() == 1u);
-    trainer.step(nn, input, target);
-    BOOST_TEST(trainer.getStepCount() == 2u);
-
-    // Step 3: window full, trains and resets
-    trainer.step(nn, input, target);
-    BOOST_TEST(trainer.getStepCount() == 0u);
-
-    // Flush with partial window
-    trainer.step(nn, input, target);
-    trainer.flush(nn);
-    BOOST_TEST(trainer.getStepCount() == 0u);
-}
-
 // ============================================================
 // MaxPool1D tests
 // ============================================================
@@ -8895,4 +8860,5 @@ BOOST_AUTO_TEST_CASE(test_case_function_coverage_terminal_accessors_and_ops)
     }
 }
 
+#include "recurrent_extras_tests.hpp"
 BOOST_AUTO_TEST_SUITE_END()

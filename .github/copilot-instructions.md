@@ -109,7 +109,7 @@ net.getLearnedValues(outputs); // read outputs after feedForward
 
 ### Weight Serialization (`cpp/include/nnproperties.hpp`)
 
-Weights are stored in a defined order: input→hidden weights, hidden bias, hidden→hidden weights (per additional layer), hidden→output weights, output bias. Text format is one value per line; binary format is raw `sizeof(FullWidthValueType)` bytes. Use `NetworkPropertiesFileManager::readWeightsFromFile` / `writeWeightsToFile`.
+Weights are stored in a defined order: input→hidden weights, hidden bias, hidden→hidden weights and bias (per additional layer, each with its own size and one connection per gate for LSTM/GRU), hidden→output weights, output bias, then (recurrent networks) every recurrent layer's weights. `RecurrentNetworkPropertiesFileManager` uses the LSTM/GRU order documented in `nnproperties.hpp`. Text format is one value per line (floating point with 17 significant digits); binary format is raw `sizeof(FullWidthValueType)` bytes. Use `NetworkPropertiesFileManager::storeNetworkWeights` / `loadNetworkWeights`.
 
 ### Cross-Compiler Warning Suppression
 

@@ -103,9 +103,11 @@ class GruNeuralNetwork
 
 **IsTrainable** - When `false`, training code is omitted entirely, reducing binary size. Non-trainable networks can still load pre-trained weights.
 
-**BatchSize** - Number of samples to accumulate before back-propagation.
+**BatchSize** - Number of time steps whose gradients are averaged into one weight update. With `BatchSize` = B, `trainNetwork` accumulates each step's gradient and the weights move once every B calls, by the mean.
 
-**RecurrentConnectionDepth** - Number of previous time steps stored in recurrent connections.
+**RecurrentConnectionDepth** - Must be 1 (the default). A recurrent layer holds h_{t-1}, one step back; any other value fails to compile, because deeper histories are not implemented.
+
+Training truncates backpropagation through time to one step: each `trainNetwork` call computes the gradient of the current step's error with h_{t-1} (and an LSTM's c_{t-1}) treated as inputs. Dependencies longer than one step are carried by the recurrent state, not by gradients flowing back through earlier steps.
 
 **OutputLayerConfiguration** - `FeedForwardOutputLayerConfiguration` for regression, `ClassifierOutputLayerConfiguration` for softmax classification.
 
@@ -129,6 +131,8 @@ typedef tinymind::LstmNeuralNetwork<ValueType, 2,
     tinymind::HiddenLayers<32, 16, 8>, 1,
     TransferFunctionsType> ThreeLayerLstm;
 ```
+
+Stacks work the same way for GRU and Elman (`RecurrentNeuralNetwork`) networks. Every hidden layer is recurrent: it has its own recurrent layer and gates, and its outputs feed every gate of the next layer. Every weight of every layer trains; the unit tests check one training step of LSTM<4,3>, GRU<4,3>, Elman<4,3> and LSTM<3,4,2> networks against central finite differences for every weight, and check that `resetState()`, `setWeights` and the weight files cover every layer.
 
 # LSTM Example: Sinusoid Prediction
 
@@ -253,6 +257,8 @@ gruNet.resetState();    // clears hidden state
 elmanNet.resetState();  // clears hidden state (also RecurrentNeuralNetwork)
 ```
 
+In a stacked network `resetState()` clears every hidden layer, not only the last.
+
 # Weight Import/Export
 
 Trained recurrent network weights can be saved and loaded using `RecurrentNetworkPropertiesFileManager`:
@@ -268,6 +274,8 @@ FileManager::storeNetworkWeights(lstmNet, outFile);
 std::ifstream inFile("lstm_weights.txt");
 FileManager::template loadNetworkWeights<ValueType, ValueType>(lstmNet, inFile);
 ```
+
+The file holds every weight: input, input bias, then (for a stacked network) each inner layer's weights into the next layer, their bias and the inner layer's recurrent weights, then the last layer's recurrent weights, the output weights and the output bias. A single hidden layer keeps the original layout. Floating-point weights are written with 17 significant digits, so a `double` reads back exactly. `NetworkPropertiesFileManager` also saves recurrent networks: it writes the feed-forward weights first and appends every recurrent layer's weights.
 
 See the [Weight Import Export and PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) page for details on the weight file format and PyTorch export scripts.
 

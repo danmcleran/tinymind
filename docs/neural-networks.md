@@ -62,13 +62,13 @@ class NeuralNetwork
 
 **IsTrainable** - Compile time flag to indicate whether or not the neural network is trainable. Non-trainable neural networks consume less space as code and data required for trainable neural networks is not compiled into the binary image. tinymind neural networks can have their weights, biases, etc. loaded from the outside world so that non-trainable neural networks can have their values initialized to trained ones. Training neural networks offline and instantiating untrainable neural networks within the embedded device can save a lot of code and data space.
 
-**BatchSize** - Batch size for trainable neural networks who want to accumulate a BatchSize amount of samples before back-propagating the error thru the network.
+**BatchSize** - Mini-batch size for trainable neural networks. Each `trainNetwork` call computes its sample's gradient; with `BatchSize` = B the gradients of B consecutive calls are summed, and on the B-th call the weights (biases included) move once by the mean gradient. `BatchSize` = 1 updates on every call.
 
 **HasRecurrentLayer** - Compile time flag which configures the neural network's hidden as either purely feed-forward or recurrent.
 
 **HiddenLayerConfig** - Hidden layer configuration parameter to choose between: Feed-forward, simple recurrent, GRU, or LSTM hidden layer type.
 
-**RecurrentConnectionDepth** - Recurrent connection depth(i.e. number of backwards time steps to save in the recurrent layer).
+**RecurrentConnectionDepth** - 0 for a feed-forward network. A recurrent network must use 1: its recurrent layer holds h_{t-1}, one step back. Other values fail to compile, because deeper histories are not implemented.
 
 **OutputLayerConfiguration** - Output layer configuration which configures the neural network's output layer as either feed forward or classifier type.
 

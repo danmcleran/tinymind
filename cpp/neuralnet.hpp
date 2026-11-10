@@ -135,102 +135,81 @@ namespace tinymind {
         static const size_t value = LayerSize * LSTM_NUMBER_OF_GATES;
     };
 
+    /**
+     * Mini-batch gradient accumulation.
+     *
+     * Each connection's gradient field accumulates the per-sample gradients of
+     * one batch: the first sample of a batch overwrites it, later samples add
+     * to it, and the last sample divides the sum by BatchSize. The training
+     * policy updates the weights only after that last sample
+     * (isLastSampleOfBatch), so the weights move once per BatchSize samples by
+     * the mean gradient, biases included. endSample() moves on to the next
+     * sample of the batch.
+     *
+     * Accumulating in place needs no buffer sized from the topology, so gated
+     * (LSTM/GRU) and recurrent connections are handled like any other.
+     */
     template<typename ValueType, size_t NumberOfGradients, size_t BatchSize>
     struct GradientsHolder
     {
         static_assert(BatchSize > 0, "Invalid batch size.");
 
-        GradientsHolder() : mIndex(0), mPass(0)
+        GradientsHolder() : mPass(0)
         {
-            size_t bufferIndex;
-            for(size_t gradient = 0;gradient < NumberOfGradients;++gradient)
-            {
-                bufferIndex = gradient * sizeof(ValueType);
-                new (&this->mGradientsBuffer[bufferIndex]) ValueType();
-            }
-
-            this->resetGradients();
         }
 
         template<typename LayerType>
         void updateBiasGradients(LayerType& layer, const size_t nextNeuron, const ValueType& gradient)
         {
-            ValueType averageGradient;
-            ValueType* pValue;
-            size_t bufferIndex;
+            ValueType sum = gradient;
 
-            if(BatchSize == this->mPass)
+            if (0 != this->mPass)
             {
-                bufferIndex = this->mIndex * sizeof(ValueType);
-                pValue = reinterpret_cast<ValueType*>(&this->mGradientsBuffer[bufferIndex]);
-                averageGradient = (*pValue / BatchSize);
-
-                layer.setBiasNeuronGradientForConnection(nextNeuron, gradient);
-
-                *pValue = 0;
+                sum += layer.getBiasNeuronGradientForConnection(nextNeuron);
             }
 
-            this->updateGradients(gradient);
+            if ((BatchSize - 1) == this->mPass)
+            {
+                sum = sum / static_cast<int>(BatchSize);
+            }
+
+            layer.setBiasNeuronGradientForConnection(nextNeuron, sum);
         }
 
         template<typename LayerType>
         void updateGradients(LayerType& layer, const size_t neuron, const size_t nextNeuron, const ValueType& gradient)
         {
-            ValueType averageGradient;
-            ValueType* pValue;
-            size_t bufferIndex;
-            
-            if(BatchSize == this->mPass)
-            {
-                bufferIndex = this->mIndex * sizeof(ValueType);
-                pValue = reinterpret_cast<ValueType*>(&this->mGradientsBuffer[bufferIndex]);
-                averageGradient = (*pValue / BatchSize);
-                
-                layer.setGradientForNeuronAndConnection(neuron, nextNeuron, averageGradient);
+            ValueType sum = gradient;
 
-                *pValue = 0;
+            if (0 != this->mPass)
+            {
+                sum += layer.getGradientForNeuronAndConnection(neuron, nextNeuron);
             }
 
-            this->updateGradients(gradient);
+            if ((BatchSize - 1) == this->mPass)
+            {
+                sum = sum / static_cast<int>(BatchSize);
+            }
+
+            layer.setGradientForNeuronAndConnection(neuron, nextNeuron, sum);
         }
+
+        bool isLastSampleOfBatch() const
+        {
+            return ((BatchSize - 1) == this->mPass);
+        }
+
+        void endSample()
+        {
+            ++this->mPass;
+            if (BatchSize == this->mPass)
+            {
+                this->mPass = 0;
+            }
+        }
+
     private:
-        void resetGradients()
-        {
-            ValueType* pValue;
-            size_t bufferIndex;
-            for(size_t gradient = 0;gradient < NumberOfGradients;++gradient)
-            {
-                bufferIndex = gradient * sizeof(ValueType);
-                pValue = reinterpret_cast<ValueType*>(&this->mGradientsBuffer[bufferIndex]);
-                *pValue = 0;
-            }
-        }
-
-        void updateGradients(const ValueType& gradient)
-        {
-            ValueType oldGradient;
-            ValueType* pValue;
-            size_t bufferIndex;
-
-            bufferIndex = this->mIndex * sizeof(ValueType);
-            pValue = reinterpret_cast<ValueType*>(&this->mGradientsBuffer[bufferIndex]);
-            oldGradient = *pValue;
-            *pValue = (oldGradient + gradient);
-            ++this->mIndex;
-            if(NumberOfGradients == this->mIndex)
-            {
-                this->mIndex = 0;
-                ++this->mPass;
-                if(this->mPass > BatchSize)
-                {
-                    this->mPass = 1;
-                }
-            }
-        }
-
-        size_t mIndex;
         size_t mPass;
-        alignas(ValueType) unsigned char mGradientsBuffer[NumberOfGradients * sizeof(ValueType)];
     };
 
     template<typename ValueType, size_t NumberOfGradients>
@@ -246,6 +225,15 @@ namespace tinymind {
         void updateGradients(LayerType& layer, const size_t neuron, const size_t nextNeuron, const ValueType& gradient)
         {
             layer.setGradientForNeuronAndConnection(neuron, nextNeuron, gradient);
+        }
+
+        bool isLastSampleOfBatch() const
+        {
+            return true;
+        }
+
+        void endSample()
+        {
         }
     };
 
@@ -324,6 +312,30 @@ namespace tinymind {
                 for (size_t nextNeuron = 0; nextNeuron < NextLayerType::NumberOfNeuronsInLayer; ++nextNeuron)
                 {
                     sum += (layer.getWeightForNeuronAndConnection(neuron, nextNeuron) * nextLayer.getNodeDeltaForNeuron(nextNeuron));
+                }
+                layer.setNodeDeltaForNeuron(neuron, sum);
+            }
+        }
+
+        // Raw dL/dh for a hidden layer that feeds a gated (LSTM, GRU) layer:
+        // each of its outputs reaches every gate of every next-layer neuron
+        // through its own weight, so dL/dh = sum over (next neuron, gate) of
+        // weight * that gate's delta. Like calculateAndSetRawNodeDeltas, it
+        // leaves the layer's own activation derivative to computeGateDeltas().
+        template<typename LayerType, typename NextLayerType, size_t GateMultiplier>
+        static void calculateAndSetRawNodeDeltasFromGates(LayerType& layer, const NextLayerType& nextLayer)
+        {
+            ValueType sum;
+
+            for(size_t neuron = 0; neuron < LayerType::NumberOfNeuronsInLayer;++neuron)
+            {
+                sum = 0;
+                for (size_t nextNeuron = 0; nextNeuron < NextLayerType::NumberOfNeuronsInLayer; ++nextNeuron)
+                {
+                    for (size_t gate = 0; gate < GateMultiplier; ++gate)
+                    {
+                        sum += (layer.getWeightForNeuronAndConnection(neuron, nextNeuron * GateMultiplier + gate) * nextLayer.getGateDeltaForNeuron(nextNeuron, gate));
+                    }
                 }
                 layer.setNodeDeltaForNeuron(neuron, sum);
             }
@@ -1863,6 +1875,19 @@ namespace tinymind {
             pNeuron->setWeightForConnection(connection, weight);
         }
 
+        // Copy every outgoing weight of every neuron (all gate connections of
+        // a gated layer included) from a layer of the same type.
+        void copyWeightsFrom(const Layer& other)
+        {
+            for (size_t neuron = 0; neuron < NumberOfNeurons; ++neuron)
+            {
+                for (size_t connection = 0; connection < NeuronType::NumberOfOutgoingConnectionsFromNeuron; ++connection)
+                {
+                    this->setWeightForNeuronAndConnection(neuron, connection, other.getWeightForNeuronAndConnection(neuron, connection));
+                }
+            }
+        }
+
         void * operator new(size_t, void *p)
         {
             return p;
@@ -1957,6 +1982,17 @@ namespace tinymind {
             this->mBiasNeuron.setWeightForConnection(connection, weight);
         }
 
+        // Copy the neurons' weights and the bias neuron's weights.
+        void copyWeightsFrom(const LayerWithBias& other)
+        {
+            Layer<NeuronType, NumberOfNeurons>::copyWeightsFrom(other);
+
+            for (size_t connection = 0; connection < NeuronType::NumberOfOutgoingConnectionsFromNeuron; ++connection)
+            {
+                this->mBiasNeuron.setWeightForConnection(connection, other.getBiasNeuronWeightForConnection(connection));
+            }
+        }
+
     protected:
         LayerWithBias()
         {
@@ -2005,6 +2041,16 @@ namespace tinymind {
 
         // Fallback for non-LSTM hidden layers: gate deltas equal the node delta
         void computeGateDeltas() {}
+
+        // Clear h (the layer's outputs), e.g. between independent sequences.
+        // Gated layers also clear their cell state.
+        void resetState()
+        {
+            for (size_t neuron = 0; neuron < NumberOfNeurons; ++neuron)
+            {
+                this->getNeuron(neuron)->setOutputValue(ValueType{});
+            }
+        }
 
         ValueType getGateDeltaForNeuron(const size_t neuron, const size_t gate) const
         {
@@ -2121,11 +2167,21 @@ namespace tinymind {
     /**
      * Hidden neural net layer with GRU neurons.
      *
-     * GRU equations (reset-after variant, compatible with PyTorch default):
+     * GRU equations (reset-after variant: the reset gate scales U_h * h_{t-1}):
      *   z_t = sigmoid(W_z * x_t + U_z * h_{t-1})       -- update gate
      *   r_t = sigmoid(W_r * x_t + U_r * h_{t-1})       -- reset gate
      *   h_hat_t = tanh(W_h * x_t + r_t * (U_h * h_{t-1}))  -- candidate
      *   h_t = (1 - z_t) * h_{t-1} + z_t * h_hat_t      -- output
+     *
+     * This is not PyTorch's nn.GRU convention, so trained PyTorch weights do
+     * not map one to one:
+     *   - PyTorch computes h_t = (1 - z_t) * h_hat_t + z_t * h_{t-1}, i.e. its
+     *     z is tinymind's (1 - z). Mapping z_tinymind = 1 - z_pytorch =
+     *     sigmoid(-a) means negating the update gate's weights and biases.
+     *   - PyTorch's candidate is tanh(W_in x + b_in + r_t * (W_hn h + b_hn)):
+     *     the recurrent bias b_hn sits inside the reset gate. tinymind has a
+     *     single bias per gate, outside r_t, so a model with b_hn != 0 cannot
+     *     be represented exactly.
      *
      * Each gate has independent weights via GateConnectionCount (3x connections):
      *   n*3 + 0 = update gate
@@ -2143,6 +2199,16 @@ namespace tinymind {
 
         static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
         static const size_t NumberOfBiasNeuronsInLayer = 1;
+
+        // Clear h_{t-1} and the h_{t-1} saved for backpropagation.
+        void resetState()
+        {
+            for (size_t neuron = 0; neuron < NumberOfNeurons; ++neuron)
+            {
+                this->getNeuron(neuron)->setState(ValueType{});
+                this->getNeuron(neuron)->setOutputValue(ValueType{});
+            }
+        }
 
         template<typename PreviousLayerType, typename RecurrentLayerType>
         void feedForward(const PreviousLayerType& previousLayer, RecurrentLayerType& recurrentLayer)
@@ -2287,6 +2353,16 @@ namespace tinymind {
         
         static const size_t NumberOfNeuronsInLayer = NumberOfNeurons;
         static const size_t NumberOfBiasNeuronsInLayer = 1;
+
+        // Clear the cell state c and h.
+        void resetState()
+        {
+            for (size_t neuron = 0; neuron < NumberOfNeurons; ++neuron)
+            {
+                this->getNeuron(neuron)->setState(ValueType{});
+                this->getNeuron(neuron)->setOutputValue(ValueType{});
+            }
+        }
 
         template<typename PreviousLayerType, typename RecurrentLayerType>
         void feedForward(const PreviousLayerType& previousLayer, RecurrentLayerType& recurrentLayer)
@@ -2525,6 +2601,15 @@ namespace tinymind {
             NeuronType* pNeuron = reinterpret_cast<NeuronType*>(&this->mNeuronsBuffer[bufferIndex]);
             pNeuron->setOutputValue(value);
         }
+
+        // Clear the latched h_{t-1}.
+        void resetState()
+        {
+            for (size_t neuron = 0; neuron < NumberOfNeurons; ++neuron)
+            {
+                this->setOutputValueForOutgoingConnection(neuron, ValueType{});
+            }
+        }
     };
 
     template<typename NeuronType, size_t NumberOfNeurons>
@@ -2642,6 +2727,14 @@ namespace tinymind {
         }
 
         void initializeWeights()
+        {
+        }
+
+        void resetState()
+        {
+        }
+
+        void copyWeightsFrom(const NullRecurrentLayer&)
         {
         }
     };
@@ -2768,6 +2861,8 @@ namespace tinymind {
     {
         void initializeWeights() {}
         void initializeNeurons() {}
+        void resetState() {}
+        void copyWeightsFrom(const EmptyLayerChain&) {}
     };
 
     template<typename LayerType, typename RestChainType>
@@ -2786,6 +2881,18 @@ namespace tinymind {
         {
             layer.initializeNeurons();
             rest.initializeNeurons();
+        }
+
+        void resetState()
+        {
+            layer.resetState();
+            rest.resetState();
+        }
+
+        void copyWeightsFrom(const LayerChain& other)
+        {
+            layer.copyWeightsFrom(other.layer);
+            rest.copyWeightsFrom(other.rest);
         }
     };
 
@@ -3345,12 +3452,106 @@ namespace tinymind {
         }
     };
 
+    // Deltas of an inner (not last) hidden layer of a recurrent stack. Its
+    // outputs feed the next hidden layer's gates, so dL/dh sums the next
+    // layer's gate deltas; a gated layer then splits dL/dh into its own gate
+    // deltas, and an ungated (Elman) layer multiplies by its activation's
+    // derivative, as the last hidden layer does.
+    template<size_t GateMultiplier>
+    struct InnerHiddenLayerDeltaDispatcher
+    {
+        template<typename NodeDeltasCalcType, typename HiddenLayerType, typename NextLayerType>
+        static void calculate(HiddenLayerType& hiddenLayer, const NextLayerType& nextLayer)
+        {
+            NodeDeltasCalcType::template calculateAndSetRawNodeDeltasFromGates<HiddenLayerType, NextLayerType, GateMultiplier>(hiddenLayer, nextLayer);
+            hiddenLayer.computeGateDeltas();
+        }
+    };
+
+    template<>
+    struct InnerHiddenLayerDeltaDispatcher<1>
+    {
+        template<typename NodeDeltasCalcType, typename HiddenLayerType, typename NextLayerType>
+        static void calculate(HiddenLayerType& hiddenLayer, const NextLayerType& nextLayer)
+        {
+            NodeDeltasCalcType::calculateAndSetNodeDeltas(hiddenLayer, nextLayer);
+        }
+    };
+
+    // The layer an inner chain element feeds: the next element of the chain,
+    // or the last hidden layer after the chain's final element.
+    template<typename RestChainType, typename LastHiddenLayerType>
+    struct ChainNextHiddenLayer;
+
+    template<typename LastHiddenLayerType>
+    struct ChainNextHiddenLayer<EmptyLayerChain, LastHiddenLayerType>
+    {
+        typedef LastHiddenLayerType type;
+
+        static type& get(EmptyLayerChain& rest, LastHiddenLayerType& lastHidden)
+        {
+            (void)rest;
+            return lastHidden;
+        }
+    };
+
+    template<typename LayerType, typename RestChainType, typename LastHiddenLayerType>
+    struct ChainNextHiddenLayer<LayerChain<LayerType, RestChainType>, LastHiddenLayerType>
+    {
+        typedef LayerType type;
+
+        static type& get(LayerChain<LayerType, RestChainType>& rest, LastHiddenLayerType& lastHidden)
+        {
+            (void)lastHidden;
+            return rest.layer;
+        }
+    };
+
+    // Backward pass through the inner hidden layers of a recurrent stack and
+    // their recurrent layers, walked in parallel. Every inner layer gets its
+    // deltas (gate deltas for LSTM/GRU), the gradients and updates of its
+    // weights into the next hidden layer (one per gate) and of its own
+    // recurrent weights. Training truncates backpropagation through time to
+    // one step, as for the last hidden layer: each layer's h_{t-1} is an input.
+    template<typename HiddenChainType, typename RecurrentChainType>
+    struct ChainRecurrentBackward;
+
+    template<>
+    struct ChainRecurrentBackward<EmptyLayerChain, EmptyLayerChain>
+    {
+        template<size_t GateMultiplier, typename NodeDeltasCalcType, typename LastHiddenLayerType>
+        static void calculateDeltas(EmptyLayerChain& hiddenChain, LastHiddenLayerType& lastHidden)
+        {
+            (void)hiddenChain;
+            (void)lastHidden;
+        }
+
+        template<size_t GateMultiplier, typename GradCalcType, typename GradientsManagerType, typename LastHiddenLayerType>
+        static void calculateGradients(EmptyLayerChain& hiddenChain, EmptyLayerChain& recurrentChain, LastHiddenLayerType& lastHidden, GradientsManagerType& gm)
+        {
+            (void)hiddenChain;
+            (void)recurrentChain;
+            (void)lastHidden;
+            (void)gm;
+        }
+
+        template<size_t GateMultiplier, typename TrainingPolicyType, typename LastHiddenLayerType>
+        static void updateWeights(TrainingPolicyType& tp, EmptyLayerChain& hiddenChain, EmptyLayerChain& recurrentChain, LastHiddenLayerType& lastHidden)
+        {
+            (void)tp;
+            (void)hiddenChain;
+            (void)recurrentChain;
+            (void)lastHidden;
+        }
+    };
+
     template<typename NeuralNetworkType>
     struct ChainRecurrentNetworkDeltasCalculator
     {
         typedef typename NeuralNetworkType::NeuralNetworkValueType ValueType;
         typedef typename NeuralNetworkType::InputLayerType InputLayerType;
         typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
+        typedef typename NeuralNetworkType::InnerRecurrentLayerChainType InnerRecurrentChainType;
         typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
         typedef typename NeuralNetworkType::NeuralNetworkRecurrentLayerType RecurrentLayerType;
         typedef typename NeuralNetworkType::NeuralNetworkOutputLayerType OutputLayerType;
@@ -3375,7 +3576,7 @@ namespace tinymind {
 
             NodeDeltasCalculatorType::calculateAndSetNodeDeltas(recurrentLayer, lastHiddenLayer);
 
-            ChainBackwardDeltaCalculator<InnerChainType>::template calculate<NodeDeltasCalculatorType>(innerChain, lastHiddenLayer);
+            ChainRecurrentBackward<InnerChainType, InnerRecurrentChainType>::template calculateDeltas<NeuralNetworkType::HiddenLayerGateMultiplier, NodeDeltasCalculatorType>(innerChain, lastHiddenLayer);
 
             InputLayerDeltaConnector<InnerChainType>::template connect<NodeDeltasCalculatorType>(inputLayer, innerChain, lastHiddenLayer);
         }
@@ -3487,11 +3688,58 @@ namespace tinymind {
         }
     };
 
+    template<typename HiddenLayerType, typename HiddenRestType, typename RecurrentLayerType, typename RecurrentRestType>
+    struct ChainRecurrentBackward<LayerChain<HiddenLayerType, HiddenRestType>, LayerChain<RecurrentLayerType, RecurrentRestType> >
+    {
+        typedef LayerChain<HiddenLayerType, HiddenRestType> HiddenChainType;
+        typedef LayerChain<RecurrentLayerType, RecurrentRestType> RecurrentChainType;
+        typedef ChainRecurrentBackward<HiddenRestType, RecurrentRestType> RestType;
+
+        // Layers nearer the output first: this layer's deltas need the gate
+        // deltas of the layer it feeds.
+        template<size_t GateMultiplier, typename NodeDeltasCalcType, typename LastHiddenLayerType>
+        static void calculateDeltas(HiddenChainType& hiddenChain, LastHiddenLayerType& lastHidden)
+        {
+            typedef ChainNextHiddenLayer<HiddenRestType, LastHiddenLayerType> NextType;
+
+            RestType::template calculateDeltas<GateMultiplier, NodeDeltasCalcType>(hiddenChain.rest, lastHidden);
+
+            InnerHiddenLayerDeltaDispatcher<GateMultiplier>::template calculate<NodeDeltasCalcType>(hiddenChain.layer, NextType::get(hiddenChain.rest, lastHidden));
+        }
+
+        template<size_t GateMultiplier, typename GradCalcType, typename GradientsManagerType, typename LastHiddenLayerType>
+        static void calculateGradients(HiddenChainType& hiddenChain, RecurrentChainType& recurrentChain, LastHiddenLayerType& lastHidden, GradientsManagerType& gm)
+        {
+            typedef ChainNextHiddenLayer<HiddenRestType, LastHiddenLayerType> NextType;
+
+            RestType::template calculateGradients<GateMultiplier, GradCalcType>(hiddenChain.rest, recurrentChain.rest, lastHidden, gm);
+
+            // This layer's weights (and bias) into the next hidden layer's gates
+            GatedGradientDispatcher<GateMultiplier>::template calculate<GradCalcType>(hiddenChain.layer, NextType::get(hiddenChain.rest, lastHidden), gm);
+
+            // This layer's recurrent weights, h_{t-1} into its own gates
+            GatedGradientDispatcher<GateMultiplier>::template calculateRecurrent<GradCalcType>(recurrentChain.layer, hiddenChain.layer, gm);
+        }
+
+        template<size_t GateMultiplier, typename TrainingPolicyType, typename LastHiddenLayerType>
+        static void updateWeights(TrainingPolicyType& tp, HiddenChainType& hiddenChain, RecurrentChainType& recurrentChain, LastHiddenLayerType& lastHidden)
+        {
+            typedef ChainNextHiddenLayer<HiddenRestType, LastHiddenLayerType> NextType;
+
+            RestType::template updateWeights<GateMultiplier>(tp, hiddenChain.rest, recurrentChain.rest, lastHidden);
+
+            GatedWeightUpdateDispatcher<GateMultiplier>::update(tp, NextType::get(hiddenChain.rest, lastHidden), hiddenChain.layer);
+
+            GatedWeightUpdateDispatcher<GateMultiplier>::update(tp, hiddenChain.layer, recurrentChain.layer);
+        }
+    };
+
     template<typename NeuralNetworkType>
     struct ChainRecurrentNetworkGradientsCalculator
     {
         typedef typename NeuralNetworkType::InputLayerType InputLayerType;
         typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
+        typedef typename NeuralNetworkType::InnerRecurrentLayerChainType InnerRecurrentChainType;
         typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
         typedef typename NeuralNetworkType::NeuralNetworkRecurrentLayerType RecurrentLayerType;
         typedef typename NeuralNetworkType::NeuralNetworkOutputLayerType OutputLayerType;
@@ -3505,6 +3753,7 @@ namespace tinymind {
         {
             InputLayerType& inputLayer = nn.getInputLayer();
             InnerChainType& innerChain = nn.getInnerHiddenLayerChain();
+            InnerRecurrentChainType& innerRecurrentChain = nn.getInnerRecurrentLayerChain();
             LastHiddenLayerType& lastHiddenLayer = nn.getLastHiddenLayer();
             RecurrentLayerType& recurrentLayer = nn.getRecurrentLayer();
             OutputLayerType& outputLayer = nn.getOutputLayer();
@@ -3514,7 +3763,7 @@ namespace tinymind {
 
             GatedGradientDispatcher<GateMultiplier>::template calculateRecurrent<GradientsCalculatorType>(recurrentLayer, lastHiddenLayer, gradientsManager);
 
-            ChainBackwardGradientCalculator<InnerChainType>::template calculate<GradientsCalculatorType>(innerChain, lastHiddenLayer, gradientsManager);
+            ChainRecurrentBackward<InnerChainType, InnerRecurrentChainType>::template calculateGradients<GateMultiplier, GradientsCalculatorType>(innerChain, innerRecurrentChain, lastHiddenLayer, gradientsManager);
 
             GatedInputLayerGradientConnector<InnerChainType, GateMultiplier>::template connect<GradientsCalculatorType>(inputLayer, innerChain, lastHiddenLayer, gradientsManager);
         }
@@ -3527,6 +3776,7 @@ namespace tinymind {
         typedef typename NeuralNetworkType::LastHiddenLayerType LastHiddenLayerType;
         typedef typename NeuralNetworkType::NeuralNetworkRecurrentLayerType RecurrentLayerType;
         typedef typename NeuralNetworkType::InnerHiddenLayerChainType InnerChainType;
+        typedef typename NeuralNetworkType::InnerRecurrentLayerChainType InnerRecurrentChainType;
         typedef typename NeuralNetworkType::InputLayerType InputLayerType;
 
         static const size_t GateMultiplier = NeuralNetworkType::HiddenLayerGateMultiplier;
@@ -3538,13 +3788,14 @@ namespace tinymind {
             LastHiddenLayerType& lastHiddenLayer = nn.getLastHiddenLayer();
             RecurrentLayerType& recurrentLayer = nn.getRecurrentLayer();
             InnerChainType& innerChain = nn.getInnerHiddenLayerChain();
+            InnerRecurrentChainType& innerRecurrentChain = nn.getInnerRecurrentLayerChain();
             InputLayerType& inputLayer = nn.getInputLayer();
 
             trainingPolicy.updateConnectionWeights(outputLayer, lastHiddenLayer);
 
             GatedWeightUpdateDispatcher<GateMultiplier>::update(trainingPolicy, lastHiddenLayer, recurrentLayer);
 
-            ChainBackwardWeightUpdater<InnerChainType>::update(trainingPolicy, innerChain, lastHiddenLayer);
+            ChainRecurrentBackward<InnerChainType, InnerRecurrentChainType>::template updateWeights<GateMultiplier>(trainingPolicy, innerChain, innerRecurrentChain, lastHiddenLayer);
 
             GatedInputLayerWeightUpdateConnector<InnerChainType, GateMultiplier>::connect(trainingPolicy, inputLayer, innerChain, lastHiddenLayer);
         }
@@ -3575,6 +3826,16 @@ namespace tinymind {
             void updateGradients(LayerType& layer, const size_t neuron, const size_t nextNeuron, const ValueType& gradient)
             {
                 this->gradientsHolder.updateGradients(layer, neuron, nextNeuron, gradient);
+            }
+
+            bool isLastSampleOfBatch() const
+            {
+                return this->gradientsHolder.isLastSampleOfBatch();
+            }
+
+            void endSample()
+            {
+                this->gradientsHolder.endSample();
             }
         private:
             GradientsHolder<ValueType, NumberOfGradients, NeuralNetworkType::NeuralNetworkBatchSize> gradientsHolder;
@@ -3623,9 +3884,16 @@ namespace tinymind {
 
             ChainNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
 
-            ChainBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+            // With BatchSize > 1 the weights move once per batch, by the mean
+            // gradient, after its last sample.
+            if (nn.getGradientsManager().isLastSampleOfBatch())
+            {
+                ChainBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
 
-            this->stepLearningRate();
+                this->stepLearningRate();
+            }
+
+            nn.getGradientsManager().endSample();
         }
     };
 
@@ -3641,9 +3909,16 @@ namespace tinymind {
 
             ChainNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
 
-            ChainBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+            // With BatchSize > 1 the weights move once per batch, by the mean
+            // gradient, after its last sample.
+            if (nn.getGradientsManager().isLastSampleOfBatch())
+            {
+                ChainBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
 
-            this->stepLearningRate();
+                this->stepLearningRate();
+            }
+
+            nn.getGradientsManager().endSample();
         }
     };
 
@@ -3659,9 +3934,16 @@ namespace tinymind {
 
             ChainRecurrentNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
 
-            ChainRecurrentBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+            // With BatchSize > 1 the weights move once per batch, by the mean
+            // of the batch's one-step gradients, after its last sample.
+            if (nn.getGradientsManager().isLastSampleOfBatch())
+            {
+                ChainRecurrentBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
 
-            this->stepLearningRate();
+                this->stepLearningRate();
+            }
+
+            nn.getGradientsManager().endSample();
         }
     };
 
@@ -3677,9 +3959,16 @@ namespace tinymind {
 
             ChainRecurrentNetworkGradientsCalculator<NNType>::calculateNetworkGradients(nn);
 
-            ChainRecurrentBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
+            // With BatchSize > 1 the weights move once per batch, by the mean
+            // of the batch's one-step gradients, after its last sample.
+            if (nn.getGradientsManager().isLastSampleOfBatch())
+            {
+                ChainRecurrentBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
 
-            this->stepLearningRate();
+                this->stepLearningRate();
+            }
+
+            nn.getGradientsManager().endSample();
         }
     };
 
@@ -3981,6 +4270,7 @@ namespace tinymind {
         static const size_t NumberOfOutputLayerNeurons = NeuralNetworkOutputLayerType::NumberOfNeuronsInLayer;
         static const size_t NeuralNetworkRecurrentConnectionDepth = NeuralNetworkRecurrentLayerType::RecurrentLayerRecurrentConnectionDepth;
         static const size_t NeuralNetworkBatchSize = BatchSize;
+        static const bool NeuralNetworkHasRecurrentLayer = HasRecurrentLayer;
         static const outputLayerConfiguration_e NeuralNetworkOutputLayerConfiguration = OutputLayerConfiguration;
 
         NeuralNetwork()
@@ -3996,6 +4286,8 @@ namespace tinymind {
             this->mOutputLayer.initializeNeurons();
 
             this->mRecurrentLayer.initializeNeurons();
+
+            this->mInnerRecurrentLayerChain.initializeNeurons();
 
             this->mTrainingPolicy.initialize();
 
@@ -4022,6 +4314,10 @@ namespace tinymind {
             this->mOutputLayer.initializeWeights();
 
             this->mRecurrentLayer.initializeWeights();
+
+            // Last, so a single-hidden-layer network (empty chain) draws the
+            // same random weights as before the inner layers were initialized.
+            this->mInnerRecurrentLayerChain.initializeWeights();
         }
 
         ValueType calculateError(ValueType const* const targetValues)
@@ -4060,6 +4356,46 @@ namespace tinymind {
         NeuralNetworkRecurrentLayerType& getRecurrentLayer()
         {
             return this->mRecurrentLayer;
+        }
+
+        // Recurrent layers of the inner hidden layers of a recurrent stack,
+        // one per inner layer (empty for a single hidden layer).
+        InnerRecurrentLayerChainType& getInnerRecurrentLayerChain()
+        {
+            return this->mInnerRecurrentLayerChain;
+        }
+
+        // Recurrent weight of inner hidden layer hiddenLayer (0 .. NumberOfInnerHiddenLayers-1):
+        // h_{t-1} of its neuron into connection (neuron' * gates + gate) of the same layer.
+        ValueType getInnerRecurrentLayerWeightForNeuronAndConnection(const size_t hiddenLayer, const size_t neuron, const size_t connection)
+        {
+            return ChainHiddenLayerAccessor<InnerRecurrentLayerChainType>::template getWeightForNeuronAndConnection<ValueType>(this->mInnerRecurrentLayerChain, hiddenLayer, neuron, connection);
+        }
+
+        void setInnerRecurrentLayerWeightForNeuronAndConnection(const size_t hiddenLayer, const size_t neuron, const size_t connection, const ValueType& weight)
+        {
+            ChainHiddenLayerAccessor<InnerRecurrentLayerChainType>::template setWeightForNeuronAndConnection<ValueType>(this->mInnerRecurrentLayerChain, hiddenLayer, neuron, connection, weight);
+        }
+
+        // Number of neurons in hidden layer index (0 = first).
+        static size_t getHiddenLayerSize(const size_t hiddenLayer)
+        {
+            return HiddenLayerSizeAccessor<HiddenLayersDescriptor>::getSize(hiddenLayer);
+        }
+
+        /**
+         * Clear the recurrent state of every hidden layer: h_{t-1} (and an LSTM's
+         * cell state) of the last and of every inner hidden layer, and the
+         * recurrent layers that latch it. Use it between independent
+         * sequences; the next feedForward then starts from h = 0. On a
+         * feed-forward network it only clears the hidden outputs.
+         */
+        void resetState()
+        {
+            this->mInnerHiddenLayerChain.resetState();
+            this->mInnerRecurrentLayerChain.resetState();
+            this->mLastHiddenLayer.resetState();
+            this->mRecurrentLayer.resetState();
         }
 
         GradientsManagerType& getGradientsManager()
@@ -4222,65 +4558,24 @@ namespace tinymind {
             this->mOutputLayer.setWeightForNeuronAndConnection(neuron, connection, weight);
         }
 
+        /**
+         * Copy every trainable weight of another network of the same type:
+         * input, inner hidden and last hidden layer weights with their bias
+         * weights (every gate connection of an LSTM/GRU layer), and every
+         * recurrent layer's weights. Learning-rate state, momentum and
+         * optimizer moments are not copied.
+         */
         void setWeights(NeuralNetworkType& other)
         {
-            typedef HiddenLayerSizeAccessor<HiddenLayersDescriptor> SizeAccessor;
-            ValueType weightValue;
+            this->mInputLayer.copyWeightsFrom(other.mInputLayer);
 
-            const size_t firstHiddenLayerSize = SizeAccessor::getSize(0);
+            this->mInnerHiddenLayerChain.copyWeightsFrom(other.mInnerHiddenLayerChain);
 
-            for(size_t i = 0;i < NumberOfInputLayerNeurons;++i)
-            {
-                for(size_t h = 0;h < firstHiddenLayerSize;++h)
-                {
-                    weightValue = other.getInputLayerWeightForNeuronAndConnection(i, h);
-                    this->setInputLayerWeightForNeuronAndConnection(i, h, weightValue);
-                }
-            }
+            this->mLastHiddenLayer.copyWeightsFrom(other.mLastHiddenLayer);
 
-            for(size_t h = 0;h < firstHiddenLayerSize;++h)
-            {
-                weightValue = other.getInputLayerBiasNeuronWeightForConnection(h);
-                this->setInputLayerBiasWeightForConnection(h, weightValue);
-            }
+            this->mRecurrentLayer.copyWeightsFrom(other.mRecurrentLayer);
 
-            for(size_t hiddenLayer = 0;hiddenLayer < (NeuralNetworkNumberOfHiddenLayers - 1);++hiddenLayer)
-            {
-                const size_t neuronsInThisLayer = SizeAccessor::getSize(hiddenLayer);
-                const size_t neuronsInNextLayer = SizeAccessor::getSize(hiddenLayer + 1);
-
-                for(size_t h = 0;h < neuronsInThisLayer;++h)
-                {
-                    for(size_t h1 = 0;h1 < neuronsInNextLayer;++h1)
-                    {
-                        weightValue = other.getHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1);
-                        this->setHiddenLayerWeightForNeuronAndConnection(hiddenLayer, h, h1, weightValue);
-                    }
-                }
-
-                for(size_t h1 = 0;h1 < neuronsInNextLayer;++h1)
-                {
-                    weightValue = other.getHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1);
-                    this->setHiddenLayerBiasNeuronWeightForConnection(hiddenLayer, h1, weightValue);
-                }
-            }
-
-            const size_t lastHiddenLayer = NeuralNetworkNumberOfHiddenLayers - 1;
-
-            for(size_t hiddenNeuron = 0;hiddenNeuron < NumberOfHiddenLayerNeurons;++hiddenNeuron)
-            {
-                for(size_t outputNeuron = 0;outputNeuron < NumberOfOutputLayerNeurons;++outputNeuron)
-                {
-                    weightValue = other.getHiddenLayerWeightForNeuronAndConnection(lastHiddenLayer, hiddenNeuron, outputNeuron);
-                    this->setHiddenLayerWeightForNeuronAndConnection(lastHiddenLayer, hiddenNeuron, outputNeuron, weightValue);
-                }
-            }
-
-            for(size_t outputNeuron = 0;outputNeuron < NumberOfOutputLayerNeurons;++outputNeuron)
-            {
-                weightValue = other.getHiddenLayerBiasNeuronWeightForConnection(lastHiddenLayer, outputNeuron);
-                this->setHiddenLayerBiasNeuronWeightForConnection(lastHiddenLayer, outputNeuron, weightValue);
-            }
+            this->mInnerRecurrentLayerChain.copyWeightsFrom(other.mInnerRecurrentLayerChain);
         }
 
         void trainNetwork(ValueType const* const targetValues)
@@ -4323,6 +4618,8 @@ namespace tinymind {
         static_assert(HiddenLayersDescriptor::Count > 0, "Must have at least one hidden layer.");
         static_assert(NumberOfOutputs > 0, "Invalid number of outputs.");
         static_assert(NumberOfOutputLayerNeurons == TransferFunctionsPolicy::NumberOfTransferFunctionsOutputNeurons, "TransferFunctionPolicy NumberOfOutputNeurons is incorrect.");
+        static_assert(!HasRecurrentLayer || (RecurrentConnectionDepth == 1),
+                      "RecurrentConnectionDepth must be 1: a recurrent layer holds only h_{t-1}, one step back. Deeper histories are not implemented.");
     };
 
     /**
@@ -4367,18 +4664,7 @@ namespace tinymind {
                                 RecurrentConnectionDepth,
                                 OutputLayerConfiguration> BaseType;
 
-        /**
-         * Clear the recurrent state h_{t-1}, e.g. between independent sequences.
-         * The next feedForward then starts from h = 0.
-         */
-        void resetState()
-        {
-            for (size_t neuron = 0; neuron < BaseType::NumberOfHiddenLayerNeurons; ++neuron)
-            {
-                this->getLastHiddenLayer().getNeuron(neuron)->setOutputValue(ValueType{});
-                this->getRecurrentLayer().setOutputValueForOutgoingConnection(neuron, ValueType{});
-            }
-        }
+        // resetState() (from NeuralNetwork) clears h_{t-1} of every hidden layer.
 
     private:
         static_assert(RecurrentConnectionDepth > 0, "Invalid recurrent connection depth.");
@@ -4545,15 +4831,8 @@ namespace tinymind {
                                 OutputLayerConfiguration> BaseType;
         typedef typename BaseType::LastHiddenLayerNeuronType LastHiddenLayerNeuronType;
 
-        void resetState()
-        {
-            for (size_t neuron = 0; neuron < BaseType::NumberOfHiddenLayerNeurons; ++neuron)
-            {
-                this->getLastHiddenLayer().getNeuron(neuron)->setState(ValueType{});
-                this->getLastHiddenLayer().getNeuron(neuron)->setOutputValue(ValueType{});
-                this->getRecurrentLayer().setOutputValueForOutgoingConnection(neuron, ValueType{});
-            }
-        }
+        // resetState() (from NeuralNetwork) clears h_{t-1} and the cell state
+        // of every hidden layer.
 
     private:
         static_assert(RecurrentConnectionDepth > 0, "Invalid recurrent connection depth.");
@@ -4604,15 +4883,8 @@ namespace tinymind {
                                 OutputLayerConfiguration> BaseType;
         typedef typename BaseType::LastHiddenLayerNeuronType LastHiddenLayerNeuronType;
 
-        void resetState()
-        {
-            for (size_t neuron = 0; neuron < BaseType::NumberOfHiddenLayerNeurons; ++neuron)
-            {
-                this->getLastHiddenLayer().getNeuron(neuron)->setState(ValueType{});
-                this->getLastHiddenLayer().getNeuron(neuron)->setOutputValue(ValueType{});
-                this->getRecurrentLayer().setOutputValueForOutgoingConnection(neuron, ValueType{});
-            }
-        }
+        // resetState() (from NeuralNetwork) clears h_{t-1} and the cell state
+        // of every hidden layer.
 
     private:
         static_assert(RecurrentConnectionDepth > 0, "Invalid recurrent connection depth.");
