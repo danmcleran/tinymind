@@ -117,21 +117,7 @@ namespace tinymind {
          */
         void forward(ValueType const* const input, ValueType* output)
         {
-            normalizeWithRunningStatistics(input, output, 1);
-            mUsedBatchStatistics = false;
-            mLastBatchSize = 1;
-
-            if (mTraining)
-            {
-                const ValueType alpha = momentum();
-                const ValueType oneMinusAlpha = one() - alpha;
-                for (size_t i = 0; i < Size; ++i)
-                {
-                    const ValueType diff = input[i] - mRunningMean[i];
-                    mRunningMean[i] = mRunningMean[i] + alpha * diff;
-                    mRunningVariance[i] = oneMinusAlpha * (mRunningVariance[i] + alpha * diff * diff);
-                }
-            }
+            forwardBatch(input, output, 1);
         }
 
         /**
@@ -148,15 +134,34 @@ namespace tinymind {
                 return;
             }
 
-            if (batchSize == 1)
-            {
-                forward(input, output);
-                return;
-            }
+            const ValueType alpha = momentum();
+            const ValueType oneMinusAlpha = one() - alpha;
 
-            if (!mTraining)
+            if ((!mTraining) || (batchSize == 1))
             {
-                normalizeWithRunningStatistics(input, output, batchSize);
+                // Running statistics: inference, or a single sample (which
+                // has no batch statistics).
+                for (size_t i = 0; i < Size; ++i)
+                {
+                    const ValueType invStd = one() / SquareRootApproximation<ValueType>::sqrt(mRunningVariance[i] + epsilon());
+                    mInvStd[i] = invStd;
+                    for (size_t sample = 0; sample < batchSize; ++sample)
+                    {
+                        const size_t index = sample * Size + i;
+                        mNormalized[index] = (input[index] - mRunningMean[i]) * invStd;
+                        output[index] = mGamma[i] * mNormalized[index] + mBeta[i];
+                    }
+
+                    // Single-sample training: the sample then updates the
+                    // exponentially weighted mean and variance.
+                    if (mTraining)
+                    {
+                        const ValueType diff = input[i] - mRunningMean[i];
+                        mRunningMean[i] = mRunningMean[i] + alpha * diff;
+                        mRunningVariance[i] = oneMinusAlpha * (mRunningVariance[i] + alpha * diff * diff);
+                    }
+                }
+
                 mUsedBatchStatistics = false;
                 mLastBatchSize = batchSize;
                 return;
@@ -164,8 +169,6 @@ namespace tinymind {
 
             const ValueType n = fromInteger(static_cast<int>(batchSize));
             const ValueType nMinusOne = fromInteger(static_cast<int>(batchSize) - 1);
-            const ValueType alpha = momentum();
-            const ValueType oneMinusAlpha = one() - alpha;
 
             for (size_t i = 0; i < Size; ++i)
             {
@@ -321,21 +324,6 @@ namespace tinymind {
         static const size_t MaximumBatchSize = MaxBatchSize;
 
     private:
-        void normalizeWithRunningStatistics(ValueType const* const input, ValueType* output, const size_t batchSize)
-        {
-            for (size_t i = 0; i < Size; ++i)
-            {
-                const ValueType invStd = one() / SquareRootApproximation<ValueType>::sqrt(mRunningVariance[i] + epsilon());
-                mInvStd[i] = invStd;
-                for (size_t sample = 0; sample < batchSize; ++sample)
-                {
-                    const size_t index = sample * Size + i;
-                    mNormalized[index] = (input[index] - mRunningMean[i]) * invStd;
-                    output[index] = mGamma[i] * mNormalized[index] + mBeta[i];
-                }
-            }
-        }
-
         ValueType mGamma[Size];
         ValueType mBeta[Size];
         ValueType mRunningMean[Size];
