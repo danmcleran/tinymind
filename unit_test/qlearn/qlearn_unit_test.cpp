@@ -639,6 +639,46 @@ BOOST_AUTO_TEST_CASE(test_qlearn_argmax_best_action)
     BOOST_TEST(static_cast<action_t>(1) == bestAction);
 }
 
+BOOST_AUTO_TEST_CASE(test_qlearn_argmax_negative_and_tied_q_values)
+{
+    // With three or more valid actions the greedy choice is the largest Q value
+    // even when every Q value is negative. Only a complete tie (no preference,
+    // e.g. an unvisited state of a zero-initialised table) returns
+    // InvalidAction, which makes the learner take a random action.
+    typedef tinymind::QValueTablePolicy<MazeEnvironmentType> QValuePolicyType;
+    QValuePolicyType qValuePolicy;
+    const state_t state = 2;
+    action_t actions[NUMBER_OF_ACTIONS] = { 0, 1, 2, 3, 4, 5 };
+    action_t bestAction;
+
+    for (action_t action = 0; action < NUMBER_OF_ACTIONS; ++action)
+    {
+        qValuePolicy.setQValue(state, action, QValueType(-10 + static_cast<int>(action == 3), 0));
+    }
+    bestAction = tinymind::ArgMaxPolicy<MazeEnvironmentType, QValuePolicyType>::selectBestActionForState(state, &actions[0], NUMBER_OF_ACTIONS, qValuePolicy);
+    BOOST_TEST(static_cast<action_t>(3) == bestAction);
+
+    for (action_t action = 0; action < NUMBER_OF_ACTIONS; ++action)
+    {
+        qValuePolicy.setQValue(state, action, QValueType(0, 0));
+    }
+    bestAction = tinymind::ArgMaxPolicy<MazeEnvironmentType, QValuePolicyType>::selectBestActionForState(state, &actions[0], NUMBER_OF_ACTIONS, qValuePolicy);
+    BOOST_TEST(static_cast<action_t>(MazeEnvironmentType::EnvironmentInvalidAction) == bestAction);
+
+    for (action_t action = 0; action < NUMBER_OF_ACTIONS; ++action)
+    {
+        qValuePolicy.setQValue(state, action, QValueType(-4, 0));
+    }
+    bestAction = tinymind::ArgMaxPolicy<MazeEnvironmentType, QValuePolicyType>::selectBestActionForState(state, &actions[0], NUMBER_OF_ACTIONS, qValuePolicy);
+    BOOST_TEST(static_cast<action_t>(MazeEnvironmentType::EnvironmentInvalidAction) == bestAction);
+
+    // A partial tie at the top goes to the first of the tied actions.
+    qValuePolicy.setQValue(state, 4, QValueType(-1, 0));
+    qValuePolicy.setQValue(state, 5, QValueType(-1, 0));
+    bestAction = tinymind::ArgMaxPolicy<MazeEnvironmentType, QValuePolicyType>::selectBestActionForState(state, &actions[0], NUMBER_OF_ACTIONS, qValuePolicy);
+    BOOST_TEST(static_cast<action_t>(4) == bestAction);
+}
+
 BOOST_AUTO_TEST_CASE(test_qlearn_take_action)
 {
     typename MazeEnvironmentType::ParentType::experience_t experience;
@@ -972,6 +1012,48 @@ BOOST_AUTO_TEST_CASE(test_choose_random_action_from_valid_actions_untrained)
         untrainedQLearner.getEnvironment().chooseRandomActionFromValidActions(validActions, 3);
     const bool isValid = (chosen == 1) || (chosen == 3) || (chosen == 5);
     BOOST_TEST(isValid);
+}
+
+BOOST_AUTO_TEST_CASE(test_qlearn_dqn_get_q_value_reads_the_requested_state)
+{
+    // getQValue(state, action) must be the online network's output for that
+    // state, not for whichever state the network last saw.
+    static QValuePolicyType policy;
+
+    policy.setQValue(0, 1, QValueType(1, 0));
+
+    QValueType rows[NUMBER_OF_STATES][NUMBER_OF_ACTIONS];
+    for (state_t state = 0; state < NUMBER_OF_STATES; ++state)
+    {
+        for (action_t action = 0; action < NUMBER_OF_ACTIONS; ++action)
+        {
+            rows[state][action] = policy.getQValue(state, action);
+        }
+    }
+
+    // Reading the states in another order gives the same values.
+    for (state_t state = NUMBER_OF_STATES; state > 0; --state)
+    {
+        for (action_t action = NUMBER_OF_ACTIONS; action > 0; --action)
+        {
+            BOOST_TEST(rows[state - 1][action - 1] == policy.getQValue(state - 1, action - 1));
+        }
+    }
+
+    // Different states give different Q values.
+    size_t differingStates = 0;
+    for (state_t state = 1; state < NUMBER_OF_STATES; ++state)
+    {
+        for (action_t action = 0; action < NUMBER_OF_ACTIONS; ++action)
+        {
+            if (rows[state][action] != rows[0][action])
+            {
+                ++differingStates;
+                break;
+            }
+        }
+    }
+    BOOST_TEST(differingStates == static_cast<size_t>(NUMBER_OF_STATES - 1));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
