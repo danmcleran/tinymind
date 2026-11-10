@@ -64,12 +64,14 @@ namespace recurrent_extras
         return value;
     }
 
-    // Recurrent weights exist only on a recurrent network.
-    template<bool HasRecurrentLayer>
-    struct RecurrentParams
+    // Recurrent weights exist only on a recurrent network, and inner recurrent
+    // weights only on a stacked one. Choosing at compile time keeps every
+    // library accessor that gets instantiated also executed (coverage gate).
+    template<bool HasInnerRecurrentLayers>
+    struct InnerRecurrentParams
     {
         template<typename NN>
-        static void addInner(NN& nn, std::vector<Param>& params, const size_t layer, const size_t gates)
+        static void add(NN& nn, std::vector<Param>& params, const size_t layer, const size_t gates)
         {
             typedef typename NN::NeuralNetworkValueType V;
             const size_t size = NN::getHiddenLayerSize(layer);
@@ -83,9 +85,22 @@ namespace recurrent_extras
                 }
             }
         }
+    };
 
+    template<>
+    struct InnerRecurrentParams<false>
+    {
         template<typename NN>
-        static void addLast(NN& nn, std::vector<Param>& params, const size_t gates)
+        static void add(NN&, std::vector<Param>&, const size_t, const size_t)
+        {
+        }
+    };
+
+    template<bool HasRecurrentLayer>
+    struct LastRecurrentParams
+    {
+        template<typename NN>
+        static void add(NN& nn, std::vector<Param>& params, const size_t gates)
         {
             typedef typename NN::NeuralNetworkValueType V;
             const size_t size = NN::getHiddenLayerSize(NN::NeuralNetworkNumberOfHiddenLayers - 1);
@@ -102,15 +117,10 @@ namespace recurrent_extras
     };
 
     template<>
-    struct RecurrentParams<false>
+    struct LastRecurrentParams<false>
     {
         template<typename NN>
-        static void addInner(NN&, std::vector<Param>&, const size_t, const size_t)
-        {
-        }
-
-        template<typename NN>
-        static void addLast(NN&, std::vector<Param>&, const size_t)
+        static void add(NN&, std::vector<Param>&, const size_t)
         {
         }
     };
@@ -120,7 +130,8 @@ namespace recurrent_extras
     std::vector<Param> enumerateParams(NN& nn)
     {
         typedef typename NN::NeuralNetworkValueType V;
-        typedef RecurrentParams<NN::NeuralNetworkHasRecurrentLayer> Rec;
+        typedef InnerRecurrentParams<NN::NeuralNetworkHasRecurrentLayer && (NN::NeuralNetworkNumberOfHiddenLayers > 1)> InnerRec;
+        typedef LastRecurrentParams<NN::NeuralNetworkHasRecurrentLayer> LastRec;
         static const size_t G = NN::HiddenLayerGateMultiplier;
         static const size_t L = NN::NeuralNetworkNumberOfHiddenLayers;
         std::vector<Param> params;
@@ -160,9 +171,9 @@ namespace recurrent_extras
                                   [&nn, l, c]() { return toDouble(nn.getHiddenLayerBiasNeuronWeightForConnection(l, c)); },
                                   [&nn, l, c](double v) { nn.setHiddenLayerBiasNeuronWeightForConnection(l, c, fromDouble<V>(v)); }});
             }
-            Rec::addInner(nn, params, l, G);
+            InnerRec::add(nn, params, l, G);
         }
-        Rec::addLast(nn, params, G);
+        LastRec::add(nn, params, G);
         for (size_t n = 0; n < NN::NumberOfHiddenLayerNeurons; ++n)
         {
             for (size_t o = 0; o < NN::NumberOfOutputLayerNeurons; ++o)
@@ -458,9 +469,12 @@ namespace recurrent_extras
         std::vector<Param> pb = enumerateParams(batched);
         std::vector<Param> ps = enumerateParams(single);
         BOOST_REQUIRE(pb.size() == ps.size());
+        // Both networks start from the same weights.
         for (size_t p = 0; p < ps.size(); ++p)
         {
-            ps[p].set(pb[p].get());
+            const double w = pb[p].get();
+            pb[p].set(w);
+            ps[p].set(w);
         }
         batched.setLearningRate(0.1);
         batched.setMomentumRate(0.0);

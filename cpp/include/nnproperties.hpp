@@ -281,10 +281,93 @@ namespace tinymind {
             size_t connection;
         };
 
-        // Recurrent layer weights exist only on a recurrent network; a
-        // feed-forward network's NullRecurrentLayer has none.
-        template<bool HasRecurrentLayer>
-        struct RecurrentWeightAccess
+        // Input, input bias, hidden and hidden bias weights: every network has them.
+        struct FeedForwardWeightAccess
+        {
+            template<typename NeuralNetworkType, typename ValueType>
+            static ValueType get(NeuralNetworkType& nn, const NetworkWeightLocation& loc)
+            {
+                switch (loc.kind)
+                {
+                    case InputLayerWeight:
+                        return nn.getInputLayerWeightForNeuronAndConnection(loc.neuron, loc.connection);
+                    case InputLayerBiasWeight:
+                        return nn.getInputLayerBiasNeuronWeightForConnection(loc.connection);
+                    case HiddenLayerWeight:
+                        return nn.getHiddenLayerWeightForNeuronAndConnection(loc.layer, loc.neuron, loc.connection);
+                    default:
+                        return nn.getHiddenLayerBiasNeuronWeightForConnection(loc.layer, loc.connection);
+                }
+            }
+
+            template<typename NeuralNetworkType, typename ValueType>
+            static void set(NeuralNetworkType& nn, const NetworkWeightLocation& loc, const ValueType& value)
+            {
+                switch (loc.kind)
+                {
+                    case InputLayerWeight:
+                        nn.setInputLayerWeightForNeuronAndConnection(loc.neuron, loc.connection, value);
+                        break;
+                    case InputLayerBiasWeight:
+                        nn.setInputLayerBiasWeightForConnection(loc.connection, value);
+                        break;
+                    case HiddenLayerWeight:
+                        nn.setHiddenLayerWeightForNeuronAndConnection(loc.layer, loc.neuron, loc.connection, value);
+                        break;
+                    default:
+                        nn.setHiddenLayerBiasNeuronWeightForConnection(loc.layer, loc.connection, value);
+                        break;
+                }
+            }
+        };
+
+        // Which recurrent weights a network has, chosen at compile time so no
+        // accessor is instantiated for weights the network lacks:
+        // 0 = feed-forward, 1 = the last hidden layer's recurrent layer,
+        // 2 = that plus the inner hidden layers' recurrent layers.
+        template<int RecurrentLevel>
+        struct NetworkWeightAccess
+        {
+            template<typename NeuralNetworkType, typename ValueType>
+            static ValueType get(NeuralNetworkType& nn, const NetworkWeightLocation& loc)
+            {
+                return FeedForwardWeightAccess::template get<NeuralNetworkType, ValueType>(nn, loc);
+            }
+
+            template<typename NeuralNetworkType, typename ValueType>
+            static void set(NeuralNetworkType& nn, const NetworkWeightLocation& loc, const ValueType& value)
+            {
+                FeedForwardWeightAccess::template set<NeuralNetworkType, ValueType>(nn, loc, value);
+            }
+        };
+
+        template<>
+        struct NetworkWeightAccess<1>
+        {
+            template<typename NeuralNetworkType, typename ValueType>
+            static ValueType get(NeuralNetworkType& nn, const NetworkWeightLocation& loc)
+            {
+                if (RecurrentLayerWeight == loc.kind)
+                {
+                    return nn.getRecurrentLayer().getWeightForNeuronAndConnection(loc.neuron, loc.connection);
+                }
+                return FeedForwardWeightAccess::template get<NeuralNetworkType, ValueType>(nn, loc);
+            }
+
+            template<typename NeuralNetworkType, typename ValueType>
+            static void set(NeuralNetworkType& nn, const NetworkWeightLocation& loc, const ValueType& value)
+            {
+                if (RecurrentLayerWeight == loc.kind)
+                {
+                    nn.getRecurrentLayer().setWeightForNeuronAndConnection(loc.neuron, loc.connection, value);
+                    return;
+                }
+                FeedForwardWeightAccess::template set<NeuralNetworkType, ValueType>(nn, loc, value);
+            }
+        };
+
+        template<>
+        struct NetworkWeightAccess<2>
         {
             template<typename NeuralNetworkType, typename ValueType>
             static ValueType get(NeuralNetworkType& nn, const NetworkWeightLocation& loc)
@@ -293,7 +376,7 @@ namespace tinymind {
                 {
                     return nn.getInnerRecurrentLayerWeightForNeuronAndConnection(loc.layer, loc.neuron, loc.connection);
                 }
-                return nn.getRecurrentLayer().getWeightForNeuronAndConnection(loc.neuron, loc.connection);
+                return NetworkWeightAccess<1>::template get<NeuralNetworkType, ValueType>(nn, loc);
             }
 
             template<typename NeuralNetworkType, typename ValueType>
@@ -304,22 +387,7 @@ namespace tinymind {
                     nn.setInnerRecurrentLayerWeightForNeuronAndConnection(loc.layer, loc.neuron, loc.connection, value);
                     return;
                 }
-                nn.getRecurrentLayer().setWeightForNeuronAndConnection(loc.neuron, loc.connection, value);
-            }
-        };
-
-        template<>
-        struct RecurrentWeightAccess<false>
-        {
-            template<typename NeuralNetworkType, typename ValueType>
-            static ValueType get(NeuralNetworkType&, const NetworkWeightLocation&)
-            {
-                return ValueType();
-            }
-
-            template<typename NeuralNetworkType, typename ValueType>
-            static void set(NeuralNetworkType&, const NetworkWeightLocation&, const ValueType&)
-            {
+                NetworkWeightAccess<1>::template set<NeuralNetworkType, ValueType>(nn, loc, value);
             }
         };
 
@@ -349,17 +417,8 @@ namespace tinymind {
             static const size_t NumberOfHiddenLayers = NeuralNetworkType::NeuralNetworkNumberOfHiddenLayers;
             static const size_t Gates = NeuralNetworkType::HiddenLayerGateMultiplier;
             static const bool HasRecurrentLayer = NeuralNetworkType::NeuralNetworkHasRecurrentLayer;
-
-            static size_t count()
-            {
-                size_t total = 0;
-                NetworkWeightLocation loc;
-                while (locate(total, loc))
-                {
-                    ++total;
-                }
-                return total;
-            }
+            static const int RecurrentLevel = HasRecurrentLayer ? ((NumberOfHiddenLayers > 1) ? 2 : 1) : 0;
+            typedef NetworkWeightAccess<RecurrentLevel> AccessType;
 
             // Map the k-th value of the file to its weight; false past the end.
             static bool locate(size_t k, NetworkWeightLocation& loc)
@@ -408,41 +467,12 @@ namespace tinymind {
 
             static ValueType get(NeuralNetworkType& nn, const NetworkWeightLocation& loc)
             {
-                switch (loc.kind)
-                {
-                    case InputLayerWeight:
-                        return nn.getInputLayerWeightForNeuronAndConnection(loc.neuron, loc.connection);
-                    case InputLayerBiasWeight:
-                        return nn.getInputLayerBiasNeuronWeightForConnection(loc.connection);
-                    case HiddenLayerWeight:
-                        return nn.getHiddenLayerWeightForNeuronAndConnection(loc.layer, loc.neuron, loc.connection);
-                    case HiddenLayerBiasWeight:
-                        return nn.getHiddenLayerBiasNeuronWeightForConnection(loc.layer, loc.connection);
-                    default:
-                        return RecurrentWeightAccess<HasRecurrentLayer>::template get<NeuralNetworkType, ValueType>(nn, loc);
-                }
+                return AccessType::template get<NeuralNetworkType, ValueType>(nn, loc);
             }
 
             static void set(NeuralNetworkType& nn, const NetworkWeightLocation& loc, const ValueType& value)
             {
-                switch (loc.kind)
-                {
-                    case InputLayerWeight:
-                        nn.setInputLayerWeightForNeuronAndConnection(loc.neuron, loc.connection, value);
-                        break;
-                    case InputLayerBiasWeight:
-                        nn.setInputLayerBiasWeightForConnection(loc.connection, value);
-                        break;
-                    case HiddenLayerWeight:
-                        nn.setHiddenLayerWeightForNeuronAndConnection(loc.layer, loc.neuron, loc.connection, value);
-                        break;
-                    case HiddenLayerBiasWeight:
-                        nn.setHiddenLayerBiasNeuronWeightForConnection(loc.layer, loc.connection, value);
-                        break;
-                    default:
-                        RecurrentWeightAccess<HasRecurrentLayer>::template set<NeuralNetworkType, ValueType>(nn, loc, value);
-                        break;
-                }
+                AccessType::template set<NeuralNetworkType, ValueType>(nn, loc, value);
             }
 
             // Column name for the CSV header (the long-standing names for
