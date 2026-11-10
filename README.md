@@ -1171,7 +1171,7 @@ tinymind/
   fuzz/                         # libFuzzer int8 kernel harnesses, committed corpus, cross-build agreement, MSan replay
   benchmarks/
     framework_comparison_f411/  # tinymind vs TFLM (CMSIS-NN / reference) vs emlearn on a NUCLEO-F411RE
-  tools/                        # CI runner-image container (ci-image.sh), compile-commands filter, Pages generators
+  tools/                        # CI runner-image container (ci-image.sh), compile-commands filter, Pages generators, size_report/ (regenerates docs/size-comparison.md)
   docs/                         # GitHub Pages site: architecture reference, example gallery, benchmarks
   apps/
     activation/                 # Lookup table generator tool

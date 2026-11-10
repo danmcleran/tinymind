@@ -8576,3 +8576,4 @@ BOOST_AUTO_TEST_CASE(test_case_function_coverage_terminal_accessors_and_ops)
 BOOST_AUTO_TEST_SUITE_END()
 
 #include "optimizers_tests.hpp"
+#include "momentum_rounding_tests.hpp"

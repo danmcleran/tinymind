@@ -41,7 +41,7 @@ first. Both files ship with the example.
   5×8 grid, each titled `t=<true> p=<pred>` (red when misclassified)
 
 Expected (seed = 7): clean convergence to ~0.001 avg error and **~96% test
-accuracy** (1729/1797) on the held-out test split.
+accuracy** (1732/1797) on the held-out test split.
 
 ## tinymind capability shown
 

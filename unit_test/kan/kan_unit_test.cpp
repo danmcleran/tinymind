@@ -33,6 +33,8 @@ TINYMIND_DISABLE_WARNING_POP
 #include <cstdint>
 #include <cstdlib>
 #include <cmath>
+#include <algorithm>
+#include <vector>
 #include <iostream>
 #include <fstream>
 #include <deque>
@@ -712,6 +714,109 @@ BOOST_AUTO_TEST_CASE(kan_sinusoid_prediction_double)
     }
 
     std::cout << "KAN sinusoid prediction output written to output/kan_float_sinusoid_prediction.txt" << std::endl;
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+// =========================================================================
+// Fixed-point momentum: an undriven delta must decay to zero
+// =========================================================================
+//
+// The momentum terms (momentum x last delta + acceleration x the delta before)
+// used to be rounded with the format's own policy, under which 0.5 x (-1 LSB)
+// truncates back to -1 LSB, so a one-LSB delta never decayed and every such
+// parameter moved on every training step whatever the gradient. One real
+// step seeds the deltas; with the learning rate at zero only the momentum
+// terms act, and every coefficient and weight must stop moving.
+
+namespace
+{
+    template<typename ValueType>
+    struct QSmallRandom
+    {
+        static ValueType generateRandomWeight()
+        {
+            static PortableUniformReal generator(-0.5, 0.5, RANDOM_SEED);
+            const double scaled = generator() * static_cast<double>(1 << ValueType::NumberOfFractionalBits);
+            return ValueType(static_cast<typename ValueType::FullWidthFieldType>(scaled));
+        }
+    };
+
+    template<typename LayerType>
+    void collectKanParameters(LayerType& layer, std::vector<double>& values)
+    {
+        typedef typename LayerType::LayerNeuronType NeuronType;
+        for (size_t n = 0; n < LayerType::NumberOfNeuronsInLayer; ++n)
+        {
+            for (size_t c = 0; c < NeuronType::NumberOfOutgoingConnectionsFromNeuron; ++c)
+            {
+                const auto* connection = layer.getNeuron(n)->getConnection(c);
+                for (size_t k = 0; k < NeuronType::NumberOfCoefficientsPerConnection; ++k)
+                {
+                    values.push_back(static_cast<double>(connection->getCoefficient(k).getValue()));
+                }
+                values.push_back(static_cast<double>(connection->getBaseWeight().getValue()));
+                values.push_back(static_cast<double>(connection->getSplineWeight().getValue()));
+            }
+        }
+    }
+
+    template<typename NetworkType>
+    std::vector<double> kanParameters(NetworkType& kan)
+    {
+        std::vector<double> values;
+        collectKanParameters(kan.getInputLayer(), values);
+        collectKanParameters(kan.getLastHiddenLayer(), values);
+        return values;
+    }
+}
+
+BOOST_AUTO_TEST_SUITE(kan_momentum_rounding_tests)
+
+BOOST_AUTO_TEST_CASE(kan_fixed_point_momentum_decays)
+{
+    typedef tinymind::QValue<8, 8, true> Q88;
+    typedef tinymind::KanTransferFunctions<Q88, QSmallRandom<Q88>, 1> Q88TransferFunctions;
+    typedef tinymind::KolmogorovArnoldNetwork<Q88, 2, 1, 5, 1, Q88TransferFunctions, true, 1, 5, 1> KanType;
+
+    static KanType kan;
+    kan.setLearningRate(Q88(0, 64));
+    kan.setMomentumRate(Q88(0, 128));
+    kan.setAccelerationRate(Q88(0, 16));
+
+    Q88 inputs[2] = {Q88(0, 128), Q88(0, 64)};
+    Q88 target[1] = {Q88(0, 192)};
+
+    const std::vector<double> before = kanParameters(kan);
+    kan.feedForward(inputs);
+    kan.trainNetwork(target);
+    const std::vector<double> afterFirst = kanParameters(kan);
+    double firstStepMove = 0.0;
+    for (size_t i = 0; i < before.size(); ++i)
+    {
+        firstStepMove = std::max(firstStepMove, std::fabs(afterFirst[i] - before[i]));
+    }
+    BOOST_TEST(firstStepMove > 1.0);
+
+    kan.setLearningRate(Q88(0));
+    std::vector<double> snapshot;
+    for (size_t step = 0; step < 300; ++step)
+    {
+        if (step == 100)
+        {
+            snapshot = kanParameters(kan);
+        }
+        kan.feedForward(inputs);
+        kan.trainNetwork(target);
+    }
+
+    const std::vector<double> after = kanParameters(kan);
+    double drift = 0.0;
+    for (size_t i = 0; i < after.size(); ++i)
+    {
+        drift = std::max(drift, std::fabs(after[i] - snapshot[i]));
+    }
+    BOOST_TEST(drift == 0.0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

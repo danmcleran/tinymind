@@ -30,6 +30,6 @@ The dataset is synthetic (deterministic, seed 7; 6 gas classes with distinct 128
 
 ![Gas sensor training loss, accuracy drift curve over 10 batches, and batch-1 confusion matrix]({{ site.baseurl }}/assets/plots/gas_sensor_drift.png)
 
-Batch 1 trains to a perfectly diagonal in-distribution confusion matrix (batch-1 accuracy 1.00), but the drift curve slopes clearly downward as the batch index grows — accuracy falls from ~1.0 on the early batches to ~0.73 by batch 10. The gases are identical throughout; only the sensor response distribution has moved, which is exactly the failure mode the dataset was created to study.
+Batch 1 trains to a perfectly diagonal in-distribution confusion matrix (batch-1 accuracy 1.00), but the drift curve slopes clearly downward as the batch index grows — accuracy falls from ~1.0 on the early batches to ~0.79 by batch 10. The gases are identical throughout; only the sensor response distribution has moved, which is exactly the failure mode the dataset was created to study.
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/gas_sensor_drift)
