@@ -14,7 +14,7 @@ This is a recurrent classifier, not a feed-forward one:
 - **4 sigmoid outputs** — a one-hot encoding of the activity; predicted class is
   argmax read at the **last timestep** of the window
 - Q16.16 fixed-point throughout, with `GradientClipByValue`, a learning rate of
-  0.05 and no momentum (the library default of 0.25 with momentum 0.5
+  0.1 and no momentum (the library default of 0.25 with momentum 0.5
   oscillates on this task in Q16.16)
 
 Each window is **32 timesteps** long. For every window the network:
@@ -100,7 +100,7 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 
 | model | test accuracy |
 |---|---|
-| LSTM, all weights trained | **92.5%** (185/200) |
+| LSTM, all weights trained | **76.5%** (153/200); 89.6% mean over 10 seeds |
 | LSTM, `--readout-only` (input, gate and recurrent weights frozen at their random initial values) | 50.0% |
 | nearest centroid on per-axis mean + standard deviation (ignores sample order) | 52.5% |
 | chance | 25% |
@@ -108,9 +108,11 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 `make run` prints the full model's accuracy and the nearest-centroid and chance baselines; run
 `./output/har_activity --readout-only` for the ablation. Training the LSTM's
 gates and recurrent weights is what reads the sample order. Recurrent training
-in Q16.16 is noisy on this task: across five weight-initialization seeds the
-full model scored 71%, 73.5%, 89.5%, 92.5% and 94.5%, always well above both
-order-blind baselines.
+in Q16.16 is noisy on this task: over data seeds 1 to 10 (weights from seed 1)
+the full model scores 89.6% ± 10.4% (73.5% to 100%), never at chance, while
+`--readout-only` stays at 50% on every seed. The learning rate was 0.05 until
+SGD steps were rounded to nearest; at 0.05 the unbiased steps leave 8 of those
+10 seeds stuck at 50%, and 0.1 gives the numbers above.
 
 An earlier version of this example (four classes separable by gravity
 direction and step frequency) scored 100%, but a nearest-centroid classifier

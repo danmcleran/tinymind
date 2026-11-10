@@ -11,7 +11,7 @@ A recurrent human-activity classifier over tri-axial accelerometer sequences, in
 
 ## How it works
 
-- Q16.16 fixed-point **LSTM**, 3 inputs &rarr; one hidden LSTM layer of 16 tanh neurons &rarr; 4 sigmoid outputs, with `GradientClipByValue`, learning rate 0.05 and no momentum (the library default of 0.25 with momentum 0.5 oscillates on this task in Q16.16).
+- Q16.16 fixed-point **LSTM**, 3 inputs &rarr; one hidden LSTM layer of 16 tanh neurons &rarr; 4 sigmoid outputs, with `GradientClipByValue`, learning rate 0.1 and no momentum (the library default of 0.25 with momentum 0.5 oscillates on this task in Q16.16).
 - Each window is 32 timesteps. The cell state is reset (`resetState()`) at the start of every window; all 32 steps are supervised toward the window label, trained on every step, and the prediction is read (argmax) at the final timestep. 60 epochs of shuffled passes.
 - The three walking classes share the step rate, lateral sway, gravity direction, and the per-axis mean and standard deviation. Level walking has a sinusoidal vertical acceleration; the stairs classes have a sawtooth, and WALKING_DOWNSTAIRS is WALKING_UPSTAIRS played backwards in time, so every individual sample has the same distribution in both. An LSTM that reads one timestep at a time can only separate them by remembering earlier samples.
 
@@ -31,12 +31,12 @@ By default the example synthesizes the accelerometer windows (deterministic, see
 
 | Model | Test accuracy |
 |---|---|
-| LSTM, all weights trained | **92.5%** (185/200) |
+| LSTM, all weights trained | **76.5%** (153/200); 89.6% mean over 10 seeds |
 | LSTM, `--readout-only` (input, gate and recurrent weights frozen at their random initial values) | 50.0% |
 | Nearest centroid on per-axis mean + standard deviation (ignores sample order) | 52.5% |
 | Chance | 25% |
 
-The two order-blind baselines both separate SITTING and lose most of the walking classes. Training the LSTM's gates and recurrent weights is what reads the sample order: it lifts accuracy from 50% to 92.5%. Recurrent training in Q16.16 is noisy on this task, though: across five weight-initialization seeds the full model scored 71%, 73.5%, 89.5%, 92.5% and 94.5%, always well above both baselines.
+The two order-blind baselines both separate SITTING and lose most of the walking classes. Training the LSTM's gates and recurrent weights is what reads the sample order: it lifts accuracy from 50% to 76.5% on the default seed. Recurrent training in Q16.16 is noisy on this task, though: over data seeds 1 to 10 (weights from seed 1) the full model scores 89.6% ± 10.4% (73.5% to 100%), never at chance, while `--readout-only` stays at 50% on every seed. The learning rate was 0.05 until SGD steps were rounded to nearest; at 0.05 the unbiased steps leave 8 of those 10 seeds stuck at 50%, and 0.1 gives the numbers above.
 
 ## Output
 

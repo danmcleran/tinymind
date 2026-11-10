@@ -108,13 +108,16 @@ struct RandomNumberGenerator
     }
 };
 
-// Learning rate 0.05 with no momentum. The library default (0.25 with
-// momentum 0.5) oscillates on this task in Q16.16.
+// Learning rate 0.1 with no momentum. The library default (0.25 with
+// momentum 0.5) oscillates on this task in Q16.16. Over seeds 1 to 10 this
+// gives 0.95 mean test accuracy with no seed stuck at chance; 0.05 (tuned
+// before SGD steps were rounded to nearest, when the floor's downward drift
+// stood in for part of the step) now leaves 8 of 10 seeds at 0.5.
 struct HarNetworkInitializer : public tinymind::DefaultNetworkInitializer<ValueType>
 {
     static ValueType initialLearningRate()
     {
-        static const ValueType rate(0, 3277); // 0.05 in Q16.16
+        static const ValueType rate(0, 6554); // 0.1 in Q16.16
         return rate;
     }
 

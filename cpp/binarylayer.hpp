@@ -23,6 +23,7 @@
 #pragma once
 
 #include "include/tinymind_traits.hpp"
+#include "include/tinymind_rounding.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -272,7 +273,7 @@ namespace tinymind {
         {
             for (size_t i = 0; i < TotalBinaryWeights; ++i)
             {
-                mLatentWeights[i] += learningRate * mLatentGradients[i];
+                mLatentWeights[i] += multiplyRoundNearest(learningRate, mLatentGradients[i]);
                 if (mLatentWeights[i] < negOne())
                 {
                     mLatentWeights[i] = negOne();
@@ -284,7 +285,7 @@ namespace tinymind {
             }
             for (size_t j = 0; j < OutputSize; ++j)
             {
-                mBias[j] += learningRate * mBiasGradients[j];
+                mBias[j] += multiplyRoundNearest(learningRate, mBiasGradients[j]);
             }
 
             // Re-binarize: pack sign(latent_weight) into packed weights

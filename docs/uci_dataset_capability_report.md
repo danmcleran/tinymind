@@ -55,21 +55,21 @@ offline in float and then sweeps fixed-point formats to find the smallest one
 - **Dataset:** [UCI Optical Recognition of Handwritten Digits](https://archive.ics.uci.edu/dataset/80/optical+recognition+of+handwritten+digits) — 8×8 bitmaps (64 px, 0..16) · 10-class.
 - **Model:** MLP 64→32→10, ReLU hidden, 10 sigmoid (argmax). Per-pixel z-score with constant-zero guard, 60k iters.
 - **Data:** ships real data (`optdigits.tra` 3823 rows + `optdigits.tes` 1797 rows).
-- **Result:** ~96% test accuracy (1732/1797). Real 64-feature image task in fixed-point.
+- **Result:** ~96% test accuracy (1729/1797). Real 64-feature image task in fixed-point.
 - [`examples/optical_digits`](https://github.com/danmcleran/tinymind/tree/master/examples/optical_digits) · [page]({{ site.baseurl }}/examples/optical_digits)
 
 ### Predictive Maintenance — binary failure classifier
 - **Dataset:** [AI4I 2020 Predictive Maintenance](https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset) — milling-machine readings · binary (failure / no-failure).
 - **Model:** MLP 10→24→1, ReLU hidden, single sigmoid. 5 process features + **3 physics product features** (power, overstrain, temp gap) + 2-dim variant one-hot. 50/50 balanced sampling for the ~3.4% failure rate.
 - **Data:** optional real data (`ai4i2020.csv`); else synthesizes 10k rows from the documented HDF/PWF/OSF/TWF/RNF rules.
-- **Result:** synthetic data (seed 7): recall 0.84, precision 0.76, F1 0.80; real CSV over seeds 1-10: recall 0.78, precision 0.67, F1 0.72.
+- **Result:** synthetic data (seed 7): recall 0.85, precision 0.65, F1 0.74; real CSV over seeds 1-10: recall 0.80, precision 0.65, F1 0.71.
 - [`examples/predictive_maintenance`](https://github.com/danmcleran/tinymind/tree/master/examples/predictive_maintenance) · [page]({{ site.baseurl }}/examples/predictive_maintenance)
 
 ### Human Activity Recognition — recurrent (LSTM)
 - **Dataset:** [UCI HAR Using Smartphones](https://archive.ics.uci.edu/dataset/240) — tri-axial accelerometer · activity classes.
 - **Model:** Q16.16 **LSTM** 3→16 (tanh)→4 sigmoid, stateful per 32-step window, argmax at final step. Classes: WALKING / WALKING_UPSTAIRS / WALKING_DOWNSTAIRS / SITTING.
 - **Data:** optional real data (long-format `har.csv`); else synthesizes accelerometer windows in which upstairs and downstairs are time reversals of each other, so only sample order separates them.
-- **Result:** 92.5% test accuracy (185/200), against 50% with only the readout trained and 52.5% for a nearest centroid on per-axis mean + std. `LstmNeuralNetwork<>` for sequence classification.
+- **Result:** 76.5% test accuracy (153/200) on the default seed and 89.6% ± 10.4% over 10 seeds, against 50% with only the readout trained and 52.5% for a nearest centroid on per-axis mean + std. `LstmNeuralNetwork<>` for sequence classification.
 - [`examples/har_activity`](https://github.com/danmcleran/tinymind/tree/master/examples/har_activity) · [page]({{ site.baseurl }}/examples/har_activity)
 
 ### Japanese Vowels — recurrent (Elman), offline-float → fixed-point sweep
@@ -83,7 +83,7 @@ offline in float and then sweeps fixed-point formats to find the smallest one
 - **Dataset:** [UCI Air Quality](https://archive.ics.uci.edu/dataset/360) — hourly pollutant series.
 - **Model:** Q16.16 **LSTM** 1→16 (tanh)→1 sigmoid, next-hour forecaster. 24-hour state reset per BPTT segment, series normalized to [0.1, 0.9].
 - **Data:** optional real data (`AirQualityUCI.csv`, `CO(GT)` column, `;`-separated, decimal comma, `-200` = missing); else a synthetic daily-cycle CO series.
-- **Result:** one-step-ahead MAE ≈ 0.069 over a 1.3–3.0 range.
+- **Result:** one-step-ahead MAE ≈ 0.070 over a 1.3–3.0 range.
 - [`examples/air_quality`](https://github.com/danmcleran/tinymind/tree/master/examples/air_quality) · [page]({{ site.baseurl }}/examples/air_quality)
 
 ### Gas Sensor Array Drift — drift demonstration

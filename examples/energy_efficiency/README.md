@@ -61,8 +61,8 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
   predicted-vs-actual scatter (with a y=x reference line) for each load, with
   MAE and R² in the subplot titles
 
-Expected (seed = 7): heating-load **R² ≈ 0.96** (MAE ≈ 1.7), cooling-load
-**R² ≈ 0.92** (MAE ≈ 1.9) on the held-out 20%. For scale, ordinary least
+Expected (seed = 7): heating-load **R² ≈ 0.95** (MAE ≈ 1.7), cooling-load
+**R² ≈ 0.93** (MAE ≈ 1.8) on the held-out 20%. For scale, ordinary least
 squares on the same eight features and split reaches R² 0.92 / 0.89 (MAE 2.08 /
 2.21), so the hidden layer is earning its keep.
 

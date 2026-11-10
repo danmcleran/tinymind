@@ -33,14 +33,14 @@ If `ai4i2020.csv` is present in the run directory (`make run` `cd`s into `./outp
 
 ![Predictive maintenance training loss and test confusion matrix]({{ site.baseurl }}/assets/plots/predictive_maintenance.png)
 
-The plot is the default synthetic run (seed 7): 63 of 75 test failures caught with 20 false alarms out of 1925 healthy readings, for precision 0.76, recall 0.84 and F1 0.80.
+The plot is the default synthetic run (seed 7): 64 of 75 test failures caught with 35 false alarms out of 1925 healthy readings, for precision 0.65, recall 0.85 and F1 0.74.
 
 On the real AI4I CSV the test split holds only about 60 failures, so one seed is noisy. Over seeds 1 to 10:
 
 | Data | Precision | Recall | F1 |
 |---|---|---|---|
-| Real CSV | 0.67 ± 0.07 | 0.78 ± 0.03 | 0.72 ± 0.04 |
-| Synthetic | 0.73 ± 0.11 | 0.79 ± 0.06 | 0.75 ± 0.07 |
+| Real CSV | 0.65 ± 0.07 | 0.80 ± 0.06 | 0.71 ± 0.05 |
+| Synthetic | 0.69 ± 0.08 | 0.80 ± 0.04 | 0.74 ± 0.05 |
 
 52 of the 339 real failures (15%) come only from the random TWF/RNF modes, which no sensor reading predicts, so recall has a hard ceiling near 0.85.
 

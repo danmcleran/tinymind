@@ -30,7 +30,7 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 
 ![GRU XOR learning curve]({{ site.baseurl }}/assets/plots/gru_xor.png)
 
-The 4-case XOR error falls smoothly from ~0.5 (chance) to ~0.06 and plateaus. All four patterns are classified correctly with clear margins (predictions between 0.05 and 0.08 for the 0 cases, 0.93 and 0.96 for the 1 cases); the residual is the sigmoid output not fully saturating to 0/1 at this network size and fixed-point precision.
+The 4-case XOR error falls smoothly from ~0.5 (chance) to ~0.07 and plateaus. All four patterns are classified correctly with clear margins (predictions between 0.05 and 0.08 for the 0 cases, 0.93 for both 1 cases); the residual is the sigmoid output not fully saturating to 0/1 at this network size and fixed-point precision.
 
 ![GRU XOR decision surface, Q16.16 fixed-point]({{ site.baseurl }}/assets/plots/gru_xor_decision_surface.png)
 
@@ -38,6 +38,6 @@ Sweeping the trained GRU over the `[0,1]²` input grid — resetting the recurre
 
 ## What this example does and does not show
 
-Because the state is reset before every sample, h<sub>t-1</sub> is always zero here: the GRU's recurrent weights never affect the output, and the network behaves as a gated feed-forward net. The example exercises GRU training mechanics on a task small enough to check by hand, not recurrence. It is also easy for the gates: with the input, gate and recurrent weights frozen at their random initial values and only the hidden-to-output weights trained, the GRU still classifies all four cases (four-case error 0.088, against 0.061 when everything trains, both measured before the fixed-point momentum terms were made to round toward zero; fully trained, the error is now 0.059). For tasks that only a trained recurrent state can solve, see [Elman temporal XOR]({{ site.baseurl }}/examples/elman_temporal_xor.html) and [human activity recognition]({{ site.baseurl }}/examples/har_activity.html).
+Because the state is reset before every sample, h<sub>t-1</sub> is always zero here: the GRU's recurrent weights never affect the output, and the network behaves as a gated feed-forward net. The example exercises GRU training mechanics on a task small enough to check by hand, not recurrence. It is also easy for the gates: with the input, gate and recurrent weights frozen at their random initial values and only the hidden-to-output weights trained, the GRU still classifies all four cases (four-case error 0.088, against 0.061 when everything trains, both measured before the fixed-point momentum terms were made to round toward zero; fully trained, the error is now 0.066). For tasks that only a trained recurrent state can solve, see [Elman temporal XOR]({{ site.baseurl }}/examples/elman_temporal_xor.html) and [human activity recognition]({{ site.baseurl }}/examples/har_activity.html).
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/gru_xor)

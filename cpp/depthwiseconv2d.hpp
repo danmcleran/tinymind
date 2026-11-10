@@ -24,6 +24,8 @@
 
 #include <cstddef>
 
+#include "include/tinymind_rounding.hpp"
+
 namespace tinymind {
     /**
      * Depthwise 2D convolution: one kernel per input channel with no
@@ -157,7 +159,7 @@ namespace tinymind {
         {
             for (size_t i = 0; i < TotalWeights; ++i)
             {
-                mWeights[i] += learningRate * mGradients[i];
+                mWeights[i] += multiplyRoundNearest(learningRate, mGradients[i]);
             }
         }
 

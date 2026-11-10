@@ -253,7 +253,7 @@ namespace tinymind {
             const ValueType previousDeltaWeight = previousLayer.getBiasNeuronPreviousDeltaWeightForConnection(neuron);
             const ValueType currentDeltaWeight = previousLayer.getBiasNeuronDeltaWeightForConnection(neuron);
             const ValueType gradient = GradientClippingPolicy::clip(previousLayer.getBiasNeuronGradientForConnection(neuron));
-            const ValueType newDeltaWeight = (learningRate * gradient) + multiplyRoundTowardZero(momentumRate, currentDeltaWeight) + multiplyRoundTowardZero(accelerationRate, previousDeltaWeight);
+            const ValueType newDeltaWeight = multiplyRoundNearest(learningRate, gradient) + multiplyRoundTowardZero(momentumRate, currentDeltaWeight) + multiplyRoundTowardZero(accelerationRate, previousDeltaWeight);
             const ValueType currentWeight = previousLayer.getBiasNeuronWeightForConnection(neuron);
 
             previousLayer.setBiasNeuronDeltaWeightForConnection(neuron, newDeltaWeight);
@@ -804,7 +804,7 @@ namespace tinymind {
                     previousDeltaWeight = previousLayer.getPreviousDeltaWeightForNeuronAndConnection(previousNeuron, neuron);
                     currentDeltaWeight = previousLayer.getDeltaWeightForNeuronAndConnection(previousNeuron, neuron);
                     gradient = GradientClippingPolicy::clip(previousLayer.getGradientForNeuronAndConnection(previousNeuron, neuron));
-                    newDeltaWeight =    (this->mLearningRate * gradient) +
+                    newDeltaWeight =    multiplyRoundNearest(this->mLearningRate, gradient) +
                                         multiplyRoundTowardZero(this->mMomentumRate, currentDeltaWeight) +
                                         multiplyRoundTowardZero(this->mAccelerationRate, previousDeltaWeight);
                     currentWeight = WeightDecayPolicy::applyDecay(previousLayer.getWeightForNeuronAndConnection(previousNeuron, neuron), this->mLearningRate);
@@ -866,7 +866,7 @@ namespace tinymind {
 
                         gradient = GradientClippingPolicy::clip(previousLayer.getGradientForNeuronAndConnection(previousNeuron, conn));
 
-                        newDeltaWeight =    (this->mLearningRate * gradient) +
+                        newDeltaWeight =    multiplyRoundNearest(this->mLearningRate, gradient) +
                                             multiplyRoundTowardZero(this->mMomentumRate, currentDeltaWeight) +
                                             multiplyRoundTowardZero(this->mAccelerationRate, previousDeltaWeight);
                         currentWeight = WeightDecayPolicy::applyDecay(previousLayer.getWeightForNeuronAndConnection(previousNeuron, conn), this->mLearningRate);

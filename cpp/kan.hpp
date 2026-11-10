@@ -999,7 +999,7 @@ namespace tinymind {
                         const ValueType currDelta = pConn->getCoefficientDeltaWeight(c);
                         const ValueType gradient = pConn->getCoefficientGradient(c);
 
-                        const ValueType newDelta = (learningRate * gradient) + multiplyRoundTowardZero(momentumRate, currDelta) + multiplyRoundTowardZero(accelerationRate, prevDelta);
+                        const ValueType newDelta = multiplyRoundNearest(learningRate, gradient) + multiplyRoundTowardZero(momentumRate, currDelta) + multiplyRoundTowardZero(accelerationRate, prevDelta);
 
                         const ValueType currentCoeff = pConn->getCoefficient(c);
                         pConn->setCoefficientDeltaWeight(c, newDelta);
@@ -1012,7 +1012,7 @@ namespace tinymind {
                         const ValueType currDelta = pConn->getBaseWeightDeltaWeight();
                         const ValueType gradient = pConn->getBaseWeightGradient();
 
-                        const ValueType newDelta = (learningRate * gradient) + multiplyRoundTowardZero(momentumRate, currDelta) + multiplyRoundTowardZero(accelerationRate, prevDelta);
+                        const ValueType newDelta = multiplyRoundNearest(learningRate, gradient) + multiplyRoundTowardZero(momentumRate, currDelta) + multiplyRoundTowardZero(accelerationRate, prevDelta);
 
                         const ValueType currentWeight = pConn->getBaseWeight();
                         pConn->setBaseWeightDeltaWeight(newDelta);
@@ -1025,7 +1025,7 @@ namespace tinymind {
                         const ValueType currDelta = pConn->getSplineWeightDeltaWeight();
                         const ValueType gradient = pConn->getSplineWeightGradient();
 
-                        const ValueType newDelta = (learningRate * gradient) + multiplyRoundTowardZero(momentumRate, currDelta) + multiplyRoundTowardZero(accelerationRate, prevDelta);
+                        const ValueType newDelta = multiplyRoundNearest(learningRate, gradient) + multiplyRoundTowardZero(momentumRate, currDelta) + multiplyRoundTowardZero(accelerationRate, prevDelta);
 
                         const ValueType currentWeight = pConn->getSplineWeight();
                         pConn->setSplineWeightDeltaWeight(newDelta);

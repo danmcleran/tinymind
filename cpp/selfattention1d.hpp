@@ -24,6 +24,8 @@
 
 #include <cstddef>
 
+#include "include/tinymind_rounding.hpp"
+
 namespace tinymind {
     /**
      * Linear self-attention layer for sequence processing on embedded targets.
@@ -206,11 +208,11 @@ namespace tinymind {
         {
             for (size_t i = 0; i < TotalWeights; ++i)
             {
-                mWeights[i] += learningRate * mGradients[i];
+                mWeights[i] += multiplyRoundNearest(learningRate, mGradients[i]);
             }
             for (size_t i = 0; i < TotalBiases; ++i)
             {
-                mBiases[i] += learningRate * mBiasGradients[i];
+                mBiases[i] += multiplyRoundNearest(learningRate, mBiasGradients[i]);
             }
         }
 
