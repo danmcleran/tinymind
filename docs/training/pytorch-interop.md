@@ -160,51 +160,67 @@ testNeuralNet.getLearnedValues(&learnedValues[0]);
 
 # PyTorch Export: GRU
 
-Source code: [examples/pytorch/gru/gru_export.py](https://github.com/danmcleran/tinymind/blob/master/examples/pytorch/gru/gru_export.py)
+Source code: [examples/pytorch/gru/](https://github.com/danmcleran/tinymind/tree/master/examples/pytorch/gru) (`gru_export.py`, plus `gru_parity.cpp` and `test_gru_parity.py`, which check the result)
 
-GRU export is more complex because PyTorch and tinymind use different gate orderings:
-- **PyTorch gate order**: r (reset), z (update), n (new/candidate)
-- **tinymind gate order**: z (update), r (reset), n (candidate)
+PyTorch and tinymind write the same GRU in three different ways, and an export has to account for all three:
 
-The export script handles this reordering:
+1. **Gate order.** PyTorch stores the gates as r (reset), z (update), n (new/candidate); tinymind uses z (update), r (reset), n (candidate).
+2. **Update-gate convention.** PyTorch computes `h_t = (1 - z) * n + z * h_{t-1}`; tinymind computes `h_t = (1 - z') * h_{t-1} + z' * n`. So tinymind's `z'` is PyTorch's `1 - z = sigmoid(-a)`, and every update-gate weight and bias is negated on export.
+3. **The candidate's recurrent bias.** PyTorch's candidate is `n = tanh(W_in x + b_in + r * (W_hn h + b_hn))`, so the reset gate scales `b_hn`. tinymind has one bias per gate, added outside the reset gate, so a nonzero `b_hn` has no equivalent. The example's `GRUNet` sets `b_hn` to zero and masks its gradient so it stays zero through training, and the exporter refuses a model whose `b_hn` is not zero.
 
 ```python
+class GRUNet(nn.Module):
+    def __init__(self, input_size=2, hidden_size=4, output_size=1):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.gru = nn.GRU(input_size, hidden_size, batch_first=True)
+        self.fc = nn.Linear(hidden_size, output_size)
+        self.sigmoid = nn.Sigmoid()
+        # b_hn (the last third of bias_hh_l0) has no slot in tinymind: keep it at 0.
+        H = hidden_size
+        with torch.no_grad():
+            self.gru.bias_hh_l0[2 * H:] = 0.0
+        mask = torch.ones(3 * H)
+        mask[2 * H:] = 0.0
+        self.gru.bias_hh_l0.register_hook(lambda grad: grad * mask)
+
 def export_gru_weights(model, path, use_q16_16=True):
+    check_exportable(model)   # raises ValueError if b_hn != 0
     H = model.hidden_size
-    convert = float_to_q16_16 if use_q16_16 else lambda x: x
+    convert = float_to_q16_16 if use_q16_16 else (lambda x: repr(x))
 
-    # Gate reorder: PyTorch [r, z, n] -> tinymind [z, r, n]
-    gate_reorder = [1, 0, 2]
+    gate_reorder = [1, 0, 2]        # PyTorch [r, z, n] -> tinymind [z, r, n]
+    gate_sign = [-1.0, 1.0, 1.0]    # tinymind z' = 1 - z: negate the update gate
 
-    w_ih = model.gru.weight_ih_l0.detach().numpy()
-    w_hh = model.gru.weight_hh_l0.detach().numpy()
-    b_ih = model.gru.bias_ih_l0.detach().numpy()
-    b_hh = model.gru.bias_hh_l0.detach().numpy()
-    w_out = model.fc.weight.detach().numpy()
-    b_out = model.fc.bias.detach().numpy()
+    w_ih = model.gru.weight_ih_l0.detach().double().numpy()  # [3H, I]
+    w_hh = model.gru.weight_hh_l0.detach().double().numpy()  # [3H, H]
+    b_ih = model.gru.bias_ih_l0.detach().double().numpy()
+    b_hh = model.gru.bias_hh_l0.detach().double().numpy()
+    w_out = model.fc.weight.detach().double().numpy()
+    b_out = model.fc.bias.detach().double().numpy()
 
     I = w_ih.shape[1]
     values = []
 
-    # 1. Input-to-hidden weights (gated, reordered)
+    # 1. Input-to-hidden weights (gated, reordered, update gate negated)
     for i in range(I):
         for h in range(H):
             for g in range(3):
                 pg = gate_reorder[g]
-                values.append(convert(float(w_ih[pg * H + h, i])))
+                values.append(convert(gate_sign[g] * float(w_ih[pg * H + h, i])))
 
-    # 2. Input bias (combine PyTorch's two bias vectors)
+    # 2. One bias per gate: b_ih + b_hh (b_hn is zero)
     for h in range(H):
         for g in range(3):
             pg = gate_reorder[g]
-            values.append(convert(float(b_ih[pg * H + h] + b_hh[pg * H + h])))
+            values.append(convert(gate_sign[g] * float(b_ih[pg * H + h] + b_hh[pg * H + h])))
 
-    # 3. Recurrent-to-hidden weights (gated, reordered)
+    # 3. Recurrent-to-hidden weights (gated, reordered, update gate negated)
     for r in range(H):
         for h in range(H):
             for g in range(3):
                 pg = gate_reorder[g]
-                values.append(convert(float(w_hh[pg * H + h, r])))
+                values.append(convert(gate_sign[g] * float(w_hh[pg * H + h, r])))
 
     # 4. Hidden-to-output weights (not gated)
     for h in range(H):
@@ -221,9 +237,8 @@ def export_gru_weights(model, path, use_q16_16=True):
 ```
 
 Key details:
-- PyTorch stores two separate bias vectors (`bias_ih` and `bias_hh`); tinymind expects one combined bias, so the export script adds them together.
-- Weight matrices must be transposed (PyTorch uses `[out_features, in_features]` layout).
-- Gate indices must be reordered from PyTorch's `[r, z, n]` to tinymind's `[z, r, n]`.
+- Weight matrices are transposed (PyTorch uses `[out_features, in_features]` layout).
+- `make parity PYTHON=<python with torch>` in `examples/pytorch/gru` trains the model, exports it, loads the file into tinymind's `GruNeuralNetwork` and compares outputs: double matches PyTorch to about 5e-13, Q16.16 to about 0.003, and the XOR model classifies 4/4 in both. Run it after changing either side of the mapping. Before the update-gate and `b_hn` handling, the same XOR model scored 4/4 in PyTorch and 1/4 in tinymind.
 
 # Workflow Summary
 

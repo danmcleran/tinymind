@@ -19,7 +19,7 @@ Source: [`apps/import_pytorch/tinymind_import.py`](https://github.com/danmcleran
 |---|---|
 | [XOR walkthrough]({{ site.baseurl }}/getting-started/pytorch-quant-xor) | One- or two-layer network, you want to see every primitive (`RangeObserver`, `computeAffineParamsAsymmetric`, `buildRequantizer`) in plain code |
 | **This page** | Real PyTorch model with Conv2D + BN + ReLU stacks, dense classifier, multiple activation types. You want per-layer observer selection and automatic Conv+BN folding |
-| [ONNX importer](https://github.com/danmcleran/tinymind/tree/master/apps/import_onnx) | Source model is already in QDQ-format ONNX (from `onnxruntime.quantization.quantize_static`). Skip Python-side calibration entirely |
+| [ONNX importer](https://github.com/danmcleran/tinymind/tree/master/apps/import_onnx) | Source model is already quantized by `onnxruntime.quantization.quantize_static` (QDQ or QOperator format). Skip Python-side calibration entirely |
 
 ## What the importer does
 
@@ -136,7 +136,7 @@ Exit status 0 on PASS, 1 on FAIL.
 
 ## ONNX path
 
-`apps/import_onnx/tinymind_import_onnx.py` is the QDQ-format ONNX counterpart. It walks `QuantizeLinear` / `DequantizeLinear` / `QLinearConv` / `QLinearMatMul` / `Relu` / `Sigmoid` / `Tanh` / `Softmax` nodes from a model produced by `onnxruntime.quantization.quantize_static`, extracts the per-tensor `(scale, zero_point)` and int8 weight / int32 bias initializers, and emits the same tinymind-format `weights.hpp`. The `onnx` Python package is imported **lazily** inside `parse_onnx_model` so the emitter half of the module is usable without it.
+`apps/import_onnx/tinymind_import_onnx.py` is the ONNX counterpart. It reads a model quantized by `onnxruntime.quantization.quantize_static` in either of ONNX Runtime's formats (QDQ, the default, or QOperator), maps `Conv` / `Gemm` / `MatMul` (plus a bias `Add`) onto `QConv2D` / `QConv2DPerChannel` / `QDense` -- converting ONNX's OIHW conv weights to OHWI, `MatMul`'s `[in][out]` weights to `[out][in]`, and a flattened NCHW input to NHWC column order -- and emits a `weights.hpp` with per-tensor activation `(scale, zero_point)`, int8 weights, int32 biases and precomputed requantizers. An op or setting it cannot map exactly (pooling, grouped convolution, uint8 tensors, a nonzero weight zero point) raises `ValueError` instead of being skipped. Its tests (`make test` in `apps/import_onnx` with a torch + onnxruntime venv) compile the emitted header against tinymind's layers and match ONNX Runtime's int8 outputs to within 1 LSB. The `onnx` Python package is imported **lazily** inside `parse_onnx_model` so the emitter half of the module is usable without it.
 
 This is the right path when the source-of-truth model has already been quantized upstream and you just need to land it on tinymind.
 
@@ -151,5 +151,5 @@ This is the right path when the source-of-truth model has already been quantized
 - [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) — the `Q*` layer family the emitted `weights.hpp` consumes.
 - [PyTorch -> tinymind int8 (XOR)]({{ site.baseurl }}/getting-started/pytorch-quant-xor) — hand-rolled version of the same flow for a single tiny network.
 - [`apps/import_pytorch/`](https://github.com/danmcleran/tinymind/tree/master/apps/import_pytorch) — module source.
-- [`apps/import_onnx/`](https://github.com/danmcleran/tinymind/tree/master/apps/import_onnx) — QDQ-format ONNX importer.
+- [`apps/import_onnx/`](https://github.com/danmcleran/tinymind/tree/master/apps/import_onnx) — ONNX importer (QDQ and QOperator formats).
 - [`examples/import_demo/`](https://github.com/danmcleran/tinymind/tree/master/examples/import_demo) — exemplar.

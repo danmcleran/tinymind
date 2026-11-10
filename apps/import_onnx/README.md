@@ -1,34 +1,78 @@
 # tinymind_import_onnx (ONNX -> tinymind int8)
 
-Phase 15 importer for QDQ-format quantized ONNX models. Consumes the
-output of `onnxruntime.quantization.quantize_static(...)` and emits a
-tinymind-format `weights.hpp` matching the layout produced by
-`apps/import_pytorch/tinymind_import.py`:
+Phase 15 importer for ONNX models quantized by ONNX Runtime's
+`onnxruntime.quantization.quantize_static(...)`. It reads both of ONNX
+Runtime's output formats -- QDQ (the default) and QOperator -- and emits a
+tinymind-format `weights.hpp` for tinymind's int8 layers:
 
-  * int8 symmetric per-tensor weights (zero_point = 0)
-  * int32 biases at scale = `input_scale * weight_scale`
-  * Per-tensor `(scale, zero_point)` for every activation tensor
+  * int8 symmetric weights (zero point 0), per tensor or per output channel
+  * int32 biases at scale `input_scale * weight_scale`
+  * per-tensor `(scale, zero_point)` for every activation tensor
+  * the Requantizer `(multiplier, shift)` for every weight layer, so the
+    deployable build needs no float at start-up
 
 ## Layout
 
 ```
 apps/import_onnx/
     README.md
+    Makefile                  # make test PY=<venv python>
+    test_import_onnx.py       # end-to-end tests against ONNX Runtime
     tinymind_import_onnx.py
 ```
 
 ## Supported ops
 
-Targets canonical CNN classifier topology:
+| ONNX (QDQ form / QOperator form) | tinymind |
+|---|---|
+| `Conv` / `QLinearConv` (group 1, dilation 1, explicit pads) | `QConv2D`, or `QConv2DPerChannel` for per-channel weights |
+| `Gemm` / `QGemm`, `MatMul` / `QLinearMatMul` | `QDense`, or (per-channel) `QConv2DPerChannel<..., 1, 1, NumInputs, 1, 1, 1, 1, NumOutputs>`, a dense layer with one requantizer per output |
+| `MatMul` + bias `Add` / `QLinearMatMul` + `QLinearAdd` | folded into one dense layer with that bias |
+| `Relu` / `Sigmoid` / `Tanh` / `Softmax` / `QLinearSigmoid` | activation records with the input and output `(scale, zero_point)` the graph uses; build the int8 LUTs (`buildQSigmoidLUT`, ...) from them |
+| `Flatten`, `Reshape` to 2D, `Identity` | no layer (see the layout notes) |
 
-  * `QLinearConv`         -> `QConv2D`        (per-tensor weights)
-  * `QLinearMatMul`       -> `QDense`
-  * `Relu` / `Sigmoid` / `Tanh` / `Softmax`   -> activation-only layers,
-    emitted with TFLite-fixed output scales where applicable (Sigmoid
-    1/256, Tanh 1/128, Softmax 1/256).
+Anything else raises `ValueError`; a layer is never skipped silently. The
+importer also refuses a nonzero weight zero point (tinymind weights are
+symmetric), uint8 tensors (quantize with `QuantType.QInt8` for both
+weights and activations), grouped or dilated convolutions, `auto_pad`
+`SAME_*`, a `Gemm` with `transA` / `alpha` / `beta` other than 0 / 1 / 1,
+and a weight layer whose output is not quantized.
 
-Heavier coverage (transformer, LSTM, attention) lives on the PyTorch
-side under `apps/import_pytorch/`.
+Layout notes:
+
+  * Conv weights are emitted OHWI `[F][KH][KW][C]` (ONNX stores OIHW) and
+    dense weights `[out][in]` (`MatMul` stores `[in][out]`).
+  * tinymind tensors are NHWC; feed the network NHWC input even though the
+    ONNX model takes NCHW. A dense layer fed by a flattened 4D tensor gets
+    its weight columns permuted from ONNX's NCHW flattening order to NHWC.
+  * ONNX Runtime fuses a `Relu` after a `Conv` or `Gemm` into that layer's
+    output range (zero point at the bottom of the int8 range), so the
+    requantizer's clamp applies it and no separate layer appears.
+  * A folded `MatMul` + bias `Add` rounds once, where ONNX Runtime
+    quantizes the `MatMul` result to its own calibrated range and then adds
+    the bias, so the two can differ when an input drives the `MatMul` result
+    outside that range.
+
+For every weight layer `k<name>_...` the header carries the input and
+output scale / zero point, the geometry (`InputHeight` ... `OutputWidth`
+for a conv, `NumInputs` / `NumOutputs` for a dense layer), `PerChannel`,
+`WeightScale` / `Multiplier` / `Shift` (or the per-channel arrays
+`WeightScales` / `Multipliers` / `Shifts`), `Weights`, `HasBias` and
+`Biases`.
+
+## Tests
+
+`make test PY=<python>` with a virtual environment holding `numpy`,
+`torch`, `onnx` and `onnxruntime` (never the system Python). The tests
+export small PyTorch models, quantize them in both formats, per tensor and
+per channel, import them, compile a C++ program that builds the matching
+tinymind layer chain from the emitted header, and run both runtimes on the
+same int8 inputs. The outputs agree to within 1 LSB (about 97% exactly;
+ONNX Runtime and tinymind round the requantization differently). The test
+model has a non-square kernel with unequal strides and padding, a second
+convolution, a `Flatten` into a dense layer and a bias-free `MatMul`, so a
+wrong weight layout, pad order or flattening order fails it. Not run in CI,
+because torch and onnxruntime are not CI dependencies.
 
 ## Quick example
 
@@ -64,7 +108,7 @@ python -m tf2onnx.convert \
 ```
 
 ```python
-# 2. Post-training quantize to QDQ format.
+# 2. Post-training quantize (QDQ or QOperator, int8 weights and activations).
 from onnxruntime.quantization import (
     quantize_static, QuantFormat, QuantType, CalibrationDataReader,
 )
@@ -81,7 +125,7 @@ quantize_static(
     quant_format=QuantFormat.QDQ,
     weight_type=QuantType.QInt8,
     activation_type=QuantType.QInt8,
-    per_channel=False,
+    per_channel=False,   # True maps to QConv2DPerChannel
 )
 ```
 
