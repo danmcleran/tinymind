@@ -68,7 +68,11 @@ namespace tinymind {
      *
      * Training maintains real-valued latent weights. The ternary weights
      * used in the forward pass are ternarize(latent_weight). Gradients use
-     * the straight-through estimator (STE) with a dead zone.
+     * the plain straight-through estimator (STE), as in Ternary Weight
+     * Networks (Li, Zhang and Liu, 2016): the latent weight's gradient is
+     * the gradient of its ternary weight, delta * input, for every latent
+     * weight, with no gate. Because the threshold scales with the mean
+     * |latent weight|, the latent weights need no clipping either.
      *
      * @tparam ValueType         Numeric type for biases and latent weights (QValue or float/double)
      * @tparam InputSize         Number of input elements
@@ -142,9 +146,9 @@ namespace tinymind {
         /**
          * Backward pass using the straight-through estimator (STE).
          *
-         * Gradients pass through the ternarization unchanged for latent
-         * weights within the active range. Gradients are zeroed for
-         * latent weights far outside the threshold to prevent instability.
+         * Gradients pass through the ternarization unchanged for every
+         * latent weight: d(loss)/d(latent) = delta * input. The input deltas
+         * use the ternary weights.
          *
          * @param outputDeltas Array of OutputSize gradient values from downstream
          * @param input        The same input array used in the forward pass

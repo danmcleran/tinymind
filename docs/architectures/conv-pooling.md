@@ -140,35 +140,44 @@ linear.forward(input, output);
 
 # BatchNorm1D - 1D Batch Normalization
 
-BatchNorm1D normalizes each feature to zero mean and unit variance, then applies learnable affine parameters (gamma, beta).
+BatchNorm1D normalizes each of `Size` features with its own mean and variance, then applies learnable per-feature affine parameters (gamma, beta).
 
 ```cpp
 template<
     typename ValueType,
     size_t Size,
     unsigned MomentumPercent = 10,
-    unsigned EpsilonPercent = 1>
+    unsigned EpsilonPercent = 1,
+    size_t MaxBatchSize = 1>
 class BatchNorm1D
 ```
 
-## Training vs Inference
+## Mini-batch and single-sample paths
 
-- **Training mode:** Computes mean/variance from the current input, updates running statistics
-- **Inference mode:** Uses stored running mean/variance for stable, deterministic normalization
+- **Mini-batch** (`forwardBatch` / `backwardBatch`, 2 to `MaxBatchSize` samples laid out `[sample][feature]`): in training mode each feature's mean and variance come from the batch, which is standard batch normalization. The running statistics are updated per feature, and `backwardBatch` returns the exact input gradient, including the terms through the batch mean and variance. In inference mode the running statistics are used.
+- **Single sample** (`forward` / `backward`): one sample has no batch statistics, so this path normalizes with the running statistics in both modes, and training and inference compute the same function. In training mode the sample then updates the running statistics (an exponentially weighted mean and variance), and the gradient treats the statistics as constants. This is streaming normalization with learned gamma and beta; it starts from mean 0 and variance 1.
+
+Deltas follow the library's convention: the deltas passed in are `-dL/dy`, the deltas returned are `-dL/dx`, and `updateParameters(learningRate)` adds `learningRate` times the accumulated gamma and beta gradients.
 
 ```cpp
 #include "batchnorm.hpp"
 
-tinymind::BatchNorm1D<double, 4> bn;
+// 3 features, momentum 10%, epsilon 0.01, batches of up to 8 samples.
+tinymind::BatchNorm1D<double, 3, 10, 1, 8> bn;
+
+double batch[8 * 3];      // 8 samples x 3 features
+double normalized[8 * 3];
 bn.setTraining(true);
+bn.forwardBatch(batch, normalized, 8);
 
-double input[4] = {2.0, 4.0, 6.0, 8.0};
-double output[4];
-bn.forward(input, output);
+double deltas[8 * 3];      // -dL/dy from the next layer
+double inputDeltas[8 * 3]; // -dL/dx for the previous layer
+bn.backwardBatch(deltas, inputDeltas, 8);
+bn.updateParameters(0.01);
 
-// Switch to inference mode
+// Inference: running statistics.
 bn.setTraining(false);
-bn.forward(input, output);
+bn.forward(&batch[0], &normalized[0]);
 ```
 
 # Dropout - Inverted Dropout Regularization

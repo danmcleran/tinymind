@@ -31,48 +31,65 @@
 
 namespace tinymind {
     /**
-     * 1D batch normalization layer for stabilizing training.
+     * 1D batch normalization: each of the Size features is normalized with
+     * its own mean and variance, then scaled and shifted by learnable
+     * per-feature gamma and beta:
      *
-     * Normalizes each element across a mini-batch to zero mean and unit
-     * variance, then applies learnable affine parameters (gamma, beta):
+     *   y[n][i] = gamma[i] * (x[n][i] - mean[i]) / sqrt(var[i] + epsilon) + beta[i]
      *
-     *   y = gamma * (x - mean) / sqrt(variance + epsilon) + beta
+     * Two ways to supply the statistics:
      *
-     * During training, computes per-element mean and variance from the
-     * current input and maintains exponential moving averages for inference.
-     * During inference, uses the stored running statistics.
+     * Mini-batch (forwardBatch / backwardBatch, 2 <= N <= MaxBatchSize).
+     *   In training mode, mean[i] and var[i] (biased) are taken over the N
+     *   samples of the batch, which is standard batch normalization. The
+     *   running statistics are updated per feature with an exponential
+     *   moving average (the variance with the unbiased N/(N-1) estimate),
+     *   and backwardBatch() propagates the exact input gradient, including
+     *   the terms through the batch mean and variance. In inference mode the
+     *   running statistics are used.
      *
-     * Designed as a standalone composable layer (like Conv1D, Pool1D,
-     * and Dropout) that sits between network stages:
+     * Single sample (forward / backward, or forwardBatch with N = 1).
+     *   One sample has no batch statistics (its per-feature variance is 0),
+     *   so this path normalizes with the running statistics in both modes:
+     *   training and inference compute the same function. In training mode
+     *   the sample then updates the running statistics (an exponentially
+     *   weighted mean and variance, Finch 2009), so the normalization tracks
+     *   the input distribution as samples stream in. The statistics in use
+     *   for a forward pass are those before its own update, and the gradient
+     *   treats them as constants: dL/dx = dL/dy * gamma / sqrt(var + epsilon).
+     *   This is streaming normalization with learned affine parameters, not
+     *   mini-batch batch normalization; it starts from mean 0 and variance 1.
      *
-     *   Conv1D -> BatchNorm1D -> ReLU -> Pool1D -> Dense network
-     *
-     * For single-sample training (common on embedded), the "batch" is a
-     * single vector. The running mean/variance still accumulate useful
-     * statistics over successive forward passes, providing smoothed
-     * normalization at inference time.
+     * Gradient convention: like the rest of tinymind, deltas passed in are
+     * -dL/dy, the deltas passed back are -dL/dx, the accumulated gamma/beta
+     * gradients are -dL/dgamma and -dL/dbeta, and updateParameters() adds
+     * learningRate * gradient.
      *
      * The momentum parameter controls the running average update rate
-     * and is specified as an integer percentage (1-99) to avoid
-     * floating-point template parameters.
+     * and is specified as an integer percentage to avoid floating-point
+     * template parameters.
      *
      * @tparam ValueType        Numeric type (QValue or float/double)
-     * @tparam Size             Number of elements (features) to normalize
+     * @tparam Size             Number of features to normalize
      * @tparam MomentumPercent  Running average momentum as percentage (default 10,
      *                          meaning running_mean = 0.9 * running_mean + 0.1 * batch_mean)
      * @tparam EpsilonPercent   Epsilon for numerical stability as percentage of 1.0
      *                          (default 1, meaning epsilon = 0.01). For fixed-point,
      *                          use a value large enough to represent in the Q format.
+     * @tparam MaxBatchSize     Largest N accepted by forwardBatch/backwardBatch
+     *                          (default 1: single-sample streaming only). The
+     *                          layer stores N * Size normalized values for backward.
      */
     template<
         typename ValueType,
         size_t Size,
         unsigned MomentumPercent = 10,
-        unsigned EpsilonPercent = 1>
+        unsigned EpsilonPercent = 1,
+        size_t MaxBatchSize = 1>
     class BatchNorm1D
     {
     public:
-        BatchNorm1D() : mTraining(true)
+        BatchNorm1D() : mTraining(true), mUsedBatchStatistics(false), mLastBatchSize(0)
         {
             for (size_t i = 0; i < Size; ++i)
             {
@@ -82,92 +99,174 @@ namespace tinymind {
                 mRunningVariance[i] = one();
                 mGammaGradient[i] = zero();
                 mBetaGradient[i] = zero();
+                mInvStd[i] = zero();
+            }
+            for (size_t i = 0; i < (MaxBatchSize * Size); ++i)
+            {
                 mNormalized[i] = zero();
             }
         }
 
         /**
-         * Forward pass: normalize input, apply affine transform.
-         *
-         * Training mode: computes mean/variance from input, updates
-         * running statistics, normalizes, and applies gamma/beta.
-         *
-         * Inference mode: uses stored running mean/variance.
+         * Single-sample forward pass, normalized with the running statistics
+         * (see the class comment). In training mode the sample then updates
+         * the running statistics.
          *
          * @param input  Array of Size values
          * @param output Array of Size values
          */
         void forward(ValueType const* const input, ValueType* output)
         {
+            normalizeWithRunningStatistics(input, output, 1);
+            mUsedBatchStatistics = false;
+            mLastBatchSize = 1;
+
             if (mTraining)
             {
-                // Compute batch mean
-                ValueType mean = zero();
-                for (size_t i = 0; i < Size; ++i)
-                {
-                    mean += input[i];
-                }
-                mean = mean / sizeValue();
-
-                // Compute batch variance
-                ValueType variance = zero();
-                for (size_t i = 0; i < Size; ++i)
-                {
-                    const ValueType diff = input[i] - mean;
-                    variance += diff * diff;
-                }
-                variance = variance / sizeValue();
-
-                // Update running statistics with exponential moving average
                 const ValueType alpha = momentum();
                 const ValueType oneMinusAlpha = one() - alpha;
                 for (size_t i = 0; i < Size; ++i)
                 {
-                    mRunningMean[i] = oneMinusAlpha * mRunningMean[i] + alpha * mean;
-                    mRunningVariance[i] = oneMinusAlpha * mRunningVariance[i] + alpha * variance;
-                }
-
-                // Normalize and apply affine transform
-                const ValueType invStd = one() / SquareRootApproximation<ValueType>::sqrt(variance + epsilon());
-                for (size_t i = 0; i < Size; ++i)
-                {
-                    mNormalized[i] = (input[i] - mean) * invStd;
-                    output[i] = mGamma[i] * mNormalized[i] + mBeta[i];
-                }
-            }
-            else
-            {
-                // Inference: use running statistics
-                for (size_t i = 0; i < Size; ++i)
-                {
-                    const ValueType invStd = one() / SquareRootApproximation<ValueType>::sqrt(mRunningVariance[i] + epsilon());
-                    mNormalized[i] = (input[i] - mRunningMean[i]) * invStd;
-                    output[i] = mGamma[i] * mNormalized[i] + mBeta[i];
+                    const ValueType diff = input[i] - mRunningMean[i];
+                    mRunningMean[i] = mRunningMean[i] + alpha * diff;
+                    mRunningVariance[i] = oneMinusAlpha * (mRunningVariance[i] + alpha * diff * diff);
                 }
             }
         }
 
         /**
-         * Backward pass: compute gradients for gamma, beta, and input.
+         * Mini-batch forward pass over batchSize samples laid out
+         * input[n * Size + i]. Training mode with batchSize >= 2 uses batch
+         * statistics; otherwise the running statistics (batchSize == 1 is the
+         * same as forward()). A batchSize of 0 or above MaxBatchSize is
+         * ignored (nothing is written).
+         */
+        void forwardBatch(ValueType const* const input, ValueType* output, const size_t batchSize)
+        {
+            if ((batchSize == 0) || (batchSize > MaxBatchSize))
+            {
+                return;
+            }
+
+            if (batchSize == 1)
+            {
+                forward(input, output);
+                return;
+            }
+
+            if (!mTraining)
+            {
+                normalizeWithRunningStatistics(input, output, batchSize);
+                mUsedBatchStatistics = false;
+                mLastBatchSize = batchSize;
+                return;
+            }
+
+            const ValueType n = fromInteger(static_cast<int>(batchSize));
+            const ValueType nMinusOne = fromInteger(static_cast<int>(batchSize) - 1);
+            const ValueType alpha = momentum();
+            const ValueType oneMinusAlpha = one() - alpha;
+
+            for (size_t i = 0; i < Size; ++i)
+            {
+                ValueType mean = zero();
+                for (size_t sample = 0; sample < batchSize; ++sample)
+                {
+                    mean += input[sample * Size + i];
+                }
+                mean = mean / n;
+
+                ValueType variance = zero();
+                for (size_t sample = 0; sample < batchSize; ++sample)
+                {
+                    const ValueType diff = input[sample * Size + i] - mean;
+                    variance += diff * diff;
+                }
+                const ValueType sumOfSquares = variance;
+                variance = variance / n;
+
+                const ValueType invStd = one() / SquareRootApproximation<ValueType>::sqrt(variance + epsilon());
+                mInvStd[i] = invStd;
+
+                for (size_t sample = 0; sample < batchSize; ++sample)
+                {
+                    const size_t index = sample * Size + i;
+                    mNormalized[index] = (input[index] - mean) * invStd;
+                    output[index] = mGamma[i] * mNormalized[index] + mBeta[i];
+                }
+
+                mRunningMean[i] = oneMinusAlpha * mRunningMean[i] + alpha * mean;
+                mRunningVariance[i] = oneMinusAlpha * mRunningVariance[i] + alpha * (sumOfSquares / nMinusOne);
+            }
+
+            mUsedBatchStatistics = true;
+            mLastBatchSize = batchSize;
+        }
+
+        /**
+         * Single-sample backward pass for the preceding forward(). Accumulates
+         * the gamma/beta gradients and writes the input deltas.
          *
-         * Accumulates gradients for the learnable parameters (gamma, beta)
-         * and propagates normalized gradients to the input.
-         *
-         * @param outputDeltas Array of Size gradient values from downstream
-         * @param inputDeltas  Array of Size gradient values to propagate upstream
+         * @param outputDeltas Array of Size values, -dL/dy
+         * @param inputDeltas  Array of Size values, -dL/dx
          */
         void backward(ValueType const* const outputDeltas, ValueType* inputDeltas)
         {
+            backwardBatch(outputDeltas, inputDeltas, 1);
+        }
+
+        /**
+         * Backward pass for the preceding forward()/forwardBatch() with the
+         * same batchSize (any other batchSize is ignored). With batch
+         * statistics, the exact gradient through
+         * the batch mean and variance:
+         *
+         *   g = delta * gamma
+         *   dx[n] = invStd / N * (N * g[n] - sum(g) - xhat[n] * sum(g * xhat))
+         *
+         * With running statistics (constants): dx = delta * gamma * invStd.
+         */
+        void backwardBatch(ValueType const* const outputDeltas, ValueType* inputDeltas, const size_t batchSize)
+        {
+            // The stored normalized values belong to the last forward pass.
+            if (batchSize != mLastBatchSize)
+            {
+                return;
+            }
+
             for (size_t i = 0; i < Size; ++i)
             {
-                // Gradient for gamma: dL/dgamma = dL/dy * x_normalized
-                mGammaGradient[i] += outputDeltas[i] * mNormalized[i];
+                ValueType sumDelta = zero();
+                ValueType sumDeltaXhat = zero();
+                for (size_t sample = 0; sample < batchSize; ++sample)
+                {
+                    const size_t index = sample * Size + i;
+                    sumDelta += outputDeltas[index];
+                    sumDeltaXhat += outputDeltas[index] * mNormalized[index];
+                }
 
-                // Gradient for beta: dL/dbeta = dL/dy
-                mBetaGradient[i] += outputDeltas[i];
+                mGammaGradient[i] += sumDeltaXhat;
+                mBetaGradient[i] += sumDelta;
 
-                // Gradient for input: dL/dx_norm = dL/dy * gamma
-                inputDeltas[i] = outputDeltas[i] * mGamma[i];
+                if (mUsedBatchStatistics)
+                {
+                    const ValueType n = fromInteger(static_cast<int>(batchSize));
+                    const ValueType scale = mGamma[i] * mInvStd[i] / n;
+                    for (size_t sample = 0; sample < batchSize; ++sample)
+                    {
+                        const size_t index = sample * Size + i;
+                        inputDeltas[index] = scale * (n * outputDeltas[index] - sumDelta - mNormalized[index] * sumDeltaXhat);
+                    }
+                }
+                else
+                {
+                    const ValueType scale = mGamma[i] * mInvStd[i];
+                    for (size_t sample = 0; sample < batchSize; ++sample)
+                    {
+                        const size_t index = sample * Size + i;
+                        inputDeltas[index] = outputDeltas[index] * scale;
+                    }
+                }
             }
         }
 
@@ -205,22 +304,49 @@ namespace tinymind {
         void setBeta(const size_t index, const ValueType& value) { mBeta[index] = value; }
 
         ValueType getRunningMean(const size_t index) const { return mRunningMean[index]; }
+        void setRunningMean(const size_t index, const ValueType& value) { mRunningMean[index] = value; }
+
         ValueType getRunningVariance(const size_t index) const { return mRunningVariance[index]; }
+        void setRunningVariance(const size_t index, const ValueType& value) { mRunningVariance[index] = value; }
 
         ValueType getGammaGradient(const size_t index) const { return mGammaGradient[index]; }
         ValueType getBetaGradient(const size_t index) const { return mBetaGradient[index]; }
 
+        // Normalized value of feature `index` of the first (or only) sample
+        // of the last forward pass.
         ValueType getNormalized(const size_t index) const { return mNormalized[index]; }
+        ValueType getNormalized(const size_t sample, const size_t index) const { return mNormalized[sample * Size + index]; }
+
+        static const size_t NumberOfFeatures = Size;
+        static const size_t MaximumBatchSize = MaxBatchSize;
 
     private:
+        void normalizeWithRunningStatistics(ValueType const* const input, ValueType* output, const size_t batchSize)
+        {
+            for (size_t i = 0; i < Size; ++i)
+            {
+                const ValueType invStd = one() / SquareRootApproximation<ValueType>::sqrt(mRunningVariance[i] + epsilon());
+                mInvStd[i] = invStd;
+                for (size_t sample = 0; sample < batchSize; ++sample)
+                {
+                    const size_t index = sample * Size + i;
+                    mNormalized[index] = (input[index] - mRunningMean[i]) * invStd;
+                    output[index] = mGamma[i] * mNormalized[index] + mBeta[i];
+                }
+            }
+        }
+
         ValueType mGamma[Size];
         ValueType mBeta[Size];
         ValueType mRunningMean[Size];
         ValueType mRunningVariance[Size];
         ValueType mGammaGradient[Size];
         ValueType mBetaGradient[Size];
-        ValueType mNormalized[Size];
+        ValueType mInvStd[Size];
+        ValueType mNormalized[MaxBatchSize * Size];
         bool mTraining;
+        bool mUsedBatchStatistics;
+        size_t mLastBatchSize;
 
         // Construct a ValueType representing the integer v. FPU-free for QValue:
         // QValue(int) treats its argument as the raw fixed-point bit pattern,
@@ -251,12 +377,6 @@ namespace tinymind {
             return o;
         }
 
-        static ValueType sizeValue()
-        {
-            static const ValueType s = fromInteger(static_cast<int>(Size));
-            return s;
-        }
-
         static ValueType momentum()
         {
             static const ValueType m = fromInteger(static_cast<int>(MomentumPercent))
@@ -272,6 +392,7 @@ namespace tinymind {
         }
 
         static_assert(Size > 0, "BatchNorm size must be > 0.");
+        static_assert(MaxBatchSize > 0, "BatchNorm maximum batch size must be > 0.");
         static_assert(MomentumPercent > 0 && MomentumPercent <= 100, "Momentum percent must be in (0, 100].");
         static_assert(EpsilonPercent > 0, "Epsilon percent must be > 0.");
     };

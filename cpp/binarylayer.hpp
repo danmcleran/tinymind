@@ -76,9 +76,15 @@ namespace tinymind {
      * arrays, giving 32x memory reduction compared to full-precision.
      * A real-valued bias per output neuron is maintained for expressiveness.
      *
-     * Training uses the straight-through estimator (STE): gradients pass
-     * through the sign() binarization as if it were the identity function,
-     * with gradients clipped to zero outside [-1, +1].
+     * Training uses the straight-through estimator (STE), as in
+     * BinaryConnect (Courbariaux et al., 2015): the gradient for a latent
+     * weight is the gradient of its binarized weight, delta * sign(input),
+     * passed through sign() as if it were the identity, and zeroed for a
+     * latent weight outside [-1, +1]. updateWeights() clips every latent
+     * weight back into [-1, +1], so no weight can leave that range during
+     * training and stop learning (only setLatentWeight() can put one
+     * outside it). The input deltas are delta * sign(weight): the input's
+     * sign() is passed straight through with no |x| <= 1 gate.
      *
      * Real-valued "latent" weights are maintained during training. The
      * binary weights used in the forward pass are sign(latent_weight).
@@ -198,7 +204,8 @@ namespace tinymind {
          * Backward pass using the straight-through estimator (STE).
          *
          * Gradients pass through the sign() binarization unchanged,
-         * but are clipped to zero for latent weights outside [-1, +1].
+         * but are zeroed for latent weights outside [-1, +1] (which
+         * updateWeights() never produces; see the class comment).
          *
          * @param outputDeltas Array of OutputSize gradient values from downstream
          * @param input        The same input array used in the forward pass
@@ -257,7 +264,8 @@ namespace tinymind {
         }
 
         /**
-         * Update latent weights and biases, then re-binarize.
+         * Update latent weights and biases, clip the latent weights to
+         * [-1, +1], then re-binarize.
          * @param learningRate Step size for weight update
          */
         void updateWeights(const ValueType& learningRate)
@@ -265,6 +273,14 @@ namespace tinymind {
             for (size_t i = 0; i < TotalBinaryWeights; ++i)
             {
                 mLatentWeights[i] += learningRate * mLatentGradients[i];
+                if (mLatentWeights[i] < negOne())
+                {
+                    mLatentWeights[i] = negOne();
+                }
+                else if (one() < mLatentWeights[i])
+                {
+                    mLatentWeights[i] = one();
+                }
             }
             for (size_t j = 0; j < OutputSize; ++j)
             {

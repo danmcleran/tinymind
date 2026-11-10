@@ -185,7 +185,7 @@ ISA-capability-gated SIMD specializations on the inner reduction loop of `QDense
 | SiLU | `SiLUActivationPolicy` | (-0.28, inf) |
 | Softmax | `SoftmaxActivationPolicy` | (0, 1) per class |
 
-Fixed-point activations use pre-computed lookup tables for speed. Floating-point activations use standard math functions.
+Fixed-point activations use pre-computed lookup tables for speed. Floating-point activations use standard math functions. Capped ReLU's cap is a whole number (`CappedReluActivationPolicy<ValueType, 6>` is ReLU6). GELU's derivative is taken at the pre-activation, which feed-forward and Elman layers keep for it. Softmax is the `ClassifierOutputLayerConfiguration` output and trains with cross-entropy.
 
 ### Q-Learning
 
