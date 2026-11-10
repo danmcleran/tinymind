@@ -69,7 +69,7 @@ offline in float and then sweeps fixed-point formats to find the smallest one
 - **Dataset:** [UCI HAR Using Smartphones](https://archive.ics.uci.edu/dataset/240) — tri-axial accelerometer · activity classes.
 - **Model:** Q16.16 **LSTM** 3→16 (tanh)→4 sigmoid, stateful per 32-step window, argmax at final step. Classes: WALKING / WALKING_UPSTAIRS / WALKING_DOWNSTAIRS / SITTING.
 - **Data:** optional real data (long-format `har.csv`); else synthesizes accelerometer windows in which upstairs and downstairs are time reversals of each other, so only sample order separates them.
-- **Result:** 91.5% test accuracy (183/200), against 50% with only the readout trained and 52.5% for a nearest centroid on per-axis mean + std. `LstmNeuralNetwork<>` for sequence classification.
+- **Result:** 92.5% test accuracy (185/200), against 50% with only the readout trained and 52.5% for a nearest centroid on per-axis mean + std. `LstmNeuralNetwork<>` for sequence classification.
 - [`examples/har_activity`](https://github.com/danmcleran/tinymind/tree/master/examples/har_activity) · [page]({{ site.baseurl }}/examples/har_activity)
 
 ### Japanese Vowels — recurrent (Elman), offline-float → fixed-point sweep

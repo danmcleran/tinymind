@@ -44,7 +44,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 
 ### Training Policies
 
-- **Adam optimizer** with per-parameter adaptive learning rates (`AdamOptimizerFloat` for double, `AdamOptimizer` for fixed-point)
+- **Adam optimizer** with per-parameter adaptive learning rates for every weight and bias (`AdamOptimizerFloat` for double, `AdamOptimizer` for fixed-point, whose defaults are computed for each Q format)
 - **RMSprop optimizer** with per-parameter adaptive learning rates via running average of squared gradients (`RmsPropOptimizerFloat` for double, `RmsPropOptimizer` for fixed-point) -- often preferred over Adam for recurrent networks
 - **Dropout regularization** via `Dropout<ValueType, Size, DropoutPercent>` -- inverted dropout with training/inference mode toggle, no scaling needed at inference time
 - **Gradient clipping** via configurable `GradientClipByValue` policy to prevent exploding gradients (especially critical for fixed-point)
@@ -692,7 +692,8 @@ struct RmsPropTF : public BaseTF
 
 typedef tinymind::MultilayerPerceptron<double, 2, 1, 5, 1, RmsPropTF> Network;
 
-// Fixed-point RMSprop (Q8.8: decay ≈ 230/256 ≈ 0.898, epsilon ≈ 1/256)
+// Fixed-point RMSprop (defaults: decay 0.9, epsilon one LSB, in any Q format;
+// in Q8.8 that is decay = 230/256, epsilon = 1/256)
 typedef tinymind::QValue<8, 8, true> QType;
 typedef tinymind::FixedPointTransferFunctions<
     QType, RandomNumberGenerator<QType>,

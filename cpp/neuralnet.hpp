@@ -246,12 +246,14 @@ namespace tinymind {
     template<typename ValueType>
     struct BiasNeuronConnectionWeightUpdater<ValueType, 1>
     {
-        template<typename LayerType>
+        // Bias gradients are clipped by the same policy as weight gradients.
+        template<typename GradientClippingPolicy, typename LayerType>
         static void updateBiasConnectionWeights(LayerType& previousLayer, const size_t neuron, const ValueType& learningRate, const ValueType& momentumRate, const ValueType& accelerationRate)
         {
             const ValueType previousDeltaWeight = previousLayer.getBiasNeuronPreviousDeltaWeightForConnection(neuron);
             const ValueType currentDeltaWeight = previousLayer.getBiasNeuronDeltaWeightForConnection(neuron);
-            const ValueType newDeltaWeight = (learningRate * previousLayer.getBiasNeuronGradientForConnection(neuron)) + (momentumRate * currentDeltaWeight) + (accelerationRate * previousDeltaWeight);
+            const ValueType gradient = GradientClippingPolicy::clip(previousLayer.getBiasNeuronGradientForConnection(neuron));
+            const ValueType newDeltaWeight = (learningRate * gradient) + (momentumRate * currentDeltaWeight) + (accelerationRate * previousDeltaWeight);
             const ValueType currentWeight = previousLayer.getBiasNeuronWeightForConnection(neuron);
 
             previousLayer.setBiasNeuronDeltaWeightForConnection(neuron, newDeltaWeight);
@@ -262,7 +264,7 @@ namespace tinymind {
     template<typename ValueType>
     struct BiasNeuronConnectionWeightUpdater<ValueType, 0>
     {
-        template<typename LayerType>
+        template<typename GradientClippingPolicy, typename LayerType>
         static void updateBiasConnectionWeights(LayerType& layer, const size_t neuron, const ValueType& learningRate, const ValueType& momentumRate, const ValueType& accelerationRate)
         {
             (void)layer; // Suppress unused parameter warning
@@ -270,6 +272,38 @@ namespace tinymind {
             (void)learningRate; // Suppress unused parameter warning
             (void)momentumRate; // Suppress unused parameter warning
             (void)accelerationRate; // Suppress unused parameter warning
+        }
+    };
+
+    // Adaptive-optimizer (Adam, RMSprop) counterpart of
+    // BiasNeuronConnectionWeightUpdater: hands the clipped bias gradient to
+    // the optimizer so biases get the same update rule as weights.
+    template<typename ValueType, size_t NumberOfBiasNeurons>
+    struct BiasNeuronOptimizerWeightUpdater
+    {
+    };
+
+    template<typename ValueType>
+    struct BiasNeuronOptimizerWeightUpdater<ValueType, 1>
+    {
+        template<typename GradientClippingPolicy, typename LayerType, typename OptimizerType, typename PreviousLayerType>
+        static void updateBiasConnectionWeights(OptimizerType& optimizer, PreviousLayerType& previousLayer, const size_t connection, const ValueType& learningRate)
+        {
+            const ValueType gradient = GradientClippingPolicy::clip(previousLayer.getBiasNeuronGradientForConnection(connection));
+            optimizer.template updateBiasWeights<LayerType>(previousLayer, connection, gradient, learningRate);
+        }
+    };
+
+    template<typename ValueType>
+    struct BiasNeuronOptimizerWeightUpdater<ValueType, 0>
+    {
+        template<typename GradientClippingPolicy, typename LayerType, typename OptimizerType, typename PreviousLayerType>
+        static void updateBiasConnectionWeights(OptimizerType& optimizer, PreviousLayerType& previousLayer, const size_t connection, const ValueType& learningRate)
+        {
+            (void)optimizer;
+            (void)previousLayer;
+            (void)connection;
+            (void)learningRate;
         }
     };
 
@@ -711,6 +745,15 @@ namespace tinymind {
             this->mLearningRate = this->mLearningRateSchedule.step(this->mLearningRate);
         }
 
+        // Called once per weight update (every trainNetwork() with BatchSize 1,
+        // the last sample of each batch otherwise), before any weight moves:
+        // advances the optimizer's timestep (Adam's bias correction) once per
+        // update. It used to advance once per layer.
+        void beginTrainingStep()
+        {
+            this->mOptimizer.step();
+        }
+
         template<typename LayerType, typename PreviousLayerType>
         void updateConnectionWeights(LayerType& layer, PreviousLayerType& previousLayer)
         {
@@ -770,26 +813,32 @@ namespace tinymind {
                     previousLayer.setWeightForNeuronAndConnection(previousNeuron, neuron, (currentWeight + newDeltaWeight));
                 }
 
-                BiasNeuronConnectionWeightUpdaterType::updateBiasConnectionWeights(previousLayer, neuron, this->mLearningRate, this->mMomentumRate, this->mAccelerationRate);
+                BiasNeuronConnectionWeightUpdaterType::template updateBiasConnectionWeights<GradientClippingPolicy>(previousLayer, neuron, this->mLearningRate, this->mMomentumRate, this->mAccelerationRate);
             }
         }
 
-        // Adam weight update
+        // Adaptive-optimizer (Adam, RMSprop) weight update. The timestep was
+        // advanced once for this training step by beginTrainingStep(). Weight
+        // decay shrinks each weight before the adaptive step (decoupled, as in
+        // AdamW), the same operation the SGD path applies; biases are not
+        // decayed, also as in SGD.
         template<typename LayerType, typename PreviousLayerType>
         void updateConnectionWeightsImpl(LayerType& layer, PreviousLayerType& previousLayer, AdamTag)
         {
             (void)layer;
+            typedef BiasNeuronOptimizerWeightUpdater<ValueType, PreviousLayerType::NumberOfBiasNeuronsInLayer> BiasNeuronOptimizerWeightUpdaterType;
             ValueType gradient;
-
-            this->mOptimizer.step();
 
             for (size_t neuron = 0; neuron < LayerType::NumberOfNeuronsInLayer; ++neuron)
             {
                 for (size_t previousNeuron = 0; previousNeuron < PreviousLayerType::NumberOfNeuronsInLayer; ++previousNeuron)
                 {
                     gradient = GradientClippingPolicy::clip(previousLayer.getGradientForNeuronAndConnection(previousNeuron, neuron));
+                    previousLayer.setWeightForNeuronAndConnection(previousNeuron, neuron, WeightDecayPolicy::applyDecay(previousLayer.getWeightForNeuronAndConnection(previousNeuron, neuron), this->mLearningRate));
                     this->mOptimizer.template updateWeights<LayerType>(previousLayer, previousNeuron, neuron, gradient, this->mLearningRate);
                 }
+
+                BiasNeuronOptimizerWeightUpdaterType::template updateBiasConnectionWeights<GradientClippingPolicy, LayerType>(this->mOptimizer, previousLayer, neuron, this->mLearningRate);
             }
         }
 
@@ -829,19 +878,19 @@ namespace tinymind {
 
                 for (size_t gate = 0; gate < GateMultiplier; ++gate)
                 {
-                    BiasNeuronConnectionWeightUpdaterType::updateBiasConnectionWeights(previousLayer, neuron * GateMultiplier + gate, this->mLearningRate, this->mMomentumRate, this->mAccelerationRate);
+                    BiasNeuronConnectionWeightUpdaterType::template updateBiasConnectionWeights<GradientClippingPolicy>(previousLayer, neuron * GateMultiplier + gate, this->mLearningRate, this->mMomentumRate, this->mAccelerationRate);
                 }
             }
         }
 
-        // Adam gated weight update
+        // Adaptive-optimizer gated weight update: every gate's weights and
+        // bias, with the same decay and clipping as the ungated path above.
         template<typename LayerType, typename PreviousLayerType, size_t GateMultiplier>
         void updateConnectionWeightsGatedImpl(LayerType& layer, PreviousLayerType& previousLayer, AdamTag)
         {
             (void)layer;
+            typedef BiasNeuronOptimizerWeightUpdater<ValueType, PreviousLayerType::NumberOfBiasNeuronsInLayer> BiasNeuronOptimizerWeightUpdaterType;
             ValueType gradient;
-
-            this->mOptimizer.step();
 
             for (size_t neuron = 0; neuron < LayerType::NumberOfNeuronsInLayer; ++neuron)
             {
@@ -851,8 +900,14 @@ namespace tinymind {
                     {
                         const size_t conn = neuron * GateMultiplier + gate;
                         gradient = GradientClippingPolicy::clip(previousLayer.getGradientForNeuronAndConnection(previousNeuron, conn));
+                        previousLayer.setWeightForNeuronAndConnection(previousNeuron, conn, WeightDecayPolicy::applyDecay(previousLayer.getWeightForNeuronAndConnection(previousNeuron, conn), this->mLearningRate));
                         this->mOptimizer.template updateWeights<LayerType>(previousLayer, previousNeuron, conn, gradient, this->mLearningRate);
                     }
+                }
+
+                for (size_t gate = 0; gate < GateMultiplier; ++gate)
+                {
+                    BiasNeuronOptimizerWeightUpdaterType::template updateBiasConnectionWeights<GradientClippingPolicy, LayerType>(this->mOptimizer, previousLayer, neuron * GateMultiplier + gate, this->mLearningRate);
                 }
             }
         }
@@ -1991,6 +2046,28 @@ namespace tinymind {
             {
                 this->mBiasNeuron.setWeightForConnection(connection, other.getBiasNeuronWeightForConnection(connection));
             }
+        }
+
+        // Adaptive-optimizer moments of the bias connections (Adam, RMSprop).
+        // Like the weights' moments, they reuse the delta-weight storage.
+        ValueType getBiasNeuronFirstMomentForConnection(const size_t connection) const
+        {
+            return this->mBiasNeuron.getFirstMomentForConnection(connection);
+        }
+
+        void setBiasNeuronFirstMomentForConnection(const size_t connection, const ValueType& value)
+        {
+            this->mBiasNeuron.setFirstMomentForConnection(connection, value);
+        }
+
+        ValueType getBiasNeuronSecondMomentForConnection(const size_t connection) const
+        {
+            return this->mBiasNeuron.getSecondMomentForConnection(connection);
+        }
+
+        void setBiasNeuronSecondMomentForConnection(const size_t connection, const ValueType& value)
+        {
+            this->mBiasNeuron.setSecondMomentForConnection(connection, value);
         }
 
     protected:
@@ -3888,6 +3965,8 @@ namespace tinymind {
             // gradient, after its last sample.
             if (nn.getGradientsManager().isLastSampleOfBatch())
             {
+                // One optimizer step per actual weight update (once per batch).
+                this->beginTrainingStep();
                 ChainBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
 
                 this->stepLearningRate();
@@ -3913,6 +3992,8 @@ namespace tinymind {
             // gradient, after its last sample.
             if (nn.getGradientsManager().isLastSampleOfBatch())
             {
+                // One optimizer step per actual weight update (once per batch).
+                this->beginTrainingStep();
                 ChainBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
 
                 this->stepLearningRate();
@@ -3938,6 +4019,8 @@ namespace tinymind {
             // of the batch's one-step gradients, after its last sample.
             if (nn.getGradientsManager().isLastSampleOfBatch())
             {
+                // One optimizer step per actual weight update (once per batch).
+                this->beginTrainingStep();
                 ChainRecurrentBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
 
                 this->stepLearningRate();
@@ -3963,6 +4046,8 @@ namespace tinymind {
             // of the batch's one-step gradients, after its last sample.
             if (nn.getGradientsManager().isLastSampleOfBatch())
             {
+                // One optimizer step per actual weight update (once per batch).
+                this->beginTrainingStep();
                 ChainRecurrentBackPropConnectionWeightUpdater<NNType>::updateConnectionWeights(*this, nn);
 
                 this->stepLearningRate();

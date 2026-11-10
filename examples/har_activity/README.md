@@ -100,7 +100,7 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 
 | model | test accuracy |
 |---|---|
-| LSTM, all weights trained | **91.5%** (183/200) |
+| LSTM, all weights trained | **92.5%** (185/200) |
 | LSTM, `--readout-only` (input, gate and recurrent weights frozen at their random initial values) | 50.0% |
 | nearest centroid on per-axis mean + standard deviation (ignores sample order) | 52.5% |
 | chance | 25% |
@@ -109,7 +109,7 @@ make plot      # needs matplotlib; a venv/pyenv works if it is not already in yo
 `./output/har_activity --readout-only` for the ablation. Training the LSTM's
 gates and recurrent weights is what reads the sample order. Recurrent training
 in Q16.16 is noisy on this task: across five weight-initialization seeds the
-full model scored 65.5%, 73%, 86.5%, 91.5% and 93%, always well above both
+full model scored 71%, 73.5%, 89.5%, 92.5% and 94.5%, always well above both
 order-blind baselines.
 
 An earlier version of this example (four classes separable by gravity

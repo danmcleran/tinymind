@@ -75,4 +75,95 @@ namespace tinymind {
 
 #endif
 
+    /*
+     * Fixed-point hyperparameter defaults.
+     *
+     * The optimizer, weight-decay and schedule policies take each constant as
+     * an (IntegerPart, FractionalPart) pair for the QValue(int, fraction)
+     * constructor, where FractionalPart is a raw count of LSBs in ValueType's
+     * own format (230 means 230/256 in Q8.8 but 230/65536 in Q16.16). Their
+     * defaults used to be written as Q8.8 raw counts, which made every other
+     * format's defaults wrong (Adam beta1 = 0.0035 in Q16.16).
+     *
+     * QFractionLsbs<ValueType, Num, Den>::value is the raw fractional field
+     * for Num/Den in ValueType's format: round(Num/Den * 2^F), clamped to
+     * [1, 2^F - 1] so a rate never rounds to exactly 0 or 1 (0.999 is 1.0
+     * in Q8.8, and 1e-8 is 0 in every format). Num must be less than Den.
+     * For a type with no NumberOfFractionalBits (float, double) the value is
+     * 1 and unused: the floating-point policies take real constants.
+     */
+    template<typename T>
+    struct fractional_bits_void
+    {
+        typedef void type;
+    };
+
+    template<typename T, typename = void>
+    struct fractional_bits_of
+    {
+        static const unsigned value = 0;
+    };
+
+    template<typename T>
+    struct fractional_bits_of<T, typename fractional_bits_void<decltype(T::NumberOfFractionalBits)>::type>
+    {
+        static const unsigned value = static_cast<unsigned>(T::NumberOfFractionalBits);
+    };
+
+    namespace detail
+    {
+        // Long division, so 2^F never has to be formed (F may be 64).
+        constexpr unsigned long long fractionLsbs(const unsigned long long num, const unsigned long long den, const unsigned bits)
+        {
+            const unsigned long long maxLsbs = (bits >= 64u) ? ~0ULL : ((1ULL << bits) - 1ULL);
+            unsigned long long quotient = 0;
+            unsigned long long remainder = num % den;
+            for (unsigned bit = 0; bit < bits; ++bit)
+            {
+                remainder <<= 1;
+                quotient <<= 1;
+                if (remainder >= den)
+                {
+                    remainder -= den;
+                    quotient |= 1ULL;
+                }
+            }
+            // Round half up, without wrapping past the largest fraction.
+            if (((remainder << 1) >= den) && (quotient < maxLsbs))
+            {
+                ++quotient;
+            }
+            if (quotient > maxLsbs)
+            {
+                quotient = maxLsbs;
+            }
+            if (quotient == 0)
+            {
+                quotient = 1;
+            }
+            return quotient;
+        }
+    }
+
+    template<typename ValueType, unsigned long long Num, unsigned long long Den>
+    struct QFractionLsbs
+    {
+        static_assert(Den > 0, "Denominator must be positive.");
+        static_assert(Num < Den, "QFractionLsbs encodes a value in (0, 1).");
+
+        static const unsigned long long value = detail::fractionLsbs(Num, Den, fractional_bits_of<ValueType>::value);
+    };
+
+    // Definitions, so value can also be bound to a reference (a static const
+    // member is not implicitly inline in any standard). A template's static
+    // member may be defined in a header.
+    template<typename ValueType, unsigned long long Num, unsigned long long Den>
+    const unsigned long long QFractionLsbs<ValueType, Num, Den>::value;
+
+    template<typename T, typename Enable>
+    const unsigned fractional_bits_of<T, Enable>::value;
+
+    template<typename T>
+    const unsigned fractional_bits_of<T, typename fractional_bits_void<decltype(T::NumberOfFractionalBits)>::type>::value;
+
 }

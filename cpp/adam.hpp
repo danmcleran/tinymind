@@ -23,6 +23,7 @@
 #pragma once
 
 #include "include/tinymind_platform.hpp"
+#include "include/tinymind_traits.hpp"
 
 #include <cstddef>
 
@@ -102,6 +103,65 @@ namespace tinymind {
     };
 #endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 
+    namespace detail
+    {
+        constexpr unsigned long long isqrtRounded(const unsigned long long n)
+        {
+            unsigned long long low = 0;
+            unsigned long long high = (n < 2ULL) ? n : ((n >> 1) < 4294967295ULL ? (n >> 1) : 4294967295ULL);
+            while (low < high)
+            {
+                const unsigned long long mid = low + (high - low + 1ULL) / 2ULL;
+                if (mid <= n / mid)
+                {
+                    low = mid;
+                }
+                else
+                {
+                    high = mid - 1ULL;
+                }
+            }
+            // Round to nearest: (r + 0.5)^2 = r^2 + r + 0.25.
+            return ((n - low * low) > low) ? (low + 1ULL) : low;
+        }
+
+        // round(sqrt(D * 2^bits)), the raw fraction of sqrt(2^-bits / (1 - beta2))
+        // for 1 - beta2 = 1/D, kept inside (0, 1).
+        constexpr unsigned long long adamEpsilonLsbs(const unsigned long long d, const unsigned bits)
+        {
+            const unsigned long long maxLsbs = (bits >= 64u) ? ~0ULL : ((1ULL << bits) - 1ULL);
+            unsigned long long lsbs = 0;
+            if (bits <= 56u)
+            {
+                lsbs = isqrtRounded(d << bits);
+            }
+            else
+            {
+                // D * 2^bits does not fit; sqrt(D * 2^bits) = sqrt(D * 2^(bits mod 2)) * 2^(bits / 2).
+                lsbs = isqrtRounded(d << (bits % 2u)) << (bits / 2u);
+            }
+            if (lsbs > maxLsbs)
+            {
+                lsbs = maxLsbs;
+            }
+            return (lsbs == 0ULL) ? 1ULL : lsbs;
+        }
+    }
+
+    /**
+     * Fixed-point Adam epsilon for 1 - beta2 = 1/D: epsilon = sqrt(LSB / (1 - beta2)),
+     * the gradient magnitude below which the second-moment increment
+     * (1 - beta2) * g^2 rounds to zero. See AdamOptimizer for why.
+     */
+    template<typename ValueType, unsigned long long D>
+    struct QAdamEpsilonLsbs
+    {
+        static const unsigned long long value = detail::adamEpsilonLsbs(D, fractional_bits_of<ValueType>::value);
+    };
+
+    template<typename ValueType, unsigned long long D>
+    const unsigned long long QAdamEpsilonLsbs<ValueType, D>::value;
+
     /**
      * Adam optimizer policy for use with BackPropagationParent.
      *
@@ -112,40 +172,65 @@ namespace tinymind {
      *
      * The first and second moments reuse the existing mDeltaWeight and
      * mPreviousDeltaWeight storage in TrainableConnection, so no additional
-     * per-connection memory is required beyond what SGD already uses.
+     * per-connection memory is required beyond what SGD already uses. Bias
+     * connections are updated the same way, through updateBiasWeights().
      *
-     * Template parameters use the QValue(int, unsigned) constructor for
-     * fixed-point types. For floating-point, provide your own specialization
-     * or use AdamOptimizerFloat.
+     * The network calls step() once per weight update, before any weight
+     * moves (every trainNetwork() with BatchSize 1, once per batch
+     * otherwise), so the bias-correction timestep t counts updates, not
+     * layers.
      *
-     * Default hyperparameters:
-     *   beta1 = 0.9, beta2 = 0.999, epsilon = 1e-8
+     * Each constant is an (IntegerPart, FractionalPart) pair for the
+     * QValue(int, fraction) constructor; FractionalPart is a raw count of
+     * LSBs in ValueType's own format. The defaults are computed for
+     * ValueType's format, each rounded to it and kept inside (0, 1):
+     *   beta1 = 0.9, beta2 = 0.99, epsilon = sqrt(LSB / (1 - beta2))
+     * In Q16.16 that is beta1 = 58982/65536, beta2 = 64881/65536 and
+     * epsilon = 2560/65536 (0.039); in Q32.32 epsilon is 1.5e-4.
      *
-     * For fixed-point Q8.8:
-     *   beta1 ≈ 230/256 ≈ 0.898  -> (0, 230)
-     *   beta2 ≈ 255/256 ≈ 0.996  -> (0, 255)
-     *   epsilon ≈ 1/256 ≈ 0.004  -> (0, 1)
+     * These are not the floating-point textbook values (beta2 = 0.999,
+     * epsilon = 1e-8, which AdamOptimizerFloat uses), because the second
+     * moment underflows in fixed point: (1 - beta2) * g^2 rounds to zero
+     * for any |g| < sqrt(LSB / (1 - beta2)), so v stops tracking small
+     * gradients and the step lr * m / (sqrt(v) + epsilon) is limited only by
+     * epsilon. With epsilon at one LSB that step was hundreds of times the
+     * textbook one; with epsilon = sqrt(LSB / (1 - beta2)), the gradient
+     * size at which v underflows, it stays within about one learning rate.
+     * beta2 = 0.99 keeps that epsilon small (0.039 in Q16.16, against 0.12
+     * for beta2 = 0.999). On the Q16.16 XOR network in unit_test/nn, the
+     * textbook constants reach the error target on 6 of 24 seeds and these
+     * defaults on 24 of 24. Pass explicit constants to override, e.g.
+     * AdamOptimizer<Q, 0, QFractionLsbs<Q, 9, 10>::value, 0, QFractionLsbs<Q, 999, 1000>::value, 0, QAdamEpsilonLsbs<Q, 1000>::value>.
+     * Q8.8 has too few fractional bits for Adam (its default epsilon is
+     * 0.625). For floating-point, use AdamOptimizerFloat.
      */
     template<typename ValueType,
-             int Beta1Int = 0, unsigned Beta1Frac = 230,
-             int Beta2Int = 0, unsigned Beta2Frac = 255,
-             int EpsilonInt = 0, unsigned EpsilonFrac = 1>
+             int Beta1Int = 0, unsigned long long Beta1Frac = QFractionLsbs<ValueType, 9, 10>::value,
+             int Beta2Int = 0, unsigned long long Beta2Frac = QFractionLsbs<ValueType, 99, 100>::value,
+             int EpsilonInt = 0, unsigned long long EpsilonFrac = QAdamEpsilonLsbs<ValueType, 100>::value>
     struct AdamOptimizer
     {
         static const bool IsAdam = true;
 
-        AdamOptimizer() : mTimestep(0)
+        AdamOptimizer() : mTimestep(0), mBeta1Power(one()), mBeta2Power(one())
         {
         }
 
         void initialize()
         {
             mTimestep = 0;
+            mBeta1Power = one();
+            mBeta2Power = one();
         }
 
         void step()
         {
             ++mTimestep;
+            // beta^t is tracked incrementally, so the bias correction stays
+            // right for every t (it used to stop at t = 100) and costs two
+            // multiplies per training step instead of a t-long loop per weight.
+            mBeta1Power = mBeta1Power * beta1();
+            mBeta2Power = mBeta2Power * beta2();
         }
 
         size_t getTimestep() const
@@ -153,91 +238,119 @@ namespace tinymind {
             return mTimestep;
         }
 
+        static ValueType beta1()
+        {
+            static const ValueType value(static_cast<typename ValueType::FixedPartFieldType>(Beta1Int), static_cast<typename ValueType::FractionalPartFieldType>(Beta1Frac));
+            return value;
+        }
+
+        static ValueType beta2()
+        {
+            static const ValueType value(static_cast<typename ValueType::FixedPartFieldType>(Beta2Int), static_cast<typename ValueType::FractionalPartFieldType>(Beta2Frac));
+            return value;
+        }
+
+        static ValueType epsilon()
+        {
+            static const ValueType value(static_cast<typename ValueType::FixedPartFieldType>(EpsilonInt), static_cast<typename ValueType::FractionalPartFieldType>(EpsilonFrac));
+            return value;
+        }
+
         template<typename LayerType, typename PreviousLayerType>
         void updateWeights(PreviousLayerType& previousLayer, const size_t neuron, const size_t conn, const ValueType& gradient, const ValueType& learningRate)
         {
-            static const ValueType beta1(Beta1Int, Beta1Frac);
-            static const ValueType beta2(Beta2Int, Beta2Frac);
-            static const ValueType epsilon(EpsilonInt, EpsilonFrac);
-            static const ValueType one(1, 0);
-
-            // Get current moments
             ValueType m = previousLayer.getFirstMomentForNeuronAndConnection(neuron, conn);
             ValueType v = previousLayer.getSecondMomentForNeuronAndConnection(neuron, conn);
+            const ValueType update = this->computeUpdate(m, v, gradient, learningRate);
 
-            // Update biased first moment: m = beta1 * m + (1 - beta1) * gradient
-            m = beta1 * m + (one - beta1) * gradient;
-
-            // Update biased second moment: v = beta2 * v + (1 - beta2) * gradient^2
-            v = beta2 * v + (one - beta2) * gradient * gradient;
-
-            // Store updated moments
             previousLayer.setFirstMomentForNeuronAndConnection(neuron, conn, m);
             previousLayer.setSecondMomentForNeuronAndConnection(neuron, conn, v);
 
-            // Bias correction
-            ValueType mHat = m;
-            ValueType vHat = v;
-            if (mTimestep < 100)
-            {
-                // Apply bias correction only in early timesteps when it matters
-                ValueType beta1Power = one;
-                ValueType beta2Power = one;
-                for (size_t t = 0; t < mTimestep; ++t)
-                {
-                    beta1Power = beta1Power * beta1;
-                    beta2Power = beta2Power * beta2;
-                }
-                const ValueType beta1Correction = one - beta1Power;
-                const ValueType beta2Correction = one - beta2Power;
-
-                if (beta1Correction > epsilon)
-                {
-                    mHat = m / beta1Correction;
-                }
-                if (beta2Correction > epsilon)
-                {
-                    vHat = v / beta2Correction;
-                }
-            }
-
-            // Compute update: lr * mHat / (sqrt(vHat) + epsilon)
-            const ValueType sqrtV = SquareRootApproximation<ValueType>::sqrt(vHat);
-            const ValueType update = learningRate * mHat / (sqrtV + epsilon);
-
-            // Apply weight update
             const ValueType currentWeight = previousLayer.getWeightForNeuronAndConnection(neuron, conn);
             previousLayer.setWeightForNeuronAndConnection(neuron, conn, currentWeight + update);
         }
 
+        template<typename LayerType, typename PreviousLayerType>
+        void updateBiasWeights(PreviousLayerType& previousLayer, const size_t conn, const ValueType& gradient, const ValueType& learningRate)
+        {
+            ValueType m = previousLayer.getBiasNeuronFirstMomentForConnection(conn);
+            ValueType v = previousLayer.getBiasNeuronSecondMomentForConnection(conn);
+            const ValueType update = this->computeUpdate(m, v, gradient, learningRate);
+
+            previousLayer.setBiasNeuronFirstMomentForConnection(conn, m);
+            previousLayer.setBiasNeuronSecondMomentForConnection(conn, v);
+
+            const ValueType currentWeight = previousLayer.getBiasNeuronWeightForConnection(conn);
+            previousLayer.setBiasNeuronWeightForConnection(conn, currentWeight + update);
+        }
+
     private:
+        static ValueType one()
+        {
+            return ValueType(static_cast<typename ValueType::FixedPartFieldType>(1), static_cast<typename ValueType::FractionalPartFieldType>(0));
+        }
+
+        // Updates the moments in place and returns lr * mHat / (sqrt(vHat) + epsilon).
+        ValueType computeUpdate(ValueType& m, ValueType& v, const ValueType& gradient, const ValueType& learningRate) const
+        {
+            m = beta1() * m + (one() - beta1()) * gradient;
+            v = beta2() * v + (one() - beta2()) * gradient * gradient;
+
+            ValueType mHat = m;
+            ValueType vHat = v;
+            const ValueType zero(static_cast<typename ValueType::FullWidthValueType>(0));
+            const ValueType beta1Correction = one() - mBeta1Power;
+            const ValueType beta2Correction = one() - mBeta2Power;
+
+            // Both corrections are at least 1 LSB once step() has run; before
+            // the first step (t = 0) they are 0 and the moments are used as is.
+            if (beta1Correction > zero)
+            {
+                mHat = m / beta1Correction;
+            }
+            if (beta2Correction > zero)
+            {
+                vHat = v / beta2Correction;
+            }
+
+            const ValueType sqrtV = SquareRootApproximation<ValueType>::sqrt(vHat);
+            return learningRate * mHat / (sqrtV + epsilon());
+        }
+
         size_t mTimestep;
+        ValueType mBeta1Power;
+        ValueType mBeta2Power;
     };
 
 #if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
     /**
-     * Floating-point Adam optimizer with standard hyperparameters.
-     * Uses double-precision constants directly instead of QValue constructors.
-     * Requires TINYMIND_ENABLE_STD because std::sqrt and std::pow are needed
-     * for moment normalization and bias correction.
+     * Floating-point Adam optimizer with standard hyperparameters
+     * (beta1 = 0.9, beta2 = 0.999, epsilon = 1e-8). Uses double-precision
+     * constants directly instead of QValue constructors. Requires
+     * TINYMIND_ENABLE_STD because std::sqrt is needed for moment
+     * normalization. The network calls step() once per weight update.
      */
     template<typename ValueType>
     struct AdamOptimizerFloat
     {
         static const bool IsAdam = true;
 
-        AdamOptimizerFloat() : mTimestep(0), mBeta1(0.9), mBeta2(0.999), mEpsilon(1e-8)
+        AdamOptimizerFloat() : mTimestep(0), mBeta1(0.9), mBeta2(0.999), mEpsilon(1e-8), mBeta1Power(1.0), mBeta2Power(1.0)
         {
         }
 
         void initialize()
         {
             mTimestep = 0;
+            mBeta1Power = 1.0;
+            mBeta2Power = 1.0;
         }
 
         void step()
         {
             ++mTimestep;
+            mBeta1Power *= mBeta1;
+            mBeta2Power *= mBeta2;
         }
 
         size_t getTimestep() const
@@ -248,38 +361,55 @@ namespace tinymind {
         template<typename LayerType, typename PreviousLayerType>
         void updateWeights(PreviousLayerType& previousLayer, const size_t neuron, const size_t conn, const ValueType& gradient, const ValueType& learningRate)
         {
-            // Get current moments
             ValueType m = previousLayer.getFirstMomentForNeuronAndConnection(neuron, conn);
             ValueType v = previousLayer.getSecondMomentForNeuronAndConnection(neuron, conn);
+            const ValueType update = this->computeUpdate(m, v, gradient, learningRate);
 
-            // Update biased moments
-            m = static_cast<ValueType>(mBeta1) * m + static_cast<ValueType>(1.0 - mBeta1) * gradient;
-            v = static_cast<ValueType>(mBeta2) * v + static_cast<ValueType>(1.0 - mBeta2) * gradient * gradient;
-
-            // Store updated moments
             previousLayer.setFirstMomentForNeuronAndConnection(neuron, conn, m);
             previousLayer.setSecondMomentForNeuronAndConnection(neuron, conn, v);
 
-            // Bias correction
-            const double beta1Power = std::pow(mBeta1, static_cast<double>(mTimestep));
-            const double beta2Power = std::pow(mBeta2, static_cast<double>(mTimestep));
-            const ValueType mHat = m / static_cast<ValueType>(1.0 - beta1Power);
-            const ValueType vHat = v / static_cast<ValueType>(1.0 - beta2Power);
-
-            // Compute update
-            const ValueType sqrtV = static_cast<ValueType>(std::sqrt(static_cast<double>(vHat)));
-            const ValueType update = learningRate * mHat / (sqrtV + static_cast<ValueType>(mEpsilon));
-
-            // Apply weight update
             const ValueType currentWeight = previousLayer.getWeightForNeuronAndConnection(neuron, conn);
             previousLayer.setWeightForNeuronAndConnection(neuron, conn, currentWeight + update);
         }
 
+        template<typename LayerType, typename PreviousLayerType>
+        void updateBiasWeights(PreviousLayerType& previousLayer, const size_t conn, const ValueType& gradient, const ValueType& learningRate)
+        {
+            ValueType m = previousLayer.getBiasNeuronFirstMomentForConnection(conn);
+            ValueType v = previousLayer.getBiasNeuronSecondMomentForConnection(conn);
+            const ValueType update = this->computeUpdate(m, v, gradient, learningRate);
+
+            previousLayer.setBiasNeuronFirstMomentForConnection(conn, m);
+            previousLayer.setBiasNeuronSecondMomentForConnection(conn, v);
+
+            const ValueType currentWeight = previousLayer.getBiasNeuronWeightForConnection(conn);
+            previousLayer.setBiasNeuronWeightForConnection(conn, currentWeight + update);
+        }
+
     private:
+        ValueType computeUpdate(ValueType& m, ValueType& v, const ValueType& gradient, const ValueType& learningRate) const
+        {
+            m = static_cast<ValueType>(mBeta1) * m + static_cast<ValueType>(1.0 - mBeta1) * gradient;
+            v = static_cast<ValueType>(mBeta2) * v + static_cast<ValueType>(1.0 - mBeta2) * gradient * gradient;
+
+            ValueType mHat = m;
+            ValueType vHat = v;
+            if (mTimestep > 0)
+            {
+                mHat = m / static_cast<ValueType>(1.0 - mBeta1Power);
+                vHat = v / static_cast<ValueType>(1.0 - mBeta2Power);
+            }
+
+            const ValueType sqrtV = static_cast<ValueType>(std::sqrt(static_cast<double>(vHat)));
+            return learningRate * mHat / (sqrtV + static_cast<ValueType>(mEpsilon));
+        }
+
         size_t mTimestep;
         double mBeta1;
         double mBeta2;
         double mEpsilon;
+        double mBeta1Power;
+        double mBeta2Power;
     };
 #endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 
