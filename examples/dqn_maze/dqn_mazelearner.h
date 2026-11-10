@@ -124,12 +124,15 @@ struct DQNMazeEnvironment : public tinymind::QLearningEnvironment<state_t, actio
         return this->mGoalState;
     }
 
+    // One-hot state: one input per room. A single scalar input (state / 5)
+    // makes six nearby points that one small hidden layer cannot map to six
+    // different rows of Q values.
     static void getInputValues(const StateType state, ValueType *pInputs)
     {
-        static const ValueType MAX_STATE = ValueType((NumberOfStates - 1),0);
-        ValueType input = (ValueType(state, 0) / MAX_STATE);
-
-        *pInputs = input;
+        for (size_t i = 0; i < NumberOfStates; ++i)
+        {
+            pInputs[i] = ValueType((i == state) ? 1 : 0, 0);
+        }
     }
 
     size_t getNextStateForStateActionPair(const StateType, const ActionType action) const
@@ -280,7 +283,7 @@ typedef tinymind::QTableRewardPolicy<state_t, action_t, QValueType, NUMBER_OF_ST
 typedef DQNMazeEnvironment<state_t, action_t, QValueType, NUMBER_OF_STATES, NUMBER_OF_ACTIONS, QTableRewardPolicyType> MazeEnvironmentType;
 
 // define the neural network for DQN
-#define NUMBER_OF_INPUT_LAYER_NEURONS 1
+#define NUMBER_OF_INPUT_LAYER_NEURONS NUMBER_OF_STATES
 #define NUMBER_OF_HIDDEN_LAYERS 1
 #define NUMBER_OF_HIDDEN_LAYER_NEURONS (NUMBER_OF_ACTIONS + 2)
 #define NUMBER_OF_OUTPUT_LAYER_NEURONS NUMBER_OF_ACTIONS
@@ -289,7 +292,9 @@ typedef DQNMazeEnvironment<state_t, action_t, QValueType, NUMBER_OF_STATES, NUMB
 typedef tinymind::FixedPointTransferFunctions<  QValueType,
                                                 UniformRealRandomNumberGenerator<QValueType>,
                                                 tinymind::TanhActivationPolicy<QValueType>,
-                                                tinymind::TanhActivationPolicy<QValueType>,
+                                                // Linear output: Q values reach 1 / (1 - 0.8) = 5 at
+                                                // the goal, beyond tanh's (-1, 1).
+                                                tinymind::LinearActivationPolicy<QValueType>,
                                                 NUMBER_OF_OUTPUT_LAYER_NEURONS> TransferFunctionsType;
 typedef tinymind::MultilayerPerceptron< QValueType,
                                         NUMBER_OF_INPUT_LAYER_NEURONS,

@@ -25,11 +25,11 @@ As in the [previous tutorial]({{ site.baseurl }}/getting-started/q-learning-unde
 
 # DQN Architecture
 
-For this problem we will get rid of the Q-table and replace it with a neural network. We will need 1 input neuron (State) and 6 output neurons (Actions). I've chosen to implement 1 hidden layer with 2 more neurons than output neurons.
+For this problem we will get rid of the Q-table and replace it with a neural network. We will need 6 input neurons (one per room) and 6 output neurons (one Q value per action). I've chosen to implement 1 hidden layer with 2 more neurons than output neurons. The diagram below shows the first version of this network, which had a single input neuron; the reasons it changed follow the diagram.
 
 ![dqn]({{ site.baseurl }}/assets/diagrams/200395665-9236afda-feed-440e-b29f-11e2911454b6.png)
 
-Each output neuron represents the action to take from the state. There is 1 neuron in the input layer, which represents the current state of our mouse. Using Q-format, I scale the input by taking the current state and dividing by the maximum possible state:
+Each output neuron holds the Q value of one action from the current state. The state is one-hot encoded: input `i` is 1.0 when the mouse is in room `i` and 0 otherwise. An earlier version fed a single input, the state divided by the maximum state, but that squeezes six rooms into six nearby points of one number, and a hidden layer this small cannot map them to six different rows of Q values:
 
 ```cpp
 template<typename StateType,
@@ -45,11 +45,14 @@ struct DQNMazeEnvironment : public tinymind::QLearningEnvironment<state_t, actio
 ...
 static void getInputValues(const StateType state, ValueType *pInputs)
 {
-static const ValueType MAX_STATE = ValueType((NumberOfStates - 1),0);
-ValueType input = (ValueType(state, 0) / MAX_STATE);
-*pInputs = input;
+    for (size_t i = 0; i < NumberOfStates; ++i)
+    {
+        pInputs[i] = ValueType((i == state) ? 1 : 0, 0);
+    }
 }
 ```
+
+The output layer is linear. A Q value is the discounted sum of future rewards, and with a reward of 1 and a discount factor of 0.8 it reaches 1 / (1 - 0.8) = 5 at the goal, outside the (-1, 1) range of a tanh output.
 
 # DQN Neural Network
 
@@ -80,9 +83,9 @@ Training data for start state == 2:
 
 ![dqn state 2]({{ site.baseurl }}/assets/diagrams/200396035-8f17e0ae-f904-4859-ace2-2dbf6201cf14.png)
 
-After training, the Q-learner has learned an optimal path: 2->3->1->5:
+After training, the Q-learner has learned a shortest path from every room. From room 2 it takes 2->3->4->5, and all 100 greedy test episodes reach the cheese:
 
-![dqn state 2 final]({{ site.baseurl }}/assets/diagrams/200396180-ed85b77a-03d8-4a89-9345-1fb73bb99200.png)
+![dqn test trajectories]({{ site.baseurl }}/assets/plots/dqn_maze.png)
 
 # Determining The Size Of The DQN
 
@@ -93,10 +96,10 @@ size output/dqn_mazelearner.o
 
 ```
    text	   data	    bss	    dec	    hex	filename
-  10979	      8	   3652	  14639	   392f	output/dqn_mazelearner.o
+  11350	      8	   5148	  16506	   407a	output/dqn_mazelearner.o
 ```
 
-The entire DQN fits within **~16 KB**. Pretty small as DQN goes.
+The entire DQN fits within **~16.5 KB**. Pretty small as DQN goes.
 
 # Conclusion
 

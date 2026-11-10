@@ -326,6 +326,7 @@ namespace tinymind {
             ValueType qValue1;
             ActionType action;
             size_t actionIndex; // index/counter over actions[]; matches numberOfValidActions' type
+            bool allTied;
 
             switch(numberOfValidActions)
             {
@@ -348,17 +349,30 @@ namespace tinymind {
                     }
                     break;
                 default:
-                    bestQValue = 0;
-                    bestAction = EnvironmentType::EnvironmentInvalidAction;
-                    for(actionIndex = 0;actionIndex < numberOfValidActions;++actionIndex)
+                    // Largest Q value, whatever its sign. Only when every valid
+                    // action ties (e.g. an unvisited state of a zero-initialised
+                    // Q table) is there no preference, and InvalidAction tells
+                    // the learner to pick a random action instead.
+                    bestAction = actions[0];
+                    bestQValue = qValuePolicy.getQValue(state, bestAction);
+                    allTied = true;
+                    for(actionIndex = 1;actionIndex < numberOfValidActions;++actionIndex)
                     {
                         action = actions[actionIndex];
                         qValue = qValuePolicy.getQValue(state, action);
+                        if(qValue != bestQValue)
+                        {
+                            allTied = false;
+                        }
                         if(qValue > bestQValue)
                         {
                             bestQValue = qValue;
                             bestAction = action;
                         }
+                    }
+                    if(allTied)
+                    {
+                        bestAction = EnvironmentType::EnvironmentInvalidAction;
                     }
                     break;
             }
@@ -449,14 +463,30 @@ namespace tinymind {
         static const size_t NumberOfActions = EnvironmentType::EnvironmentNumberOfActions;
         static const size_t NumberOfInputLayerNeurons = NeuralNetworkType::NumberOfInputLayerNeurons;
 
-        QValueNeuralNetworkPolicy() : mIterations(0)
+        QValueNeuralNetworkPolicy() : mIterations(0), mFedState(0), mFedStateValid(false)
         {
         }
 
+        /**
+         * Q(state, action) from the online network. The network's outputs are
+         * for whichever input it last saw, so the state is fed forward first,
+         * unless it was the last one fed (ArgMaxPolicy asks once per action).
+         * getQValue is const for ArgMaxPolicy, so the network and that record
+         * are mutable: a forward pass changes no weights.
+         */
         ValueType getQValue(const StateType state, const ActionType action) const
         {
-            (void)state; // Unused parameter
             ValueType learnedValues[NumberOfActions];
+
+            if (!this->mFedStateValid || (this->mFedState != state))
+            {
+                ValueType inputs[NumberOfInputLayerNeurons];
+
+                EnvironmentType::getInputValues(state, &inputs[0]);
+                this->mNeuralNet.feedForward(&inputs[0]);
+                this->mFedState = state;
+                this->mFedStateValid = true;
+            }
 
             this->mNeuralNet.getLearnedValues(&learnedValues[0]);
 
@@ -489,8 +519,11 @@ namespace tinymind {
 
             EnvironmentType::getInputValues(state, &inputs[0]);
 
+            // Training needs this state's forward pass immediately before it,
+            // and changes the weights, so no earlier forward pass stays valid.
             this->mNeuralNet.feedForward(&inputs[0]);
             this->mNeuralNet.getLearnedValues(&values[0]);
+            this->mFedStateValid = false;
 
             values[action] = value;
 
@@ -513,8 +546,10 @@ namespace tinymind {
         }
     private:
         size_t mIterations;
-        NeuralNetworkType mNeuralNet;
+        mutable NeuralNetworkType mNeuralNet;
         NeuralNetworkType mTargetNeuralNet;
+        mutable StateType mFedState;
+        mutable bool mFedStateValid;
     };
 
     template<   typename EnvironmentType,
