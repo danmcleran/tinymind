@@ -9,6 +9,10 @@ description: >
   A retry against the same mirror often stalls the same way (on the 26.04
   image, azure.archive.ubuntu.com trickled the large amd64v3 packages until
   every attempt timed out), so retries after the first go to archive.ubuntu.com.
+  The runners have also lost every Canonical host at once, over HTTP and HTTPS
+  alike, while packages.microsoft.com kept working (2026-11-11: every job that
+  installed packages timed out for hours), so retries after the second go to
+  mirrors outside Canonical's network.
 
 inputs:
   packages:
@@ -68,6 +72,31 @@ runs:
           sudo sed -i 's#azure\.archive\.ubuntu\.com#archive.ubuntu.com#g' $files
         }
 
+        # Move the Ubuntu archives off Canonical's network entirely. Neither
+        # Canonical host above helps when the runners cannot reach Canonical
+        # at all, so the amd64 archive and security pockets go to
+        # mirrors.edge.kernel.org and the arm64 ports archive, which
+        # kernel.org does not carry, goes to mirrors.ocf.berkeley.edu. Both
+        # are fetched over HTTPS. A third-party mirror cannot hand apt altered
+        # packages: apt still verifies every index against Ubuntu's signing
+        # keys, so the worst a stale or broken mirror can do is fail the
+        # install. The runner image ships ca-certificates, and apt has spoken
+        # HTTPS natively since 1.5, so no extra package is needed.
+        use_external_mirror() {
+          local files
+          files="$(sudo grep -rlsE 'https?://((azure\.)?archive|security|(azure\.)?ports)\.ubuntu\.com' \
+                     /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d || true)"
+          if [ -z "$files" ]; then
+            echo "apt-install: no Canonical archive configured; keeping the sources as they are" >&2
+            return
+          fi
+          echo "apt-install: switching the Ubuntu archives to mirrors outside Canonical in:" $files >&2
+          sudo sed -E -i \
+            -e 's#https?://((azure\.)?archive|security)\.ubuntu\.com/ubuntu#https://mirrors.edge.kernel.org/ubuntu#g' \
+            -e 's#https?://(azure\.)?ports\.ubuntu\.com/ubuntu-ports#https://mirrors.ocf.berkeley.edu/ubuntu-ports#g' \
+            $files
+        }
+
         for attempt in $(seq 1 "$max"); do
           # Capture the status via `|| status=$?` rather than reading $? after
           # an `if`: an `if` whose condition fails and which has no `else`
@@ -101,6 +130,8 @@ runs:
             sudo apt-get clean || true
             if [ "$attempt" -eq 1 ]; then
               use_archive_mirror
+            elif [ "$attempt" -eq 2 ]; then
+              use_external_mirror
             fi
             sleep "$wait"
           fi
