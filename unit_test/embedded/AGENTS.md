@@ -1,0 +1,21 @@
+# unit_test/embedded
+
+The cross-corner regression guard for the platform feature gates in
+`cpp/include/tinymind_platform.hpp`. Repo-wide rules are in the root `AGENTS.md`.
+
+## Gate corners
+
+- `unit_test/embedded` is the regression guard — its Makefile builds eight corners of the `(FLOAT, STD, QUANT, FP16, INT16_ACCUM, SIMD_*)` matrix (`freestanding`, `no_stdlib`, `no_fpu`, `hosted`, `quant_freestanding`, `fp16_freestanding`, `int16_accum_freestanding`, `simd_disabled`) and `make check` runs all of them.
+- A separate `simd_prereq_regressions` make target locks the static_assert prerequisite chain via compile-failure checks.
+- `qtree_static_regressions` does the same for `QStaticDecisionTree` / `QStaticGBDT` (C++14 + C++17 builds, policy-vs-runtime agreement, five planted model defects that must fail to compile); `make check` runs both, and `check-clang` runs the qtree one under clang.
+- Every build that is meant to fail to compile carries `$(EXPECT_FAIL)` (`-DTINYMIND_EXPECT_COMPILE_FAILURE=1`); `tools/filter_compile_commands.py` drops those from `compile_commands.json` before `make tidy`, so a new negative check must use it too or clang-tidy reports its planted failure as a library error.
+
+## Arm, QEMU, heap and stack gates
+
+Further embedded gates live in the same Makefile: `arm_crosscompile` (HARD — build-only smoke compile across Cortex-M0+/M4/M33 and soft/hard float ABIs with `arm-none-eabi-g++`, proving the headers assemble for a real MCU, not just the host), `arm_crosscompile_clang` (HARD — the same corners cross-compiled with `clang++ --target=arm-none-eabi`, borrowing the arm-none-eabi GCC's target C++ headers via a queried `-isystem` list rather than hardcoded paths; covers the LLVM embedded toolchain for Arm deployment path), `heapfree` (HARD — `nm`-asserts the freestanding + quant objects reference no `malloc`/`operator new`), `arm_dsp_qemu` (HARD — the `SIMD_ARM_DSP` SMLAD backend is the one SIMD path no CI host can execute, so it is built three ways (GCC, Clang `-munaligned-access`, Clang at its strict-alignment bare-metal default) into bare-metal images and run for bit-exactness against the scalar reference on QEMU's `mps2-an386` Cortex-M4 under semihosting; each image must also contain an `smlad`, so a silent scalar fallback fails; proves correctness only — QEMU is not cycle-accurate; two further images build the test TU with GCC and Clang UBSan in trap mode, which needs no runtime bare-metal — the only UB check the SMLAD path gets; the startup file stays uninstrumented, and both compilers are kept because GCC misses an overflow whose result is discarded while Clang catches it), `helium_qemu` (HARD, CI job "Helium backends on emulated Cortex-M55" — the same test TU, `qemu_m/simd_qemu_test.cpp`, built with both Helium gates for QEMU's `mps3-an547` Cortex-M55: MVE-I dispatched and bit-exact, MVE-F called directly and bit-exact against a model of its lane arithmetic; GCC, Clang and a UBSan image of each; startup enables CP10/CP11 or the first MVE instruction faults; `objdump` needs `-m armv8.1-m.main` to decode MVE, and prints VMLADAVA as `vmlava`; the MVE-F header did not compile until this gate existed, since nothing else builds it), and `stack_usage` (advisory — `-fstack-usage` report of the deepest per-frame stack for the deployable Cortex-M4 int8 shape).
+
+## MemorySanitizer
+
+`check-msan` (HARD) runs the embedded gate corners under MemorySanitizer, closing the uninitialized-read gap that ASan and UBSan structurally cannot cover — it also replays the fuzz corpus through `replay_main.cpp` (`make -C fuzz msan-replay`; plain C I/O so no uninstrumented libstdc++ member runs), and is otherwise scoped to `unit_test/embedded` because MSan needs every linked object instrumented (a stock libstdc++ makes the Boost suites die inside Boost.Test's static init), and it runs at `-O0` because at `-O1`+ the optimizer folds undef reads away before instrumentation sees them.
+
+**A new sanitizer or CI gate must be shown to fail before it is trusted** — plant the defect it exists to catch and confirm it is reported. That `-O0` is why this rule is written down rather than assumed: at `-O1` a planted uninitialized read is optimized away and the job passes while detecting nothing, so raising the level to tidy up build flags would leave the gate green and blind.

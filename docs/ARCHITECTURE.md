@@ -2,8 +2,9 @@
 
 Deep reference for the optional quantization / continuous-time / SIMD tiers, the
 test matrix, the examples, and the apps. The load-bearing rules (build commands,
-platform feature gates, core library map, design pattern) live in the repo-root
-`CLAUDE.md`; this file is the long-form companion it points to.
+language floor, training-arithmetic rules) live in the repo-root `AGENTS.md`, and
+the platform feature gates, core library map and design pattern in
+`cpp/AGENTS.md`; this file is the long-form companion they point to.
 
 ## Quantization (optional, `TINYMIND_ENABLE_QUANTIZATION=1`)
 
