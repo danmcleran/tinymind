@@ -1184,7 +1184,7 @@ tinymind/
 
 ## Documentation
 
-- [CLAUDE.md](CLAUDE.md) -- Architecture overview and build commands
+- [AGENTS.md](AGENTS.md) -- Rules for coding agents: build commands, language floor, training-arithmetic and style rules (`CLAUDE.md` imports it; subdirectories carry their own)
 - [KAN.md](KAN.md) -- KAN implementation plan and summary
 - [LSTM.md](LSTM.md) -- LSTM implementation analysis and improvement roadmap
 - [QUANTIZATION.md](QUANTIZATION.md) -- Post-training int8 quantization plan and design notes

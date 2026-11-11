@@ -327,7 +327,7 @@ tidy : compile_commands.json
 
 # Header self-containment (HARD GATE). Header-only library: each cpp/**/*.hpp
 # must compile as its own translation unit. The library's include contract is
-# "tinymind_platform.hpp first, then the header" (see CLAUDE.md), so that prelude
+# "tinymind_platform.hpp first, then the header" (see cpp/AGENTS.md), so that prelude
 # is injected before each header. Bundled builds mask missing includes because
 # an earlier TU drags in <cstddef>/<cstdint> et al.; this catches them one file
 # at a time. Fails if any header is not self-contained -- fix by adding the
