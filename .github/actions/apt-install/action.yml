@@ -9,6 +9,10 @@ description: >
   A retry against the same mirror often stalls the same way (on the 26.04
   image, azure.archive.ubuntu.com trickled the large amd64v3 packages until
   every attempt timed out), so retries after the first go to archive.ubuntu.com.
+  Both of those are plain HTTP, and the runners have also lost HTTP to every
+  Ubuntu mirror while HTTPS still worked (2026-11-11: three MSan nightlies in
+  a row timed out on azure.archive and archive alike), so retries after the
+  second fetch the Ubuntu archives over HTTPS.
 
 inputs:
   packages:
@@ -68,6 +72,25 @@ runs:
           sudo sed -i 's#azure\.archive\.ubuntu\.com#archive.ubuntu.com#g' $files
         }
 
+        # Fetch the Ubuntu archives over HTTPS. The runner's mirror list
+        # already carries https:// entries for archive and security behind the
+        # http:// one, but apt only moves down the list after an entry fails,
+        # and a stalled HTTP fetch spends the whole update budget before that
+        # happens. Rewriting the http:// entries puts HTTPS first. The runner
+        # image ships ca-certificates, and apt has spoken HTTPS natively since
+        # 1.5, so no extra package is needed.
+        use_https_archive() {
+          local files
+          files="$(sudo grep -rlsE 'http://((azure\.)?archive|security|ports)\.ubuntu\.com' \
+                     /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d || true)"
+          if [ -z "$files" ]; then
+            echo "apt-install: no http:// Ubuntu archive configured; keeping the sources as they are" >&2
+            return
+          fi
+          echo "apt-install: switching the Ubuntu archives from http:// to https:// in:" $files >&2
+          sudo sed -E -i 's#http://((azure\.)?archive|security|ports)\.ubuntu\.com#https://\1.ubuntu.com#g' $files
+        }
+
         for attempt in $(seq 1 "$max"); do
           # Capture the status via `|| status=$?` rather than reading $? after
           # an `if`: an `if` whose condition fails and which has no `else`
@@ -101,6 +124,8 @@ runs:
             sudo apt-get clean || true
             if [ "$attempt" -eq 1 ]; then
               use_archive_mirror
+            elif [ "$attempt" -eq 2 ]; then
+              use_https_archive
             fi
             sleep "$wait"
           fi
