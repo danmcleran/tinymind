@@ -257,12 +257,16 @@ namespace tinymind {
  * Requantizer::oneRounding() once per layer and, when every requantizer
  * passes, run a second copy of the loop that calls applyOneRounding()
  * instead, which has no saturating path; the result is identical. It
- * defaults on for Thumb-1 only. On the Cortex-M4 the split measured faster
- * per layer but up to 10% slower over a whole inlined model, and costs a
- * second copy of the loop in flash, so other targets keep the single loop.
+ * defaults on for GCC on Thumb-1 only, where it was measured: the L031 MLP
+ * went from 48,619 to 33,010 cycles at -O2. Clang on the same core ran it
+ * 7-18% slower with the split than without, and on the Cortex-M4 GCC ran it
+ * faster per layer but up to 10% slower over a whole inlined model, so every
+ * other compiler and target keeps the single loop. The split also costs a
+ * second copy of the loop in flash.
  */
 #ifndef TINYMIND_SPLIT_REQUANTIZER_FORMS
-#if defined(__ARM_ARCH_ISA_THUMB) && (__ARM_ARCH_ISA_THUMB == 1)
+#if defined(__GNUC__) && !defined(__clang__) && \
+    defined(__ARM_ARCH_ISA_THUMB) && (__ARM_ARCH_ISA_THUMB == 1)
 #define TINYMIND_SPLIT_REQUANTIZER_FORMS 1
 #else
 #define TINYMIND_SPLIT_REQUANTIZER_FORMS 0
