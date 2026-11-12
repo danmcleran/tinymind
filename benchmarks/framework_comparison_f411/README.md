@@ -209,7 +209,7 @@ What differs from the F411 run:
 
 | Framework | O2 cycles | O3 cycles | O3 us @32MHz | flash O2 / O3 (B) | RAM (B) | acc | int8 bit-exact |
 |---|---:|---:|---:|---:|---:|---:|---|
-| tinymind int8 (scalar) | 48,619 | 36,006 | 1,125 | 6,732 / 6,488 | 344 | 96.88% | yes |
+| tinymind int8 (scalar) | 33,010 | 32,644 | 1,020 | 7,596 / 6,136 | 368 | 96.88% | yes |
 | TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 39,160 / 43,444 | 1,872+ | - | - |
 | TFLM int8 (reference) | does not fit | does not fit | - | 33,944 / 38,292 | 1,776+ | - | - |
 | TFLM float32 | does not fit | does not fit | - | 45,700 / 49,984 | 1,392+ | - | - |
@@ -219,7 +219,7 @@ What differs from the F411 run:
 
 | Framework | O2 cycles | O3 cycles | O3 us @32MHz | flash O2 / O3 (B) | RAM (B) | int8 bit-exact |
 |---|---:|---:|---:|---:|---:|---|
-| tinymind int8 (scalar) | 821,307 | 740,864 | 23,152 | 7,204 / 8,592 | 5,644 | yes |
+| tinymind int8 (scalar) | 821,251 | 740,279 | 23,134 | 7,656 / 8,220 | 5,596 | yes |
 | TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 83,000 / 90,468 | 5,136+ | - |
 | TFLM int8 (reference) | does not fit | does not fit | - | 51,072 / 57,052 | 5,072+ | - |
 | TFLM float32 | does not fit | does not fit | - | 82,852 / 90,304 | 14,448+ | - |
@@ -254,32 +254,34 @@ Cycles are the median over 33 inferences of different samples. A tree walk's len
 so the min-max spread is 7-10% (26% for `loadable`, whose float vote tally also varies), against < 0.1% for
 the networks.
 
-Per layer at `-O3` (cycles): MLP fc0 25,625 / fc1 7,709 / fc2 2,851; KWS conv3x3 510,808, maxpool 24,921,
-dwconv3x3 72,544, pwconv 135,798, avgpool 5,756, fc 2,851.
+Per layer at `-O3` (cycles): MLP fc0 23,185 / fc1 6,956 / fc2 2,696; KWS conv3x3 510,808, maxpool 24,921,
+dwconv3x3 72,544, pwconv 135,798, avgpool 5,756, fc 2,696.
 
 Findings:
 
 1. **Only tinymind fits.** TFLM's runtime plus model alone needs 33.9 KB (reference kernels, MLP, `-O2`)
    to 90 KB, more than the part's 32 KB of flash before the harness or a single test input is added.
-   tinymind needs 6.7 KB for the MLP and 7.2 KB for the KWS CNN, both at `-O2`. Thumb-1 code is larger
+   tinymind needs 7.6 KB for the MLP and 7.7 KB for the KWS CNN, both at `-O2`. Thumb-1 code is larger
    than Thumb-2: TFLM's reference MLP grows from 25.7 KB on the M4 to 33.9 KB here (+32%); tinymind's MLP
-   from 5.8 KB to 6.7 KB.
+   from 5.8 KB to 7.6 KB (6.1 KB at `-O3`).
 2. **Bit-exact on ARMv6-M.** Both tinymind int8 models hash-match the host and the F411 on the M0+, with no
    alignment faults on a core that has no unaligned access.
-3. **MLP: int8 vs software float.** On a part without an FPU, tinymind's int8 MLP runs in 36.0k cycles
-   at `-O3` (1.1 ms) and emlearn's float MLP in 707k (22 ms): 20x (15x at `-O2`). That is not an int8-vs-int8 comparison, since
+3. **MLP: int8 vs software float.** On a part without an FPU, tinymind's int8 MLP runs in 32.6k cycles
+   at `-O3` (1.0 ms) and emlearn's float MLP in 707k (22 ms): 22x. That is not an int8-vs-int8 comparison, since
    emlearn has no int8 MLP; it is what each library offers for this network on this part. Both get 31/32 of
    the subset right.
-4. **M0+ vs M4F, same code, cycles at `-O3`.** MLP 36,006 vs 21,002 (1.7x); KWS 740,864 vs 254,766
+4. **M0+ vs M4F, same code, cycles at `-O3`.** MLP 32,644 vs 21,002 (1.6x); KWS 740,279 vs 254,766
    (2.9x), against tinymind's scalar build on the F411. At 32 MHz the KWS CNN takes 23 ms.
-5. **The MLP is 36% slower at `-O2` than in the previous measurement** (48,619 cycles against 35,637, and
-   1.2 KB larger); `-O3` is unchanged (36,006 against 35,963). Building each library commit since then
-   places it at #230, which made `Requantizer::apply`'s rarely taken saturating path saturate instead of
-   overflowing. The MLP's requantizers never take that path; why the change costs the dense layers at
-   `-O2` is not yet understood, and moving the path out of line recovered only part of it.
    Requantization's 64-bit multiply is a libgcc call (`__aeabi_lmul`) on ARMv6-M, and the KWS stem is
    69% of the network; both are where M0+ tuning would start.
-5. **Trees: tinymind's inline forest ties emlearn's.** The first run (#221) walked the forest:
+5. **The MLP lost 36% at `-O2` and got it back (#275).** Re-measured at `6a8b522` it took 48,619 cycles at
+   `-O2` against 35,637 before; building each library commit since then placed the jump at #230, which
+   grew `Requantizer::apply`'s saturating path. The dense layers call `apply` once per output, so that
+   path's code sat in the output loop even though the MLP never takes it, and on Thumb-1 GCC spilled the
+   dot product beside it. #275 checks once per layer whether every requantizer takes the one-rounding
+   path and runs a copy of the loop without the saturating code (GCC on Thumb-1 only): 33,010 at `-O2`
+   and 32,644 at `-O3`, faster than before #230 at both levels, for 0.9 KB more flash at `-O2`.
+6. **Trees: tinymind's inline forest ties emlearn's.** The first run (#221) walked the forest:
    2,524 cycles at `-O3` to emlearn's generated if/else at 841 (3.0x), in 12.8 KB of flash to 6.0 KB. A
    walked `QTreeNode` costs about 20 Thumb-1 instructions (four loads, index arithmetic for the 12-byte node
    stride, the walk's cycle guard), and every leaf is a full 12-byte node, where an inline node is a load, a
@@ -387,16 +389,16 @@ Every Clang image is bit-exact with the GCC build. Cycles (`infer_med`), Clang 1
 | F411 | tm_mlperf_kws_dsp | 9,002,881 | 10,606,143 | 8,011,750 | 10,300,182 |
 | F411 | tm_mlperf_ic | 88,722,466 | 88,256,142 | 85,326,662 | 88,249,862 |
 | F411 | tm_mlperf_ic_dsp | 27,637,585 | 40,354,472 | 26,368,775 | 38,141,841 |
-| L031 | tm_mlp | 48,619 | 38,907 | 36,006 | 39,339 |
-| L031 | tm_kws | 821,307 | 809,981 | 740,864 | 808,981 |
+| L031 | tm_mlp | 33,010 | 38,907 | 32,644 | 39,339 |
+| L031 | tm_kws | 821,251 | 809,981 | 740,279 | 808,981 |
 | L031 | tm_rf | 2,581 | 2,309 | 2,524 | 2,310 |
 | L031 | tm_rf_inline_u8 | 872 | 945 | 845 | 930 |
 | L031 | tm_rf_compact | 1,705 | 1,838 | 1,649 | 1,839 |
 
 Clang is slower on every network at `-O3`, by 3-45%, and most on the SMLAD builds; with it, tinymind loses
 to TFLM+CMSIS-NN (GCC) on both MLPerf models. Why is not yet established; Clang calls
-`Requantizer::apply` out of line where GCC inlines it. Clang's L031 MLP at `-O2` beats GCC's because of
-the GCC `-O2` slowdown described above (finding 5).
+`Requantizer::apply` out of line where GCC inlines it. #275's Cortex-M0+ fix (finding 5) is not applied
+under Clang, which ran the MLP 7-18% slower with it.
 
 The first Clang run exposed a harness bug: the empty `for (;;) {}` after the report is undefined behaviour
 in C++ (forward progress), Clang deleted it, and the L031 images fell through into the next function and

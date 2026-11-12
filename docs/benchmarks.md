@@ -9,7 +9,7 @@ nav_order: 14
 tinymind, TensorFlow Lite for Microcontrollers (TFLM, now LiteRT for Microcontrollers) and emlearn were run on the same microcontrollers: a Cortex-M4F (NUCLEO-F411RE) and a [Cortex-M0+](#cortex-m0-nucleo-l031k6) (NUCLEO-L031K6). Every framework executed the same models, and the int8 frameworks used the same int8 weights. Everything was measured on the board; nothing was simulated.
 
 {: .note }
-Every table re-measured 2026-11-12 on both boards, at tinymind `6a8b522`, with the code in [`benchmarks/framework_comparison_f411`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/framework_comparison_f411). These are numbers from two boards, one compiler and five models. They describe this setup, not every workload. Updated after [#192](https://github.com/danmcleran/tinymind/pull/192), [#195](https://github.com/danmcleran/tinymind/pull/195), [#198](https://github.com/danmcleran/tinymind/pull/198), [#199](https://github.com/danmcleran/tinymind/pull/199), [#202](https://github.com/danmcleran/tinymind/pull/202), [#204](https://github.com/danmcleran/tinymind/pull/204), [#208](https://github.com/danmcleran/tinymind/pull/208), [#210](https://github.com/danmcleran/tinymind/pull/210) and [#211](https://github.com/danmcleran/tinymind/pull/211), nine tinymind fixes this benchmark prompted (see [what changed](#what-changed-since-the-first-run)), and after [#229](https://github.com/danmcleran/tinymind/pull/229) and [#273](https://github.com/danmcleran/tinymind/pull/273), which the MLPerf Tiny models prompted.
+Every table re-measured 2026-11-12 on both boards, at tinymind `6a8b522` with [#275](https://github.com/danmcleran/tinymind/pull/275) (which changes only Cortex-M0+ code), with the code in [`benchmarks/framework_comparison_f411`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/framework_comparison_f411). These are numbers from two boards, one compiler and five models. They describe this setup, not every workload. Updated after [#192](https://github.com/danmcleran/tinymind/pull/192), [#195](https://github.com/danmcleran/tinymind/pull/195), [#198](https://github.com/danmcleran/tinymind/pull/198), [#199](https://github.com/danmcleran/tinymind/pull/199), [#202](https://github.com/danmcleran/tinymind/pull/202), [#204](https://github.com/danmcleran/tinymind/pull/204), [#208](https://github.com/danmcleran/tinymind/pull/208), [#210](https://github.com/danmcleran/tinymind/pull/210) and [#211](https://github.com/danmcleran/tinymind/pull/211), nine tinymind fixes this benchmark prompted (see [what changed](#what-changed-since-the-first-run)), after [#229](https://github.com/danmcleran/tinymind/pull/229) and [#273](https://github.com/danmcleran/tinymind/pull/273), which the MLPerf Tiny models prompted, and after [#275](https://github.com/danmcleran/tinymind/pull/275), a Cortex-M0+ fix this refresh prompted.
 
 ## Setup
 
@@ -85,7 +85,7 @@ Each layer was timed separately, behind its own non-inlined call.
 
 **Where the time goes now.** The single-channel 3×3 stem is still about two thirds of the CNN's time, at 29% of CMSIS-NN's cost for the same layer (126k vs 435k cycles), so it remains the layer to work on.
 
-**Build tinymind at `-O3`.** The MLP runs within 2% at either level, and the CNN is 8% slower at `-O2` with SMLAD (196k vs 182k) and 6% slower without it. On the Cortex-M0+ the gap is larger: the MLP takes 35% more cycles at `-O2` (see [below](#cortex-m0-nucleo-l031k6)). tinymind's kernels are templates compiled in your own translation unit, so the optimizer's choices are part of its performance; CMSIS-NN's kernels ship precompiled and barely move between levels.
+**Build tinymind at `-O3`.** The MLP runs within 2% at either level, and the CNN is 8% slower at `-O2` with SMLAD (196k vs 182k) and 6% slower without it. tinymind's kernels are templates compiled in your own translation unit, so the optimizer's choices are part of its performance; CMSIS-NN's kernels ship precompiled and barely move between levels.
 
 **RAM is close on the CNN.** tinymind keeps every intermediate activation buffer static. TFLM's arena planner reuses buffers but carries interpreter state. Alternating between two buffers (2,592 B and 784 B instead of 4,432 B) would save about 1 KB.
 
@@ -160,7 +160,7 @@ The same harness, backends and models on the smallest class of part, plus one mo
 
 | Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM | Accuracy |
 |---|---:|---:|---:|---:|---:|---:|
-| **tinymind int8** | **48,619** | **36,006** | **1.13 ms** | 6.5–6.7 KB | 344 B | 96.88% |
+| **tinymind int8** | **33,010** | **32,644** | **1.02 ms** | 6.1–7.6 KB | 368 B | 96.88% |
 | TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 39.2–43.4 KB | 1,872+ B | - |
 | TFLM int8 (reference) | does not fit | does not fit | - | 33.9–38.3 KB | 1,776+ B | - |
 | TFLM float32 | does not fit | does not fit | - | 45.7–50.0 KB | 1,392+ B | - |
@@ -170,7 +170,7 @@ The same harness, backends and models on the smallest class of part, plus one mo
 
 | Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM |
 |---|---:|---:|---:|---:|---:|
-| **tinymind int8** | **821,307** | **740,864** | **23.2 ms** | 7.2–8.6 KB | 5,644 B |
+| **tinymind int8** | **821,251** | **740,279** | **23.1 ms** | 7.7–8.2 KB | 5,596 B |
 | TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 83.0–90.5 KB | 5,136+ B |
 | TFLM int8 (reference) | does not fit | does not fit | - | 51.1–57.1 KB | 5,072+ B |
 | TFLM float32 | does not fit | does not fit | - | 82.9–90.3 KB | 14,448+ B |
@@ -194,15 +194,15 @@ A tree walk's length depends on the input, so the spread between fastest and slo
 
 ### What the M0+ numbers say
 
-**Only tinymind fits the networks.** TFLM's runtime plus the MLP alone needs 34–50 KB, more than the part's 32 KB of flash before the harness or a test input is added. tinymind runs the MLP in 6.7 KB and the CNN in 7.2 KB at `-O2`, bit-exact with the host and the F411 on a core that has no unaligned access.
+**Only tinymind fits the networks.** TFLM's runtime plus the MLP alone needs 34–50 KB, more than the part's 32 KB of flash before the harness or a test input is added. tinymind runs the MLP in 7.6 KB and the CNN in 7.7 KB at `-O2`, bit-exact with the host and the F411 on a core that has no unaligned access.
 
-**On the MLP, int8 against software float is 20× at `-O3`** (36.0k vs 707k cycles) and 15× at `-O2`. That is not int8 against int8, since emlearn has no int8 MLP; it is what each library offers for this network on a part without an FPU.
+**On the MLP, int8 against software float is 22×** (33.0k vs 712k cycles at `-O2`). That is not int8 against int8, since emlearn has no int8 MLP; it is what each library offers for this network on a part without an FPU.
 
 **The random forest went from a 3× loss to a tie.** The first run walked the forest with `QDecisionTree`: about 20 Thumb-1 instructions per node and a full 12-byte node per leaf, against emlearn's generated load, compare-immediate and branch. [`QStaticDecisionTree`]({{ site.baseurl }}/architectures/decision-trees#compile-time-models) (#223) generates that same code from the same node pool at compile time, so the pool is not stored at all. It is 2.9× faster than the walk in about half its size. With `uint8_t` features, which load with Thumb-1's immediate-offset `LDRB` instead of a register-offset `LDRSB`, it beats emlearn at `-O2` (872 vs 917 cycles), is within 0.5% at `-O3` (845 vs 841), is smaller at `-O3` (7.9 vs 8.3 KB) and uses less RAM (112 vs 184 B). When flash matters more than cycles, the compact policy packs the same pool at compile time into 4-byte decision nodes in pre-order and a deduplicated int8 leaf table: the whole forest is 3.0 KB, half of emlearn's smallest and a quarter of the walk, at 1.5× the walk's speed and about half of inline's. Against emlearn's data-driven `loadable` method it is 3.7–3.9× faster in 42% of the flash. The model is also checked when it compiles: a split on a feature the input does not have, or a child index outside the pool, is a build error instead of an out-of-bounds read.
 
-**The MLP is 36% slower at `-O2` than in the previous measurement** (48.6k cycles against 35.6k, and 1.2 KB larger), while `-O3` is unchanged (36.0k against 36.0k). Re-measuring each library change since then on the board places it at [#230](https://github.com/danmcleran/tinymind/pull/230), which made `Requantizer::apply`'s rarely taken saturating path saturate instead of overflowing. The MLP's requantizers never take that path, and why the change costs the dense layers at `-O2` is not yet understood; moving the path out of line recovered only part of it. `-O3` is not affected.
+**The MLP is 7–9% faster than in the previous measurement, after first being 36% slower.** Re-measured at `6a8b522`, it took 48.6k cycles at `-O2` against 35.6k before. Building each library change since then on the board placed the jump at [#230](https://github.com/danmcleran/tinymind/pull/230), which grew `Requantizer::apply`'s saturating path (scale ratios of 0.25 and up, which the MLP never takes). The dense layers call `apply` once per output, so that path's code sat in the output loop, and on Thumb-1, whose instructions mostly reach eight registers, GCC at `-O2` spilled the dot product beside it. [#275](https://github.com/danmcleran/tinymind/pull/275) checks once per layer whether every requantizer takes the one-rounding path and then runs a copy of the loop without the saturating code, for GCC on Thumb-1 only: 33.0k cycles at `-O2` and 32.6k at `-O3`, against 35.6k and 36.0k before #230, bit-exact, for 0.9 KB more flash at `-O2`.
 
-**M0+ against M4F, same code.** At `-O3` the MLP takes 1.7× the cycles of the F411's scalar build and the CNN 2.9×. Requantization's 64-bit multiply becomes a library call (`__aeabi_lmul`) on ARMv6-M, and the 3×3 stem is 69% of the CNN, so those are where M0+ tuning would start.
+**M0+ against M4F, same code.** At `-O3` the MLP takes 1.6× the cycles of the F411's scalar build and the CNN 2.9×. Requantization's 64-bit multiply becomes a library call (`__aeabi_lmul`) on ARMv6-M, and the 3×3 stem is 69% of the CNN, so those are where M0+ tuning would start.
 
 ## tinymind under Clang
 
@@ -220,12 +220,12 @@ Two settings matter. **`-munaligned-access`**: Clang's bare-metal Arm target ass
 | | KWS CNN, +SMLAD | 181,853 | 222,330 | +22.3% |
 | | MLPerf keyword spotting, +SMLAD | 8,011,750 | 10,300,182 | +28.6% |
 | | MLPerf image classification, +SMLAD | 26,368,775 | 38,141,841 | +44.6% |
-| L031 | MLP | 36,006 | 39,339 | +9.3% |
-| | KWS CNN | 740,864 | 808,981 | +9.2% |
+| L031 | MLP | 32,644 | 39,339 | +20.5% |
+| | KWS CNN | 740,279 | 808,981 | +9.3% |
 | | Random forest, compile-time inline (uint8) | 845 | 930 | +10.1% |
 | | Random forest, run-time walk | 2,524 | 2,310 | −8.5% |
 
-**Build tinymind with GCC where you can.** Clang is slower on every network, by 3–45%, and most on the SMLAD builds. Built with Clang, tinymind no longer beats TFLM with CMSIS-NN (built with GCC) on the MLPerf models: 10.3M against 9.6M cycles on keyword spotting and 38.1M against 37.4M on image classification. It still beats it on the two models built for this benchmark (12.3k against 14.0k on the MLP, 222k against 576k on the CNN). The main gaps are not yet explained; one visible difference is that Clang calls `Requantizer::apply` out of line where GCC inlines it. At `-O2` on the Cortex-M0+, Clang's MLP (38.9k cycles) beats GCC's, because of the [GCC `-O2` slowdown above](#cortex-m0-nucleo-l031k6).
+**Build tinymind with GCC where you can.** Clang is slower on every network, by 3–45%, and most on the SMLAD builds. Built with Clang, tinymind no longer beats TFLM with CMSIS-NN (built with GCC) on the MLPerf models: 10.3M against 9.6M cycles on keyword spotting and 38.1M against 37.4M on image classification. It still beats it on the two models built for this benchmark (12.3k against 14.0k on the MLP, 222k against 576k on the CNN). The main gaps are not yet explained; one visible difference is that Clang calls `Requantizer::apply` out of line where GCC inlines it. The Cortex-M0+ fix in #275 is not applied under Clang, which ran the MLP 7–18% slower with it.
 
 ## What changed since the first run
 
