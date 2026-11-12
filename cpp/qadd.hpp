@@ -83,25 +83,33 @@ namespace tinymind {
 
         void forward(const InAType* a, const InBType* b, OutType* out) const
         {
+            // Snapshot the fields into locals. Every output store is an int8_t write,
+            // which may alias *this, so member reads inside the loop would be
+            // reloaded once per element.
+            const int32_t zpA = static_cast<int32_t>(input_a_zero_point);
+            const int32_t zpB = static_cast<int32_t>(input_b_zero_point);
+            const int32_t leftScale = static_cast<int32_t>(1) << left_shift;
+            const int32_t multA = input_a_multiplier;
+            const int32_t shiftA = input_a_shift;
+            const int32_t multB = input_b_multiplier;
+            const int32_t shiftB = input_b_shift;
+            const Requantizer<int32_t, OutType> rq = output_requantizer;
+
             for (std::size_t i = 0; i < N_; ++i)
             {
-                const int32_t a_minus_zp =
-                    static_cast<int32_t>(a[i]) -
-                    static_cast<int32_t>(input_a_zero_point);
-                const int32_t b_minus_zp =
-                    static_cast<int32_t>(b[i]) -
-                    static_cast<int32_t>(input_b_zero_point);
+                const int32_t a_minus_zp = static_cast<int32_t>(a[i]) - zpA;
+                const int32_t b_minus_zp = static_cast<int32_t>(b[i]) - zpB;
 
-                const int32_t shifted_a = a_minus_zp * (static_cast<int32_t>(1) << left_shift);
-                const int32_t shifted_b = b_minus_zp * (static_cast<int32_t>(1) << left_shift);
+                const int32_t shifted_a = a_minus_zp * leftScale;
+                const int32_t shifted_b = b_minus_zp * leftScale;
 
                 const int32_t scaled_a = multiplyByQuantizedMultiplier(
-                    shifted_a, input_a_multiplier, input_a_shift);
+                    shifted_a, multA, shiftA);
                 const int32_t scaled_b = multiplyByQuantizedMultiplier(
-                    shifted_b, input_b_multiplier, input_b_shift);
+                    shifted_b, multB, shiftB);
 
                 const int32_t sum = scaled_a + scaled_b;
-                out[i] = output_requantizer.apply(sum);
+                out[i] = rq.apply(sum);
             }
         }
     };
