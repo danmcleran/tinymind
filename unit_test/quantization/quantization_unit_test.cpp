@@ -3113,6 +3113,213 @@ BOOST_AUTO_TEST_CASE(fp16_bf16_buffer_round_trip)
 #endif // TINYMIND_ENABLE_FLOAT
 
 // ---------------------------------------------------------------------------
+// Requantizer::applyOneRounding and the split dense loops.
+//
+// With TINYMIND_SPLIT_REQUANTIZER_FORMS (on in this suite's Makefile, and by
+// default on Thumb-1), QDense and the single-pixel pointwise layers run a
+// copy of their output loop that calls applyOneRounding() when every
+// requantizer allows it, and the general loop otherwise. Both must give
+// apply()'s result exactly.
+// ---------------------------------------------------------------------------
+
+#if !TINYMIND_SPLIT_REQUANTIZER_FORMS
+#error "the quantization suite builds with TINYMIND_SPLIT_REQUANTIZER_FORMS=1 (see its Makefile)"
+#endif
+
+namespace
+{
+    struct SplitFormRng
+    {
+        uint32_t state;
+
+        uint32_t next()
+        {
+            state = state * 1664525u + 1013904223u;
+            return state;
+        }
+
+        int32_t range(int32_t lo, int32_t hi)
+        {
+            const int64_t span = static_cast<int64_t>(hi) - static_cast<int64_t>(lo) + 1;
+            if (span > static_cast<int64_t>(UINT32_MAX))
+            {
+                return static_cast<int32_t>(next());
+            }
+            return static_cast<int32_t>(static_cast<int64_t>(lo) +
+                static_cast<int64_t>(next() % static_cast<uint32_t>(span)));
+        }
+    };
+
+    template<typename T>
+    void applyOneRoundingMatchesApply(uint32_t seed)
+    {
+        SplitFormRng rng = {seed};
+        const int32_t lo = static_cast<int32_t>(std::numeric_limits<T>::min());
+        const int32_t hi = static_cast<int32_t>(std::numeric_limits<T>::max());
+        static const int32_t edges[] = {INT32_MIN, INT32_MIN + 1, -1, 0, 1, INT32_MAX - 1, INT32_MAX};
+        std::size_t mismatches = 0;
+        for (int set = 0; set < 400; ++set)
+        {
+            Requantizer<int32_t, T> rq;
+            rq.multiplier = static_cast<int32_t>(rng.next() >> 1);
+            rq.shift = rng.range(2, 31);
+            rq.zero_point = static_cast<T>(rng.range(lo, hi));
+            const int32_t a = rng.range(lo, hi);
+            const int32_t b = rng.range(lo, hi);
+            rq.qmin = static_cast<T>((a < b) ? a : b);
+            rq.qmax = static_cast<T>((a < b) ? b : a);
+            BOOST_TEST(rq.oneRounding());
+            for (int k = 0; k < 64; ++k)
+            {
+                const int32_t acc = (k < 7) ? edges[k] : static_cast<int32_t>(rng.next());
+                if (rq.applyOneRounding(acc) != rq.apply(acc))
+                {
+                    ++mismatches;
+                }
+            }
+        }
+        BOOST_TEST(mismatches == 0u);
+
+        // The forms apply() sends down its saturating path.
+        Requantizer<int32_t, T> rq;
+        rq.multiplier = 1 << 30;
+        rq.shift = 1;
+        BOOST_TEST(!rq.oneRounding());
+        rq.shift = -3;
+        BOOST_TEST(!rq.oneRounding());
+        rq.shift = 7;
+        rq.multiplier = -5;
+        BOOST_TEST(!rq.oneRounding());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(requantizer_apply_one_rounding_matches_apply)
+{
+    applyOneRoundingMatchesApply<int8_t>(11u);
+    applyOneRoundingMatchesApply<uint8_t>(12u);
+    applyOneRoundingMatchesApply<int16_t>(13u);
+    applyOneRoundingMatchesApply<int32_t>(14u);
+}
+
+namespace
+{
+    constexpr std::size_t kSplitIn = 16;
+    constexpr std::size_t kSplitOut = 8;
+
+    struct SplitDenseCase
+    {
+        int8_t weights[kSplitOut * kSplitIn];
+        int32_t biases[kSplitOut];
+        int8_t input[kSplitIn];
+        int8_t zeroPoint;
+
+        explicit SplitDenseCase(uint32_t seed)
+        {
+            SplitFormRng rng = {seed};
+            for (std::size_t i = 0; i < kSplitOut * kSplitIn; ++i)
+            {
+                weights[i] = static_cast<int8_t>(rng.range(-127, 127));
+            }
+            for (std::size_t f = 0; f < kSplitOut; ++f)
+            {
+                biases[f] = rng.range(-5000, 5000);
+            }
+            for (std::size_t i = 0; i < kSplitIn; ++i)
+            {
+                input[i] = static_cast<int8_t>(rng.range(-128, 127));
+            }
+            zeroPoint = static_cast<int8_t>(rng.range(-20, 20));
+        }
+
+        // The dot product and requantizer written out, per filter.
+        int8_t reference(std::size_t f, const Requantizer<int32_t, int8_t>& rq) const
+        {
+            int32_t acc = biases[f];
+            for (std::size_t i = 0; i < kSplitIn; ++i)
+            {
+                acc += static_cast<int32_t>(weights[f * kSplitIn + i]) *
+                       (static_cast<int32_t>(input[i]) - static_cast<int32_t>(zeroPoint));
+            }
+            return rq.apply(acc);
+        }
+    };
+
+    Requantizer<int32_t, int8_t> splitRequantizer(int32_t multiplier, int32_t shift)
+    {
+        Requantizer<int32_t, int8_t> rq;
+        rq.multiplier = multiplier;
+        rq.shift = shift;
+        rq.zero_point = 3;
+        rq.qmin = -128;
+        rq.qmax = 127;
+        return rq;
+    }
+}
+
+BOOST_AUTO_TEST_CASE(dense_layers_split_requantizer_forms_match_reference)
+{
+    // A one-rounding requantizer (the split loop) and two that apply() sends
+    // down its saturating path (the general loop).
+    const Requantizer<int32_t, int8_t> forms[] = {
+        splitRequantizer(1518500250, 9),
+        splitRequantizer(1518500250, 1),
+        splitRequantizer(1073741824, -2),
+    };
+    const SplitDenseCase c(77u);
+    for (std::size_t k = 0; k < 3; ++k)
+    {
+        QDense<int8_t, int8_t, int32_t, int8_t, kSplitIn, kSplitOut> dense;
+        dense.weights = c.weights;
+        dense.biases = c.biases;
+        dense.input_zero_point = c.zeroPoint;
+        dense.requantizer = forms[k];
+        int8_t out[kSplitOut];
+        dense.forward(c.input, out);
+
+        QPointwiseConv2D<int8_t, int8_t, int32_t, int8_t, 1, 1, kSplitIn, kSplitOut> pointwise;
+        pointwise.weights = c.weights;
+        pointwise.biases = c.biases;
+        pointwise.input_zero_point = c.zeroPoint;
+        pointwise.requantizer = forms[k];
+        int8_t outPointwise[kSplitOut];
+        pointwise.forward(c.input, outPointwise);
+
+        for (std::size_t f = 0; f < kSplitOut; ++f)
+        {
+            const int8_t want = c.reference(f, forms[k]);
+            BOOST_TEST(static_cast<int>(out[f]) == static_cast<int>(want));
+            BOOST_TEST(static_cast<int>(outPointwise[f]) == static_cast<int>(want));
+        }
+    }
+
+    // Per channel: every filter one-rounding (the split loop), then one
+    // filter that is not, which sends the whole layer to the general loop.
+    Requantizer<int32_t, int8_t> rqs[kSplitOut];
+    for (std::size_t f = 0; f < kSplitOut; ++f)
+    {
+        rqs[f] = splitRequantizer(1100000000 + static_cast<int32_t>(f) * 100000000, 8 + static_cast<int32_t>(f % 3));
+    }
+    for (int mixed = 0; mixed < 2; ++mixed)
+    {
+        if (mixed != 0)
+        {
+            rqs[5] = splitRequantizer(1518500250, 1);
+        }
+        QPointwiseConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 1, 1, kSplitIn, kSplitOut> perChannel;
+        perChannel.weights = c.weights;
+        perChannel.biases = c.biases;
+        perChannel.input_zero_point = c.zeroPoint;
+        perChannel.requantizers = rqs;
+        int8_t out[kSplitOut];
+        perChannel.forward(c.input, out);
+        for (std::size_t f = 0; f < kSplitOut; ++f)
+        {
+            BOOST_TEST(static_cast<int>(out[f]) == static_cast<int>(c.reference(f, rqs[f])));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // QAdd fast path: bit-exact against the reference arithmetic.
 //
 // QAdd::forward takes a one-rounding form of each input's rescaling, and the

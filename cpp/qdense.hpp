@@ -93,6 +93,28 @@ namespace tinymind {
             const InputType inputZeroPoint = input_zero_point;
             const Requantizer<AccumulatorType, OutputType> rq = requantizer;
 
+#if TINYMIND_SPLIT_REQUANTIZER_FORMS
+            // The same loop without the saturating path's code (see
+            // TINYMIND_SPLIT_REQUANTIZER_FORMS in qaffine.hpp).
+            if (rq.oneRounding())
+            {
+                for (std::size_t o = 0; o < NumOutputs_; ++o)
+                {
+                    AccumulatorType acc = (layerBiases != nullptr)
+                        ? layerBiases[o]
+                        : static_cast<AccumulatorType>(0);
+
+                    const WeightType* w_row = layerWeights + o * NumInputs_;
+                    acc += simd::dotProductWithZeroPoint<InputType, WeightType,
+                                                         AccumulatorType>(
+                        input, w_row, NumInputs_, inputZeroPoint);
+
+                    output[o] = rq.applyOneRounding(acc);
+                }
+                return;
+            }
+#endif
+
             for (std::size_t o = 0; o < NumOutputs_; ++o)
             {
                 AccumulatorType acc = (layerBiases != nullptr)

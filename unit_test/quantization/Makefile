@@ -6,7 +6,10 @@ MKDIR=mkdir -p ./output
 CC=g++
 WARN=-Wall -Wextra -Werror -Wpedantic
 SOURCES=quantization_unit_test.cpp
-DEFINES=-DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_STD=1 -DTINYMIND_ENABLE_FP16=1
+# TINYMIND_SPLIT_REQUANTIZER_FORMS defaults on only for Thumb-1 targets; on
+# here so the host runs the dense kernels' split loops (see qaffine.hpp).
+DEFINES=-DTINYMIND_ENABLE_QUANTIZATION=1 -DTINYMIND_ENABLE_FLOAT=1 -DTINYMIND_ENABLE_STD=1 -DTINYMIND_ENABLE_FP16=1 \
+        -DTINYMIND_SPLIT_REQUANTIZER_FORMS=1
 INCLUDES=-I../../include -I../../cpp -I../../cpp/include -I${BOOST_HOME}
 OUT=./output/quantization_unit_test
 

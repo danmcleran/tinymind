@@ -262,6 +262,25 @@ namespace tinymind {
                 // A single pixel (a dense layer): nothing to amortize across
                 // pixels, and holding the requantizer across the loop only
                 // takes registers from the dot product.
+#if TINYMIND_SPLIT_REQUANTIZER_FORMS
+                // The same loop without the saturating path's code (see
+                // TINYMIND_SPLIT_REQUANTIZER_FORMS in qaffine.hpp).
+                if (rq.oneRounding())
+                {
+                    for (std::size_t f = 0; f < NumFilters_; ++f)
+                    {
+                        const AccumulatorType bias = (layerBiases != nullptr)
+                            ? layerBiases[f]
+                            : static_cast<AccumulatorType>(0);
+                        const AccumulatorType acc = bias +
+                            simd::dotProductWithZeroPoint<InputType, WeightType, AccumulatorType>(
+                                input, layerWeights + f * WeightsPerFilter, InChannels_,
+                                inputZeroPoint);
+                        output[f] = rq.applyOneRounding(acc);
+                    }
+                    return;
+                }
+#endif
                 for (std::size_t f = 0; f < NumFilters_; ++f)
                 {
                     const AccumulatorType bias = (layerBiases != nullptr)
@@ -379,6 +398,31 @@ namespace tinymind {
                 // A single pixel (a dense layer): nothing to amortize across
                 // pixels, and holding the requantizer across the loop only
                 // takes registers from the dot product.
+#if TINYMIND_SPLIT_REQUANTIZER_FORMS
+                // The same loop without the saturating path's code, when
+                // every filter's requantizer allows it (see
+                // TINYMIND_SPLIT_REQUANTIZER_FORMS in qaffine.hpp).
+                bool oneRounding = true;
+                for (std::size_t f = 0; f < NumFilters_; ++f)
+                {
+                    oneRounding = oneRounding && rqs[f].oneRounding();
+                }
+                if (oneRounding)
+                {
+                    for (std::size_t f = 0; f < NumFilters_; ++f)
+                    {
+                        const AccumulatorType bias = (layerBiases != nullptr)
+                            ? layerBiases[f]
+                            : static_cast<AccumulatorType>(0);
+                        const AccumulatorType acc = bias +
+                            simd::dotProductWithZeroPoint<InputType, WeightType, AccumulatorType>(
+                                input, layerWeights + f * WeightsPerFilter, InChannels_,
+                                inputZeroPoint);
+                        output[f] = rqs[f].applyOneRounding(acc);
+                    }
+                    return;
+                }
+#endif
                 for (std::size_t f = 0; f < NumFilters_; ++f)
                 {
                     const AccumulatorType bias = (layerBiases != nullptr)
