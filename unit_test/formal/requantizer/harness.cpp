@@ -15,6 +15,12 @@
  *   TM_PROP_LSHIFT the reference's left shift, written in the library's
  *                  shape so the solver can share the multiply, equals
  *                  acc * 2^left saturated to int32. Run once.
+ *   TM_PROP_ADDIN  QAdd's one-rounding input rescaling, FastAddInput::apply
+ *                  (cpp/qadd.hpp), is free of undefined behaviour and equals
+ *                  multiplyByQuantizedMultiplier's reference applied to
+ *                  (q - zp) << left_shift, for every q and zero point within
+ *                  the bound init() enforces, every left_shift 0..29 and
+ *                  every multiplier >= 0. Shifts 0..31.
  *   TM_PROP_KERNELS the two 64-bit multiplies (saturatingRoundingDoubling-
  *                  HighMul, roundingHighMulDivideByPOT) cannot overflow for
  *                  any int32 operands, and the high multiply equals
@@ -32,12 +38,16 @@
 #include <cstdint>
 
 #include "qaffine.hpp"
+#include "qadd.hpp"
 
 #ifndef TM_DST
 #define TM_DST int8_t
 #endif
 #if !defined(TM_SHIFT) && !defined(TM_PROP_KERNELS) && !defined(TM_PROP_LSHIFT)
 #error "define TM_SHIFT (the Makefile runs every value from -31 to 31)"
+#endif
+#if defined(TM_PROP_ADDIN) && ((TM_SHIFT < 0) || (TM_SHIFT > 31))
+#error "FastAddInput takes shifts 0 to 31 only"
 #endif
 
 typedef TM_DST Dst;
@@ -136,6 +146,29 @@ static int64_t refScaled(int32_t acc, int32_t multiplier, int32_t shift)
     return refRoundingDivide(refHighMul(refLeftShiftShaped(acc, left), multiplier), right);
 }
 
+// gemmlowp's rescaling of x = x2 / 2 for an even x2: refHighMul(x, m), then
+// refRoundingDivide by 2^e. The product x * m is written as (x2 * m) / 2,
+// which is exact because x2 * m is even, so that the solver can share the
+// library's multiply of x2 (see refLeftShiftShaped for why that matters);
+// everything else is refHighMul's own form.
+static int64_t refAddInput(int32_t x2, int32_t m, int32_t e)
+{
+    const int64_t x = static_cast<int64_t>(x2) / 2;
+    int64_t h;
+    if ((x == INT32_MIN) && (m == INT32_MIN))
+    {
+        h = INT32_MAX;
+    }
+    else
+    {
+        const int64_t ab = (static_cast<int64_t>(x2) * static_cast<int64_t>(m)) / 2;
+        const int64_t nudge = (ab >= 0) ? (static_cast<int64_t>(1) << 30) : (1 - (static_cast<int64_t>(1) << 30));
+        const int64_t n = ab + nudge;
+        h = (n >= 0) ? (n >> 31) : -((-n) >> 31);
+    }
+    return refRoundingDivide(h, e);
+}
+
 static int64_t refApply(int32_t acc, int32_t multiplier, int32_t shift, int64_t zp, int64_t qmin, int64_t qmax)
 {
     int64_t v = refScaled(acc, multiplier, shift) + zp;
@@ -187,6 +220,36 @@ int main()
     const int32_t got = tinymind::multiplyByQuantizedMultiplier(acc, rq.multiplier, rq.shift);
     __CPROVER_assert(static_cast<int64_t>(got) == refScaled(acc, rq.multiplier, rq.shift),
                      "multiplyByQuantizedMultiplier equals the int64 reference");
+#elif defined(TM_PROP_ADDIN)
+    // FastAddInput's fields are set with init()'s formulas: CBMC 5.95 cannot
+    // parse init(), which reads static members of StorageRange's explicit
+    // specializations. The unit suite checks init()'s domain at its boundary.
+    // The bound on q - zp is the one init() enforces for every q of the
+    // storage type: |q - zp| << (left + 1) <= 2^30.
+    const int32_t left = nondet_int32();
+    __CPROVER_assume((left >= 0) && (left <= 29));
+    const int32_t m = nondet_int32();
+    __CPROVER_assume(m >= 0);
+    const int32_t e = nondetShift();
+    const int32_t zp = nondet_int32();
+    const int32_t q = nondet_int32();
+    const int64_t d = static_cast<int64_t>(q) - static_cast<int64_t>(zp);
+    const int64_t bound = static_cast<int64_t>(1) << (29 - left);
+    __CPROVER_assume((d >= -bound) && (d <= bound));
+
+    tinymind::detail::FastAddInput<Dst> in;
+    in.zero_point = zp;
+    in.leftScale2 = static_cast<int32_t>(1) << (left + 1);
+    in.multiplier = m;
+    in.nudgeHigh = (e > 0) ? (static_cast<uint32_t>(1) << (e - 1)) : 0u;
+    in.negativeStep = (e > 0) ? 1u : 0u;
+    in.shift = e;
+    const int32_t got = in.apply(q);
+
+    // (q - zp) << (left + 1), in the library's shape.
+    const int32_t x2 = (q - zp) * in.leftScale2;
+    __CPROVER_assert(static_cast<int64_t>(got) == refAddInput(x2, m, e),
+                     "FastAddInput::apply equals the reference on (q - zp) << left");
 #elif defined(TM_PROP_KERNELS)
     // The 64-bit multiplies, on unconstrained arguments: every caller's
     // operands are int32 values, so these instances cover every call site.
@@ -209,7 +272,7 @@ int main()
     __CPROVER_assert(refLeftShiftShaped(acc, left) == refLeftShift(acc, left),
                      "shaped left shift equals acc * 2^left saturated");
 #else
-#error "define TM_PROP_APPLY, TM_PROP_MBQM, TM_PROP_KERNELS or TM_PROP_LSHIFT"
+#error "define TM_PROP_APPLY, TM_PROP_MBQM, TM_PROP_ADDIN, TM_PROP_KERNELS or TM_PROP_LSHIFT"
 #endif
     return 0;
 }

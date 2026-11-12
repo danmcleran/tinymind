@@ -15,20 +15,24 @@ ROOT   := ../../../cpp
 OUT    := output
 
 CHECKS := --signed-overflow-check --undefined-shift-check
-DEPS   := harness.cpp select_props.sh $(ROOT)/qaffine.hpp $(ROOT)/include/tinymind_platform.hpp
+DEPS   := harness.cpp select_props.sh $(ROOT)/qaffine.hpp $(ROOT)/qadd.hpp $(ROOT)/include/tinymind_platform.hpp
 
 # Requantizer's contract is -31 <= shift <= 31. One job per shift value: with
 # the shift a constant the solver faces only the multiply.
 SHIFTS := $(shell seq -31 31)
 APPLY_TYPES := int8_t uint8_t int16_t int32_t
+# QAdd's FastAddInput takes shifts 0..31.
+ADDIN_SHIFTS := $(shell seq 0 31)
 
 PROOFS := kernels lshift \
           $(foreach t,$(APPLY_TYPES),$(foreach s,$(SHIFTS),apply_$(t)_$(s))) \
-          $(foreach s,$(SHIFTS),mbqm_$(s))
+          $(foreach s,$(SHIFTS),mbqm_$(s)) \
+          $(foreach s,$(ADDIN_SHIFTS),addin_$(s))
 
 # Planted defects, each run at one point where it must be reported:
 #   name := sed expression ; property ; dst type ; shift
-MUTANTS := threshold nudge rail int32_zp left_limit
+# The sed applies to qaffine.hpp unless MUT_<name>_FILE names another header.
+MUTANTS := threshold nudge rail int32_zp left_limit addin_nudge addin_negative
 MUT_threshold  := s,(mask >> 1) + ((x < 0) ? 1 : 0),(mask >> 1),
 MUT_threshold_ARGS := APPLY int8_t 31
 MUT_nudge      := s,| static_cast<uint32_t>(0x40000000u);,| static_cast<uint32_t>(0x20000000u);,
@@ -42,6 +46,15 @@ MUT_int32_zp   := s,if (sizeof(DstStorageType) >= sizeof(int32_t)),if (false),
 MUT_int32_zp_ARGS := APPLY int32_t 7
 MUT_left_limit := s,const int32_t limit = INT32_MAX >> left_shift;,const int32_t limit = INT32_MAX >> (left_shift - 1);,
 MUT_left_limit_ARGS := MBQM int8_t -5
+# QAdd's fast input rescaling: the low word of the rounding nudge one short of
+# 2^31, and the [x < 0] term applied at shift 0, where there is no second
+# rounding to correct.
+MUT_addin_nudge := s,static_cast<uint32_t>(0x80000000u);,static_cast<uint32_t>(0x7FFFFFFFu);,
+MUT_addin_nudge_FILE := qadd.hpp
+MUT_addin_nudge_ARGS := ADDIN int8_t 3
+MUT_addin_negative := s,(static_cast<uint32_t>(x2) >> 31) \& negativeStep;,(static_cast<uint32_t>(x2) >> 31);,
+MUT_addin_negative_FILE := qadd.hpp
+MUT_addin_negative_ARGS := ADDIN int8_t 0
 
 .PHONY: all prove mutants clean
 all: prove mutants
@@ -90,15 +103,18 @@ $(OUT)/apply_%.proved: $(DEPS) | $(OUT)
 $(OUT)/mbqm_%.proved: $(DEPS) | $(OUT)
 	$(call run_proof,mbqm_$*,MBQM,int8_t,$*)
 
+$(OUT)/addin_%.proved: $(DEPS) | $(OUT)
+	$(call run_proof,addin_$*,ADDIN,int8_t,$*)
+
 # A mutant is caught when CBMC reports any failed property: a wrong result
 # (the equivalence assertion) or undefined behaviour. A run that ends in
 # neither verdict (a front-end error, a crash) is a failure of the check
 # itself, never a catch and never a survivor.
 $(OUT)/mutant-%.killed: $(DEPS) | $(OUT)
 	@rm -rf $(OUT)/mutant-$*; mkdir -p $(OUT)/mutant-$*; \
-	cp -r $(ROOT)/qaffine.hpp $(ROOT)/include $(OUT)/mutant-$*/; \
-	sed -i '$(MUT_$*)' $(OUT)/mutant-$*/qaffine.hpp; \
-	if cmp -s $(ROOT)/qaffine.hpp $(OUT)/mutant-$*/qaffine.hpp; then \
+	cp -r $(ROOT)/qaffine.hpp $(ROOT)/qadd.hpp $(ROOT)/include $(OUT)/mutant-$*/; \
+	sed -i '$(MUT_$*)' $(OUT)/mutant-$*/$(or $(MUT_$*_FILE),qaffine.hpp); \
+	if cmp -s $(ROOT)/$(or $(MUT_$*_FILE),qaffine.hpp) $(OUT)/mutant-$*/$(or $(MUT_$*_FILE),qaffine.hpp); then \
 	    echo "FAIL   mutant $* (sed did not change the header)"; exit 1; fi; \
 	set -- $(MUT_$*_ARGS); \
 	props=$$(./select_props.sh $(CBMC) harness.cpp --cpp11 -I $(OUT)/mutant-$* -D TM_PROP_$$1 -D TM_DST=$$2 \
