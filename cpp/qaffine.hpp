@@ -153,7 +153,7 @@ namespace tinymind {
      * an int32 accumulator and an integer (multiplier, shift) pair and
      * returns the rescaled int32 without zero-point bias or saturation.
      *
-     * Phase 10 callers (QAdd's per-input rescaling, QConcat) use this
+     * Phase 10 callers (QAdd's reference loop, QConcat) use this
      * directly when they need the int32 intermediate before the final
      * Requantizer; the existing Requantizer.apply continues to call the
      * primitives separately for back-compat.

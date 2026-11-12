@@ -3113,6 +3113,179 @@ BOOST_AUTO_TEST_CASE(fp16_bf16_buffer_round_trip)
 #endif // TINYMIND_ENABLE_FLOAT
 
 // ---------------------------------------------------------------------------
+// QAdd fast path: bit-exact against the reference arithmetic.
+//
+// QAdd::forward takes a one-rounding form of each input's rescaling, and the
+// FastRequantizer for the output, whenever the parameters allow it. This
+// compares every (a, b) pair of the storage type against the TFLite reference
+// written out with multiplyByQuantizedMultiplier and Requantizer::apply, over
+// random parameter sets that fall on both sides of the fast forms' domain.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    struct QAddCaseRng
+    {
+        uint32_t state;
+
+        uint32_t next()
+        {
+            state = state * 1664525u + 1013904223u;
+            return state;
+        }
+
+        int32_t range(int32_t lo, int32_t hi)
+        {
+            return lo + static_cast<int32_t>(next() % static_cast<uint32_t>(hi - lo + 1));
+        }
+    };
+
+    template<typename T>
+    int32_t qaddReference(const QAdd<T, T, T, 1>& p, int32_t a, int32_t b)
+    {
+        const int32_t shifted_a = (a - static_cast<int32_t>(p.input_a_zero_point)) *
+                                  (static_cast<int32_t>(1) << p.left_shift);
+        const int32_t shifted_b = (b - static_cast<int32_t>(p.input_b_zero_point)) *
+                                  (static_cast<int32_t>(1) << p.left_shift);
+        const int32_t sum =
+            tinymind::multiplyByQuantizedMultiplier(shifted_a, p.input_a_multiplier, p.input_a_shift) +
+            tinymind::multiplyByQuantizedMultiplier(shifted_b, p.input_b_multiplier, p.input_b_shift);
+        return static_cast<int32_t>(p.output_requantizer.apply(sum));
+    }
+
+    int32_t qaddRandomMultiplier(QAddCaseRng& rng)
+    {
+        static const int32_t edges[] = {0, 1, 1 << 30, 0x7FFFFFFF, 0x40000001, -1};
+        const uint32_t pick = rng.next() % 8u;
+        if (pick < 6u)
+        {
+            return edges[pick];
+        }
+        return static_cast<int32_t>(rng.next() >> 1);
+    }
+
+    // Returns the number of parameter sets whose inputs took the fast form.
+    template<typename T>
+    int qaddFastPathMatchesReference(uint32_t seed, int sets)
+    {
+        constexpr std::size_t Values = 256;
+        constexpr std::size_t Pairs = Values * Values;
+        typedef tinymind::detail::StorageRange<T> Range;
+        static T a[Pairs];
+        static T b[Pairs];
+        static T y[Pairs];
+        for (std::size_t i = 0; i < Pairs; ++i)
+        {
+            a[i] = static_cast<T>(Range::min + static_cast<int32_t>(i / Values));
+            b[i] = static_cast<T>(Range::min + static_cast<int32_t>(i % Values));
+        }
+
+        // 22 is the largest left shift at which the reference itself cannot
+        // overflow int32 (255 << 22 < 2^30, so the sum stays below 2^31).
+        static const int32_t leftShifts[] = {0, 1, 7, 15, 20, 21, 22};
+        static const int32_t gridShifts[] = {0, 1, 2, 30, 31};
+        static const int32_t gridMultipliers[] = {1 << 30, 3 << 29, 0x40000001, 0x7FFFFFFF};
+        const int GridSets = 7 * 5 * 4;
+        QAddCaseRng rng = {seed};
+        int fast = 0;
+        for (int set = 0; set < sets; ++set)
+        {
+            QAdd<T, T, T, Pairs> add;
+            add.input_a_zero_point = static_cast<T>(rng.range(Range::min, Range::max));
+            add.input_b_zero_point = static_cast<T>(rng.range(Range::min, Range::max));
+            add.left_shift = leftShifts[rng.next() % 7u];
+            add.input_a_multiplier = qaddRandomMultiplier(rng);
+            add.input_b_multiplier = qaddRandomMultiplier(rng);
+            // Mostly in [0, 31]; sometimes negative, which the fast form refuses.
+            add.input_a_shift = rng.range(-2, 31);
+            add.input_b_shift = (set % 4 == 0) ? 0 : rng.range(-2, 31);
+            if (set < GridSets)
+            {
+                // A deterministic grid first: rounding ties (the product's
+                // low bits exactly half an output step) need multipliers
+                // with few low set bits, which random ones rarely give.
+                add.left_shift = leftShifts[set % 7];
+                add.input_a_shift = gridShifts[(set / 7) % 5];
+                add.input_a_multiplier = gridMultipliers[(set / 35) % 4];
+            }
+            add.output_requantizer.multiplier = qaddRandomMultiplier(rng);
+            add.output_requantizer.shift = rng.range(-4, 31);
+            add.output_requantizer.zero_point = static_cast<T>(rng.range(Range::min, Range::max));
+            const bool narrow = (rng.next() % 4u) == 0u;
+            add.output_requantizer.qmin = static_cast<T>(narrow ? Range::min + 10 : Range::min);
+            add.output_requantizer.qmax = static_cast<T>(narrow ? Range::max - 10 : Range::max);
+
+            tinymind::detail::FastAddInput<T> fa;
+            tinymind::detail::FastAddInput<T> fb;
+            if (fa.init(add.input_a_zero_point, add.left_shift, add.input_a_multiplier, add.input_a_shift) &&
+                fb.init(add.input_b_zero_point, add.left_shift, add.input_b_multiplier, add.input_b_shift))
+            {
+                ++fast;
+            }
+
+            QAdd<T, T, T, 1> one;
+            one.input_a_zero_point = add.input_a_zero_point;
+            one.input_b_zero_point = add.input_b_zero_point;
+            one.left_shift = add.left_shift;
+            one.input_a_multiplier = add.input_a_multiplier;
+            one.input_a_shift = add.input_a_shift;
+            one.input_b_multiplier = add.input_b_multiplier;
+            one.input_b_shift = add.input_b_shift;
+            one.output_requantizer = add.output_requantizer;
+
+            add.forward(a, b, y);
+            std::size_t mismatches = 0;
+            for (std::size_t i = 0; i < Pairs; ++i)
+            {
+                if (static_cast<int32_t>(y[i]) != qaddReference(one, a[i], b[i]))
+                {
+                    ++mismatches;
+                }
+            }
+            BOOST_TEST(mismatches == 0u, "set " << set << " seed " << seed);
+        }
+        return fast;
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qadd_fast_path_bit_exact_int8)
+{
+    const int sets = 280;
+    const int fast = qaddFastPathMatchesReference<int8_t>(0x51ED2701u, sets);
+    // Both sides of the fast forms' domain must be exercised.
+    BOOST_TEST(fast > sets / 4);
+    BOOST_TEST(fast < sets);
+}
+
+BOOST_AUTO_TEST_CASE(qadd_fast_path_domain_boundary)
+{
+    // The fast form needs |q - zp| << (left_shift + 1) <= 2^30 for every q.
+    tinymind::detail::FastAddInput<int8_t> s8;
+    BOOST_TEST(s8.init(0, 22, 1 << 30, 1));      // span 128 == 2^(29 - 22)
+    BOOST_TEST(!s8.init(1, 22, 1 << 30, 1));     // span 129
+    BOOST_TEST(s8.init(-128, 21, 1 << 30, 1));   // span 255 <= 256
+    BOOST_TEST(!s8.init(-128, 22, 1 << 30, 1));
+    tinymind::detail::FastAddInput<uint8_t> u8;
+    BOOST_TEST(u8.init(0, 21, 1 << 30, 1));      // span 255 <= 256
+    BOOST_TEST(!u8.init(0, 22, 1 << 30, 1));
+    BOOST_TEST(u8.init(128, 22, 1 << 30, 1));    // span 128
+    // Multiplier and shift limits.
+    BOOST_TEST(!s8.init(0, 20, -1, 1));
+    BOOST_TEST(!s8.init(0, 20, 1 << 30, -1));
+    BOOST_TEST(!s8.init(0, 20, 1 << 30, 32));
+    BOOST_TEST(s8.init(0, 20, 0x7FFFFFFF, 31));
+    BOOST_TEST(s8.init(0, 20, 0, 0));
+}
+
+BOOST_AUTO_TEST_CASE(qadd_fast_path_bit_exact_uint8)
+{
+    const int sets = 200;
+    const int fast = qaddFastPathMatchesReference<uint8_t>(0x0BADC0DEu, sets);
+    BOOST_TEST(fast > sets / 4);
+    BOOST_TEST(fast < sets);
+}
+
+// ---------------------------------------------------------------------------
 // Phase 10: composition ops (QAdd, QMul, QConcat2_2D, QPad2D) + per-channel
 // QConv2D / QPointwiseConv2D.
 //

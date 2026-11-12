@@ -40,6 +40,20 @@
 #endif
 
 /*
+ * TINYMIND_NOINLINE keeps a function out of line. A kernel uses it on a
+ * rarely taken fallback so that the common path stays small enough to be
+ * inlined into its caller, where the constants of a const layer object fold
+ * into it (see QAdd::forward).
+ */
+#if defined(_MSC_VER)
+#define TINYMIND_NOINLINE __declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+#define TINYMIND_NOINLINE __attribute__((noinline))
+#else
+#define TINYMIND_NOINLINE
+#endif
+
+/*
  * Platform feature gates for tinymind.
  *
  * All TINYMIND_ENABLE_* macros default to 0 so that a freestanding embedded

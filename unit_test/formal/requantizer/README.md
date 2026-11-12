@@ -1,8 +1,9 @@
 # Formal proof: the int8 requantizer
 
-CBMC proofs that the requantizer in `cpp/qaffine.hpp` is free of undefined
-behaviour and computes exactly what its definition says, for every input its
-contract allows. Testing cannot cover this domain: a requantizer has a 32-bit
+CBMC proofs that the requantizer in `cpp/qaffine.hpp`, and the one-rounding
+input rescaling `QAdd` uses in `cpp/qadd.hpp`, are free of undefined
+behaviour and compute exactly what their definitions say, for every input
+their contracts allow. Testing cannot cover this domain: a requantizer has a 32-bit
 accumulator, a 32-bit multiplier, a shift and three storage-typed parameters,
 and the unit and exhaustive suites sweep the accumulator for a handful of
 fixed parameter sets.
@@ -12,9 +13,9 @@ PATH=$PWD/../arm_dsp_dot/tools:$PWD/../arm_dsp_dot/.venv/bin:$PATH make -j16
 ```
 
 Bitwuzla setup is described in [`../arm_dsp_dot/README.md`](../arm_dsp_dot/README.md).
-The 317 proofs take about 11 CPU-hours of solver time (50 minutes at `-j16`
+The 349 proofs take about 11 CPU-hours of solver time (50 minutes at `-j16`
 on a 16-core desktop; the int32-storage jobs are the slowest, up to 20
-minutes each). Each must print `PROVED`, then every planted defect must print
+minutes each; the 32 `addin` jobs add about 22 CPU-minutes). Each must print `PROVED`, then every planted defect must print
 `CAUGHT`. That cost is why it is opt-in rather than a CI gate.
 
 ## What is proved
@@ -27,6 +28,7 @@ takes each value of the contract, -31 to 31, in its own job.
 |---|---|
 | `apply_<type>_<shift>` | `Requantizer<int32_t, T>::apply` has no signed overflow and no undefined shift, and returns the reference result, for `T` = `int8_t`, `uint8_t`, `int16_t`, `int32_t` (252 jobs) |
 | `mbqm_<shift>` | `multiplyByQuantizedMultiplier`, which QAdd, QGRU, QSSM, QCfC and others call directly, likewise against the reference before the zero point (63 jobs) |
+| `addin_<shift>` | `QAdd`'s `detail::FastAddInput::apply` has no signed overflow and no undefined shift, and equals the reference rescaling of `(q - zp) << left_shift` (the saturating left shift cannot trigger inside the bound), for every `q` and zero point with `abs(q - zp) << (left_shift + 1) <= 2^30`, every `left_shift` 0..29 and every multiplier >= 0 (32 jobs, shifts 0..31). The reference writes the product `x * m` as `(2x * m) / 2`, exact for an even operand, so that it shares the library's multiply |
 | `kernels` | The two 64-bit multiplies cannot overflow for any int32 operands, and `saturatingRoundingDoublingHighMul` equals gemmlowp's definition |
 | `lshift` | The reference's left shift, written in the library's shape (see below), equals `acc * 2^left` computed in uint64 and saturated to int32, for every accumulator and every left shift 0..40 |
 
@@ -88,6 +90,8 @@ verdict at all.
 | `rail` | the saturating path's rail at 2^14, inside int16's range |
 | `int32_zp` | the 32-bit-storage fix undone |
 | `left_limit` | the saturating left shift's overflow limit off by one bit |
+| `addin_nudge` | `FastAddInput`'s rounding nudge one short of 2^31 in its low word |
+| `addin_negative` | `FastAddInput`'s `[x < 0]` term applied at shift 0, where there is no second rounding |
 
 ## Scope and trusted base
 
@@ -100,6 +104,12 @@ verdict at all.
   scope, and a static member function of an explicit specialization all
   fail), and restructuring that inner-loop code to suit the tool was not
   worth the risk. The exhaustive suite compares it against `Requantizer`.
+- **`FastAddInput::init` is not covered** for the same reason: it reads the
+  static members of `StorageRange`'s explicit specializations. The `addin`
+  harness sets the fields with `init`'s formulas and assumes the bound `init`
+  enforces; `unit_test/quantization` checks `init`'s accept and reject
+  decisions at the bound, and compares `QAdd` with the reference over every
+  input pair for several hundred parameter sets.
 - **Storage types:** `int8_t`, `uint8_t`, `int16_t` and `int32_t`, which
   cover every instantiation in the tree. `uint16_t` shares the narrow-storage
   path with `int16_t`.
