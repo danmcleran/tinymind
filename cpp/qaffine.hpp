@@ -243,6 +243,32 @@ namespace tinymind {
      * free of undefined behaviour and equal to gemmlowp's two-step
      * definition, computed exactly, over that whole domain.
      */
+/*
+ * Dense kernels (QDense, and QPointwiseConv2D / QPointwiseConv2DPerChannel on
+ * a single pixel) call a requantizer once per output, right after a dot
+ * product. Requantizer::apply carries a saturating path for scale ratios of
+ * 0.25 and up that imported models rarely take, but its code sits in the
+ * output loop either way. On Thumb-1 (ARMv6-M: Cortex-M0, M0+, M1), whose
+ * instructions mostly reach only eight registers, GCC at -O2 then keeps
+ * values for that path live across the loop and spills the dot product
+ * beside it: the L031 MLP bench ran 36% slower after the path grew in #230.
+ *
+ * With TINYMIND_SPLIT_REQUANTIZER_FORMS set, those kernels check
+ * Requantizer::oneRounding() once per layer and, when every requantizer
+ * passes, run a second copy of the loop that calls applyOneRounding()
+ * instead, which has no saturating path; the result is identical. It
+ * defaults on for Thumb-1 only. On the Cortex-M4 the split measured faster
+ * per layer but up to 10% slower over a whole inlined model, and costs a
+ * second copy of the loop in flash, so other targets keep the single loop.
+ */
+#ifndef TINYMIND_SPLIT_REQUANTIZER_FORMS
+#if defined(__ARM_ARCH_ISA_THUMB) && (__ARM_ARCH_ISA_THUMB == 1)
+#define TINYMIND_SPLIT_REQUANTIZER_FORMS 1
+#else
+#define TINYMIND_SPLIT_REQUANTIZER_FORMS 0
+#endif
+#endif
+
     template<typename SrcAccum_, typename DstStorage_>
     struct Requantizer
     {
@@ -255,12 +281,32 @@ namespace tinymind {
         DstStorageType qmin;
         DstStorageType qmax;
 
+        /**
+         * True when apply() takes the one-rounding path: multiplier >= 0 and
+         * shift >= 2 (a scale ratio below 0.25), in one sign test.
+         */
+        bool oneRounding() const
+        {
+            return (multiplier | (shift - 2)) >= 0;
+        }
+
+        /**
+         * apply() for a requantizer with oneRounding() true: the same result,
+         * without the saturating path's code. See
+         * TINYMIND_SPLIT_REQUANTIZER_FORMS for the kernels that use it.
+         */
+        DstStorageType applyOneRounding(SrcAccumType acc) const
+        {
+            return addZeroPointAndClamp(
+                roundingHighMulDivideByPOT(static_cast<int32_t>(acc), multiplier, shift));
+        }
+
         DstStorageType apply(SrcAccumType acc) const
         {
             int32_t scaled;
             // multiplier >= 0 and shift >= 2 in one sign test, so the
             // optimizer can hoist a single loop-invariant branch.
-            if ((multiplier | (shift - 2)) >= 0)
+            if (oneRounding())
             {
                 // The common case (scale ratio below 0.25): one rounding
                 // that matches the two-step form below bit for bit.
@@ -292,6 +338,12 @@ namespace tinymind {
                 }
             }
 
+            return addZeroPointAndClamp(scaled);
+        }
+
+    private:
+        DstStorageType addZeroPointAndClamp(int32_t scaled) const
+        {
             if (sizeof(DstStorageType) >= sizeof(int32_t))
             {
                 // A 32-bit zero point can take scaled + zero_point past the
