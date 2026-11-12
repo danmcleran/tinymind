@@ -89,17 +89,26 @@ namespace tinymind {
         void forward(const int32_t* tokens, std::size_t seq_len,
                      OutputType* output) const
         {
+            // Snapshot the fields into locals. Every output store is an int8_t write,
+            // which may alias *this and the requantizer, so member reads inside the
+            // loops would be reloaded once per element.
+            const WeightType* const embeddingTable = table;
+            const Requantizer<int32_t, OutputType>* const rqPtr = requantizer;
+            const Requantizer<int32_t, OutputType> rq = (rqPtr != nullptr)
+                ? *rqPtr
+                : Requantizer<int32_t, OutputType>();
+
             for (std::size_t t = 0; t < seq_len; ++t)
             {
                 const std::size_t id = static_cast<std::size_t>(tokens[t]);
-                const WeightType* row = table + id * EmbeddingDim_;
+                const WeightType* row = embeddingTable + id * EmbeddingDim_;
                 OutputType* out_row = output + t * EmbeddingDim_;
 
-                if (requantizer != nullptr)
+                if (rqPtr != nullptr)
                 {
                     for (std::size_t e = 0; e < EmbeddingDim_; ++e)
                     {
-                        out_row[e] = requantizer->apply(
+                        out_row[e] = rq.apply(
                             static_cast<int32_t>(row[e]));
                     }
                 }

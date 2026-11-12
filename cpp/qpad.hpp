@@ -80,6 +80,11 @@ namespace tinymind {
 
         void forward(const StorageType* in, StorageType* out) const
         {
+            // Snapshot the fields into locals. Every output store is an int8_t write,
+            // which may alias *this, so member reads inside the loop would be
+            // reloaded once per element.
+            const StorageType padValue = pad_value;
+
             for (std::size_t oh = 0; oh < OutputHeight; ++oh)
             {
                 const bool inside_h = (oh >= PadTop_) && (oh < PadTop_ + H_IN_);
@@ -103,7 +108,7 @@ namespace tinymind {
                     {
                         for (std::size_t c = 0; c < C_; ++c)
                         {
-                            out[outPixelOffset + c] = pad_value;
+                            out[outPixelOffset + c] = padValue;
                         }
                     }
                 }
