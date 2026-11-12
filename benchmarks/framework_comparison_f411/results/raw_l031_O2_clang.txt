@@ -1,0 +1,167 @@
+level=O2
+image=tm_mlp
+# begin bench
+name=tinymind_int8/mlp
+setup_rc=0
+setup_cycles=44
+infer_min=38899
+infer_med=38907
+infer_max=38913
+n_test=32
+correct=31
+hash=0x06CE0530
+hash_match=1
+stack_bytes=188
+static_ram=260
+arena_used=0
+# end bench
+level=O2
+image=tm_kws
+# begin bench
+name=tinymind_int8/kws
+setup_rc=0
+setup_cycles=44
+infer_min=809881
+infer_med=809981
+infer_max=810020
+n_test=8
+hash=0x6B1854D3
+hash_match=1
+stack_bytes=576
+static_ram=4980
+arena_used=0
+# end bench
+level=O2
+image=tm_rf
+# begin bench
+name=tinymind_int8/rf
+setup_rc=0
+setup_cycles=44
+infer_min=2197
+infer_med=2309
+infer_max=2329
+n_test=32
+correct=31
+hash=0xC2E23534
+hash_match=1
+stack_bytes=164
+static_ram=204
+arena_used=0
+# end bench
+level=O2
+image=tm_rf_inline
+# begin bench
+name=tinymind_int8/rf_inline
+setup_rc=0
+setup_cycles=44
+infer_min=1001
+infer_med=1058
+infer_max=1102
+n_test=32
+correct=31
+hash=0xC2E23534
+hash_match=1
+stack_bytes=148
+static_ram=204
+arena_used=0
+# end bench
+level=O2
+image=tm_rf_inline_u8
+# begin bench
+name=tinymind_uint8/rf_inline
+setup_rc=0
+setup_cycles=44
+infer_min=894
+infer_med=945
+infer_max=984
+n_test=32
+correct=31
+hash=0xC2E23534
+hash_match=1
+stack_bytes=140
+static_ram=204
+arena_used=0
+# end bench
+level=O2
+image=tm_rf_compact
+# begin bench
+name=tinymind_int8/rf_compact
+setup_rc=0
+setup_cycles=44
+infer_min=1745
+infer_med=1838
+infer_max=1873
+n_test=32
+correct=31
+hash=0xC2E23534
+hash_match=1
+stack_bytes=148
+static_ram=204
+arena_used=0
+# end bench
+level=O2
+image=tm_rf_compact_u8
+# begin bench
+name=tinymind_uint8/rf_compact
+setup_rc=0
+setup_cycles=44
+infer_min=1745
+infer_med=1838
+infer_max=1873
+n_test=32
+correct=31
+hash=0xC2E23534
+hash_match=1
+stack_bytes=148
+static_ram=204
+arena_used=0
+# end bench
+level=O2
+image=tm_mlp_prof
+# begin bench
+name=tinymind_int8/mlp
+setup_rc=0
+setup_cycles=44
+infer_min=38899
+infer_med=38907
+infer_max=38913
+n_test=32
+correct=31
+hash=0x06CE0530
+hash_match=1
+stack_bytes=444
+static_ram=308
+arena_used=0
+layer.0.fc0=27047
+layer.1.fc1=8457
+layer.2.fc2=3509
+# end bench
+level=O2
+image=tm_kws_prof
+# begin bench
+name=tinymind_int8/kws
+setup_rc=0
+setup_cycles=44
+infer_min=803285
+infer_med=803386
+infer_max=803431
+n_test=8
+hash=0x6B1854D3
+hash_match=1
+stack_bytes=828
+static_ram=3924
+arena_used=0
+layer.0.conv3x3=557074
+layer.1.maxpool=17656
+layer.2.dwconv3x3=75714
+layer.3.pwconv=144530
+layer.4.avgpool=4978
+layer.5.fc=3507
+# end bench
+size image=tm_mlp flash=11188 ram=260
+size image=tm_kws flash=13168 ram=4980
+size image=tm_rf flash=18956 ram=204
+size image=tm_rf_inline flash=11728 ram=204
+size image=tm_rf_inline_u8 flash=10932 ram=204
+size image=tm_rf_compact flash=8828 ram=204
+size image=tm_rf_compact_u8 flash=8832 ram=204

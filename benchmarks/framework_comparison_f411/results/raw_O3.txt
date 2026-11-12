@@ -19,9 +19,9 @@ image=tm_mlp
 name=tinymind_int8/mlp
 setup_rc=0
 setup_cycles=21
-infer_min=20486
-infer_med=20486
-infer_max=20489
+infer_min=21002
+infer_med=21002
+infer_max=21005
 n_test=360
 correct=346
 hash=0x85BDD037
@@ -36,9 +36,9 @@ image=tm_mlp_dsp
 name=tinymind_int8+dsp/mlp
 setup_rc=0
 setup_cycles=21
-infer_min=10241
-infer_med=10241
-infer_max=10244
+infer_min=10227
+infer_med=10227
+infer_max=10229
 n_test=360
 correct=346
 hash=0x85BDD037
@@ -53,13 +53,13 @@ image=tm_kws
 name=tinymind_int8/kws
 setup_rc=0
 setup_cycles=21
-infer_min=254900
-infer_med=254900
-infer_max=254902
+infer_min=254766
+infer_med=254766
+infer_max=254768
 n_test=8
 hash=0x6B1854D3
 hash_match=1
-stack_bytes=576
+stack_bytes=592
 static_ram=4976
 arena_used=0
 # end bench
@@ -68,14 +68,14 @@ image=tm_kws_dsp
 # begin bench
 name=tinymind_int8+dsp/kws
 setup_rc=0
-setup_cycles=24
-infer_min=181568
-infer_med=181568
-infer_max=181568
+setup_cycles=21
+infer_min=181853
+infer_med=181853
+infer_max=181853
 n_test=8
 hash=0x6B1854D3
 hash_match=1
-stack_bytes=560
+stack_bytes=580
 static_ram=4976
 arena_used=0
 # end bench
@@ -197,132 +197,132 @@ image=tm_mlp_prof
 # begin bench
 name=tinymind_int8/mlp
 setup_rc=0
-setup_cycles=22
-infer_min=20454
-infer_med=20454
-infer_max=20456
+setup_cycles=24
+infer_min=21116
+infer_med=21116
+infer_max=21119
 n_test=360
 correct=346
 hash=0x85BDD037
 hash_match=1
-stack_bytes=284
+stack_bytes=412
 static_ram=304
 arena_used=0
-layer.0.fc0=15097
-layer.1.fc1=4151
-layer.2.fc2=1280
+layer.0.fc0=15591
+layer.1.fc1=4169
+layer.2.fc2=1288
 # end bench
 level=O3
 image=tm_mlp_dsp_prof
 # begin bench
 name=tinymind_int8+dsp/mlp
 setup_rc=0
-setup_cycles=22
-infer_min=10275
-infer_med=10275
-infer_max=10277
+setup_cycles=18
+infer_min=10294
+infer_med=10294
+infer_max=10296
 n_test=360
 correct=346
 hash=0x85BDD037
 hash_match=1
-stack_bytes=256
+stack_bytes=384
 static_ram=304
 arena_used=0
-layer.0.fc0=7345
+layer.0.fc0=7342
 layer.1.fc1=2225
-layer.2.fc2=949
+layer.2.fc2=965
 # end bench
 level=O3
 image=tm_kws_prof
 # begin bench
 name=tinymind_int8/kws
 setup_rc=0
-setup_cycles=18
-infer_min=249850
-infer_med=249850
-infer_max=249852
+setup_cycles=19
+infer_min=256627
+infer_med=256630
+infer_max=256630
 n_test=8
 hash=0x6B1854D3
 hash_match=1
-stack_bytes=568
+stack_bytes=700
 static_ram=9408
 arena_used=0
-layer.0.conv3x3=173164
-layer.1.maxpool=10156
-layer.2.dwconv3x3=21054
-layer.3.pwconv=44258
+layer.0.conv3x3=183748
+layer.1.maxpool=10158
+layer.2.dwconv3x3=20668
+layer.3.pwconv=41835
 layer.4.avgpool=2282
-layer.5.fc=1281
+layer.5.fc=1302
 # end bench
 level=O3
 image=tm_kws_dsp_prof
 # begin bench
 name=tinymind_int8+dsp/kws
 setup_rc=0
-setup_cycles=21
-infer_min=180201
-infer_med=180201
-infer_max=180201
+setup_cycles=24
+infer_min=178951
+infer_med=178951
+infer_max=178951
 n_test=8
 hash=0x6B1854D3
 hash_match=1
-stack_bytes=568
+stack_bytes=712
 static_ram=9408
 arena_used=0
-layer.0.conv3x3=127756
-layer.1.maxpool=10160
-layer.2.dwconv3x3=21047
-layer.3.pwconv=25865
+layer.0.conv3x3=126262
+layer.1.maxpool=10156
+layer.2.dwconv3x3=20660
+layer.3.pwconv=27485
 layer.4.avgpool=2281
-layer.5.fc=946
+layer.5.fc=952
 # end bench
 level=O3
 image=tflm_cmsis_mlp_int8_prof
 # begin bench
 name=tflm_int8+cmsis/mlp
 setup_rc=0
-setup_cycles=114413
-infer_min=14290
-infer_med=14290
-infer_max=14292
+setup_cycles=113521
+infer_min=14309
+infer_med=14309
+infer_max=14309
 n_test=360
 correct=346
 hash=0x85BDD037
 hash_match=1
-stack_bytes=976
-static_ram=2308
+stack_bytes=1104
+static_ram=2500
 arena_used=1348
 layer.0.FULLY_CONNECTED=8556
-layer.1.FULLY_CONNECTED=3375
-layer.2.FULLY_CONNECTED=2035
+layer.1.FULLY_CONNECTED=3384
+layer.2.FULLY_CONNECTED=2039
 # end bench
 level=O3
 image=tflm_cmsis_kws_int8_prof
 # begin bench
 name=tflm_int8+cmsis/kws
 setup_rc=0
-setup_cycles=131687
-infer_min=577275
-infer_med=577276
-infer_max=577276
+setup_cycles=131657
+infer_min=576927
+infer_med=576928
+infer_max=576928
 n_test=8
 hash=0x6B1854D3
 hash_match=1
-stack_bytes=1272
-static_ram=5572
+stack_bytes=1400
+static_ram=5764
 arena_used=4788
-layer.0.CONV_2D=435412
-layer.1.MAX_POOL_2D=36697
-layer.2.DEPTHWISE_CONV_2D=40918
-layer.3.CONV_2D=53866
-layer.4.AVERAGE_POOL_2D=7917
-layer.5.FULLY_CONNECTED=2041
+layer.0.CONV_2D=435387
+layer.1.MAX_POOL_2D=36383
+layer.2.DEPTHWISE_CONV_2D=40909
+layer.3.CONV_2D=53863
+layer.4.AVERAGE_POOL_2D=7921
+layer.5.FULLY_CONNECTED=2031
 # end bench
 size image=baseline flash=2592 ram=132
-size image=tm_mlp flash=31456 ram=256
-size image=tm_mlp_dsp flash=31540 ram=256
-size image=tm_kws flash=12640 ram=4976
-size image=tm_kws_dsp flash=12156 ram=4976
+size image=tm_mlp flash=31840 ram=256
+size image=tm_mlp_dsp flash=31888 ram=256
+size image=tm_kws flash=12400 ram=4976
+size image=tm_kws_dsp flash=12044 ram=4976
 size image=tflm_cmsis_mlp_int8 flash=66616 ram=2004
 size image=tflm_ref_mlp_int8 flash=55544 ram=1908
 size image=tflm_cmsis_mlp_f32 flash=142388 ram=1524

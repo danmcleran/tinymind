@@ -249,6 +249,10 @@ void Reset_Handler()
 
     for (;;)
     {
+        // An infinite loop with no side effects is undefined behaviour in
+        // C++ (forward progress), and clang deletes it: execution then falls
+        // through into whatever function the linker placed next.
+        __asm volatile ("" ::: "memory");
     }
 }
 
@@ -257,6 +261,10 @@ void Default_Handler()
     board_puts("\n# FAULT\n");
     for (;;)
     {
+        // An infinite loop with no side effects is undefined behaviour in
+        // C++ (forward progress), and clang deletes it: execution then falls
+        // through into whatever function the linker placed next.
+        __asm volatile ("" ::: "memory");
     }
 }
 
