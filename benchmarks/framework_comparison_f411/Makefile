@@ -18,6 +18,13 @@
 #   make stlink               list attached ST-LINK probes and which one is used
 #   make models               regenerate gen/out/ (needs the venv)
 #
+# TOOLCHAIN=clang builds the tinymind images (tm_*) with clang++ through
+# ./clang-arm-cxx, which passes -munaligned-access where the core has it (see
+# there); TFLM and emlearn stay on GCC and are left out. It has its own build
+# dirs (<B>-clang) and results files (raw_*_clang.txt):
+#   make TOOLCHAIN=clang LEVEL=O3 run
+#   make TOOLCHAIN=clang SUITE=mlperf LEVEL=O3 run
+#
 # SUITE=mlperf (F411 only) swaps the image set for the MLPerf Tiny reference
 # keyword spotting and image classification models, run by tinymind and TFLM:
 #   make mlperf-models        fetch the pinned models, generate gen/mlperf/ (venv)
@@ -91,6 +98,14 @@ else ifneq ($(SUITE),default)
   $(error SUITE must be default or mlperf)
 endif
 
+TOOLCHAIN ?= gcc
+ifeq ($(TOOLCHAIN),clang)
+  B   := $(B)-clang
+  RAW := $(basename $(RAW))_clang.txt
+else ifneq ($(TOOLCHAIN),gcc)
+  $(error TOOLCHAIN must be gcc or clang)
+endif
+
 # Which ST-LINK to flash and read. With one probe attached it is found on its
 # own; with several, STLINK=<serial> picks one (`make stlink` lists them), on
 # the command line, in the environment, or in an untracked local.mk (which can
@@ -110,6 +125,12 @@ PORT    ?= $(firstword $(filter %_$(STLINK)-if02,$(STLINK_VCPS)))
 
 CXX  = arm-none-eabi-g++
 CC   = arm-none-eabi-gcc
+# Compiler for the tinymind images only.
+ifeq ($(TOOLCHAIN),clang)
+  TM_CXX = ./clang-arm-cxx
+else
+  TM_CXX = $(CXX)
+endif
 SIZE = arm-none-eabi-size
 COMMON = $(CPU) $(OPT) -g -ffunction-sections -fdata-sections -Wall -Wextra -Werror
 CXXFLAGS = $(COMMON) -std=c++17 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit
@@ -166,6 +187,12 @@ ARENA_tflm_ref_mlperf_kws_int8   = 22784
 ARENA_tflm_cmsis_mlperf_ic_int8  = 55008
 ARENA_tflm_ref_mlperf_ic_int8    = 54352
 
+ifeq ($(TOOLCHAIN),clang)
+  IMAGES      := $(filter tm_%,$(IMAGES))
+  PROF_IMAGES := $(filter tm_%,$(PROF_IMAGES))
+  FIT_IMAGES  :=
+endif
+
 all: $(IMAGES:%=$(B)/%.elf) $(PROF_IMAGES:%=$(B)/%.elf)
 
 $(B):
@@ -202,7 +229,7 @@ SOURCES_OF = $(filter %.c %.cpp,$(1))
 # $(1)=image $(2)=extra defines
 define tm_rule
 $(B)/$(1).elf: fw/be_tinymind.cpp $$(HARNESS) $$(TM_HDRS) | $$(B) $$(DATA_DEPS)
-	$$(CXX) $$(CXXFLAGS) $$(INC) $$(TM_INC) $(2) -o $$@ $$(call SOURCES_OF,$$^) $$(LD)
+	$$(TM_CXX) $$(CXXFLAGS) $$(INC) $$(TM_INC) $(2) -o $$@ $$(call SOURCES_OF,$$^) $$(LD)
 endef
 $(eval $(call tm_rule,tm_mlp,-DMODEL_MLP))
 $(eval $(call tm_rule,tm_mlp_dsp,-DMODEL_MLP $(DSP)))
@@ -246,7 +273,7 @@ $(eval $(call tflm_rule,tflm_ref_mlperf_ic_int8,$(TFLM_REF),-DMODEL_MLPERF_IC,+r
 # $(1)=image $(2)=extra defines
 define tm_rf_rule
 $(B)/$(1).elf: fw/be_tinymind_rf.cpp $$(HARNESS) $$(TM_HDRS) | $$(B) $$(DATA_DEPS)
-	$$(CXX) $$(CXXFLAGS) $$(INC) $$(TM_INC) $(2) -o $$@ $$(call SOURCES_OF,$$^) $$(LD)
+	$$(TM_CXX) $$(CXXFLAGS) $$(INC) $$(TM_INC) $(2) -o $$@ $$(call SOURCES_OF,$$^) $$(LD)
 endef
 $(eval $(call tm_rf_rule,tm_rf,))
 $(eval $(call tm_rf_rule,tm_rf_inline,-DTM_RF_INLINE))

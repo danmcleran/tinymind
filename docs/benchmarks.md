@@ -9,16 +9,16 @@ nav_order: 14
 tinymind, TensorFlow Lite for Microcontrollers (TFLM, now LiteRT for Microcontrollers) and emlearn were run on the same microcontrollers: a Cortex-M4F (NUCLEO-F411RE) and a [Cortex-M0+](#cortex-m0-nucleo-l031k6) (NUCLEO-L031K6). Every framework executed the same models, and the int8 frameworks used the same int8 weights. Everything was measured on the board; nothing was simulated.
 
 {: .note }
-F411 measured 2026-10-13, Cortex-M0+ measured 2026-10-17, [MLPerf Tiny reference models](#mlperf-tiny-reference-models) measured 2026-10-19, with the code in [`benchmarks/framework_comparison_f411`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/framework_comparison_f411). These are numbers from two boards, one compiler and five models. They describe this setup, not every workload. Updated after [#192](https://github.com/danmcleran/tinymind/pull/192), [#195](https://github.com/danmcleran/tinymind/pull/195), [#198](https://github.com/danmcleran/tinymind/pull/198), [#199](https://github.com/danmcleran/tinymind/pull/199), [#202](https://github.com/danmcleran/tinymind/pull/202), [#204](https://github.com/danmcleran/tinymind/pull/204), [#208](https://github.com/danmcleran/tinymind/pull/208), [#210](https://github.com/danmcleran/tinymind/pull/210) and [#211](https://github.com/danmcleran/tinymind/pull/211), nine tinymind fixes this benchmark prompted (see [what changed](#what-changed-since-the-first-run)).
+Every table re-measured 2026-11-12 on both boards, at tinymind `6a8b522`, with the code in [`benchmarks/framework_comparison_f411`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/framework_comparison_f411). These are numbers from two boards, one compiler and five models. They describe this setup, not every workload. Updated after [#192](https://github.com/danmcleran/tinymind/pull/192), [#195](https://github.com/danmcleran/tinymind/pull/195), [#198](https://github.com/danmcleran/tinymind/pull/198), [#199](https://github.com/danmcleran/tinymind/pull/199), [#202](https://github.com/danmcleran/tinymind/pull/202), [#204](https://github.com/danmcleran/tinymind/pull/204), [#208](https://github.com/danmcleran/tinymind/pull/208), [#210](https://github.com/danmcleran/tinymind/pull/210) and [#211](https://github.com/danmcleran/tinymind/pull/211), nine tinymind fixes this benchmark prompted (see [what changed](#what-changed-since-the-first-run)), and after [#229](https://github.com/danmcleran/tinymind/pull/229) and [#273](https://github.com/danmcleran/tinymind/pull/273), which the MLPerf Tiny models prompted.
 
 ## Setup
 
 | | |
 |---|---|
 | Board | NUCLEO-F411RE: STM32F411RE, Cortex-M4F at 100 MHz, 3 flash wait states with the ART accelerator on |
-| Compiler | arm-none-eabi-gcc 13.2.1, `-mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16` |
+| Compiler | arm-none-eabi-gcc 13.2.1, `-mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16` (Clang 18.1.3 [below](#tinymind-under-clang)) |
 | Timing | DWT cycle counter; median of 33 warm inferences (spread under 0.1%) |
-| tinymind | master @ `b02e92d`, int8 layer family, with and without the `TINYMIND_ENABLE_SIMD_ARM_DSP` (SMLAD) backend |
+| tinymind | master @ `6a8b522`, int8 layer family, with and without the `TINYMIND_ENABLE_SIMD_ARM_DSP` (SMLAD) backend |
 | TFLM | tflite-micro @ `18811372` (2026-10-12), with CMSIS-NN kernels and with reference kernels |
 | emlearn | 0.23.2 (`eml_net`, float32) |
 | Converter | TensorFlow 2.21, post-training int8 quantization with default settings (per-channel weights) |
@@ -43,8 +43,8 @@ F411 measured 2026-10-13, Cortex-M0+ measured 2026-10-17, [MLPerf Tiny reference
 
 | Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM | Accuracy |
 |---|---:|---:|---:|---:|---:|---:|
-| tinymind int8 (scalar) | 20,639 | 20,486 | 205 µs | 5.3–5.5 KB | 152 B | 96.11% |
-| **tinymind int8 (+SMLAD)** | **10,305** | **10,241** | **102 µs** | 5.4–5.5 KB | 124 B | 96.11% |
+| tinymind int8 (scalar) | 20,621 | 21,002 | 210 µs | 5.8 KB | 152 B | 96.11% |
+| **tinymind int8 (+SMLAD)** | **10,167** | **10,227** | **102 µs** | 5.9 KB | 124 B | 96.11% |
 | TFLM int8 (CMSIS-NN) | 14,075 | 14,030 | 140 µs | 36.7–40.6 KB | 2,600 B | 96.11% |
 | TFLM int8 (reference) | 32,084 | 31,411 | 314 µs | 25.7–29.6 KB | 2,152 B | 96.11% |
 | TFLM float32 | 27,902 | 28,059 | 281 µs | 43.2–47.3 KB | 1,824 B | 96.11% |
@@ -54,8 +54,8 @@ F411 measured 2026-10-13, Cortex-M0+ measured 2026-10-17, [MLPerf Tiny reference
 
 | Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM |
 |---|---:|---:|---:|---:|---:|
-| tinymind int8 (scalar) | 266,451 | 254,900 | 2.55 ms | 5.0–6.8 KB | 5,332 B |
-| **tinymind int8 (+SMLAD)** | **192,965** | **181,568** | **1.82 ms** | 4.7–6.4 KB | 5,296 B |
+| tinymind int8 (scalar) | 271,043 | 254,766 | 2.55 ms | 5.8–6.6 KB | 5,308 B |
+| **tinymind int8 (+SMLAD)** | **195,841** | **181,853** | **1.82 ms** | 5.4–6.3 KB | 5,372 B |
 | TFLM int8 (CMSIS-NN) | 573,396 | 576,368 | 5.76 ms | 84.5–91.6 KB | 6,288 B |
 | TFLM int8 (reference) | 2,459,339 | 2,435,580 | 24.4 ms | 41.1–46.2 KB | 5,668 B |
 | TFLM float32 | 2,136,067 | 2,159,717 | 21.6 ms | 84.3–91.6 KB | 15,128 B |
@@ -70,22 +70,22 @@ Each layer was timed separately, behind its own non-inlined call.
 
 | Layer | tinymind +SMLAD `-O2` | tinymind +SMLAD `-O3` | TFLM CMSIS-NN `-O2` | TFLM CMSIS-NN `-O3` |
 |---|---:|---:|---:|---:|
-| conv 3×3, 1→8 | 132,155 | **127,756** | 434,553 | 435,412 |
-| max-pool 2×2 | 10,162 | **10,160** | 35,807 | 36,697 |
-| depthwise 3×3 | 21,415 | **21,047** | 39,208 | 40,918 |
-| pointwise 8→16 | **22,941** | 25,865 | 53,212 | 53,866 |
-| average-pool | **2,267** | 2,281 | 8,875 | 7,917 |
-| dense 16→10 | 948 | **946** | 2,097 | 2,041 |
+| conv 3×3, 1→8 | 134,793 | **126,262** | 434,553 | 435,387 |
+| max-pool 2×2 | 10,161 | **10,156** | 35,807 | 36,383 |
+| depthwise 3×3 | 20,670 | **20,660** | 39,208 | 40,909 |
+| pointwise 8→16 | 29,877 | **27,485** | 53,212 | 53,863 |
+| average-pool | **2,269** | 2,281 | 8,875 | 7,921 |
+| dense 16→10 | 954 | **952** | 2,097 | 2,031 |
 
 ## What the numbers say
 
-**tinymind with the SMLAD backend is faster than TFLM with CMSIS-NN on every layer, at both optimization levels.** On the MLP it is 27% faster (10.2k vs 14.0k cycles at `-O3`). On the CNN it is 68% faster at `-O3` (182k vs 576k, 3.2× the speed) and 66% faster at `-O2`. Code + weights are 5–7 KB against 37–92 KB (7–18× smaller), because there is no interpreter or flatbuffer parser, and no unused kernel variants get linked in.
+**tinymind with the SMLAD backend is faster than TFLM with CMSIS-NN on every layer, at both optimization levels.** On the MLP it is 27% faster (10.2k vs 14.0k cycles at `-O3`). On the CNN it is 68% faster at `-O3` (182k vs 576k, 3.2× the speed) and 66% faster at `-O2`. Code + weights are 5–7 KB against 37–92 KB (6–17× smaller), because there is no interpreter or flatbuffer parser, and no unused kernel variants get linked in.
 
-**Without SMLAD,** tinymind's portable scalar build still runs the CNN 56% faster than TFLM with CMSIS-NN (255k vs 576k cycles at `-O3`). On the MLP the scalar build (20.5k) sits between CMSIS-NN (14.0k) and TFLM's reference kernels (31.4k).
+**Without SMLAD,** tinymind's portable scalar build still runs the CNN 56% faster than TFLM with CMSIS-NN (255k vs 576k cycles at `-O3`). On the MLP the scalar build (21.0k) sits between CMSIS-NN (14.0k) and TFLM's reference kernels (31.4k).
 
-**Where the time goes now.** The single-channel 3×3 stem is still about two thirds of the CNN's time, at 29% of CMSIS-NN's cost for the same layer (128k vs 435k cycles), so it remains the layer to work on.
+**Where the time goes now.** The single-channel 3×3 stem is still about two thirds of the CNN's time, at 29% of CMSIS-NN's cost for the same layer (126k vs 435k cycles), so it remains the layer to work on.
 
-**Build tinymind at `-O3`.** The MLP runs within 1% at either level, and the CNN is 6% slower at `-O2` with SMLAD (193k vs 182k) and 5% slower without it. Individual layers can still go either way: pointwise is faster at `-O2` here. tinymind's kernels are templates compiled in your own translation unit, so the optimizer's choices are part of its performance; CMSIS-NN's kernels ship precompiled and barely move between levels.
+**Build tinymind at `-O3`.** The MLP runs within 2% at either level, and the CNN is 8% slower at `-O2` with SMLAD (196k vs 182k) and 6% slower without it. On the Cortex-M0+ the gap is larger: the MLP takes 35% more cycles at `-O2` (see [below](#cortex-m0-nucleo-l031k6)). tinymind's kernels are templates compiled in your own translation unit, so the optimizer's choices are part of its performance; CMSIS-NN's kernels ship precompiled and barely move between levels.
 
 **RAM is close on the CNN.** tinymind keeps every intermediate activation buffer static. TFLM's arena planner reuses buffers but carries interpreter state. Alternating between two buffers (2,592 B and 784 B instead of 4,432 B) would save about 1 KB.
 
@@ -108,12 +108,12 @@ How they were run:
 
 | Model | Framework | Cycles | ms | Flash | RAM |
 |---|---|---:|---:|---:|---:|
-| Keyword spotting (DS-CNN) | **tinymind +SMLAD** | **8,193,064** | **81.9** | **53,156** | **17,248** |
-| | tinymind scalar | 15,736,026 | 157.4 | 52,748 | 17,264 |
+| Keyword spotting (DS-CNN) | **tinymind +SMLAD** | **8,011,750** | **80.1** | **53,452** | **17,276** |
+| | tinymind scalar | 15,677,563 | 156.8 | 53,072 | 17,288 |
 | | TFLM CMSIS-NN | 9,583,099 | 95.8 | 148,864 | 24,432 |
 | | TFLM reference | 67,484,238 | 674.8 | 101,944 | 23,828 |
-| Image classification (ResNet-8) | **tinymind +SMLAD** | **26,753,191** | **267.5** | **108,324** | **54,424** |
-| | tinymind scalar | 85,467,754 | 854.7 | 120,836 | 54,380 |
+| Image classification (ResNet-8) | **tinymind +SMLAD** | **26,368,775** | **263.7** | **112,352** | **54,416** |
+| | tinymind scalar | 85,326,662 | 853.3 | 124,140 | 54,368 |
 | | TFLM CMSIS-NN | 37,372,049 | 373.7 | 191,212 | 56,608 |
 | | TFLM reference | 191,555,451 | 1,915.6 | 155,412 | 55,396 |
 
@@ -121,24 +121,26 @@ Per-layer cycles for the image classification model, `-O3` (each layer timed sep
 
 | Layer | tinymind +SMLAD | TFLM CMSIS-NN |
 |---|---:|---:|
-| conv 3×3, 3→16 | 1,903,707 | 2,837,416 |
-| conv 3×3, 16→16 (×2) | 5,008,401 | 6,984,937 |
-| conv 3×3 stride 2, 16→32 | 2,538,895 | 3,171,053 |
-| conv 3×3, 32→32 | 4,414,087 | 5,718,998 |
-| conv 1×1 stride 2, 16→32 | 506,977 | 677,296 |
-| conv 3×3 stride 2, 32→64 | 2,236,304 | 2,747,445 |
-| conv 3×3, 64→64 | 4,219,491 | 5,213,962 |
-| conv 1×1 stride 2, 32→64 | 457,817 | 533,502 |
-| residual add (32×32×16) | 557,110 | 1,407,630 |
+| conv 3×3, 3→16 | 1,920,193 | 2,837,416 |
+| conv 3×3, 16→16 (×2) | 5,020,704 | 6,984,937 |
+| conv 3×3 stride 2, 16→32 | 2,545,177 | 3,171,053 |
+| conv 3×3, 32→32 | 4,414,753 | 5,718,998 |
+| conv 1×1 stride 2, 16→32 | 490,899 | 677,296 |
+| conv 3×3 stride 2, 32→64 | 2,239,423 | 2,747,445 |
+| conv 3×3, 64→64 | 4,222,239 | 5,213,962 |
+| conv 1×1 stride 2, 32→64 | 450,110 | 533,502 |
+| residual add (32×32×16) | 442,425 | 1,407,630 |
+| residual add (16×16×32) | 213,055 | 702,260 |
+| residual add (8×8×64) | 102,458 | 350,923 |
 
 What these numbers say:
 
-- **tinymind takes 14.5% fewer cycles than CMSIS-NN on keyword spotting and 28.4% fewer on image classification**, and fewer on every layer of both models at `-O2` and `-O3`. It needs a third of TFLM's flash on keyword spotting and 57% on image classification, and less RAM on both (17.2 against 24.4 KB, and 54.4 against 56.6 KB).
+- **tinymind takes 16.4% fewer cycles than CMSIS-NN on keyword spotting and 29.4% fewer on image classification**, and fewer on every layer of both models at `-O2` and `-O3`. It needs 36% of TFLM's flash on keyword spotting and 59% on image classification, and less RAM on both (17.3 against 24.4 KB, and 54.4 against 56.6 KB).
 - **The first run lost image classification by 16%.** Before this suite, tinymind's 3×3 convolutions over 16 to 64 channels computed one output at a time, and SAME padding needed a separate pass and a padded copy of each input. Three changes closed it, all bit-exact:
   - The convolutions now compute two filters by two output pixels per pass through an SMLAD kernel, so each load feeds two multiplies, as CMSIS-NN does. The kernel is a separate function on purpose: inlined into the layer, it competed with the surrounding loops for registers, and these layers' cost swung by 30% with unrelated code changes. The 1×1 convolutions over 32 or more channels use the same kernel.
   - Padding is folded into the convolution and depthwise layers (`PadTop` … `PadRight` template parameters). A ring of padded rows on the stack replaces the 12 KB and 18 KB padded copies that had put tinymind's RAM above TFLM's.
   - A new `QSoftmaxFixedPoint1D` reproduces the TFLite int8 softmax exactly, so a model that ends in a softmax can be checked against TFLM bit for bit.
-- **The models above did not move.** The KWS-style CNN is within 0.3% at `-O3` and 2% faster at `-O2`; the MLP and every Cortex-M0+ image are unchanged. Their tables stay as measured at `b02e92d`.
+- **The residual adds take a third of CMSIS-NN's cycles** since [#273](https://github.com/danmcleran/tinymind/pull/273). `QAdd` rescaled each input with a two-step rounding and a branch on the shift's sign; for TFLite ADD without a fused activation, each input is now one 64-bit rounding (an `SMLAL` and a shift), proved equal to the reference by CBMC, and the output uses the same single-rounding requantizer as the convolutions. The three adds dropped from 557k, 336k and 176k cycles to 442k, 213k and 102k, bit-exact.
 
 Reproduce with `make mlperf-models`, then `make SUITE=mlperf LEVEL=O3 run`; full tables, `-O2` included, are in [`results/REPORT_mlperf.md`](https://github.com/danmcleran/tinymind/blob/master/benchmarks/framework_comparison_f411/results/REPORT_mlperf.md).
 
@@ -152,13 +154,13 @@ The same harness, backends and models on the smallest class of part, plus one mo
 | Compiler | arm-none-eabi-gcc 13.2.1, `-mcpu=cortex-m0plus -mthumb -mfloat-abi=soft` |
 | Timing | The M0+ has no DWT cycle counter: SysTick runs at the core clock over its full 24-bit range and its interrupt counts wraps, giving a free-running 32-bit cycle count (checked on the board against a 3-cycle busy loop and for monotonicity across ~110k wraps) |
 | Test sets | The first 32 MLP and random-forest samples (360 do not fit in 32 KB of flash next to the code); all 8 KWS samples |
-| tinymind | master @ `576f146`, scalar int8 (ARMv6-M has no SMLAD) |
+| tinymind | master @ `6a8b522`, scalar int8 (ARMv6-M has no SMLAD) |
 
 ### MLP (digits, first 32 test samples)
 
 | Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM | Accuracy |
 |---|---:|---:|---:|---:|---:|---:|
-| **tinymind int8** | **35,637** | **35,963** | **1.12 ms** | 5.5–5.8 KB | 200 B | 96.88% |
+| **tinymind int8** | **48,619** | **36,006** | **1.13 ms** | 6.5–6.7 KB | 344 B | 96.88% |
 | TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 39.2–43.4 KB | 1,872+ B | - |
 | TFLM int8 (reference) | does not fit | does not fit | - | 33.9–38.3 KB | 1,776+ B | - |
 | TFLM float32 | does not fit | does not fit | - | 45.7–50.0 KB | 1,392+ B | - |
@@ -168,7 +170,7 @@ The same harness, backends and models on the smallest class of part, plus one mo
 
 | Framework | Cycles `-O2` | Cycles `-O3` | Time `-O3` | Code + weights | RAM |
 |---|---:|---:|---:|---:|---:|
-| **tinymind int8** | **818,262** | **746,112** | **23.3 ms** | 6.0–8.5 KB | 5,488 B |
+| **tinymind int8** | **821,307** | **740,864** | **23.2 ms** | 7.2–8.6 KB | 5,644 B |
 | TFLM int8 (CMSIS-NN) | does not fit | does not fit | - | 83.0–90.5 KB | 5,136+ B |
 | TFLM int8 (reference) | does not fit | does not fit | - | 51.1–57.1 KB | 5,072+ B |
 | TFLM float32 | does not fit | does not fit | - | 82.9–90.3 KB | 14,448+ B |
@@ -192,13 +194,38 @@ A tree walk's length depends on the input, so the spread between fastest and slo
 
 ### What the M0+ numbers say
 
-**Only tinymind fits the networks.** TFLM's runtime plus the MLP alone needs 34–50 KB, more than the part's 32 KB of flash before the harness or a test input is added. tinymind runs the MLP in 5.5 KB and the CNN in 6.0 KB at `-O2`, bit-exact with the host and the F411 on a core that has no unaligned access.
+**Only tinymind fits the networks.** TFLM's runtime plus the MLP alone needs 34–50 KB, more than the part's 32 KB of flash before the harness or a test input is added. tinymind runs the MLP in 6.7 KB and the CNN in 7.2 KB at `-O2`, bit-exact with the host and the F411 on a core that has no unaligned access.
 
-**On the MLP, int8 against software float is 20×** (35.6k vs 712k cycles). That is not int8 against int8, since emlearn has no int8 MLP; it is what each library offers for this network on a part without an FPU.
+**On the MLP, int8 against software float is 20× at `-O3`** (36.0k vs 707k cycles) and 15× at `-O2`. That is not int8 against int8, since emlearn has no int8 MLP; it is what each library offers for this network on a part without an FPU.
 
 **The random forest went from a 3× loss to a tie.** The first run walked the forest with `QDecisionTree`: about 20 Thumb-1 instructions per node and a full 12-byte node per leaf, against emlearn's generated load, compare-immediate and branch. [`QStaticDecisionTree`]({{ site.baseurl }}/architectures/decision-trees#compile-time-models) (#223) generates that same code from the same node pool at compile time, so the pool is not stored at all. It is 2.9× faster than the walk in about half its size. With `uint8_t` features, which load with Thumb-1's immediate-offset `LDRB` instead of a register-offset `LDRSB`, it beats emlearn at `-O2` (872 vs 917 cycles), is within 0.5% at `-O3` (845 vs 841), is smaller at `-O3` (7.9 vs 8.3 KB) and uses less RAM (112 vs 184 B). When flash matters more than cycles, the compact policy packs the same pool at compile time into 4-byte decision nodes in pre-order and a deduplicated int8 leaf table: the whole forest is 3.0 KB, half of emlearn's smallest and a quarter of the walk, at 1.5× the walk's speed and about half of inline's. Against emlearn's data-driven `loadable` method it is 3.7–3.9× faster in 42% of the flash. The model is also checked when it compiles: a split on a feature the input does not have, or a child index outside the pool, is a build error instead of an out-of-bounds read.
 
-**M0+ against M4F, same code.** The MLP takes 1.8× the cycles of the F411's scalar build and the CNN 2.9×. Requantization's 64-bit multiply becomes a library call (`__aeabi_lmul`) on ARMv6-M, and the 3×3 stem is 69% of the CNN, so those are where M0+ tuning would start.
+**The MLP is 36% slower at `-O2` than in the previous measurement** (48.6k cycles against 35.6k, and 1.2 KB larger), while `-O3` is unchanged (36.0k against 36.0k). Re-measuring each library change since then on the board places it at [#230](https://github.com/danmcleran/tinymind/pull/230), which made `Requantizer::apply`'s rarely taken saturating path saturate instead of overflowing. The MLP's requantizers never take that path, and why the change costs the dense layers at `-O2` is not yet understood; moving the path out of line recovered only part of it. `-O3` is not affected.
+
+**M0+ against M4F, same code.** At `-O3` the MLP takes 1.7× the cycles of the F411's scalar build and the CNN 2.9×. Requantization's 64-bit multiply becomes a library call (`__aeabi_lmul`) on ARMv6-M, and the 3×3 stem is 69% of the CNN, so those are where M0+ tuning would start.
+
+## tinymind under Clang
+
+Every table above is GCC. `make TOOLCHAIN=clang` rebuilds the tinymind images with Clang 18.1.3 instead (TFLM and emlearn stay on GCC), linked against the same newlib and startup code, and every one of them is bit-exact with the GCC build on both boards.
+
+Two settings matter. **`-munaligned-access`**: Clang's bare-metal Arm target assumes strict alignment unless told otherwise, so without it every 32-bit load in the SMLAD backend becomes four byte loads, and the MLP with SMLAD took 23,098 cycles, slower than Clang's own scalar build (22,054). The bench's `clang-arm-cxx` passes it on every core that has unaligned access; the Cortex-M0+ does not. **`-fshort-enums`**: GCC's `arm-none-eabi` target uses short enums and newlib is built that way, so a Clang object without it does not match the C library's ABI.
+
+`-O3`, cycles:
+
+| Board | Model | GCC 13.2.1 | Clang 18.1.3 | Clang vs GCC |
+|---|---|---:|---:|---:|
+| F411 | MLP, scalar | 21,002 | 22,024 | +4.9% |
+| | MLP, +SMLAD | 10,227 | 12,280 | +20.1% |
+| | KWS CNN, scalar | 254,766 | 292,351 | +14.8% |
+| | KWS CNN, +SMLAD | 181,853 | 222,330 | +22.3% |
+| | MLPerf keyword spotting, +SMLAD | 8,011,750 | 10,300,182 | +28.6% |
+| | MLPerf image classification, +SMLAD | 26,368,775 | 38,141,841 | +44.6% |
+| L031 | MLP | 36,006 | 39,339 | +9.3% |
+| | KWS CNN | 740,864 | 808,981 | +9.2% |
+| | Random forest, compile-time inline (uint8) | 845 | 930 | +10.1% |
+| | Random forest, run-time walk | 2,524 | 2,310 | −8.5% |
+
+**Build tinymind with GCC where you can.** Clang is slower on every network, by 3–45%, and most on the SMLAD builds. Built with Clang, tinymind no longer beats TFLM with CMSIS-NN (built with GCC) on the MLPerf models: 10.3M against 9.6M cycles on keyword spotting and 38.1M against 37.4M on image classification. It still beats it on the two models built for this benchmark (12.3k against 14.0k on the MLP, 222k against 576k on the CNN). The main gaps are not yet explained; one visible difference is that Clang calls `Requantizer::apply` out of line where GCC inlines it. At `-O2` on the Cortex-M0+, Clang's MLP (38.9k cycles) beats GCC's, because of the [GCC `-O2` slowdown above](#cortex-m0-nucleo-l031k6).
 
 ## What changed since the first run
 
@@ -206,12 +233,12 @@ The first runs (tinymind before #192) exposed four weak spots. All four are fixe
 
 | tinymind | First run | Now |
 |---|---:|---:|
-| MLP +SMLAD `-O2` | 24,591 | 10,305 |
-| MLP +SMLAD `-O3` | 12,278 | 10,241 |
-| MLP scalar `-O3` | 33,154 | 20,486 |
-| CNN +SMLAD `-O2` | 831,570 | 192,965 |
-| CNN +SMLAD `-O3` | 422,449 | 181,568 |
-| CNN scalar `-O3` | 445,579 | 254,900 |
+| MLP +SMLAD `-O2` | 24,591 | 10,167 |
+| MLP +SMLAD `-O3` | 12,278 | 10,227 |
+| MLP scalar `-O3` | 33,154 | 21,002 |
+| CNN +SMLAD `-O2` | 831,570 | 195,841 |
+| CNN +SMLAD `-O3` | 422,449 | 181,853 |
+| CNN scalar `-O3` | 445,579 | 254,766 |
 
 - **[#192](https://github.com/danmcleran/tinymind/pull/192), SMLAD inner loop.** At `-O2` the int8 dot product stayed rolled inside each layer's output loop, where the requantizer's hoisted constants left it about three scratch registers. In the disassembly it issued 2 SMLADs per iteration, stored each loaded word to the stack and read it back, and reloaded its loop bound from memory on every pass. How badly depended on unrelated surrounding code: with identical kernels the MLP measured anywhere from 14.5k to 24.6k cycles. The loop is now unrolled with a pragma (so `-O2` compiles it like `-O3`), and the input zero point is folded into `SXTAB16`, the way CMSIS-NN does it.
 - **[#195](https://github.com/danmcleran/tinymind/pull/195), convolution windows.** The conv layers called the dot product once per kernel tap, so the single-channel 3×3 stem ran nine length-1 dot products per output, none of them long enough to use SMLAD. Each output pixel's kernel window is now gathered into a small contiguous patch once (up to 64 bytes; larger windows run one dot product per kernel row instead) and reused by every filter.
@@ -246,6 +273,8 @@ make LEVEL=O3 run    # build, flash and capture every image
 For the MLPerf Tiny reference models, `make mlperf-models` downloads them and `make SUITE=mlperf LEVEL=O3 run` writes `results/raw_mlperf_O3.txt`.
 
 On a NUCLEO-L031K6, `make BOARD=l031 LEVEL=O3 run` builds and runs the Cortex-M0+ images (`results/raw_l031_O3.txt`), and `make BOARD=l031 fit` reports what the images that do not fit would need.
+
+Adding `TOOLCHAIN=clang` to any of these runs builds the tinymind images with Clang and writes `results/raw_*_clang.txt`.
 
 The generated model headers are committed, so the firmware builds without TensorFlow; `make deps` is only needed for the TFLM and emlearn images.
 

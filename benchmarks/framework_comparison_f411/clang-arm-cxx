@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+#
+# Copyright (c) 2026 Dan McLeran
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+# Stand-in for arm-none-eabi-g++ in a compile-and-link command line, used by
+# `make TOOLCHAIN=clang`: compiles each .cpp with clang for arm-none-eabi
+# and links with the GCC driver (newlib nano, the same linker script and
+# startup), so only the compiler differs from the GCC images.
+#
+# Clang has no C++ library for bare-metal Arm, so it borrows the installed
+# GCC's: the library include directories are asked from arm-none-eabi-g++ for
+# the same -mcpu/-mfloat-abi/-mfpu (the multilib decides c++config.h), as
+# unit_test/embedded does. GCC's own include/ and include-fixed/ are left out:
+# they hold compiler builtin headers (arm_acle.h among them) that do not parse
+# under clang, which supplies its own.
+#
+# Clang's arm-none-eabi target assumes strict alignment unless told otherwise,
+# where GCC emits unaligned word loads on cores that have them. Without
+# -munaligned-access the Arm DSP backend's 32-bit loads become four byte loads
+# each and its build runs slower than clang's scalar one (tm_mlp_dsp 23,098
+# cycles against 12,277 with the flag), so it is passed for every core except
+# ARMv6-M and ARMv8-M Baseline (Cortex-M0, M0+, M1, M23), which have no
+# unaligned access.
+#
+# Environment: CLANGXX (default clang++), ARM_GXX (default arm-none-eabi-g++).
+set -euo pipefail
+
+clangxx=${CLANGXX:-clang++}
+gxx=${ARM_GXX:-arm-none-eabi-g++}
+
+srcs=()
+cflags=()
+lflags=()
+target=()
+out=
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o) out=$2; shift 2; continue;;
+        -T|-L) lflags+=("$1" "$2"); shift 2; continue;;
+        *.cpp) srcs+=("$1");;
+        *.c) echo "clang-arm-cxx: C sources are not supported: $1" >&2; exit 1;;
+        -T*|-L*|-Wl,*|--specs=*|-nostartfiles|-l*) lflags+=("$1");;
+        -mcpu=*|-mthumb|-mfloat-abi=*|-mfpu=*) target+=("$1"); lflags+=("$1");;
+        -O*) cflags+=("$1"); lflags+=("$1");;
+        *) cflags+=("$1");;
+    esac
+    shift
+done
+[ -n "$out" ] || { echo "clang-arm-cxx: no -o given" >&2; exit 1; }
+
+# GCC's arm-none-eabi target uses short enums (the AAPCS bare-metal variant),
+# and newlib is built that way; clang's defaults to 32-bit enums, which the
+# linker reports as an ABI mismatch against libc_nano.
+abi=(-fshort-enums)
+
+align=(-munaligned-access)
+case " ${target[*]} " in
+    *-mcpu=cortex-m0*|*-mcpu=cortex-m1\ *|*-mcpu=cortex-m23*) align=();;
+esac
+
+private=" $("$gxx" -print-file-name=include) $("$gxx" -print-file-name=include-fixed) "
+sysinc=()
+while read -r dir; do
+    case "$private" in
+        *" $dir "*) ;;
+        *) sysinc+=(-isystem "$dir");;
+    esac
+done < <("$gxx" "${target[@]}" -E -x c++ - -v </dev/null 2>&1 |
+         sed -n '/#include <...>/,/End of search/p' | grep '^ /' | sed 's/^ //')
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+objs=()
+i=0
+for s in "${srcs[@]}"; do
+    o=$tmp/$i.o
+    i=$((i + 1))
+    "$clangxx" --target=arm-none-eabi "${target[@]}" "${abi[@]}" "${align[@]}" -nostdinc++ "${sysinc[@]}" \
+        "${cflags[@]}" -c "$s" -o "$o"
+    objs+=("$o")
+done
+# Clang's objects carry a .note.GNU-stack section and GCC's arm-none-eabi
+# objects carry none, so with clang's the linker checks every input and warns
+# that newlib's memcpy.o implies an executable stack. A bare-metal image has
+# no such notion; silence the warning rather than the check's other uses.
+"$gxx" "${lflags[@]}" -Wl,--no-warn-execstack -o "$out" "${objs[@]}"
