@@ -136,6 +136,46 @@ namespace tinymind {
             }
         };
 
+        /**
+         * QAdd's reference loop: the TFLite arithmetic, for any parameters.
+         * Kept out of line so that QAdd::forward stays small enough to be
+         * inlined into its caller (see there), and templated on the storage
+         * types only, with a run-time length, so that every QAdd of the same
+         * storage types shares one copy instead of one per length.
+         */
+        template<typename InA, typename InB, typename Out>
+        TINYMIND_NOINLINE void qaddReference(const InA* a, const InB* b, Out* out, std::size_t n,
+                                             InA zeroPointA, InB zeroPointB, int32_t left_shift,
+                                             int32_t multA, int32_t shiftA,
+                                             int32_t multB, int32_t shiftB,
+                                             const Requantizer<int32_t, Out>& requantizer)
+        {
+            // Copy the requantizer into a local: every output store is an
+            // int8_t write, which may alias it, so its fields would otherwise
+            // be reloaded once per element.
+            const int32_t zpA = static_cast<int32_t>(zeroPointA);
+            const int32_t zpB = static_cast<int32_t>(zeroPointB);
+            const int32_t leftScale = static_cast<int32_t>(1) << left_shift;
+            const Requantizer<int32_t, Out> rq = requantizer;
+
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                const int32_t a_minus_zp = static_cast<int32_t>(a[i]) - zpA;
+                const int32_t b_minus_zp = static_cast<int32_t>(b[i]) - zpB;
+
+                const int32_t shifted_a = a_minus_zp * leftScale;
+                const int32_t shifted_b = b_minus_zp * leftScale;
+
+                const int32_t scaled_a = multiplyByQuantizedMultiplier(
+                    shifted_a, multA, shiftA);
+                const int32_t scaled_b = multiplyByQuantizedMultiplier(
+                    shifted_b, multB, shiftB);
+
+                const int32_t sum = scaled_a + scaled_b;
+                out[i] = rq.apply(sum);
+            }
+        }
+
     } // namespace detail
 
     template<
@@ -185,41 +225,9 @@ namespace tinymind {
                 }
                 return;
             }
-            forwardReference(a, b, out);
-        }
-
-    private:
-        // The TFLite reference arithmetic, for any parameters.
-        TINYMIND_NOINLINE void forwardReference(const InAType* a, const InBType* b, OutType* out) const
-        {
-            // Snapshot the fields into locals. Every output store is an int8_t write,
-            // which may alias *this, so member reads inside the loop would be
-            // reloaded once per element.
-            const int32_t zpA = static_cast<int32_t>(input_a_zero_point);
-            const int32_t zpB = static_cast<int32_t>(input_b_zero_point);
-            const int32_t leftScale = static_cast<int32_t>(1) << left_shift;
-            const int32_t multA = input_a_multiplier;
-            const int32_t shiftA = input_a_shift;
-            const int32_t multB = input_b_multiplier;
-            const int32_t shiftB = input_b_shift;
-            const Requantizer<int32_t, OutType> rq = output_requantizer;
-
-            for (std::size_t i = 0; i < N_; ++i)
-            {
-                const int32_t a_minus_zp = static_cast<int32_t>(a[i]) - zpA;
-                const int32_t b_minus_zp = static_cast<int32_t>(b[i]) - zpB;
-
-                const int32_t shifted_a = a_minus_zp * leftScale;
-                const int32_t shifted_b = b_minus_zp * leftScale;
-
-                const int32_t scaled_a = multiplyByQuantizedMultiplier(
-                    shifted_a, multA, shiftA);
-                const int32_t scaled_b = multiplyByQuantizedMultiplier(
-                    shifted_b, multB, shiftB);
-
-                const int32_t sum = scaled_a + scaled_b;
-                out[i] = rq.apply(sum);
-            }
+            detail::qaddReference(a, b, out, N_, input_a_zero_point, input_b_zero_point, left_shift,
+                                  input_a_multiplier, input_a_shift,
+                                  input_b_multiplier, input_b_shift, output_requantizer);
         }
     };
 
