@@ -92,6 +92,7 @@ Every push and pull request is gated. **Blocking** gates (must pass to merge):
 | LSTM | [`LstmNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | 4-gate architecture |
 | GRU | [`GruNeuralNetwork`]({{ site.baseurl }}/architectures/lstm-gru) | 3-gate architecture (~25% less memory) |
 | Liquid (LTC / CfC) | [`LtcCell`, `CfCCell`]({{ site.baseurl }}/architectures/lstm-gru#liquid-neural-networks-continuous-time) | Continuous-time cells (fused ODE solver / closed-form). Irregular sampling; train via reverse-mode autodiff; int8 `QCfCCell` for deployment |
+| On-Device Fine-Tuning | [`DenseHead`, `PrototypeHead`]({{ site.baseurl }}/training/on-device-fine-tuning) | Adapt a frozen model on the device from a few labelled samples: a trainable dense head (SGD, softmax cross-entropy) or a gradient-free nearest-class-mean head; under 800 bytes for a 32-value embedding and 6 classes in Q16.16 |
 | Forward-mode Autodiff (PINN) | [`Dual`, `tanh(Dual)` / `sigmoid(Dual)`]({{ site.baseurl }}/pinn-feasibility) | Input-coordinate derivatives (`du/dx`, `d²u/dx²`) for PDE residuals; float or fixed-point, freestanding-clean |
 
 ## Quick Start
