@@ -71,6 +71,8 @@ These layers sit outside the neural network template and can be chained into pip
 - **`dropout.hpp`** — Inverted dropout regularization.
 - **`binarylayer.hpp`** — Binary neural network layer (XNOR+popcount).
 - **`ternarylayer.hpp`** — Ternary neural network layer ({-1,0,+1} weights).
+- **`densehead.hpp`** — `DenseHead`: a trainable dense head for head-only fine-tuning on top of a frozen model's embedding. Loss policies `SoftmaxCrossEntropyHeadLoss` (default; exp LUT in fixed point, tails beyond the table cut to 0) and `SquaredErrorHeadLoss` (arithmetic only). The SGD update is fused into the backward pass, so there is no gradient buffer.
+- **`prototypehead.hpp`** — `PrototypeHead`: a gradient-free nearest-class-mean head (running mean per class, optional count cap that turns it into a moving average), with `SquaredEuclideanDistance` or `ManhattanDistance`.
 
 ### Design Pattern
 

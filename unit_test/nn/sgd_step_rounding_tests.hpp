@@ -170,6 +170,42 @@ namespace sgd_step_rounding_tests
         }
     };
 
+    // DenseHead: index 0 is the weight, 1 the bias. The update is fused into
+    // the backward pass, so the delta is kept here and applied by update();
+    // with input 1.0 both gradients are the delta itself.
+    struct DenseHeadPolicy
+    {
+        typedef tinymind::DenseHead<Q8, 1, 1, tinymind::SquaredErrorHeadLoss<Q8>> LayerType;
+
+        static Q8& lastDelta()
+        {
+            static Q8 delta;
+            return delta;
+        }
+
+        static void backward(LayerType&, const Q8& delta)
+        {
+            lastDelta() = delta;
+        }
+
+        static void update(LayerType& layer)
+        {
+            const Q8 input[1] = {one()};
+            const Q8 deltas[1] = {lastDelta()};
+            layer.update(&deltas[0], &input[0], learningRate());
+        }
+
+        static Q8 parameter(const LayerType& layer, const size_t index)
+        {
+            return (index == 0) ? layer.getWeight(0, 0) : layer.getBias(0);
+        }
+
+        static Q8 gradient(const LayerType&, const size_t)
+        {
+            return lastDelta();
+        }
+    };
+
     // BatchNorm1D: beta's gradient is the delta itself.
     struct BatchNormPolicy
     {
@@ -457,6 +493,12 @@ BOOST_AUTO_TEST_CASE(test_case_sub_lsb_step_batchnorm)
 {
     using namespace sgd_step_rounding_tests;
     checkLayer<BatchNormPolicy>(1);
+}
+
+BOOST_AUTO_TEST_CASE(test_case_sub_lsb_step_dense_head)
+{
+    using namespace sgd_step_rounding_tests;
+    checkLayer<DenseHeadPolicy>(2);
 }
 
 BOOST_AUTO_TEST_CASE(test_case_step_rounding_self_attention)

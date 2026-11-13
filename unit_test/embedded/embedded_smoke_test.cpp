@@ -74,6 +74,8 @@
 #include "rmsprop.hpp"
 #include "nnproperties.hpp"
 #include "networkStats.hpp"
+#include "densehead.hpp"
+#include "prototypehead.hpp"
 
 #if TINYMIND_ENABLE_QUANTIZATION
 #include "qaffine.hpp"
@@ -229,6 +231,56 @@ void clearTo(Q88* p, size_t n, int v)
     {
         p[i] = Q88(v, 0);
     }
+}
+
+// Head-only fine-tuning on a frozen embedding. The squared-error DenseHead and
+// both PrototypeHead distances are arithmetic only, so they must train and
+// predict at FLOAT=0 / STD=0. (The softmax loss rides the exp lookup table and
+// needs TINYMIND_USE_EXP_<I>_<F>, which a freestanding target need not define.)
+typedef tinymind::DenseHead<Q88, 4, 3, tinymind::SquaredErrorHeadLoss<Q88> > DenseHeadType;
+typedef tinymind::PrototypeHead<Q88, 4, 3> EuclideanHeadType;
+typedef tinymind::PrototypeHead<Q88, 4, 3, tinymind::ManhattanDistance<Q88> > ManhattanHeadType;
+
+DenseHeadType gDenseHead;
+EuclideanHeadType gEuclideanHead;
+ManhattanHeadType gManhattanHead;
+
+bool exerciseHeads()
+{
+    // Three one-hot embeddings, one per class.
+    Q88 embeddings[3][4];
+    for (size_t c = 0; c < 3; ++c)
+    {
+        for (size_t i = 0; i < 4; ++i)
+        {
+            embeddings[c][i] = Q88((i == c) ? 1 : 0, 0);
+        }
+    }
+
+    gDenseHead.clear();
+    gEuclideanHead.clear();
+    gManhattanHead.clear();
+    const Q88 learningRate(0, 64); // 0.25
+    for (size_t step = 0; step < 60; ++step)
+    {
+        const size_t c = step % 3;
+        gDenseHead.trainClass(embeddings[c], c, learningRate);
+    }
+    for (size_t c = 0; c < 3; ++c)
+    {
+        gEuclideanHead.learn(embeddings[c], c);
+        gManhattanHead.learn(embeddings[c], c);
+    }
+
+    bool ok = true;
+    for (size_t c = 0; c < 3; ++c)
+    {
+        ok = ok && (gDenseHead.predict(embeddings[c]) == c);
+        ok = ok && (gEuclideanHead.predict(embeddings[c]) == c);
+        ok = ok && (gManhattanHead.predict(embeddings[c]) == c);
+    }
+
+    return ok;
 }
 
 // Exercise the ANFIS inference path. Builds a full-grid rule table, then runs
@@ -1114,6 +1166,7 @@ int main()
 
     ok = ok && exerciseDual();
     ok = ok && exerciseAnfis();
+    ok = ok && exerciseHeads();
     ok = ok && exerciseNarrowFormat();
 
 #if TINYMIND_ENABLE_QUANTIZATION

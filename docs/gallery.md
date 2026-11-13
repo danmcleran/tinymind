@@ -144,6 +144,9 @@ for which example uses which dataset.
 **Gas sensor array drift** — MLP (128→32→6) trained on batch 1; accuracy decays across later batches as sensors drift.
 ![Gas sensor drift]({{ site.baseurl }}/assets/plots/gas_sensor_drift.png)
 
+**Gas sensor drift, adapted on the device** — head-only fine-tuning (`DenseHead`), a class-mean `PrototypeHead`, re-normalization and bias training compared from 1 to 20 labelled samples per class.
+![Gas sensor drift adaptation]({{ site.baseurl }}/assets/plots/gas_sensor_drift_adapt.png)
+
 **Air quality forecasting** — recurrent LSTM (1→16→1) one-step-ahead hourly pollutant forecast.
 ![Air quality forecast]({{ site.baseurl }}/assets/plots/air_quality_forecast.png)
 
