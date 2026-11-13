@@ -90,6 +90,7 @@ namespace head_finetune_tests
         PortableUniformReal jitter(-0.15, 0.15, 3u);
         double x[3];
         ValueType input[3];
+        ValueType inputDeltas[3];
         const ValueType rate = make<ValueType>(learningRate);
         for (size_t step = 0; step < steps; ++step)
         {
@@ -99,7 +100,9 @@ namespace head_finetune_tests
             {
                 input[i] = make<ValueType>(x[i]);
             }
-            head.trainClass(&input[0], c, rate);
+            // Every other step also asks for the embedding gradient, which
+            // must not change what the head learns.
+            head.trainClass(&input[0], c, rate, ((step & 1u) != 0u) ? &inputDeltas[0] : nullptr);
         }
 
         size_t correct = 0;
