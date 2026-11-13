@@ -51,6 +51,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **L2 weight decay** (ridge regularization) via `L2WeightDecay` policy to prevent weight overflow and reduce overfitting
 - **Learning rate scheduling** with `StepDecaySchedule` (multiply by decay factor every N steps) and `FixedLearningRatePolicy` (default)
 - **Early stopping** via `EarlyStopping<ValueType, Patience>` to detect convergence and save compute cycles
+- **Head-only fine-tuning** via `DenseHead` (a trainable dense layer with softmax cross-entropy or squared error) and `PrototypeHead` (a gradient-free nearest-class-mean classifier): a frozen model's embedding feeds a head that adapts on the device from a few labelled samples, in under 800 bytes for a 32-value embedding and 6 classes in Q16.16 (see the [on-device fine-tuning guide](https://danmcleran.github.io/tinymind/training/on-device-fine-tuning))
 - **Teacher forcing / scheduled sampling** via `ScheduledSampling` for recurrent training -- linearly decays from ground truth to model predictions
 - **Recurrent training** truncates backpropagation through time to one step: each step's gradient treats h_{t-1} (and an LSTM's c_{t-1}) as inputs, so longer dependencies are carried by the recurrent state rather than by gradients flowing back through earlier steps
 - All policies are optional template parameters with null/no-op defaults for full backward compatibility
@@ -1044,6 +1045,8 @@ tinymind/
     batchnorm.hpp               # Batch normalization (training/inference)
     binarylayer.hpp             # Binary neural network layer (XNOR+popcount)
     ternarylayer.hpp            # Ternary neural network layer ({-1,0,+1} weights)
+    densehead.hpp               # DenseHead: trainable classifier head for on-device fine-tuning
+    prototypehead.hpp           # PrototypeHead: nearest-class-mean head, gradient-free adaptation
     qformat.hpp                 # Fixed-point arithmetic
     qlearn.hpp                  # Q-learning and DQN
     qaffine.hpp                 # Affine quantization primitives + Requantizer (TINYMIND_ENABLE_QUANTIZATION)
@@ -1124,7 +1127,7 @@ tinymind/
     iris/                       # Iris species classifier (Q16.16 MLP)
     energy_efficiency/          # Two-output building energy-load regressor (UCI, Q16.16 MLP)
     optical_digits/             # Handwritten-digit classifier (UCI, Q16.16 MLP)
-    gas_sensor_drift/           # Six-way gas classifier showing sensor drift across batches (UCI, Q16.16 MLP)
+    gas_sensor_drift/           # Six-way gas classifier showing sensor drift across batches, then adapting on the device (UCI, Q16.16 MLP)
     air_quality/                # Next-hour pollutant forecaster (Q16.16 LSTM)
     har_activity/               # Human-activity recognition from accelerometer sequences (Q16.16 LSTM)
     ltc_sequence/               # Liquid Time-Constant cell fit to a leaky-integrator step response

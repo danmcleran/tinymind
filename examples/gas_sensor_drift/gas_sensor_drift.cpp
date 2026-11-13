@@ -50,6 +50,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -59,6 +60,9 @@
 #include "neuralnet.hpp"
 #include "constants.hpp"
 #include "nnproperties.hpp"
+#include "densehead.hpp"
+#include "prototypehead.hpp"
+#include "include/tinymind_rounding.hpp"
 
 // ---------------------------------------------------------------------------
 // Q-format neural network definition
@@ -280,6 +284,417 @@ static void synthesizeDataset(std::vector<Sample>& out)
     }
 }
 
+// ---------------------------------------------------------------------------
+// Adapting to drift on the device
+// ---------------------------------------------------------------------------
+//
+// The trained MLP is split in two: a frozen backbone (the 128 -> 32 ReLU
+// layer) and a head (the 32 -> 6 layer). On each drifted batch a few labelled
+// samples per class are drawn (the "shots"); the rest of the batch is the
+// test set. Seven ways to use them are compared, each starting from the
+// shipped model:
+//
+//   none       the shipped model, unchanged
+//   renorm     z-score statistics recomputed from the shots, labels unused
+//   renorm_all z-score statistics from the whole batch, labels unused (a
+//              reference: unlabelled data is cheap on a device)
+//   prototype  tinymind::PrototypeHead on the backbone's embedding: one mean
+//              embedding per class from the shots, nearest mean wins
+//   head       tinymind::DenseHead loaded with the shipped head and trained
+//              on the shots with softmax cross-entropy (head-only fine-tuning)
+//   bias       only the backbone's 32 biases trained, the head frozen; the
+//              gradient comes from DenseHead::backward()
+//   bias_head  the biases and the head trained together
+//
+// Each (batch, shots) cell is averaged over 10 random draws of the shots.
+
+static constexpr size_t EMBEDDING = NUMBER_OF_NEURONS_PER_HIDDEN_LAYER;
+typedef tinymind::DenseHead<ValueType, EMBEDDING, NUMBER_OF_OUTPUTS> HeadType;
+typedef tinymind::PrototypeHead<ValueType, EMBEDDING, NUMBER_OF_OUTPUTS> PrototypeType;
+
+enum Method
+{
+    METHOD_NONE = 0,
+    METHOD_RENORM,
+    METHOD_RENORM_ALL,
+    METHOD_PROTOTYPE,
+    METHOD_HEAD,
+    METHOD_BIAS,
+    METHOD_BIAS_HEAD,
+    NUM_METHODS
+};
+
+static const char* const METHOD_NAMES[NUM_METHODS] = {
+    "none", "renorm", "renorm_all", "prototype", "head", "bias", "bias_head"
+};
+
+static const int SHOTS[] = {1, 2, 5, 10, 20};
+static constexpr size_t NUM_SHOTS = sizeof(SHOTS) / sizeof(SHOTS[0]);
+static constexpr int DRAWS = 10;
+static constexpr unsigned ADAPT_EPOCHS = 30U;
+static constexpr double ADAPT_LEARNING_RATE = 0.05;
+
+typedef std::vector<ValueType> Vec;
+
+// The frozen backbone: the MLP's input-to-hidden weights and biases, read
+// out of the trained network.
+struct Backbone
+{
+    ValueType weights[EMBEDDING][NUMBER_OF_INPUTS];
+    ValueType biases[EMBEDDING];
+
+    void load(NeuralNetworkType& net)
+    {
+        for (size_t k = 0; k < EMBEDDING; ++k)
+        {
+            for (size_t i = 0; i < NUMBER_OF_INPUTS; ++i)
+            {
+                weights[k][i] = net.getInputLayerWeightForNeuronAndConnection(i, k);
+            }
+            biases[k] = net.getInputLayerBiasNeuronWeightForConnection(k);
+        }
+    }
+
+    // W x without the bias, cached per sample so that a bias change costs
+    // 32 additions instead of a 128 x 32 product.
+    void preActivation(const ValueType* input, ValueType* pre) const
+    {
+        for (size_t k = 0; k < EMBEDDING; ++k)
+        {
+            ValueType sum(0);
+            for (size_t i = 0; i < NUMBER_OF_INPUTS; ++i)
+            {
+                sum += weights[k][i] * input[i];
+            }
+            pre[k] = sum;
+        }
+    }
+};
+
+static inline void embed(const ValueType* pre, const ValueType* bias, ValueType* h)
+{
+    const ValueType zero(0);
+    for (size_t k = 0; k < EMBEDDING; ++k)
+    {
+        const ValueType z = pre[k] + bias[k];
+        h[k] = (z > zero) ? z : zero;
+    }
+}
+
+// Normalization statistics from a set of samples (labels unused).
+static void statsFrom(const std::vector<Sample>& data, const std::vector<size_t>& idx, FeatureStats& st)
+{
+    std::vector<Sample> subset;
+    subset.reserve(idx.size());
+    for (size_t j : idx) subset.push_back(data[j]);
+    fitStats(subset, st);
+}
+
+static inline void toInputWith(const Sample& s, const FeatureStats& st, ValueType* in)
+{
+    for (size_t f = 0; f < NUMBER_OF_INPUTS; ++f)
+    {
+        in[f] = toQ((s.feat[f] - st.mean[f]) / st.stdev[f] / 3.0);
+    }
+}
+
+// Accuracy of `head` (or `proto` when not null) on the samples whose cached
+// pre-activations are `pre`, with backbone biases `bias`.
+static double scoreHead(const HeadType& head, const PrototypeType* proto,
+                        const std::vector<Vec>& pre, const std::vector<int>& labels,
+                        const ValueType* bias)
+{
+    ValueType h[EMBEDDING];
+    size_t correct = 0;
+    for (size_t j = 0; j < pre.size(); ++j)
+    {
+        embed(pre[j].data(), bias, h);
+        const size_t p = (proto != nullptr) ? proto->predict(h) : head.predict(h);
+        correct += (static_cast<int>(p) == labels[j]) ? 1U : 0U;
+    }
+    return static_cast<double>(correct) / static_cast<double>(pre.size());
+}
+
+// Trains the backbone biases (when trainBias) and the head (when trainHead)
+// on the shots for ADAPT_EPOCHS epochs of per-sample SGD.
+static void adapt(HeadType& head, ValueType* bias, const std::vector<Vec>& shotPre,
+                  const std::vector<int>& shotLabels, const bool trainBias, const bool trainHead,
+                  std::mt19937& rng)
+{
+    const ValueType rate = toQ(ADAPT_LEARNING_RATE);
+    const ValueType zero(0);
+    ValueType h[EMBEDDING];
+    ValueType logits[NUMBER_OF_OUTPUTS];
+    ValueType target[NUMBER_OF_OUTPUTS];
+    ValueType deltas[NUMBER_OF_OUTPUTS];
+    ValueType hDeltas[EMBEDDING];
+    std::vector<size_t> order(shotPre.size());
+    for (size_t j = 0; j < order.size(); ++j) order[j] = j;
+
+    for (unsigned epoch = 0; epoch < ADAPT_EPOCHS; ++epoch)
+    {
+        for (size_t j = order.size(); j > 1; --j)
+        {
+            std::swap(order[j - 1], order[rng() % j]);
+        }
+        for (size_t j : order)
+        {
+            const ValueType* pre = shotPre[j].data();
+            embed(pre, bias, h);
+            if (trainHead)
+            {
+                head.trainClass(h, static_cast<size_t>(shotLabels[j]), rate, trainBias ? hDeltas : nullptr);
+            }
+            else
+            {
+                for (size_t o = 0; o < NUMBER_OF_OUTPUTS; ++o)
+                {
+                    target[o] = toQ(shotLabels[j] == static_cast<int>(o) ? 1.0 : 0.0);
+                }
+                head.forward(h, logits);
+                head.outputDeltas(logits, target, deltas);
+                head.backward(deltas, hDeltas);
+            }
+            if (trainBias)
+            {
+                // dL/db through the ReLU: the hidden delta where the unit is on.
+                for (size_t k = 0; k < EMBEDDING; ++k)
+                {
+                    if ((pre[k] + bias[k]) > zero)
+                    {
+                        bias[k] += tinymind::multiplyRoundNearest(rate, hDeltas[k]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void runAdaptation(NeuralNetworkType& net, const std::vector<Sample>& data,
+                          const std::vector<Sample>& val)
+{
+    Backbone backbone;
+    backbone.load(net);
+
+    ValueType shippedWeights[HeadType::NumberOfWeights];
+    ValueType shippedBiases[HeadType::NumberOfBiases];
+    for (size_t o = 0; o < NUMBER_OF_OUTPUTS; ++o)
+    {
+        for (size_t k = 0; k < EMBEDDING; ++k)
+        {
+            shippedWeights[o * EMBEDDING + k] = net.getHiddenLayerWeightForNeuronAndConnection(0, k, o);
+        }
+        shippedBiases[o] = net.getHiddenLayerBiasNeuronWeightForConnection(0, o);
+    }
+
+    // Cache every sample's input and pre-activation under the batch-1 stats.
+    ValueType input[NUMBER_OF_INPUTS];
+    std::vector<Vec> pre(data.size(), Vec(EMBEDDING));
+    std::vector<int> labels(data.size());
+    for (size_t j = 0; j < data.size(); ++j)
+    {
+        toInput(data[j], input);
+        backbone.preActivation(input, pre[j].data());
+        labels[j] = data[j].label;
+    }
+    std::vector<Vec> valPre(val.size(), Vec(EMBEDDING));
+    std::vector<int> valLabels(val.size());
+    for (size_t j = 0; j < val.size(); ++j)
+    {
+        toInput(val[j], input);
+        backbone.preActivation(input, valPre[j].data());
+        valLabels[j] = val[j].label;
+    }
+
+    // The split must reproduce the network exactly: Q16.16 sums are exact,
+    // so the hidden layer and the logits agree bit for bit with the MLP's.
+    {
+        HeadType head;
+        head.loadWeights(shippedWeights, shippedBiases);
+        ValueType h[EMBEDDING];
+        size_t hiddenMismatches = 0;
+        size_t argmaxMismatches = 0;
+        size_t tiedMismatches = 0;
+        ValueType learned[NUMBER_OF_OUTPUTS];
+        for (size_t j = 0; j < data.size(); ++j)
+        {
+            toInput(data[j], input);
+            net.feedForward(input);
+            embed(pre[j].data(), backbone.biases, h);
+            for (size_t k = 0; k < EMBEDDING; ++k)
+            {
+                hiddenMismatches += (net.getLastHiddenLayer().getOutputValueForNeuron(k) != h[k]) ? 1U : 0U;
+            }
+            net.getLearnedValues(learned);
+            size_t best = 0;
+            for (size_t o = 1; o < NUMBER_OF_OUTPUTS; ++o)
+            {
+                if (learned[o] > learned[best]) best = o;
+            }
+            const size_t headBest = head.predict(h);
+            if (best != headBest)
+            {
+                ++argmaxMismatches;
+                // The sigmoid table saturates, so two confident outputs can
+                // both read 1.0 and the MLP takes the first; the head
+                // compares the logits underneath.
+                tiedMismatches += (learned[best] == learned[headBest]) ? 1U : 0U;
+            }
+        }
+        std::cout << "\nBackbone + DenseHead vs the MLP over " << data.size()
+                  << " samples: " << hiddenMismatches << " hidden values differ; "
+                  << argmaxMismatches << " predictions differ, " << tiedMismatches
+                  << " of them where two sigmoid outputs tie." << std::endl;
+    }
+
+    std::vector<size_t> byBatchClass[NUM_BATCHES + 1][NUM_CLASSES];
+    for (size_t j = 0; j < data.size(); ++j)
+    {
+        byBatchClass[data[j].batch][data[j].label].push_back(j);
+    }
+
+    std::ofstream csv("gas_adapt.csv");
+    csv << "method,batch,shots,accuracy_mean,accuracy_std,batch1_accuracy_mean" << std::endl;
+
+    double batch10[NUM_METHODS][NUM_SHOTS];
+
+    for (int b = 2; b <= NUM_BATCHES; ++b)
+    {
+        // renorm_all: statistics from the whole batch, independent of the draw.
+        FeatureStats allStats;
+        {
+            std::vector<size_t> all;
+            for (int c = 0; c < NUM_CLASSES; ++c)
+                all.insert(all.end(), byBatchClass[b][c].begin(), byBatchClass[b][c].end());
+            statsFrom(data, all, allStats);
+        }
+
+        for (size_t si = 0; si < NUM_SHOTS; ++si)
+        {
+            const int shots = SHOTS[si];
+            double sum[NUM_METHODS] = {0.0};
+            double sumSq[NUM_METHODS] = {0.0};
+            double sumB1[NUM_METHODS] = {0.0};
+
+            for (int r = 0; r < DRAWS; ++r)
+            {
+                std::mt19937 rng(static_cast<uint32_t>(b * 10000 + shots * 100 + r));
+
+                std::vector<size_t> shotIdx;
+                std::vector<size_t> testIdx;
+                for (int c = 0; c < NUM_CLASSES; ++c)
+                {
+                    std::vector<size_t> pool = byBatchClass[b][c];
+                    for (int k = 0; k < shots; ++k)
+                    {
+                        const size_t pick = static_cast<size_t>(k) + rng() % (pool.size() - static_cast<size_t>(k));
+                        std::swap(pool[static_cast<size_t>(k)], pool[pick]);
+                    }
+                    shotIdx.insert(shotIdx.end(), pool.begin(), pool.begin() + shots);
+                    testIdx.insert(testIdx.end(), pool.begin() + shots, pool.end());
+                }
+
+                std::vector<Vec> shotPre;
+                std::vector<int> shotLabels;
+                for (size_t j : shotIdx) { shotPre.push_back(pre[j]); shotLabels.push_back(labels[j]); }
+                std::vector<Vec> testPre;
+                std::vector<int> testLabels;
+                for (size_t j : testIdx) { testPre.push_back(pre[j]); testLabels.push_back(labels[j]); }
+
+                double acc[NUM_METHODS];
+                double accB1[NUM_METHODS];
+
+                HeadType shipped;
+                shipped.loadWeights(shippedWeights, shippedBiases);
+
+                acc[METHOD_NONE] = scoreHead(shipped, nullptr, testPre, testLabels, backbone.biases);
+                accB1[METHOD_NONE] = scoreHead(shipped, nullptr, valPre, valLabels, backbone.biases);
+
+                // renorm / renorm_all: new statistics, shipped weights.
+                for (int m = METHOD_RENORM; m <= METHOD_RENORM_ALL; ++m)
+                {
+                    FeatureStats shotStats;
+                    if (m == METHOD_RENORM) statsFrom(data, shotIdx, shotStats);
+                    const FeatureStats& st = (m == METHOD_RENORM) ? shotStats : allStats;
+                    std::vector<Vec> rp(testIdx.size(), Vec(EMBEDDING));
+                    for (size_t j = 0; j < testIdx.size(); ++j)
+                    {
+                        toInputWith(data[testIdx[j]], st, input);
+                        backbone.preActivation(input, rp[j].data());
+                    }
+                    acc[m] = scoreHead(shipped, nullptr, rp, testLabels, backbone.biases);
+                    std::vector<Vec> vp(val.size(), Vec(EMBEDDING));
+                    for (size_t j = 0; j < val.size(); ++j)
+                    {
+                        toInputWith(val[j], st, input);
+                        backbone.preActivation(input, vp[j].data());
+                    }
+                    accB1[m] = scoreHead(shipped, nullptr, vp, valLabels, backbone.biases);
+                }
+
+                // prototype: class means of the shots' embeddings.
+                {
+                    PrototypeType proto;
+                    ValueType h[EMBEDDING];
+                    for (size_t j = 0; j < shotPre.size(); ++j)
+                    {
+                        embed(shotPre[j].data(), backbone.biases, h);
+                        proto.learn(h, static_cast<size_t>(shotLabels[j]));
+                    }
+                    acc[METHOD_PROTOTYPE] = scoreHead(shipped, &proto, testPre, testLabels, backbone.biases);
+                    accB1[METHOD_PROTOTYPE] = scoreHead(shipped, &proto, valPre, valLabels, backbone.biases);
+                }
+
+                // head / bias / bias_head: SGD on the shots.
+                for (int m = METHOD_HEAD; m <= METHOD_BIAS_HEAD; ++m)
+                {
+                    HeadType head;
+                    head.loadWeights(shippedWeights, shippedBiases);
+                    ValueType bias[EMBEDDING];
+                    for (size_t k = 0; k < EMBEDDING; ++k) bias[k] = backbone.biases[k];
+                    std::mt19937 order(static_cast<uint32_t>(b * 10000 + shots * 100 + r + 7));
+                    adapt(head, bias, shotPre, shotLabels, m != METHOD_HEAD, m != METHOD_BIAS, order);
+                    acc[m] = scoreHead(head, nullptr, testPre, testLabels, bias);
+                    accB1[m] = scoreHead(head, nullptr, valPre, valLabels, bias);
+                }
+
+                for (int m = 0; m < NUM_METHODS; ++m)
+                {
+                    sum[m] += acc[m];
+                    sumSq[m] += acc[m] * acc[m];
+                    sumB1[m] += accB1[m];
+                }
+            }
+
+            for (int m = 0; m < NUM_METHODS; ++m)
+            {
+                const double mean = sum[m] / DRAWS;
+                const double var = std::max(0.0, sumSq[m] / DRAWS - mean * mean);
+                csv << METHOD_NAMES[m] << "," << b << "," << shots << ","
+                    << std::fixed << std::setprecision(4) << mean << ","
+                    << std::sqrt(var) << "," << (sumB1[m] / DRAWS) << std::endl;
+                if (b == NUM_BATCHES) batch10[m][si] = mean;
+            }
+        }
+    }
+    csv.close();
+
+    std::cout << "\nBatch 10 accuracy after adapting on k labelled samples per class"
+              << " (mean of " << DRAWS << " draws):" << std::endl;
+    std::cout << "  " << std::left << std::setw(11) << "method";
+    for (size_t si = 0; si < NUM_SHOTS; ++si) std::cout << std::right << std::setw(8) << ("k=" + std::to_string(SHOTS[si]));
+    std::cout << std::endl;
+    for (int m = 0; m < NUM_METHODS; ++m)
+    {
+        std::cout << "  " << std::left << std::setw(11) << METHOD_NAMES[m];
+        for (size_t si = 0; si < NUM_SHOTS; ++si)
+        {
+            std::cout << std::right << std::setw(8) << std::fixed << std::setprecision(3) << batch10[m][si];
+        }
+        std::cout << std::endl;
+    }
+}
+
 static const unsigned WEIGHT_INIT_SEED = 1U; // see main()
 
 int main(int argc, char* argv[])
@@ -452,6 +867,8 @@ int main(int argc, char* argv[])
               << batch1ValAcc << std::endl;
     std::cout << "Batch 10 accuracy:      " << std::fixed << std::setprecision(4)
               << batch10Acc << "   (drift degradation)" << std::endl;
+
+    runAdaptation(net, data, val);
 
     return 0;
 }

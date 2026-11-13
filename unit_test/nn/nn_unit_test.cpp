@@ -68,6 +68,8 @@ TINYMIND_DISABLE_WARNING_POP
 #include "random.hpp"
 #include "nnproperties.hpp"
 #include "xavier.hpp"
+#include "densehead.hpp"
+#include "prototypehead.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -8578,3 +8580,4 @@ BOOST_AUTO_TEST_SUITE_END()
 #include "optimizers_tests.hpp"
 #include "momentum_rounding_tests.hpp"
 #include "sgd_step_rounding_tests.hpp"
+#include "head_finetune_tests.hpp"

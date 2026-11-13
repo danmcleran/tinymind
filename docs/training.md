@@ -13,3 +13,4 @@ tinymind supports both on-device training and a train-offline-deploy-lean workfl
 |---|---|
 | [Advanced Training Techniques]({{ site.baseurl }}/training/training-techniques) | Adam, RMSprop, gradient clipping, weight decay, learning rate scheduling, early stopping |
 | [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) | Train in PyTorch, export weights, deploy in C++ at 40-60% less memory |
+| [On-Device Fine-Tuning]({{ site.baseurl }}/training/on-device-fine-tuning) | Adapt a frozen model on the device with a trainable `DenseHead` or a gradient-free `PrototypeHead` |
