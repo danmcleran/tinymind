@@ -112,6 +112,9 @@ these exactly.
 **Importer round trip (int8)** — a 3-8-4-2 MLP calibrated with three observers and cross-layer equalization; int8 vs float parity, error near 0.004.
 ![Importer int8 parity]({{ site.baseurl }}/assets/plots/import_demo_parity.png)
 
+**Importer round trip, LSTM (int8)** — an `nn.LSTM` + linear head imported onto `QLSTMCell` + `QDense`: one sequence's hidden-state trace (int16 and int8 cell state against float) and the head output over 16 test sequences.
+![LSTM importer int8 parity]({{ site.baseurl }}/assets/plots/import_lstm_demo.png)
+
 ## Mixture-of-Experts
 
 **int8 MoE regime routing** — a top-1 router partitions the input domain into three regimes; one of three linear experts runs per inference (color blocks = the routing map).

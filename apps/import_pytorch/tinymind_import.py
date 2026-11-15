@@ -28,8 +28,9 @@ PyTorch -> tinymind int8 importer (Phase 15).
 Generalizes the pattern from examples/pytorch_quant/xor/xor_quant.py. The
 caller assembles a sequenced list of `Layer` descriptors that mirror the
 tinymind q*.hpp shapes (QDense / QConv2D / QBatchNorm2D / QReLU / QSigmoid /
-QTanh / QSoftmax1D) and supplies a calibration callback that streams a
-representative dataset through the float reference model. The importer:
+QTanh / QSoftmax1D, and QLSTMCell for a model that starts with one nn.LSTM)
+and supplies a calibration callback that streams a representative dataset
+through the float reference model. The importer:
 
   1. Detects Conv2D-followed-by-BatchNorm and folds the BN parameters into
      the conv weights/bias via foldBatchNorm semantics.
@@ -51,6 +52,7 @@ emitted here is bit-identical to what the C++ Requantizer expects.
 """
 
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional, Sequence
 
@@ -416,6 +418,214 @@ def moe_float_forward(layer: "MoE", parent: np.ndarray) -> np.ndarray:
     return y
 
 
+# The LSTM gates saturate beyond +-8, so the gate pre-activations (and the
+# LUTs that read them) use a fixed int8 grid of 8/127, as the QLSTMCell unit
+# tests and TFLite's integer LSTM (Q3.12 gates) do. Not calibrated.
+LSTM_LUT_INPUT_SCALE = 8.0 / 127.0
+
+
+@dataclass
+class LSTM(Layer):
+    """One LSTM layer (PyTorch nn.LSTM, num_layers=1, unidirectional) mapped
+    onto cpp/qlstm.hpp::QLSTMCell.
+
+    The layer's input tensor is a whole sequence, [step][feature]; the cell
+    runs it from zero hidden and cell state, and the tensor named `name` is
+    the LAST hidden state, so the layers after it see one vector of
+    `hidden_size` values. The LSTM must be the model's first layer.
+
+    Gate order is PyTorch's (i, f, g, o), which is QLSTMCell's, so weight_ih
+    and weight_hh are taken as they come from the state dict:
+      weight_ih [4 * hidden, in]      (weight_ih_l0)
+      weight_hh [4 * hidden, hidden]  (weight_hh_l0)
+      bias_ih, bias_hh [4 * hidden]   (bias_ih_l0, bias_hh_l0; either may be
+                                       None). The cell has one bias per gate,
+                                       their sum.
+
+    Quantization shape:
+      * `observer` sees every hidden state of every calibration sequence and
+        `cell_observer` every cell state. Both get symmetric scales with zero
+        point 0, so the zero initial state is exact; the hidden scale is also
+        the grid of the layer's output.
+      * The cell state is int16 (`cell_bits=16`, the default: finer, for
+        long sequences) or int8 (`cell_bits=8`).
+      * Weights: symmetric int8 per gate, input and recurrent weights each
+        with their own scale (8 scales).
+      * Biases: int32 in the LUT input grid (quantizeQLSTMBiases).
+    """
+    weight_ih: np.ndarray = None
+    weight_hh: np.ndarray = None
+    bias_ih: Optional[np.ndarray] = None
+    bias_hh: Optional[np.ndarray] = None
+    input_name: str = ""
+    sequence_length: Optional[int] = None
+    cell_bits: int = 16
+    cell_observer: object = field(default_factory=MinMaxObserver)
+    # Filled by importer:
+    cell_scale: float = 0.0
+    input_weight_scales: Sequence[float] = None
+    recurrent_weight_scales: Sequence[float] = None
+    q_weight_ih: np.ndarray = None   # [4][hidden][in]
+    q_weight_hh: np.ndarray = None   # [4][hidden][hidden]
+    q_bias: np.ndarray = None        # [4][hidden], int32 in the LUT grid
+
+    def __post_init__(self) -> None:
+        if self.weight_ih is None or self.weight_hh is None:
+            raise ValueError(f"LSTM {self.name}: weight_ih and weight_hh are required")
+        self.weight_ih = np.asarray(self.weight_ih, dtype=np.float32)
+        self.weight_hh = np.asarray(self.weight_hh, dtype=np.float32)
+        if self.weight_hh.ndim != 2 or self.weight_hh.shape[0] != 4 * self.weight_hh.shape[1]:
+            raise ValueError(f"LSTM {self.name}: weight_hh must be [4 * hidden, hidden], "
+                             f"got {self.weight_hh.shape}")
+        hid = self.weight_hh.shape[1]
+        if self.weight_ih.ndim != 2 or self.weight_ih.shape[0] != 4 * hid:
+            raise ValueError(f"LSTM {self.name}: weight_ih must be [4 * hidden, in] "
+                             f"= [{4 * hid}, in], got {self.weight_ih.shape}")
+        for nm in ("bias_ih", "bias_hh"):
+            b = getattr(self, nm)
+            if b is not None:
+                b = np.asarray(b, dtype=np.float32).reshape(-1)
+                if b.shape[0] != 4 * hid:
+                    raise ValueError(f"LSTM {self.name}: {nm} must have {4 * hid} "
+                                     f"values, got {b.shape[0]}")
+                setattr(self, nm, b)
+        if self.cell_bits not in (8, 16):
+            raise ValueError(f"LSTM {self.name}: cell_bits must be 8 or 16, "
+                             f"got {self.cell_bits}")
+
+    @classmethod
+    def from_state_dict(cls, name: str, state: dict, input_name: str,
+                        **kwargs) -> "LSTM":
+        """Build from an nn.LSTM's state_dict(), converted to numpy
+        ({k: v.detach().numpy() for k, v in lstm.state_dict().items()}).
+
+        Rejects what QLSTMCell cannot run: stacked layers (weight_ih_l1),
+        bidirectional (_reverse) and projections (weight_hr_l0)."""
+        for k in state:
+            if k.endswith("_reverse"):
+                raise ValueError(f"LSTM {name}: bidirectional LSTMs are not supported "
+                                 f"({k}); QLSTMCell runs one direction")
+            if k.startswith("weight_hr"):
+                raise ValueError(f"LSTM {name}: proj_size is not supported ({k})")
+            m = re.search(r"_l(\d+)$", k)
+            if m is not None and int(m.group(1)) > 0:
+                raise ValueError(f"LSTM {name}: stacked LSTMs (num_layers > 1) are "
+                                 f"not supported ({k})")
+        return cls(name=name, input_name=input_name,
+                   weight_ih=state["weight_ih_l0"],
+                   weight_hh=state["weight_hh_l0"],
+                   bias_ih=state.get("bias_ih_l0"),
+                   bias_hh=state.get("bias_hh_l0"),
+                   **kwargs)
+
+    @property
+    def hidden_size(self) -> int:
+        return int(self.weight_hh.shape[1])
+
+    @property
+    def input_size(self) -> int:
+        return int(self.weight_ih.shape[1])
+
+    @property
+    def cell_qmin(self) -> int:
+        return -(1 << (self.cell_bits - 1))
+
+    @property
+    def cell_qmax(self) -> int:
+        return (1 << (self.cell_bits - 1)) - 1
+
+    @property
+    def bias(self) -> np.ndarray:
+        """bias_ih + bias_hh, summed in double and stored as float32 (the
+        float the C++ quantizeQLSTMBiases reads)."""
+        total = np.zeros(4 * self.hidden_size, dtype=np.float64)
+        for b in (self.bias_ih, self.bias_hh):
+            if b is not None:
+                total = total + b.astype(np.float64)
+        return total.astype(np.float32)
+
+
+def _sigmoid(v: float) -> float:
+    return 1.0 / (1.0 + math.exp(-v))
+
+
+def _matvec_f32(x: np.ndarray, w: np.ndarray) -> np.ndarray:
+    """x @ w.T accumulated in float64 without BLAS, rounded to float32, so
+    the result does not depend on the CPU's BLAS or SIMD width."""
+    y = np.einsum("i,oi->o", x.astype(np.float64), w.astype(np.float64),
+                  optimize=False)
+    return y.astype(np.float32)
+
+
+def lstm_float_forward(layer: "LSTM", seq: np.ndarray
+                       ) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """Float reference of the LSTM over one sequence [step][feature] from
+    zero state. Returns (hidden states, cell states), one float32 vector per
+    step. PyTorch nn.LSTM semantics:
+
+        i, f, g, o = sigmoid, sigmoid, tanh, sigmoid of
+                     W_ih x + b_ih + W_hh h + b_hh   (gate blocks i, f, g, o)
+        c = f * c + i * g
+        h = o * tanh(c)
+
+    Gates use Python's math.exp / math.tanh (the C library), and h and c are
+    stored as float32 every step, so the reference is CPU-independent.
+    """
+    seq = np.asarray(seq, dtype=np.float32)
+    if seq.ndim != 2 or seq.shape[1] != layer.input_size:
+        raise ValueError(f"LSTM {layer.name}: a sample must be [step][{layer.input_size}], "
+                         f"got {seq.shape}")
+    if layer.sequence_length is not None and seq.shape[0] != layer.sequence_length:
+        raise ValueError(f"LSTM {layer.name}: sequence_length is {layer.sequence_length}, "
+                         f"a sample has {seq.shape[0]} steps")
+    hid = layer.hidden_size
+    bias = layer.bias.astype(np.float64)
+    h = np.zeros(hid, np.float32)
+    c = np.zeros(hid, np.float32)
+    hs: list[np.ndarray] = []
+    cs: list[np.ndarray] = []
+    for x in seq:
+        pre = (_matvec_f32(x, layer.weight_ih).astype(np.float64) + bias
+               + _matvec_f32(h, layer.weight_hh).astype(np.float64))
+        nh = np.empty(hid, np.float32)
+        nc = np.empty(hid, np.float32)
+        for u in range(hid):
+            i = _sigmoid(pre[u])
+            f = _sigmoid(pre[hid + u])
+            g = math.tanh(pre[2 * hid + u])
+            o = _sigmoid(pre[3 * hid + u])
+            cu = np.float32(f * float(c[u]) + i * g)
+            nc[u] = cu
+            nh[u] = np.float32(o * math.tanh(float(cu)))
+        h, c = nh, nc
+        hs.append(h)
+        cs.append(c)
+    return hs, cs
+
+
+def symmetric_activation_scale(observer: object, qmax: int) -> float:
+    """max(|min|, |max|) / qmax of an observed range, zero point 0. An
+    all-zero range gets 1 / qmax so the scale is never zero."""
+    lo, hi = observer.range()
+    m = max(abs(lo), abs(hi))
+    return m / qmax if m > 0.0 else 1.0 / qmax
+
+
+def quantize_lstm_biases(bias: np.ndarray, lut_input_scale: float) -> np.ndarray:
+    """Mirror cpp/include/qcalibration.hpp::quantizeQLSTMBiases on the float
+    values the C++ reads: lround(double(b) / double(lut_input_scale)) with
+    both operands float32. Raises rather than wrapping when a bias does not
+    fit int32 (the C++ conversion would wrap it)."""
+    lut = float(np.float32(lut_input_scale))
+    out = []
+    for b in np.asarray(bias, dtype=np.float32).tolist():
+        q = lround(float(b) / lut)
+        if q < -(1 << 31) or q > (1 << 31) - 1:
+            raise ValueError(f"LSTM bias {b} does not fit int32 at LUT scale {lut}")
+        out.append(q)
+    return np.array(out, dtype=np.int32)
+
+
 @dataclass
 class QFormatDense(Layer):
     """Q-format dense layer (tinymind QValue pipeline).
@@ -546,17 +756,26 @@ def calibrate(layers: Sequence[Layer],
     Tanh / Softmax / BatchNorm) compute their output from the parent
     tensor via numpy directly.
 
+    An LSTM (only as the first layer, reading `input_name`) takes each
+    sample as a sequence [step][feature]; its hidden and cell observers see
+    every step, and the tensor it passes on is the last hidden state.
+
     Returns a dict of tensor_name -> (scale, zero_point).
     """
-    activations: dict[str, np.ndarray] = {}
+    _check_lstm_placement(layers, input_name)
     for x in dataset:
         x_f = x.astype(np.float32)
         input_observer.observe(x_f)
-        activations[input_name] = x_f
         # Reset for-this-sample storage.
         per_sample: dict[str, np.ndarray] = {input_name: x_f}
         for layer in layers:
             parent = per_sample[layer.input_name]
+            if isinstance(layer, LSTM):
+                hs, cs = lstm_float_forward(layer, parent)
+                layer.observer.observe(np.stack(hs))
+                layer.cell_observer.observe(np.stack(cs))
+                per_sample[layer.name] = hs[-1]
+                continue
             if isinstance(layer, (Dense, Conv2D, QFormatDense)):
                 y = layer.forward(parent)
             elif isinstance(layer, MoE):
@@ -592,8 +811,28 @@ def calibrate(layers: Sequence[Layer],
         if isinstance(layer, Tanh):
             ranges[layer.name] = (1.0 / 128.0, 0)
             continue
+        if isinstance(layer, LSTM):
+            # Symmetric hidden and cell states, zero point 0 (the zero
+            # initial state is exact); the hidden grid is the layer output's.
+            ranges[layer.name] = (symmetric_activation_scale(layer.observer, 127), 0)
+            layer.cell_scale = symmetric_activation_scale(layer.cell_observer,
+                                                          layer.cell_qmax)
+            continue
         ranges[layer.name] = affine_asymmetric(*layer.observer.range())
     return ranges
+
+
+def _check_lstm_placement(layers: Sequence[Layer], input_name: str) -> None:
+    """QLSTMCell consumes the model input sequence and hands one hidden
+    state on, so an LSTM is accepted only as the first layer."""
+    for idx, layer in enumerate(layers):
+        if not isinstance(layer, LSTM):
+            continue
+        if idx != 0 or layer.input_name != input_name:
+            raise ValueError(
+                f"LSTM {layer.name}: an LSTM must be the first layer and read the "
+                f"model input '{input_name}' (it reads '{layer.input_name}' at "
+                f"position {idx}); an LSTM after another layer is not supported")
 
 
 # ----------------------------------------------------------------------------
@@ -605,7 +844,25 @@ def quantize_weights(layers: Sequence[Layer],
                      ranges: dict[str, tuple[float, int]]) -> None:
     """Symmetric per-tensor weight quantization. Mutates each layer."""
     for layer in layers:
-        if isinstance(layer, (Dense, Conv2D)):
+        if isinstance(layer, LSTM):
+            # Symmetric per gate, input and recurrent weights separately;
+            # biases in the fixed LUT input grid.
+            hid = layer.hidden_size
+            w_in = layer.weight_ih.reshape(4, hid, layer.input_size)
+            w_rec = layer.weight_hh.reshape(4, hid, hid)
+            layer.input_weight_scales = [symmetric_weight_scale(w_in[g])
+                                         for g in range(4)]
+            layer.recurrent_weight_scales = [symmetric_weight_scale(w_rec[g])
+                                             for g in range(4)]
+            layer.q_weight_ih = np.stack([
+                quantize_symmetric_weights(w_in[g], layer.input_weight_scales[g])
+                for g in range(4)])
+            layer.q_weight_hh = np.stack([
+                quantize_symmetric_weights(w_rec[g], layer.recurrent_weight_scales[g])
+                for g in range(4)])
+            layer.q_bias = quantize_lstm_biases(
+                layer.bias, LSTM_LUT_INPUT_SCALE).reshape(4, hid)
+        elif isinstance(layer, (Dense, Conv2D)):
             layer.weight_scale = symmetric_weight_scale(layer.weight)
             layer.q_weight = quantize_symmetric_weights(
                 layer.weight, layer.weight_scale)
@@ -682,6 +939,53 @@ def _qformat_cpp_storage_type(width_bits: int, signed: bool) -> str:
     if width_bits <= 32:
         return "int32_t" if signed else "uint32_t"
     return "int64_t" if signed else "uint64_t"
+
+
+def _fmt_float_array(name: str, values: Iterable[float]) -> str:
+    vs = list(values)
+    body = ", ".join(f"{float(v)!r}f" for v in vs)
+    return f"    constexpr float {name}[{len(vs)}] = {{ {body} }};\n"
+
+
+def _emit_lstm(layer: "LSTM") -> str:
+    """Emit one LSTM's QLSTMCell inputs.
+
+    The hidden state's scale and zero point are the layer's activation
+    calibration entry (k<name>_Scale / k<name>_ZeroPoint). The C++ side fills
+    tinymind::QLSTMScales from these floats and calls buildQLSTMParams, and
+    builds the sigmoid / tanh LUTs on k<name>_LutInputScale.
+    """
+    nm = layer.name.replace("/", "_").replace("-", "_")
+    hid, nin = layer.hidden_size, layer.input_size
+    cell_type = "int16_t" if layer.cell_bits == 16 else "int8_t"
+    out = [
+        f"\n    // LSTM {nm} (cpp/qlstm.hpp QLSTMCell): gates i, f, g, o; weights\n"
+        f"    // gate-major [gate][hidden][input]; runs from zero state. k{nm}_Scale /\n"
+        f"    // k{nm}_ZeroPoint above are the hidden state's grid.\n",
+        f"    constexpr std::size_t k{nm}_NumInputs = {nin};\n",
+        f"    constexpr std::size_t k{nm}_NumHidden = {hid};\n",
+    ]
+    if layer.sequence_length is not None:
+        out.append(f"    constexpr std::size_t k{nm}_SequenceLength = "
+                   f"{layer.sequence_length};\n")
+    out += [
+        f"    typedef {cell_type} {nm}_CellType;\n",
+        f"    constexpr float   k{nm}_CellScale     = {layer.cell_scale!r}f;\n",
+        f"    constexpr int32_t k{nm}_CellZeroPoint = 0;\n",
+        f"    constexpr int32_t k{nm}_CellQMin      = {layer.cell_qmin};\n",
+        f"    constexpr int32_t k{nm}_CellQMax      = {layer.cell_qmax};\n",
+        f"    constexpr float   k{nm}_LutInputScale = {LSTM_LUT_INPUT_SCALE!r}f;\n",
+        _fmt_float_array(f"k{nm}_InputWeightScales", layer.input_weight_scales),
+        _fmt_float_array(f"k{nm}_RecurrentWeightScales",
+                         layer.recurrent_weight_scales),
+        _fmt_int_array(f"k{nm}_InputWeights",
+                       layer.q_weight_ih.reshape(-1).tolist(), "int8_t"),
+        _fmt_int_array(f"k{nm}_RecurrentWeights",
+                       layer.q_weight_hh.reshape(-1).tolist(), "int8_t"),
+        _fmt_int_array(f"k{nm}_Biases", layer.q_bias.reshape(-1).tolist(),
+                       "int32_t"),
+    ]
+    return "".join(out)
 
 
 def _emit_bridge_params(boundary: HybridBoundary,
@@ -788,6 +1092,10 @@ def emit_weights_header(path: str,
                 parts.append(_fmt_int_array(f"k{nm}_Biases",
                                             layer.q_bias.reshape(-1).tolist(),
                                             storage))
+
+    for layer in layers:
+        if isinstance(layer, LSTM):
+            parts.append(_emit_lstm(layer))
 
     if any(isinstance(layer, MoE) for layer in layers):
         parts.append("\n    // Mixture-of-Experts (cpp/qmoe.hpp): top-1 router "

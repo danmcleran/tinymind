@@ -84,6 +84,59 @@ MinMax.
 `examples/import_demo/` exercises this importer on a small MLP and
 verifies the C++ int8 forward against the float reference.
 
+## Sequence models: one nn.LSTM first
+
+A model that starts with one `nn.LSTM` layer, followed by any of the layers
+above on its last hidden state, maps onto `cpp/qlstm.hpp::QLSTMCell` plus the
+usual int8 head. Each calibration sample is then a whole sequence,
+`[step][feature]`:
+
+```python
+from tinymind_import import LSTM, Dense, MinMaxObserver, import_pytorch_model
+
+state = {k: v.detach().numpy() for k, v in model.lstm.state_dict().items()}
+w, b = (model.fc.weight.detach().numpy(), model.fc.bias.detach().numpy())
+layers = [
+    LSTM.from_state_dict("lstm", state, input_name="input",
+                         sequence_length=24, cell_bits=16),
+    Dense(name="head", weight=w, bias=b, input_name="lstm",
+          forward=lambda h: h @ w.T + b),
+]
+import_pytorch_model(layers, input_name="input",
+                     input_observer=MinMaxObserver(),
+                     dataset=calibration_sequences,   # each [24][num_features]
+                     output_path="weights.hpp", namespace="my_model")
+```
+
+  * The cell runs each sequence from zero state; the tensor named after the
+    LSTM is its **last** hidden state, which the next layer reads.
+  * `observer` sees every hidden state of every calibration step, and
+    `cell_observer` every cell state. Both scales are symmetric (zero point
+    0); the hidden scale is the grid the head reads.
+  * `cell_bits=16` (the default) stores the cell state as int16, 256 times
+    finer than `cell_bits=8`; pick 8 only when the memory matters more.
+  * Weights are symmetric int8 **per gate**, input and recurrent weights
+    each with their own scale. PyTorch's gate order (i, f, g, o) is
+    QLSTMCell's, so the state-dict tensors are used as they are.
+  * The gate pre-activations use a fixed 8/127 grid (`LSTM_LUT_INPUT_SCALE`;
+    the gates saturate beyond +-8), and the int32 biases
+    (`bias_ih + bias_hh`) are quantized in that grid the way
+    `quantizeQLSTMBiases` does.
+
+The emitted header carries `k<name>_CellScale`, `k<name>_LutInputScale`,
+`k<name>_InputWeightScales[4]`, `k<name>_RecurrentWeightScales[4]`, the int8
+`k<name>_InputWeights` / `k<name>_RecurrentWeights` (gate-major), the int32
+`k<name>_Biases`, the cell range and a `<name>_CellType` typedef. The C++ side
+fills `QLSTMScales` from them, calls `buildQLSTMParams`, and builds the
+sigmoid and tanh LUTs on the LUT input scale; `examples/import_lstm_demo/`
+does exactly that and checks the result against the float model.
+
+`LSTM.from_state_dict` raises `ValueError` for what `QLSTMCell` cannot run: a
+stacked (`num_layers > 1`), bidirectional or projected (`proj_size`) LSTM. An
+LSTM anywhere but first is refused as well. `nn.GRU` has no importer path:
+PyTorch applies the reset gate after the recurrent product and `QGRUCell`
+applies it before, so a PyTorch GRU does not map onto the cell.
+
 ## Hybrid int8 + Q-format models
 
 The importer also handles models that mix an int8 affine tier with the
@@ -166,4 +219,14 @@ cd apps/import_pytorch && ../../.venv/bin/python -m unittest test_import_pytorch
 ```
 
 Conv2D + BatchNorm2D fusion: the fused weights compute conv-then-BN, and
-calibration observes the range after the BN. These tests are not run in CI.
+calibration observes the range after the BN.
+
+LSTM: the float forward against the LSTM equations written independently,
+the hidden and cell scales, the per-gate weight scales and their gate-major
+layout, the bias sum and its rounding, the emitted constants and the
+rejections. With `torch` installed in the venv, one more test checks the
+float forward against `nn.LSTM` itself (parameters scaled so the gates
+saturate) and the rejections against real stacked, bidirectional and
+projected modules; without torch it is skipped.
+
+These tests are not run in CI.
