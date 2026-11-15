@@ -5991,6 +5991,9 @@ BOOST_AUTO_TEST_CASE(qfft_twiddle_table_unit_circle)
 
     BOOST_TEST(cos_t[0] == 32767);  // cos(0)
     BOOST_TEST(sin_t[0] == 0);      // sin(0)
+    // sin(-pi/2) * 32768 = -32768 survives the clamp: the twiddle table can
+    // hold the Q1.15 corner, so q15Mul must handle a == b == -32768.
+    BOOST_TEST(sin_t[kQFFTLen / 4] == -32768);
 
     for (std::size_t k = 0; k < kQFFTLen / 2; ++k)
     {
@@ -5999,6 +6002,61 @@ BOOST_AUTO_TEST_CASE(qfft_twiddle_table_unit_circle)
         const double mag = c * c + s * s;
         BOOST_TEST(std::fabs(mag - 1.0) < 1e-3);
     }
+}
+
+BOOST_AUTO_TEST_CASE(qfft_q15_mul_minus_one_squared_does_not_overflow)
+{
+    // (-1) * (-1) in Q1.15 is +32768 after the shift: one past int16, still
+    // an int32, which is why q15Mul returns int32 and the butterfly
+    // saturates its sums.
+    BOOST_TEST(tinymind::qfft_detail::q15Mul(-32768, -32768) == 32768);
+    BOOST_TEST(tinymind::qfft_detail::q15Mul(-32768, 32767) == -32767);
+
+    // A full-scale negative DC input runs through every twiddle, including
+    // the -32768 sine, and lands exactly in bin 0 (forward scales by 1/N).
+    // The other bins are 0 up to the floor of the per-stage halving, which
+    // can leave -1.
+    int16_t cos_t[kQFFTLen / 2];
+    int16_t sin_t[kQFFTLen / 2];
+    buildQFFTTwiddles(kQFFTLen, cos_t, sin_t);
+    tinymind::QFFT1D<kQFFTLen> fft;
+    fft.twiddle_cos = cos_t;
+    fft.twiddle_sin = sin_t;
+    int16_t re[kQFFTLen];
+    int16_t im[kQFFTLen];
+    for (std::size_t i = 0; i < kQFFTLen; ++i)
+    {
+        re[i] = -32768;
+        im[i] = -32768;
+    }
+    fft.forward(re, im);
+    BOOST_TEST(re[0] == -32768);
+    BOOST_TEST(im[0] == -32768);
+    for (std::size_t k = 1; k < kQFFTLen; ++k)
+    {
+        BOOST_TEST((re[k] == 0 || re[k] == -1));
+        BOOST_TEST((im[k] == 0 || im[k] == -1));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qfft_bit_reversal_table_uses_the_narrowest_index)
+{
+    // The permutation table is flash: one byte per entry up to N = 256,
+    // two up to 65536, never a 4- or 8-byte size_t for those lengths.
+    typedef tinymind::qfft_detail::BitReversalTable<16, 4> T16;
+    typedef tinymind::qfft_detail::BitReversalTable<256, 8> T256;
+    typedef tinymind::qfft_detail::BitReversalTable<512, 9> T512;
+    static_assert(sizeof(T16::IndexType) == 1, "N = 16 fits uint8_t");
+    static_assert(sizeof(T256::IndexType) == 1, "N = 256 fits uint8_t");
+    static_assert(sizeof(T512::IndexType) == 2, "N = 512 needs uint16_t");
+    static_assert(sizeof(T256) == 256, "N = 256 table is 256 bytes");
+
+    const T256 table;
+    BOOST_TEST(static_cast<unsigned>(table.indices[1]) == 128u);
+    BOOST_TEST(static_cast<unsigned>(table.indices[255]) == 255u);
+    const T512 wide;
+    BOOST_TEST(static_cast<unsigned>(wide.indices[1]) == 256u);
+    BOOST_TEST(static_cast<unsigned>(wide.indices[2]) == 128u);
 }
 
 BOOST_AUTO_TEST_CASE(qfft_magnitude_spectrum_matches_float_reference)

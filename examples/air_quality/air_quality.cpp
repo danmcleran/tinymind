@@ -54,8 +54,6 @@
 #include "neuralnet.hpp"
 #include "activationFunctions.hpp"
 #include "fixedPointTransferFunctions.hpp"
-#include "earlyStopping.hpp"
-#include "teacherForcing.hpp"
 
 #define TRAINING_EPOCHS 15000U
 #define NUM_SAMPLES 2400U     // 100 days of hourly samples
@@ -291,7 +289,7 @@ int main(int argc, char** argv)
     ValueType target[1];
     ValueType learnedValues[1];
 
-    std::cout << "Training LSTM forecaster: " << trainingEpochs
+    std::cout << "Training LSTM forecaster: up to " << trainingEpochs
               << " epochs over " << (trainEnd - 1)
               << " sequential pairs (holdout=" << holdout << " hours)..."
               << std::endl;
@@ -305,10 +303,18 @@ int main(int argc, char** argv)
     // resets keep the daily-cycle signal trainable.
     const size_t WINDOW = TRAIN_WINDOW;
 
+    // Training stops at the first epoch in which no sample trains: every
+    // per-sample error is inside ZeroToleranceCalculator's dead-band (1/128
+    // of full scale), so trainNetwork() is never called and the weights do
+    // not move. The state is reset at the start of every epoch and nothing
+    // else changes between epochs, so every later epoch would repeat this
+    // one exactly; trainingEpochs is only an upper bound.
+    unsigned epochsRun = 0;
     for (unsigned epoch = 0; epoch < trainingEpochs; ++epoch)
     {
         double epochAbsErr = 0.0;
         size_t count = 0;
+        size_t trained = 0;
 
         lstmNet.resetState();
         for (size_t t = 0; t + 1 < trainEnd; ++t)
@@ -330,15 +336,28 @@ int main(int argc, char** argv)
             if (!TransferFunctionsType::isWithinZeroTolerance(error))
             {
                 lstmNet.trainNetwork(&target[0]);
+                ++trained;
             }
         }
 
         const double avgErr = (count > 0) ? (epochAbsErr / static_cast<double>(count)) : 0.0;
         lossCsv << epoch << "," << avgErr << std::endl;
+        epochsRun = epoch + 1;
+
+        if (trained == 0)
+        {
+            break;
+        }
     }
     lossCsv.close();
 
-    std::cout << "Training complete." << std::endl;
+    std::cout << "Training complete after " << epochsRun << " epochs";
+    if (epochsRun < trainingEpochs)
+    {
+        std::cout << " (every error inside the zero-tolerance band; "
+                  << "further epochs would not change the weights)";
+    }
+    std::cout << "." << std::endl;
 
     // One-step-ahead evaluation over the held-out tail. Warm the LSTM state by
     // streaming the hours leading up to the holdout through feedForward (state
