@@ -1,5 +1,6 @@
 /*
- * libFuzzer harness for the int16 QFFT1D radix-2 compute kernel.
+ * libFuzzer harness for the int16 QFFT1D radix-2 compute kernel and the
+ * QRFFT1D real-input FFT built on it.
  *
  * Rationale: the FFT butterfly stages are the densest fixed-point arithmetic
  * in the library -- Q1.15 twiddle multiplies, scaled butterfly adds, and the
@@ -22,6 +23,13 @@
  *      unscaled inverse DFT of its input. The looser bound is inherent: an
  *      unscaled stage doubles the error carried into it.
  *   3. magnitudeSquared is re^2 + im^2, saturated to INT32_MAX.
+ *   4. QRFFT1D on the real parts the case decoded (no further bytes are
+ *      read, so archived inputs decode as before): every one of the
+ *      N/2 + 1 bins is within 2 * log2(N) + 1 units of the exact DFT / N,
+ *      for every int16 input -- the first-stage headroom means no input
+ *      can saturate an intermediate, so there is no "checkable" carve-out
+ *      as for the complex forward. Bins 0 and N/2 are real, and its
+ *      magnitudeSquared is exact up to the INT32_MAX saturation.
  *
  * Build/run: see fuzz/Makefile (`make fuzz` / `make fuzz-ci`).
  *
@@ -37,6 +45,7 @@
 #include "fuzz_check.hpp"
 
 using tinymind::QFFT1D;
+using tinymind::QRFFT1D;
 using tinymind::buildQFFTTwiddles;
 
 namespace {
@@ -94,6 +103,9 @@ void run(ByteReader& br)
     int32_t mag_sq[N];
 
     for (std::size_t k = 0; k < N; ++k) { real[k] = br.i16(); imag[k] = br.i16(); }
+
+    int16_t samples[N];
+    for (std::size_t k = 0; k < N; ++k) { samples[k] = real[k]; }
 
     int16_t cos_t[N / 2];
     int16_t sin_t[N / 2];
@@ -153,6 +165,38 @@ void run(ByteReader& br)
         const int64_t sq = static_cast<int64_t>(real[k]) * real[k] +
                            static_cast<int64_t>(imag[k]) * imag[k];
         TINYMIND_FUZZ_CHECK(mag_sq[k] == ((sq > INT32_MAX) ? INT32_MAX : sq));
+    }
+
+    // Property 4: the real-input FFT on the decoded real parts.
+    QRFFT1D<N> rfft;
+    rfft.twiddle_cos = cos_t;
+    rfft.twiddle_sin = sin_t;
+    int16_t bins_r[N / 2 + 1];
+    int16_t bins_i[N / 2 + 1];
+    int32_t bins_mag[N / 2 + 1];
+    rfft.forward(samples, bins_r, bins_i);
+    tinymind_fuzz::emit(bins_r, sizeof(bins_r));
+    tinymind_fuzz::emit(bins_i, sizeof(bins_i));
+
+    int16_t zeros[N];
+    for (std::size_t k = 0; k < N; ++k) { zeros[k] = 0; }
+    referenceDFT<N>(samples, zeros, -1, static_cast<double>(N), want_r, want_i);
+    const double rfft_bound = 2.0 * stages + 1.0;
+    for (std::size_t k = 0; k <= N / 2; ++k)
+    {
+        TINYMIND_FUZZ_CHECK(std::fabs(bins_r[k] - want_r[k]) <= rfft_bound);
+        TINYMIND_FUZZ_CHECK(std::fabs(bins_i[k] - want_i[k]) <= rfft_bound);
+    }
+    TINYMIND_FUZZ_CHECK(bins_i[0] == 0);
+    TINYMIND_FUZZ_CHECK(bins_i[N / 2] == 0);
+
+    QRFFT1D<N>::magnitudeSquared(bins_r, bins_i, bins_mag);
+    tinymind_fuzz::emit(bins_mag, sizeof(bins_mag));
+    for (std::size_t k = 0; k <= N / 2; ++k)
+    {
+        const int64_t sq = static_cast<int64_t>(bins_r[k]) * bins_r[k] +
+                           static_cast<int64_t>(bins_i[k]) * bins_i[k];
+        TINYMIND_FUZZ_CHECK(bins_mag[k] == ((sq > INT32_MAX) ? INT32_MAX : sq));
     }
 }
 

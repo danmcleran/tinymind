@@ -120,7 +120,7 @@ A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside*
 - **Composition ops** -- `QAdd` (TFLite ADD semantics, left_shift + 3 multiplier/shift triples), `QMul` (single-Requantizer elementwise multiply), `QConcat2_2D` (channel-axis concat with per-input rescaler), `QPad2D` (constant pad using input zero_point so padded cells decode to true zero)
 - **Normalization** -- `QBatchNorm1D` / `QBatchNorm2D` (per-channel (multiplier, shift, bias) triple), `QLayerNorm1D` (integer mean/variance per row, `qInvSqrtQ30` Newton iteration), `QSoftmax1D` (two-pass int8->int8 softmax via 256-entry int32 exp LUT, output 1/256, zp -128), `QSoftmaxFixedPoint1D` (bit-exact with the TFLite int8 softmax)
 - **Recurrent cells** -- `QLSTMCell` (4 gates, TFLite ordering, int8 or int16 cell state via `TINYMIND_ENABLE_INT16_ACCUM=1`), `QGRUCell` (3 gates, reset-before-multiply), and `QCfCCell` (closed-form continuous-time: backbone trunk + tanh heads + folded-`ts` time-gate + interpolation). Standalone single-step; caller owns time loop and hidden/cell buffers
-- **Attention + FFT** -- `QFFT1D` (radix-2 DIT on int16 buffers, Q1.15 twiddles, scaled butterflies), `QAttention1D` (int8 linear-attention with ReLU kernel), `QAttentionSoftmax1D` (standard softmax attention with `1/sqrt(d_k)` folded into score Requantizer), `QMultiHeadLinearAttention1D` (stacks N heads)
+- **Attention + FFT** -- `QFFT1D` (radix-2 DIT on int16 buffers, Q1.15 twiddles, scaled butterflies), `QRFFT1D` (real-input FFT: N/2 + 1 bins at about half the work), `QAttention1D` (int8 linear-attention with ReLU kernel), `QAttentionSoftmax1D` (standard softmax attention with `1/sqrt(d_k)` folded into score Requantizer), `QMultiHeadLinearAttention1D` (stacks N heads)
 - **Requantizer contract** -- `Requantizer` takes any multiplier, zero point and clamp bounds with a shift in -31..31, which `quantizeMultiplier` (and the PyTorch importer's `quantize_multiplier`) always returns. A CBMC proof (`unit_test/formal/requantizer`) shows `apply()`, and `QAdd`'s one-rounding input rescaling, free of undefined behaviour and equal to gemmlowp's definition, computed exactly, for every input in that range
 - **Transformer input layers** -- `QEmbedding` (int8 token-id gather from a `[Vocab, E]` table, optional requantizer onto a downstream grid) and `QPositionalEncoding1D` (fused affine add of a sinusoidal or learned positional table; host `sinusoidalPositionalTable()` generator)
 - **Activations** -- `qrelu` / `qrelu6` plus `clampForRelu` / `clampForRelu6` helpers that fold the activation into the upstream Requantizer's saturation pass; 256-entry int8 sigmoid / tanh LUTs via `buildQSigmoidLUT` / `buildQTanhLUT` + `qApplyLUT` / `qApplyLUTBuffer` -- no `<cmath>` on the inference path
@@ -1067,7 +1067,7 @@ tinymind/
     qsoftmax_fixedpoint.hpp     # QSoftmaxFixedPoint1D (bit-exact with the TFLite int8 softmax)
     qlstm.hpp                   # QLSTMCell (int8 or int16 cell state)
     qgru.hpp                    # QGRUCell (3 gates, reset-before-multiply)
-    qfft1d.hpp                  # QFFT1D (int16 radix-2 DIT, Q1.15 twiddles)
+    qfft1d.hpp                  # QFFT1D (int16 radix-2 DIT, Q1.15 twiddles), QRFFT1D (real input)
     qattention1d.hpp            # QAttention1D (int8 linear attention)
     qattention_softmax.hpp      # QAttentionSoftmax1D (standard softmax attention)
     qcausalattention1d.hpp      # QCausalAttention1D (causal linear self-attn, O(1) KV state)

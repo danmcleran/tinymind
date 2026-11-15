@@ -6186,6 +6186,258 @@ BOOST_AUTO_TEST_CASE(qfft_forward_inverse_round_trip_is_close_to_identity)
     BOOST_TEST(max_err < 500);
 }
 
+namespace
+{
+
+// A deterministic 64-bit LCG for the real-FFT tests, uniform in [-1, 1).
+struct RfftLcg
+{
+    uint64_t state;
+    explicit RfftLcg(uint64_t seed) : state(seed) {}
+    double next()
+    {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return static_cast<double>(state >> 11) * (2.0 / 9007199254740992.0) - 1.0;
+    }
+};
+
+// Signals the real FFT must handle: noise at several amplitudes, a tone
+// between bins, and patterns that sit on the int16 rails (the inputs that
+// would saturate a packed complex FFT without the first-stage headroom).
+template<std::size_t N>
+void fillRfftSignal(std::size_t kind, RfftLcg& rng, int16_t* x)
+{
+    const double two_pi = 6.283185307179586476925286766559;
+    for (std::size_t n = 0; n < N; ++n)
+    {
+        const double u = rng.next();
+        int32_t v = 0;
+        switch (kind % 7)
+        {
+            case 0:  v = static_cast<int32_t>(std::lround(u * 327.67)); break;
+            case 1:  v = static_cast<int32_t>(std::lround(u * 32767.0)); break;
+            case 2:  v = (u < 0.0) ? -32768 : 32767; break;
+            case 3:  v = (u < -0.33) ? -32768 : ((u < 0.33) ? 0 : 32767); break;
+            case 4:  v = static_cast<int32_t>(std::lround(
+                         32767.0 * std::sin(two_pi * 3.37 * static_cast<double>(n) /
+                                            static_cast<double>(N)))); break;
+            case 5:  v = ((n / 2) & 1u) ? -32768 : 32767; break;
+            default: v = (n & 1u) ? -32768 : 32767; break;
+        }
+        x[n] = static_cast<int16_t>(v);
+    }
+}
+
+// Exact DFT of a real signal, divided by N, bins 0..N/2.
+template<std::size_t N>
+void exactRealDft(const int16_t* x, double* re, double* im)
+{
+    const double two_pi = 6.283185307179586476925286766559;
+    for (std::size_t k = 0; k <= N / 2; ++k)
+    {
+        double a = 0.0;
+        double b = 0.0;
+        for (std::size_t n = 0; n < N; ++n)
+        {
+            const double ph = -two_pi * static_cast<double>((k * n) % N) /
+                              static_cast<double>(N);
+            a += static_cast<double>(x[n]) * std::cos(ph);
+            b += static_cast<double>(x[n]) * std::sin(ph);
+        }
+        re[k] = a / static_cast<double>(N);
+        im[k] = b / static_cast<double>(N);
+    }
+}
+
+// Every bin within 2 * log2(N) + 1 LSB of the exact DFT / N and within
+// log2(N) LSB of QFFT1D<N> on the same input with a zeroed imaginary part.
+template<std::size_t N>
+void checkRfft(std::size_t trials)
+{
+    typedef tinymind::QRFFT1D<N> Rfft;
+    const std::size_t numBins = Rfft::NumBins;
+    BOOST_TEST(numBins == N / 2 + 1);
+
+    int16_t cos_t[N / 2];
+    int16_t sin_t[N / 2];
+    buildQFFTTwiddles(N, cos_t, sin_t);
+    Rfft rfft;
+    rfft.twiddle_cos = cos_t;
+    rfft.twiddle_sin = sin_t;
+    tinymind::QFFT1D<N> cfft;
+    cfft.twiddle_cos = cos_t;
+    cfft.twiddle_sin = sin_t;
+
+    double stages = 0.0;
+    for (std::size_t m = N; m > 1; m >>= 1)
+    {
+        stages += 1.0;
+    }
+    const double dftBound = 2.0 * stages + 1.0;
+    const int32_t qfftBound = static_cast<int32_t>(stages);
+
+    RfftLcg rng(1);
+    double worstDft = 0.0;
+    int32_t worstQfft = 0;
+    for (std::size_t t = 0; t < trials; ++t)
+    {
+        int16_t x[N];
+        int16_t xCopy[N];
+        fillRfftSignal<N>(t, rng, x);
+        for (std::size_t n = 0; n < N; ++n)
+        {
+            xCopy[n] = x[n];
+        }
+
+        int16_t re[N / 2 + 1];
+        int16_t im[N / 2 + 1];
+        rfft.forward(x, re, im);
+
+        bool inputUnchanged = true;
+        for (std::size_t n = 0; n < N; ++n)
+        {
+            inputUnchanged = inputUnchanged && (x[n] == xCopy[n]);
+        }
+        BOOST_TEST(inputUnchanged);
+        BOOST_TEST(im[0] == 0);
+        BOOST_TEST(im[N / 2] == 0);
+
+        double wantRe[N / 2 + 1];
+        double wantIm[N / 2 + 1];
+        exactRealDft<N>(x, wantRe, wantIm);
+
+        int16_t cRe[N];
+        int16_t cIm[N];
+        for (std::size_t n = 0; n < N; ++n)
+        {
+            cRe[n] = x[n];
+            cIm[n] = 0;
+        }
+        cfft.forward(cRe, cIm);
+
+        for (std::size_t k = 0; k < numBins; ++k)
+        {
+            const double eRe = std::fabs(static_cast<double>(re[k]) - wantRe[k]);
+            const double eIm = std::fabs(static_cast<double>(im[k]) - wantIm[k]);
+            worstDft = std::max(worstDft, std::max(eRe, eIm));
+            const int32_t dRe = std::abs(static_cast<int32_t>(re[k]) - static_cast<int32_t>(cRe[k]));
+            const int32_t dIm = std::abs(static_cast<int32_t>(im[k]) - static_cast<int32_t>(cIm[k]));
+            worstQfft = std::max(worstQfft, std::max(dRe, dIm));
+        }
+    }
+    BOOST_TEST(worstDft <= dftBound);
+    BOOST_TEST(worstQfft <= qfftBound);
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(qrfft_two_point_is_sum_and_difference)
+{
+    // N = 2 has no inner stage: X[0] = (x0 + x1) / 2, X[1] = (x0 - x1) / 2,
+    // both real, floored as every QFFT1D shift is.
+    int16_t cos_t[1];
+    int16_t sin_t[1];
+    buildQFFTTwiddles(2, cos_t, sin_t);
+    tinymind::QRFFT1D<2> rfft;
+    rfft.twiddle_cos = cos_t;
+    rfft.twiddle_sin = sin_t;
+
+    const int16_t cases[4][2] = { { 1000, 3 }, { -32768, -32768 }, { 32767, -32768 }, { -7, 4 } };
+    for (std::size_t c = 0; c < 4; ++c)
+    {
+        int16_t re[2];
+        int16_t im[2];
+        rfft.forward(cases[c], re, im);
+        const int32_t a = cases[c][0];
+        const int32_t b = cases[c][1];
+        BOOST_TEST(re[0] == ((a + b) >> 1));
+        BOOST_TEST(re[1] == ((a - b) >> 1));
+        BOOST_TEST(im[0] == 0);
+        BOOST_TEST(im[1] == 0);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qrfft_matches_the_dft_and_qfft_on_real_input)
+{
+    checkRfft<4>(70);
+    checkRfft<8>(70);
+    checkRfft<16>(70);
+    checkRfft<64>(35);
+    checkRfft<256>(14);
+}
+
+BOOST_AUTO_TEST_CASE(qrfft_full_scale_dc_and_impulse_land_in_the_right_bins)
+{
+    constexpr std::size_t N = 64;
+    int16_t cos_t[N / 2];
+    int16_t sin_t[N / 2];
+    buildQFFTTwiddles(N, cos_t, sin_t);
+    tinymind::QRFFT1D<N> rfft;
+    rfft.twiddle_cos = cos_t;
+    rfft.twiddle_sin = sin_t;
+
+    // Full-scale negative DC: everything in bin 0, the rest within the floor
+    // of the shifts.
+    int16_t x[N];
+    for (std::size_t n = 0; n < N; ++n)
+    {
+        x[n] = -32768;
+    }
+    int16_t re[N / 2 + 1];
+    int16_t im[N / 2 + 1];
+    rfft.forward(x, re, im);
+    BOOST_TEST(re[0] == -32768);
+    for (std::size_t k = 1; k <= N / 2; ++k)
+    {
+        BOOST_TEST(std::abs(static_cast<int32_t>(re[k])) <= 1);
+        BOOST_TEST(std::abs(static_cast<int32_t>(im[k])) <= 1);
+    }
+
+    // Full-scale alternating signal: everything in the Nyquist bin (exact
+    // value 32767.5), the rest near 0, all within the 2 * log2(N) + 1 = 13
+    // LSB bound of checkRfft.
+    for (std::size_t n = 0; n < N; ++n)
+    {
+        x[n] = (n & 1u) ? static_cast<int16_t>(-32768) : static_cast<int16_t>(32767);
+    }
+    rfft.forward(x, re, im);
+    BOOST_TEST(re[N / 2] >= 32767 - 13);
+    BOOST_TEST(im[N / 2] == 0);
+    for (std::size_t k = 0; k < N / 2; ++k)
+    {
+        BOOST_TEST(std::abs(static_cast<int32_t>(re[k])) <= 13);
+        BOOST_TEST(std::abs(static_cast<int32_t>(im[k])) <= 13);
+    }
+
+    // Impulse: a flat spectrum of 32767 / N.
+    for (std::size_t n = 0; n < N; ++n)
+    {
+        x[n] = 0;
+    }
+    x[0] = 32767;
+    rfft.forward(x, re, im);
+    for (std::size_t k = 0; k <= N / 2; ++k)
+    {
+        BOOST_TEST(std::abs(static_cast<int32_t>(re[k]) - 511) <= 1);
+        BOOST_TEST(std::abs(static_cast<int32_t>(im[k])) <= 1);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qrfft_magnitude_squared_covers_every_bin_and_saturates)
+{
+    constexpr std::size_t N = 8;
+    typedef tinymind::QRFFT1D<N> Rfft;
+    int16_t re[Rfft::NumBins] = { 3, -4, 0, -32768, 1 };
+    int16_t im[Rfft::NumBins] = { 4, 3, 0, -32768, 0 };
+    int32_t mag[Rfft::NumBins];
+    Rfft::magnitudeSquared(re, im, mag);
+    BOOST_TEST(mag[0] == 25);
+    BOOST_TEST(mag[1] == 25);
+    BOOST_TEST(mag[2] == 0);
+    BOOST_TEST(mag[3] == INT32_MAX);
+    BOOST_TEST(mag[4] == 1);
+}
+
 BOOST_AUTO_TEST_CASE(qattention_linear_parity_with_float_reference)
 {
     constexpr std::size_t S = 4;

@@ -291,3 +291,27 @@ These estimates include twiddle multiplication (2 multiplies + 2 adds per butter
 ## Int8 Quantized Counterpart
 
 tinymind ships `QFFT1D<N>`, a radix-2 DIT FFT on int16 buffers with Q1.15 twiddle factors. Twiddles are caller-owned, built host-side by `buildQFFTTwiddles(n, cos_out, sin_out)`. Scaled butterflies (right-shift by 1 per stage; total scaling 1/N) keep the int16 working register bounded. `magnitudeSquared` emits int32; the int8 boundary on either side is expressed as an ordinary `Requantizer`. Inverse via the conjugate trick. See [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) for the surrounding integer pipeline.
+
+### Real-input FFT: `QRFFT1D`
+
+Audio, vibration and IMU front ends feed the FFT real samples. A complex FFT of a real signal, with the imaginary buffer zeroed, spends half its input on zeros and half its output on bins that mirror the other half. `QRFFT1D<N>` takes the N real samples and returns only the N/2 + 1 distinct bins, with the same 1/N scaling as `QFFT1D<N>::forward`:
+
+```cpp
+int16_t cos_t[N / 2], sin_t[N / 2];
+tinymind::buildQFFTTwiddles(N, cos_t, sin_t);   // the same table QFFT1D<N> uses
+
+tinymind::QRFFT1D<N> rfft;
+rfft.twiddle_cos = cos_t;
+rfft.twiddle_sin = sin_t;
+
+int16_t samples[N];                              // real input, left unchanged
+int16_t re[tinymind::QRFFT1D<N>::NumBins];       // N/2 + 1 bins
+int16_t im[tinymind::QRFFT1D<N>::NumBins];
+int32_t power[tinymind::QRFFT1D<N>::NumBins];
+rfft.forward(samples, re, im);                   // im[0] and im[N/2] are 0
+tinymind::QRFFT1D<N>::magnitudeSquared(re, im, power);
+```
+
+It packs the samples into N/2 complex values (even samples real, odd samples imaginary), runs an N/2-point complex FFT on them, and separates the even and odd spectra in a final split step. At N = 256 that is 448 butterflies, 64 of them multiply-free, plus 128 split outputs, against 1,024 butterflies for `QFFT1D<256>`. On an x86 host at `-O3` it runs 2.3 to 2.4 times faster than `QFFT1D` with a zeroed imaginary buffer, for N from 64 to 1,024. It reads the samples from a const buffer it leaves unchanged and writes N + 2 int16 values of output: when the samples already sit in their own buffer (an ADC or DMA buffer), that is the whole work space, against the 2N values `QFFT1D` needs for its in-place real and imaginary buffers. Counting the input buffer, `QRFFT1D` uses two int16 values more.
+
+Packing two real samples into one complex value lets a component of the inner FFT reach √2 times full scale, which a plain packed FFT would saturate on full-scale input such as clipped audio. `QRFFT1D` takes that headroom in the first inner stage, whose twiddle is exactly 1, so no int16 input can saturate an intermediate. The price is a little precision: against an exact DFT / N its largest bin error is about 1.3 to 1.7 times `QFFT1D`'s on the same input, which is a few LSB of the 16-bit spectrum, and its bins differ from `QFFT1D`'s by at most log2(N) LSB. Use `QFFT1D<N>` with a zeroed imaginary buffer when those LSB matter more than the halved work. The input buffer must not overlap the outputs.
