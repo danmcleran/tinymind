@@ -171,7 +171,7 @@ One subtraction, no second table, and no additional quantization error. `QCfCCel
 
 | Header | Layer | Notes |
 |---|---|---|
-| [`qfft1d.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qfft1d.hpp) | `QFFT1D<N>` | Radix-2 DIT FFT on int16 buffers with Q1.15 twiddle factors. Scaled butterflies (shift-by-1 per stage; total 1/N) keep the working register bounded. `magnitudeSquared` emits int32. Inverse via conjugate trick |
+| [`qfft1d.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qfft1d.hpp) | `QFFT1D<N>`, `QRFFT1D<N>` | Radix-2 DIT FFT on int16 buffers with Q1.15 twiddle factors. Scaled butterflies (shift-by-1 per stage; total 1/N) keep the working register bounded. `magnitudeSquared` emits int32. Inverse via conjugate trick. `QRFFT1D` is the real-input forward transform: N/2 + 1 bins at about half the work |
 | [`qattention1d.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qattention1d.hpp) | `QAttention1D` | Linear (ReLU-kernel) self-attention, int8 counterpart of `selfattention1d.hpp`. ReLU on Q'/K' folded into the requantizer by raising `qmin = zero_point` |
 | [`qattention_softmax.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qattention_softmax.hpp) | `QAttentionSoftmax1D` | Standard softmax attention. Score requantizer folds the `1 / sqrt(d_k)` factor via `qAttentionInvSqrt(P)`. Uses the same 256-entry int32 exp LUT as `QSoftmax1D` |
 | [`qmha.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qmha.hpp) | `QMultiHeadLinearAttention1D` | `NumHeads` independent `QAttention1D` heads run sequentially; per-head outputs stacked along the projection axis. Scratch buffers reused across heads |
@@ -275,7 +275,7 @@ The LUTs themselves are pure data — drop them into flash on the MCU and the in
 | `QLSTMScales` / `QLSTMParams` / `buildQLSTMParams` / `quantizeQLSTMBiases` | Decompose per-gate float scales into the (multiplier, shift) triples `QLSTMCell` consumes |
 | `QGRUScales` / `QGRUParams` / `buildQGRUParams` / `quantizeQGRUBiases` | Same for `QGRUCell` |
 | `QCfCScales` / `QCfCParams` / `buildQCfCParams` / `quantizeQCfCBias` / `quantizeQCfCTimeBias` | Build the `QCfCCell` requantizer triples (with `ts` folded into time-gate-A) and the int32 backbone / head / combined-time biases |
-| `buildQFFTTwiddles(n, cos_out, sin_out)` | Q1.15 sin/cos table for `QFFT1D` |
+| `buildQFFTTwiddles(n, cos_out, sin_out)` | Q1.15 sin/cos table for `QFFT1D` and `QRFFT1D` |
 | `QAttention1DScales` / `QAttentionSoftmaxScales` / `qAttentionInvSqrt(P)` | Score-scaling helper for softmax attention |
 
 Typical workflow:

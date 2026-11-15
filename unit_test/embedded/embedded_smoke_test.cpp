@@ -796,6 +796,17 @@ bool exerciseQuantPipeline()
     int32_t fft_mag[8] = {0};
     tinymind::QFFT1D<8>::magnitudeSquared(fft_re, fft_im, fft_mag);
 
+    // Real-input FFT on the same 8-point table.
+    tinymind::QRFFT1D<8> qrfft;
+    qrfft.twiddle_cos = fft_cos;
+    qrfft.twiddle_sin = fft_sin;
+    static const int16_t rfft_x[8] = {1, 0, 1, 0, 1, 0, 1, 0};
+    int16_t rfft_re[tinymind::QRFFT1D<8>::NumBins] = {0};
+    int16_t rfft_im[tinymind::QRFFT1D<8>::NumBins] = {0};
+    qrfft.forward(rfft_x, rfft_re, rfft_im);
+    int32_t rfft_mag[tinymind::QRFFT1D<8>::NumBins] = {0};
+    tinymind::QRFFT1D<8>::magnitudeSquared(rfft_re, rfft_im, rfft_mag);
+
     typedef tinymind::QAttention1D<Q, Q, A, Q, Q, Q, 2, 4, 3> QAttnLinearType;
     static int8_t att_w[QAttnLinearType::TotalWeights] = {0};
     static int32_t att_b[QAttnLinearType::TotalBiases] = {0};
@@ -994,6 +1005,7 @@ bool exerciseQuantPipeline()
         && valueIsLive(lstm_h[0]) && valueIsLive(lstm_c[0])
         && valueIsLive(gru_h[0])
         && valueIsLive(fft_re[0]) && valueIsLive(fft_mag[0])
+        && valueIsLive(rfft_re[0]) && valueIsLive(rfft_mag[0])
         && valueIsLive(attn_out[0])
         && valueIsLive(sm_out[0])
         && valueIsLive(mha_out[0])

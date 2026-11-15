@@ -81,6 +81,7 @@ make clean && make && make run
   `S * S`.
 
 - **Audio front-end.** `QFFT1D<N>` accepts a caller-owned Q1.15 twiddle
-  table (`buildQFFTTwiddles`) and an int16 workspace. Pipe its
+  table (`buildQFFTTwiddles`) and an int16 workspace; for real samples,
+  `QRFFT1D<N>` returns the N/2 + 1 distinct bins at about half the work. Pipe its
   magnitude-squared output through a per-bin `Requantizer` to land on the
   int8 grid the encoder expects.

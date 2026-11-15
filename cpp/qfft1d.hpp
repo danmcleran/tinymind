@@ -294,4 +294,222 @@ namespace tinymind {
     constexpr qfft_detail::BitReversalTable<N, QFFT1D<N>::NumStages> QFFT1D<N>::sBitRevTable;
 #endif
 
+    /**
+     * Quantized real-input FFT: N real int16 samples in, the N/2 + 1
+     * non-redundant bins out, scaled by 1/N like QFFT1D<N>::forward.
+     *
+     * A real signal's spectrum is conjugate-symmetric, so a complex FFT of
+     * it (imaginary part zeroed) spends half its input and half its output
+     * on nothing. QRFFT1D packs the N samples into N/2 complex values (even
+     * samples real, odd samples imaginary), runs an N/2-point complex FFT on
+     * them, and separates the two halves in a final split step:
+     *
+     *   E[k] = (Z[k] + conj(Z[M - k])) / 2        (spectrum of the evens)
+     *   O[k] = (Z[k] - conj(Z[M - k])) / (2i)     (spectrum of the odds)
+     *   X[k] = E[k] + W_N^k * O[k]                 k = 0 .. M, M = N/2
+     *
+     * At N = 256 that is 448 butterflies (64 of them multiply-free) and 128
+     * split outputs instead of QFFT1D's 1,024 butterflies, with the same
+     * twiddle table: pass the N-point table from buildQFFTTwiddles(N, ...),
+     * the one QFFT1D<N> uses. The inner N/2-point FFT reads every second
+     * entry of it.
+     *
+     * Scaling and headroom. Packing two real samples into one complex value
+     * lets a component of the inner FFT reach sqrt(2) * 32767, past int16,
+     * on full-scale input. So the first inner stage, whose twiddle is
+     * exactly 1, computes (a +- b) >> 2 from the full-precision samples
+     * instead of >> 1, and the split step does not halve its result. Every
+     * component of the inner FFT then stays within 16,384 * sqrt(2), and
+     * since |E[k]| and |O[k]| are each at most half of full scale in exact
+     * arithmetic, the split step can reach the int16 rails only by rounding,
+     * where it saturates. No input saturates an intermediate. The cost of
+     * taking the headroom early is precision: against an exact DFT / N the
+     * largest bin error is about 1.3 to 1.7 times QFFT1D's on the same real
+     * input (a few LSB of the 16-bit spectrum), and the bins differ from
+     * QFFT1D's by a few LSB. Use QFFT1D<N> with a zeroed imaginary buffer
+     * when that matters more than the halved work.
+     *
+     * Rounding is QFFT1D's: every shift floors and every Q1.15 product goes
+     * through q15Mul.
+     *
+     * Buffers are caller-owned: `input` holds N samples, `real` and `imag`
+     * NumBins = N/2 + 1 entries each. `input` must not overlap `real` or
+     * `imag`; the outputs are also the inner FFT's work space. Bin 0 (DC)
+     * and bin N/2 (Nyquist) are real, so imag[0] and imag[N/2] are 0.
+     *
+     * Pure integer at runtime; freestanding-safe.
+     */
+    template<std::size_t N>
+    struct QRFFT1D
+    {
+        static constexpr std::size_t Length     = N;
+        static constexpr std::size_t HalfLength = N / 2;
+        static constexpr std::size_t NumBins    = N / 2 + 1;
+
+        // Q1.15 twiddle tables for N points (buildQFFTTwiddles(N, ...)),
+        // HalfLength entries each.
+        const int16_t* twiddle_cos;
+        const int16_t* twiddle_sin;
+
+        /**
+         * Forward real FFT, scaled by 1/N. Writes NumBins bins to real and
+         * imag.
+         */
+        void forward(const int16_t* input, int16_t* real, int16_t* imag) const
+        {
+            const std::size_t M = HalfLength;
+            const int16_t* const cosTable = twiddle_cos;
+            const int16_t* const sinTable = twiddle_sin;
+
+            std::size_t halfSize = 1;
+            if (M >= 2)
+            {
+                // Bit-reversed load of the packed samples, fused with the
+                // first stage (twiddle 1): (a +- b) >> 2.
+                for (std::size_t n = 0; n < M; n += 2)
+                {
+                    const std::size_t j0 = sBitRevTable.indices[n];
+                    const std::size_t j1 = sBitRevTable.indices[n + 1];
+                    const int32_t aReal = static_cast<int32_t>(input[2 * j0]);
+                    const int32_t aImag = static_cast<int32_t>(input[2 * j0 + 1]);
+                    const int32_t bReal = static_cast<int32_t>(input[2 * j1]);
+                    const int32_t bImag = static_cast<int32_t>(input[2 * j1 + 1]);
+                    real[n]     = static_cast<int16_t>((aReal + bReal) >> 2);
+                    imag[n]     = static_cast<int16_t>((aImag + bImag) >> 2);
+                    real[n + 1] = static_cast<int16_t>((aReal - bReal) >> 2);
+                    imag[n + 1] = static_cast<int16_t>((aImag - bImag) >> 2);
+                }
+                halfSize = 2;
+            }
+            else
+            {
+                // N = 2: one complex value, no inner stage.
+                real[0] = input[0];
+                imag[0] = input[1];
+            }
+
+            // The remaining stages of the N/2-point FFT, as QFFT1D's scaled
+            // butterflies; stage twiddle W_{2h}^p = W_N^{p * M / h}.
+            for (; halfSize < M; halfSize <<= 1)
+            {
+                const std::size_t fullSize = halfSize << 1;
+                const std::size_t twiddleStride = M / halfSize;
+
+                for (std::size_t group = 0; group < M; group += fullSize)
+                {
+                    for (std::size_t pair = 0; pair < halfSize; ++pair)
+                    {
+                        const std::size_t twiddleIdx = pair * twiddleStride;
+                        const int32_t wCos = static_cast<int32_t>(cosTable[twiddleIdx]);
+                        const int32_t wSin = static_cast<int32_t>(sinTable[twiddleIdx]);
+
+                        const std::size_t top = group + pair;
+                        const std::size_t bot = top + halfSize;
+
+                        const int32_t botReal = static_cast<int32_t>(real[bot]);
+                        const int32_t botImag = static_cast<int32_t>(imag[bot]);
+
+                        const int32_t tReal =
+                            qfft_detail::q15Mul(wCos, botReal) -
+                            qfft_detail::q15Mul(wSin, botImag);
+                        const int32_t tImag =
+                            qfft_detail::q15Mul(wCos, botImag) +
+                            qfft_detail::q15Mul(wSin, botReal);
+
+                        const int32_t topReal = static_cast<int32_t>(real[top]);
+                        const int32_t topImag = static_cast<int32_t>(imag[top]);
+
+                        real[top] = qfft_detail::saturateInt16((topReal + tReal) >> 1);
+                        imag[top] = qfft_detail::saturateInt16((topImag + tImag) >> 1);
+                        real[bot] = qfft_detail::saturateInt16((topReal - tReal) >> 1);
+                        imag[bot] = qfft_detail::saturateInt16((topImag - tImag) >> 1);
+                    }
+                }
+            }
+
+            // Split step. DC and Nyquist come from Z[0] alone. For N = 2 the
+            // missing first-stage halving is taken here instead.
+            const int32_t z0Real = static_cast<int32_t>(real[0]);
+            const int32_t z0Imag = static_cast<int32_t>(imag[0]);
+            const int32_t edgeShift = (M >= 2) ? 0 : 1;
+            real[0] = qfft_detail::saturateInt16((z0Real + z0Imag) >> edgeShift);
+            real[M] = qfft_detail::saturateInt16((z0Real - z0Imag) >> edgeShift);
+            imag[0] = 0;
+            imag[M] = 0;
+
+            for (std::size_t k = 1; 2 * k <= M; ++k)
+            {
+                const int32_t aReal = static_cast<int32_t>(real[k]);
+                const int32_t aImag = static_cast<int32_t>(imag[k]);
+                const int32_t bReal = static_cast<int32_t>(real[M - k]);
+                const int32_t bImag = static_cast<int32_t>(imag[M - k]);
+
+                splitBin(aReal, aImag, bReal, bImag,
+                         static_cast<int32_t>(cosTable[k]),
+                         static_cast<int32_t>(sinTable[k]),
+                         real[k], imag[k]);
+                if (M - k != k)
+                {
+                    splitBin(bReal, bImag, aReal, aImag,
+                             static_cast<int32_t>(cosTable[M - k]),
+                             static_cast<int32_t>(sinTable[M - k]),
+                             real[M - k], imag[M - k]);
+                }
+            }
+        }
+
+        /**
+         * Per-bin magnitude squared over the NumBins bins, summed in int64
+         * and saturated to INT32_MAX as QFFT1D::magnitudeSquared does.
+         */
+        static void magnitudeSquared(const int16_t* real, const int16_t* imag,
+                                     int32_t* mag_sq)
+        {
+            for (std::size_t i = 0; i < NumBins; ++i)
+            {
+                const int64_t r = static_cast<int64_t>(real[i]);
+                const int64_t m = static_cast<int64_t>(imag[i]);
+                const int64_t sq = r * r + m * m;
+                mag_sq[i] = (sq > static_cast<int64_t>(INT32_MAX))
+                    ? INT32_MAX
+                    : static_cast<int32_t>(sq);
+            }
+        }
+
+    private:
+        static constexpr std::size_t InnerStages = qfft_detail::Log2<N / 2>::value;
+        static constexpr qfft_detail::BitReversalTable<N / 2, InnerStages> sBitRevTable{};
+
+        // X[k] = E[k] + W * O[k] from a = Z[k] and b = Z[M - k], with
+        // E = (a + conj(b)) / 2 and O = (a - conj(b)) / (2i).
+        static void splitBin(int32_t aReal, int32_t aImag,
+                             int32_t bReal, int32_t bImag,
+                             int32_t wCos, int32_t wSin,
+                             int16_t& outReal, int16_t& outImag)
+        {
+            const int32_t evenReal = (aReal + bReal) >> 1;
+            const int32_t evenImag = (aImag - bImag) >> 1;
+            const int32_t oddReal  = (aImag + bImag) >> 1;
+            const int32_t oddImag  = (bReal - aReal) >> 1;
+
+            const int32_t tReal =
+                qfft_detail::q15Mul(wCos, oddReal) -
+                qfft_detail::q15Mul(wSin, oddImag);
+            const int32_t tImag =
+                qfft_detail::q15Mul(wCos, oddImag) +
+                qfft_detail::q15Mul(wSin, oddReal);
+
+            outReal = qfft_detail::saturateInt16(evenReal + tReal);
+            outImag = qfft_detail::saturateInt16(evenImag + tImag);
+        }
+
+        static_assert((N & (N - 1)) == 0, "FFT length must be a power of two.");
+        static_assert(N >= 2, "FFT length must be at least 2.");
+    };
+
+#if TINYMIND_CPLUSPLUS < 201703L
+    template<std::size_t N>
+    constexpr qfft_detail::BitReversalTable<N / 2, QRFFT1D<N>::InnerStages> QRFFT1D<N>::sBitRevTable;
+#endif
+
 } // namespace tinymind
