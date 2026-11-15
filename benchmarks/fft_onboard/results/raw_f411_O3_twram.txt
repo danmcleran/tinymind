@@ -1,0 +1,9 @@
+board=f411 level=O3 compiler=arm-none-eabi-g++ (15:13.2.rel1-2) 13.2.1 20231009
+# begin bench
+twiddles=ram
+N=64 load_med=315 qfft_min=20729 qfft_med=20729 qfft_max=20729 qrfft_min=8746 qrfft_med=8748 qrfft_max=8748 qfft_match=1 qrfft_match=1 
+N=128 load_med=499 qfft_min=36572 qfft_med=36572 qfft_max=36572 qrfft_min=16778 qrfft_med=16780 qrfft_max=16780 qfft_match=1 qrfft_match=1 
+N=256 load_med=862 qfft_min=105650 qfft_med=105650 qfft_max=105652 qrfft_min=45589 qrfft_med=45590 qrfft_max=45590 qfft_match=1 qrfft_match=1 
+N=512 load_med=1580 qfft_min=180781 qfft_med=180781 qfft_max=180785 qrfft_min=85448 qrfft_med=85448 qrfft_max=85448 qfft_match=1 qrfft_match=1 
+N=1024 load_med=3018 qfft_min=478218 qfft_med=478218 qfft_max=478220 qrfft_min=226030 qrfft_med=226030 qrfft_max=226030 qfft_match=1 qrfft_match=1 
+# end bench

@@ -312,6 +312,18 @@ rfft.forward(samples, re, im);                   // im[0] and im[N/2] are 0
 tinymind::QRFFT1D<N>::magnitudeSquared(re, im, power);
 ```
 
-It packs the samples into N/2 complex values (even samples real, odd samples imaginary), runs an N/2-point complex FFT on them, and separates the even and odd spectra in a final split step. At N = 256 that is 448 butterflies, 64 of them multiply-free, plus 128 split outputs, against 1,024 butterflies for `QFFT1D<256>`. On an x86 host at `-O3` it runs 2.3 to 2.4 times faster than `QFFT1D` with a zeroed imaginary buffer, for N from 64 to 1,024. It reads the samples from a const buffer it leaves unchanged and writes N + 2 int16 values of output: when the samples already sit in their own buffer (an ADC or DMA buffer), that is the whole work space, against the 2N values `QFFT1D` needs for its in-place real and imaginary buffers. Counting the input buffer, `QRFFT1D` uses two int16 values more.
+It packs the samples into N/2 complex values (even samples real, odd samples imaginary), runs an N/2-point complex FFT on them, and separates the even and odd spectra in a final split step. At N = 256 that is 448 butterflies, 64 of them multiply-free, plus 128 split outputs, against 1,024 butterflies for `QFFT1D<256>`. Measured on two Cortex-M boards, it runs a little over twice as fast as `QFFT1D` with a zeroed imaginary buffer (see the table below). It reads the samples from a const buffer it leaves unchanged and writes N + 2 int16 values of output: when the samples already sit in their own buffer (an ADC or DMA buffer), that is the whole work space, against the 2N values `QFFT1D` needs for its in-place real and imaginary buffers. Counting the input buffer, `QRFFT1D` uses two int16 values more.
+
+Cycles per forward transform at `-O3`, arm-none-eabi-gcc 13.2.1, twiddle tables in flash, median of 33 runs; both transforms reproduce the host's output bit for bit:
+
+| N | Cortex-M4F (F411) `QFFT1D` | `QRFFT1D` | Speedup | Cortex-M0+ (L031) `QFFT1D` | `QRFFT1D` | Speedup |
+|---:|---:|---:|---:|---:|---:|---:|
+| 64 | 21,196 | 9,133 | 2.32× | 30,644 | 12,383 | 2.47× |
+| 128 | 39,925 | 17,744 | 2.25× | 57,305 | 26,987 | 2.12× |
+| 256 | 107,095 | 47,181 | 2.27× | 165,570 | 77,747 | 2.13× |
+| 512 | 201,845 | 89,762 | 2.25× | 279,344 | 140,090 | 1.99× |
+| 1024 | 542,882 | 236,210 | 2.30× | | | |
+
+At N = 256 that is 0.47 ms against 1.07 ms on the 100 MHz Cortex-M4F, and 2.4 ms against 5.2 ms on the 32 MHz Cortex-M0+ (whose 8 KB of RAM stops the bench at N = 512). The `QFFT1D` column leaves out copying the samples in and zeroing the imaginary buffer, which a real-input caller also pays (under 3%). The `-O2` figures, the tables placed in RAM, and the bench itself are in [`benchmarks/fft_onboard`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/fft_onboard); across all of them the speedup stays between 1.76 and 2.87.
 
 Packing two real samples into one complex value lets a component of the inner FFT reach √2 times full scale, which a plain packed FFT would saturate on full-scale input such as clipped audio. `QRFFT1D` takes that headroom in the first inner stage, whose twiddle is exactly 1, so no int16 input can saturate an intermediate. The price is a little precision: against an exact DFT / N its largest bin error is about 1.3 to 1.7 times `QFFT1D`'s on the same input, which is a few LSB of the 16-bit spectrum, and its bins differ from `QFFT1D`'s by at most log2(N) LSB. Use `QFFT1D<N>` with a zeroed imaginary buffer when those LSB matter more than the halved work. The input buffer must not overlap the outputs.
