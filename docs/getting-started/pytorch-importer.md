@@ -27,7 +27,7 @@ Source: [`apps/import_pytorch/tinymind_import.py`](https://github.com/danmcleran
 
 The four passes:
 
-1. **Layer description.** Caller assembles an ordered list of `Dense` / `Conv2D` / `BatchNorm2D` / `ReLU` / `Sigmoid` / `Tanh` / `Softmax` descriptors. Each descriptor carries the weight / bias numpy arrays (or none for activations), the predecessor name, and a numpy `forward` callable.
+1. **Layer description.** Caller assembles an ordered list of `Dense` / `Conv2D` / `BatchNorm2D` / `ReLU` / `Sigmoid` / `Tanh` / `Softmax` descriptors, optionally led by one `LSTM` (see [Sequence models](#sequence-models-one-nnlstm-first)). Each descriptor carries the weight / bias numpy arrays (or none for activations), the predecessor name, and a numpy `forward` callable.
 2. **Layer fusion.** `fuse_layers` finds Conv2D-then-BatchNorm2D pairs and folds the BN constants into the conv weights / bias **pre-quantization**. Same math as `foldBatchNorm` in `cpp/include/qcalibration.hpp`, applied on numpy.
 3. **Calibration.** `calibrate` streams the calibration dataset through each layer's forward callable and feeds the output into that layer's observer (`MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver`).
 4. **Quantization + header emission.** `quantize_weights` emits symmetric int8 weights + int32 biases (`bias_scale = input_scale * weight_scale`). `emit_weights_header` writes the `weights.hpp`; the shape matches `examples/pytorch_quant/xor/weights.hpp` so the consuming C++ code is identical.
@@ -133,6 +133,31 @@ import_demo parity test (16 samples)
 ```
 
 Exit status 0 on PASS, 1 on FAIL.
+
+## Sequence models: one nn.LSTM first
+
+A model that starts with one `nn.LSTM` and continues with the layers above on its last hidden state imports onto [`QLSTMCell`]({{ site.baseurl }}/architectures/lstm-gru#int8-quantized-counterparts) and the usual int8 head. Build the LSTM descriptor from the module's state dict; every calibration sample is then a whole sequence, `[step][feature]`:
+
+```python
+state = {k: v.detach().numpy() for k, v in model.lstm.state_dict().items()}
+w, b = model.fc.weight.detach().numpy(), model.fc.bias.detach().numpy()
+layers = [
+    LSTM.from_state_dict("lstm", state, input_name="input",
+                         sequence_length=24, cell_bits=16),
+    Dense(name="head", weight=w, bias=b, input_name="lstm",
+          forward=lambda h: h @ w.T + b),
+]
+import_pytorch_model(layers, input_name="input",
+                     input_observer=MinMaxObserver(),
+                     dataset=calibration_sequences,
+                     output_path="weights.hpp", namespace="my_model")
+```
+
+The importer runs the float LSTM over every calibration sequence from zero state and observes every hidden and cell state, giving both symmetric scales (zero point 0). The cell state is int16 by default (`cell_bits=8` for int8). Weights are symmetric int8 per gate, the input and recurrent weights each with their own scale, in PyTorch's gate order (i, f, g, o), which is `QLSTMCell`'s. The gate pre-activations use a fixed 8/127 grid, and `bias_ih + bias_hh` is quantized in it as `quantizeQLSTMBiases` does. On the C++ side, fill `QLSTMScales` from the emitted floats, call `buildQLSTMParams`, and build the sigmoid and tanh LUTs on `k<name>_LutInputScale`.
+
+Stacked, bidirectional and projected LSTMs, and an LSTM after another layer, are refused with a `ValueError`. `nn.GRU` is not supported: PyTorch applies the reset gate after the recurrent product and `QGRUCell` before it.
+
+[`examples/import_lstm_demo/`](https://github.com/danmcleran/tinymind/tree/master/examples/import_lstm_demo) runs the whole path for a 3-input, 8-unit LSTM with a linear head over 24-step sequences. Its maximum output error against the float model is 0.063 with the int16 cell and 0.074 with the int8 cell.
 
 ## ONNX path
 

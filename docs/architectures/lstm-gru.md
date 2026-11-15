@@ -332,6 +332,8 @@ For inference-only deployment that does not need the trainable Q-format pipeline
 - `QGRUCell` — three gates (r, z, n) in canonical ordering. Reset-before-multiply formulation, `(1 - z_t)` computed exactly in the sigmoid grid as `-z_t`.
 - `QCfCCell` — int8 closed-form continuous-time (liquid) cell. Backbone trunk + two tanh heads + a sigmoid time-gate + the `(1 - t) * ff1 + t * ff2` interpolation; the elapsed time `ts` is folded into the time-gate-A requantizer at calibration (regular-sampling deployable form). Reuses the QGRU `(1 - t) == 128 - t` sigmoid-grid identity.
 
+A trained PyTorch model that starts with one `nn.LSTM` imports straight onto `QLSTMCell`: the [PyTorch importer]({{ site.baseurl }}/getting-started/pytorch-importer#sequence-models-one-nnlstm-first) calibrates the hidden and cell states over whole sequences and emits per-gate int8 weights, and [`examples/import_lstm_demo/`](https://github.com/danmcleran/tinymind/tree/master/examples/import_lstm_demo) runs the result. A PyTorch `nn.GRU` does not map onto `QGRUCell`: PyTorch applies the reset gate after the recurrent product, `QGRUCell` before it.
+
 All are single-step cells; the caller owns the time loop and the hidden / cell state buffers. See [Int8 Affine Quantization]({{ site.baseurl }}/architectures/int8-quantization) for the full int8 layer family and `buildQLSTMParams` / `buildQGRUParams` / `buildQCfCParams` host-side calibration helpers.
 
 ## Calibrating an int8 Cell

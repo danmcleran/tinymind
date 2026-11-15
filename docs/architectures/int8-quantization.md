@@ -308,7 +308,7 @@ ISA-capability-gated SIMD specializations live inside the inner reduction loop o
 
 Two host-side importers in `apps/` consume already-trained float / QDQ models and emit a tinymind-format `weights.hpp` that snaps into the `Q*` layer family. Per-layer calibration picks any of `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver`; Conv2D-then-BatchNorm2D pairs auto-fuse via `foldBatchNorm` before quantization.
 
-- [`apps/import_pytorch/tinymind_import.py`](https://github.com/danmcleran/tinymind/tree/master/apps/import_pytorch) — caller assembles layer descriptors from a `torch.state_dict` and a numpy forward callable. No PyTorch dependency at module import.
+- [`apps/import_pytorch/tinymind_import.py`](https://github.com/danmcleran/tinymind/tree/master/apps/import_pytorch) — caller assembles layer descriptors from a `torch.state_dict` and a numpy forward callable. A model may start with one `nn.LSTM`, which becomes a `QLSTMCell` ([`examples/import_lstm_demo/`](https://github.com/danmcleran/tinymind/tree/master/examples/import_lstm_demo)). No PyTorch dependency at module import.
 - [`apps/import_onnx/tinymind_import_onnx.py`](https://github.com/danmcleran/tinymind/tree/master/apps/import_onnx) — ONNX importer for models quantized by `onnxruntime.quantization.quantize_static`, QDQ or QOperator format. Maps `Conv` / `Gemm` / `MatMul` (+ bias `Add`) to `QConv2D` / `QConv2DPerChannel` / `QDense` in tinymind's OHWI / `[out][in]` / NHWC layouts and refuses anything it cannot map exactly. The `onnx` package is imported lazily so the emitter half is usable without it.
 
 The [PyTorch → tinymind int8 (importer)]({{ site.baseurl }}/getting-started/pytorch-importer) walkthrough runs the full flow end-to-end with `examples/import_demo/`.

@@ -45,6 +45,7 @@ check :
 	cd examples/pytorch_quant/xor && make clean && make && make release && make run && cd -
 	cd examples/import_demo && make clean && make && make release && make run && cd -
 	cd examples/import_moe_demo && make clean && make && make release && make run && cd -
+	cd examples/import_lstm_demo && make clean && make && make release && make run && cd -
 	cd examples/iris && make clean && make release && make run && cd -
 	cd examples/energy_efficiency && make clean && make release && make run && cd -
 	cd examples/optical_digits && make clean && make release && make run && cd -

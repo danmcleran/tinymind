@@ -143,6 +143,7 @@ A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside*
   - [`examples/mixed_precision_kws/`](examples/mixed_precision_kws/) -- mixed-precision: int8 frontend -> fp16 attention head -> int8 classifier. Exercises Phase 9 qbridge converters
   - [`examples/mixed_precision_mlp_int8_qformat/`](examples/mixed_precision_mlp_int8_qformat/) -- hybrid int8 affine <-> Q8.8 via Phase 17 pure-integer bridges. Deployable at `QUANT=1 FLOAT=0 STD=0`
   - [`examples/import_demo/`](examples/import_demo/) -- end-to-end Phase 15 importer flow. 3-8-4-2 MLP, three observers + CLE, ~0.004 max-abs error vs float
+  - [`examples/import_lstm_demo/`](examples/import_lstm_demo/) -- importer flow for a sequence model: one `nn.LSTM` (3 inputs, 8 hidden, 24 steps) and a linear head become `QLSTMCell` + `QDense`; 0.063 (int16 cell) and 0.074 (int8 cell) max-abs output error vs float
   - [`examples/perf_matrix/`](examples/perf_matrix/) -- SIMD gate bench. Same int8 conv + dense block under each enabled `TINYMIND_ENABLE_SIMD_*` combo, emits CSV per backend with invariant `output_checksum`
   - [`unit_test/integration/`](unit_test/integration/) -- Phase 16/17 golden-byte regression suite. Locks twelve exemplars' output byte-for-byte across SIMD gate combos and compilers (the int8 exemplars plus the Q16.16 ANFIS one)
 
@@ -1153,6 +1154,7 @@ tinymind/
     import_demo/                # End-to-end Phase 15 importer (3-8-4-2 MLP, three observers + CLE)
     moe_regimes_int8/           # int8 top-1 Mixture-of-Experts: a linear router picks one of three experts
     import_moe_demo/            # PyTorch importer -> QMixtureOfExperts, reproduced by the C++ runtime
+    import_lstm_demo/           # PyTorch importer: nn.LSTM + head -> QLSTMCell + QDense, int16 and int8 cell
     perf_matrix/                # SIMD gate bench (CSV per backend, invariant output_checksum)
   unit_test/
     nn/                         # Neural network tests (251 test cases)
