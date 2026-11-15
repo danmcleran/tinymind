@@ -135,6 +135,30 @@ namespace tinymind {
             return (a * b) >> 15;
         }
 
+        /**
+         * One bin of QRFFT1D's split step: X[k] = E[k] + W * O[k] from
+         * a = Z[k] and b = Z[M - k], with E = (a + conj(b)) / 2 and
+         * O = (a - conj(b)) / (2i). A free function rather than a member,
+         * so every QRFFT1D<N> shares one definition (QRFFT1D<2> has no
+         * split loop and would otherwise leave its copy uncalled).
+         */
+        inline void qrfftSplitBin(int32_t aReal, int32_t aImag,
+                                  int32_t bReal, int32_t bImag,
+                                  int32_t wCos, int32_t wSin,
+                                  int16_t& outReal, int16_t& outImag)
+        {
+            const int32_t evenReal = (aReal + bReal) >> 1;
+            const int32_t evenImag = (aImag - bImag) >> 1;
+            const int32_t oddReal  = (aImag + bImag) >> 1;
+            const int32_t oddImag  = (bReal - aReal) >> 1;
+
+            const int32_t tReal = q15Mul(wCos, oddReal) - q15Mul(wSin, oddImag);
+            const int32_t tImag = q15Mul(wCos, oddImag) + q15Mul(wSin, oddReal);
+
+            outReal = saturateInt16(evenReal + tReal);
+            outImag = saturateInt16(evenImag + tImag);
+        }
+
     } // namespace qfft_detail
 
     /**
@@ -444,16 +468,16 @@ namespace tinymind {
                 const int32_t bReal = static_cast<int32_t>(real[M - k]);
                 const int32_t bImag = static_cast<int32_t>(imag[M - k]);
 
-                splitBin(aReal, aImag, bReal, bImag,
-                         static_cast<int32_t>(cosTable[k]),
-                         static_cast<int32_t>(sinTable[k]),
-                         real[k], imag[k]);
+                qfft_detail::qrfftSplitBin(aReal, aImag, bReal, bImag,
+                                           static_cast<int32_t>(cosTable[k]),
+                                           static_cast<int32_t>(sinTable[k]),
+                                           real[k], imag[k]);
                 if (M - k != k)
                 {
-                    splitBin(bReal, bImag, aReal, aImag,
-                             static_cast<int32_t>(cosTable[M - k]),
-                             static_cast<int32_t>(sinTable[M - k]),
-                             real[M - k], imag[M - k]);
+                    qfft_detail::qrfftSplitBin(bReal, bImag, aReal, aImag,
+                                               static_cast<int32_t>(cosTable[M - k]),
+                                               static_cast<int32_t>(sinTable[M - k]),
+                                               real[M - k], imag[M - k]);
                 }
             }
         }
@@ -479,29 +503,6 @@ namespace tinymind {
     private:
         static constexpr std::size_t InnerStages = qfft_detail::Log2<N / 2>::value;
         static constexpr qfft_detail::BitReversalTable<N / 2, InnerStages> sBitRevTable{};
-
-        // X[k] = E[k] + W * O[k] from a = Z[k] and b = Z[M - k], with
-        // E = (a + conj(b)) / 2 and O = (a - conj(b)) / (2i).
-        static void splitBin(int32_t aReal, int32_t aImag,
-                             int32_t bReal, int32_t bImag,
-                             int32_t wCos, int32_t wSin,
-                             int16_t& outReal, int16_t& outImag)
-        {
-            const int32_t evenReal = (aReal + bReal) >> 1;
-            const int32_t evenImag = (aImag - bImag) >> 1;
-            const int32_t oddReal  = (aImag + bImag) >> 1;
-            const int32_t oddImag  = (bReal - aReal) >> 1;
-
-            const int32_t tReal =
-                qfft_detail::q15Mul(wCos, oddReal) -
-                qfft_detail::q15Mul(wSin, oddImag);
-            const int32_t tImag =
-                qfft_detail::q15Mul(wCos, oddImag) +
-                qfft_detail::q15Mul(wSin, oddReal);
-
-            outReal = qfft_detail::saturateInt16(evenReal + tReal);
-            outImag = qfft_detail::saturateInt16(evenImag + tImag);
-        }
 
         static_assert((N & (N - 1)) == 0, "FFT length must be a power of two.");
         static_assert(N >= 2, "FFT length must be at least 2.");
