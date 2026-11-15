@@ -25,6 +25,7 @@
 #include "include/tinymind_platform.hpp"
 
 #include <cstddef>
+#include <cstdint>
 
 namespace tinymind {
 
@@ -41,10 +42,37 @@ namespace tinymind {
             static const size_t value = 0;
         };
 
+        /**
+         * Smallest unsigned type that holds every index 0..N-1: uint8_t up
+         * to N = 256, uint16_t up to N = 65536, size_t beyond. The table
+         * lives in flash, and a size_t entry would cost 4 bytes per index
+         * on a 32-bit MCU (1 KB at N = 256) where 1 is enough.
+         */
+        template<size_t N, bool FitsUint8 = (N <= 256u),
+                 bool FitsUint16 = (N <= 65536u)>
+        struct BitReversalIndex
+        {
+            typedef size_t type;
+        };
+
+        template<size_t N>
+        struct BitReversalIndex<N, true, true>
+        {
+            typedef uint8_t type;
+        };
+
+        template<size_t N>
+        struct BitReversalIndex<N, false, true>
+        {
+            typedef uint16_t type;
+        };
+
         template<size_t N, size_t NumStages>
         struct BitReversalTable
         {
-            size_t indices[N];
+            typedef typename BitReversalIndex<N>::type IndexType;
+
+            IndexType indices[N];
 
             constexpr BitReversalTable() : indices{}
             {
@@ -57,7 +85,7 @@ namespace tinymind {
                         result = (result << 1) | (x & 1);
                         x >>= 1;
                     }
-                    indices[i] = result;
+                    indices[i] = static_cast<IndexType>(result);
                 }
             }
         };

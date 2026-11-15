@@ -65,7 +65,10 @@ namespace detail {
     template<size_t N, size_t NumStages>
     struct BitReversalTable
     {
-        size_t indices[N];
+        // uint8_t up to N = 256, uint16_t up to N = 65536, size_t beyond.
+        typedef typename BitReversalIndex<N>::type IndexType;
+
+        IndexType indices[N];
         constexpr BitReversalTable() : indices{}
         {
             for (size_t i = 0; i < N; ++i)
@@ -77,20 +80,20 @@ namespace detail {
                     result = (result << 1) | (x & 1);
                     x >>= 1;
                 }
-                indices[i] = result;
+                indices[i] = static_cast<IndexType>(result);
             }
         }
     };
 }
 ```
 
-The table is stored in flash as a constant array. At runtime, the permutation is a linear scan with swaps -- no shifts at all.
+The table is stored in flash as a constant array. At runtime, the permutation is a linear scan with swaps -- no shifts at all. Each entry is the narrowest unsigned type that holds the indices `0..N-1`, so the table is one byte per point up to N = 256 and two bytes up to N = 65,536. `QFFT1D` uses the same table.
 
 | FFT Size | Table Size (bytes) | Shifts Eliminated |
 |---|---|---|
-| 64 | 256 | ~384 |
-| 128 | 512 | ~896 |
-| 256 | 1,024 | ~2,048 |
+| 64 | 64 | ~384 |
+| 128 | 128 | ~896 |
+| 256 | 256 | ~2,048 |
 
 ### 3. Externally-Provided Twiddle Factors
 
@@ -226,7 +229,7 @@ All storage is statically allocated. The FFT object stores only the twiddle fact
 |---|---|---|
 | Twiddle cosines | N/2 | cos(-2*pi*k/N) |
 | Twiddle sines | N/2 | sin(-2*pi*k/N) |
-| Bit-reversal table | N | Compile-time, stored in flash |
+| Bit-reversal table | N | Compile-time, stored in flash; 1 byte per entry up to N = 256 |
 
 **Working memory** (caller-provided arrays):
 
@@ -240,11 +243,11 @@ All storage is statically allocated. The FFT object stores only the twiddle fact
 
 | FFT Size | ValueType | Object RAM | Working RAM | Flash (bit-rev table) | Total |
 |---|---|---|---|---|---|
-| 64 | Q8.8 | 128 B | 384 B | 256 B | 768 B |
-| 128 | Q8.8 | 256 B | 768 B | 512 B | 1,536 B |
-| 256 | Q8.8 | 512 B | 1,536 B | 1,024 B | 3,072 B |
-| 64 | Q16.16 | 256 B | 768 B | 256 B | 1,280 B |
-| 128 | Q16.16 | 512 B | 1,536 B | 512 B | 2,560 B |
+| 64 | Q8.8 | 128 B | 384 B | 64 B | 576 B |
+| 128 | Q8.8 | 256 B | 768 B | 128 B | 1,152 B |
+| 256 | Q8.8 | 512 B | 1,536 B | 256 B | 2,304 B |
+| 64 | Q16.16 | 256 B | 768 B | 64 B | 1,088 B |
+| 128 | Q16.16 | 512 B | 1,536 B | 128 B | 2,176 B |
 
 A 64-point Q8.8 FFT + a small 32-input classifier fits comfortably in 2 KB of RAM -- feasible on any Cortex-M0 device.
 

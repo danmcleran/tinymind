@@ -14,10 +14,18 @@ pollutant signal.
 - 1 sigmoid output — the predicted next-hour concentration (target is in [0, 1])
 - Q16.16 fixed-point (`QValue<16, 16, true>`) end to end
 - `GradientClipByValue` for recurrent stability, learning rate 0.5
-- 15000 epochs over the sequential training pairs `series[t] -> series[t+1]`,
+- Up to 15000 epochs over the sequential training pairs `series[t] -> series[t+1]`,
   with the recurrent state reset every 24 hours so each BPTT segment is a clean
   one-day stretch (this keeps the daily-cycle gradient from washing out over the
   2000+ step series and prevents the net from collapsing to predicting the mean)
+- Training stops at the first epoch in which no sample trains. A sample whose
+  error is inside `ZeroToleranceCalculator`'s dead-band (1/128 of full scale)
+  is skipped, so once every sample is inside it the weights stop moving; the
+  state is reset at every epoch start, so any later epoch would repeat that one
+  exactly. On the synthetic series this happens at epoch 28. A tighter band
+  does not help: on this seed, bands of 64, 8 and 1 LSB gave held-out MAEs of
+  0.08 to 0.58 against 0.070, because the learning rate was tuned with the 1/128
+  band in place
 
 The model is trained on all but the last 200 hours; those held-out hours are then
 forecast **one step ahead** (predict hour `t+1` from the true hour `t`) and
@@ -51,8 +59,9 @@ make run
 make plot      # needs matplotlib; a venv/pyenv works if it is not already in your Python
 ```
 
-`make run` trains for 15000 epochs (~25 s in release mode). You can override the
-epoch count and learning rate for quick experiments:
+`make run` trains for at most 15000 epochs and stops after 28 on the synthetic
+series (well under a second in release mode). You can override the epoch limit
+and learning rate for quick experiments:
 
 ```bash
 cd output && ./air_quality 8000 0.3    # epochs, learning rate
@@ -67,8 +76,8 @@ cd output && ./air_quality 8000 0.3    # epochs, learning rate
   loss over epochs, and the forecast vs actual over the held-out hours (annotated
   with the mean absolute error)
 
-Expected (seed = 7, synthetic series): the loss falls from ~0.016 to ~0.0015
-within a few dozen epochs and the predicted line clearly tracks the daily
+Expected (seed = 7, synthetic series): training stops after 28 epochs, the loss
+having fallen from ~0.015 to ~0.0016, and the predicted line clearly tracks the daily
 rise-and-fall of the true series (amplitude is mildly damped at the tallest
 peaks, the classic RNN-on-noisy-series behavior), with a one-step-ahead MAE
 around 0.070 in concentration units over a series spanning ~1.3–3.0.

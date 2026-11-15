@@ -63,10 +63,37 @@ namespace tinymind {
             static constexpr std::size_t value = 0;
         };
 
+        /**
+         * Smallest unsigned type that holds every index 0..N-1: uint8_t up
+         * to N = 256, uint16_t up to N = 65536, std::size_t beyond. The
+         * table lives in flash, and a std::size_t entry would cost 4 bytes
+         * per index on a 32-bit MCU (1 KB at N = 256) where 1 is enough.
+         */
+        template<std::size_t N, bool FitsUint8 = (N <= 256u),
+                 bool FitsUint16 = (N <= 65536u)>
+        struct BitReversalIndex
+        {
+            typedef std::size_t type;
+        };
+
+        template<std::size_t N>
+        struct BitReversalIndex<N, true, true>
+        {
+            typedef uint8_t type;
+        };
+
+        template<std::size_t N>
+        struct BitReversalIndex<N, false, true>
+        {
+            typedef uint16_t type;
+        };
+
         template<std::size_t N, std::size_t NumStages>
         struct BitReversalTable
         {
-            std::size_t indices[N];
+            typedef typename BitReversalIndex<N>::type IndexType;
+
+            IndexType indices[N];
 
             constexpr BitReversalTable() : indices{}
             {
@@ -79,7 +106,7 @@ namespace tinymind {
                         result = (result << 1) | (x & 1);
                         x >>= 1;
                     }
-                    indices[i] = result;
+                    indices[i] = static_cast<IndexType>(result);
                 }
             }
         };
@@ -97,11 +124,11 @@ namespace tinymind {
         /**
          * Q1.15 fixed-point multiply with arithmetic right shift.
          *
-         * Result = (a * b) >> 15. a and b are int16 in Q1.15. The 32-bit
-         * intermediate is large enough; ::-1 corner (a == b == -32768)
-         * theoretically overflows the right-shifted Q1.15 multiply but the
-         * pure radix-2 twiddle table only emits values in [-32767, 32767],
-         * so the corner is not reachable from buildQFFTTwiddles output.
+         * Result = (a * b) >> 15. a and b are int16 values in Q1.15, so the
+         * product is at most 2^30 in magnitude and the 32-bit intermediate
+         * cannot overflow. The result can be +32768 (a == b == -32768;
+         * buildQFFTTwiddles emits -32768 as the sine at k = N/4), which is
+         * why it stays int32: the butterfly saturates its sums to int16.
          */
         inline int32_t q15Mul(int32_t a, int32_t b)
         {

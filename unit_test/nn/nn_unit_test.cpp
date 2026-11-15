@@ -7462,6 +7462,21 @@ BOOST_AUTO_TEST_CASE(test_case_fft1d_static_sizes)
     BOOST_TEST(true);
 }
 
+BOOST_AUTO_TEST_CASE(test_case_fft1d_bit_reversal_table_uses_the_narrowest_index)
+{
+    // One byte per permutation entry up to N = 256, two up to 65536.
+    typedef tinymind::detail::BitReversalTable<256, 8> T256;
+    typedef tinymind::detail::BitReversalTable<1024, 10> T1024;
+    static_assert(sizeof(T256::IndexType) == 1, "N = 256 fits uint8_t");
+    static_assert(sizeof(T1024::IndexType) == 2, "N = 1024 needs uint16_t");
+    static_assert(sizeof(T1024) == 2048, "N = 1024 table is 2 KB");
+
+    const T1024 table;
+    BOOST_TEST(static_cast<unsigned>(table.indices[1]) == 512u);
+    BOOST_TEST(static_cast<unsigned>(table.indices[1023]) == 1023u);
+    BOOST_TEST(static_cast<unsigned>(table.indices[3]) == 768u);
+}
+
 BOOST_AUTO_TEST_CASE(test_case_fft1d_float_dc_signal)
 {
     // A constant (DC) signal should produce energy only in bin 0
