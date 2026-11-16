@@ -21,13 +21,15 @@
 */
 
 // Host side: writes the Q1.15 twiddle tables for every benchmarked N, built
-// by buildQFFTTwiddles, and the output hashes the board must reproduce.
+// by buildQFFTTwiddles, the Q8.8 tables for FFT1D, and the output hashes the
+// board must reproduce.
 // usage: gen_tw <out.h>
 #include "tinymind_platform.hpp"
 #include "qcalibration.hpp"
 
 #include "fft_common.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -68,6 +70,37 @@ void emit(FILE* f)
     std::fprintf(f, "#define HASH_QFFT_%zu 0x%08Xu\n#define HASH_QRFFT_%zu 0x%08Xu\n", N, hq, N, hr);
 }
 
+// Q8.8 twiddles for FFT1D, rounded to nearest, and its output hash.
+template<size_t N>
+void emitFft1d(FILE* f)
+{
+    std::vector<fftbench::Q8_8> c(N / 2);
+    std::vector<fftbench::Q8_8> s(N / 2);
+    for (size_t k = 0; k < N / 2; ++k)
+    {
+        const double phase = -6.283185307179586476925286766559 * static_cast<double>(k) / static_cast<double>(N);
+        c[k].setValue(static_cast<int16_t>(std::lround(std::cos(phase) * 256.0)));
+        s[k].setValue(static_cast<int16_t>(std::lround(std::sin(phase) * 256.0)));
+    }
+    std::fprintf(f, "static const int16_t tw88_cos_%zu[%zu] = {", N, N / 2);
+    for (size_t i = 0; i < N / 2; ++i)
+    {
+        std::fprintf(f, "%s%d", i ? "," : "", static_cast<int>(c[i].getValue()));
+    }
+    std::fprintf(f, "};\nstatic const int16_t tw88_sin_%zu[%zu] = {", N, N / 2);
+    for (size_t i = 0; i < N / 2; ++i)
+    {
+        std::fprintf(f, "%s%d", i ? "," : "", static_cast<int>(s[i].getValue()));
+    }
+    std::fprintf(f, "};\n");
+
+    static tinymind::FFT1D<fftbench::Q8_8, N> fft;
+    fft.setTwiddleFactors(c.data(), s.data());
+    std::vector<fftbench::Q8_8> re(N);
+    std::vector<fftbench::Q8_8> im(N);
+    std::fprintf(f, "#define HASH_FFT1D_%zu 0x%08Xu\n", N, fftbench::hashFft1d<N>(fft, re.data(), im.data()));
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -89,5 +122,10 @@ int main(int argc, char** argv)
     emit<256>(f);
     emit<512>(f);
     emit<1024>(f);
+    std::fprintf(f, "#ifdef WANT_FFT1D\n");
+    emitFft1d<64>(f);
+    emitFft1d<128>(f);
+    emitFft1d<256>(f);
+    std::fprintf(f, "#endif\n");
     return std::fclose(f) == 0 ? 0 : 1;
 }

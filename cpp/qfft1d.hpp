@@ -28,6 +28,10 @@
 #include <cstddef>
 #include <cstdint>
 
+#if defined(__ARM_FEATURE_SAT)
+#include <arm_acle.h>
+#endif
+
 /*
  * Quantized radix-2 decimation-in-time FFT for power-of-two lengths.
  *
@@ -116,9 +120,16 @@ namespace tinymind {
          */
         inline int16_t saturateInt16(int32_t v)
         {
-            if (v < -32768) return static_cast<int16_t>(-32768);
-            if (v >  32767) return static_cast<int16_t>( 32767);
+#if defined(__ARM_FEATURE_SAT)
+            // One SSAT. GCC 13 compiles an early-return clamp
+            // (if (v < lo) return lo; ...) to two compare-and-branch pairs,
+            // and does not recognize the conditional form below either.
+            return static_cast<int16_t>(__ssat(v, 16));
+#else
+            v = (v < -32768) ? -32768 : v;
+            v = (v >  32767) ?  32767 : v;
             return static_cast<int16_t>(v);
+#endif
         }
 
         /**
@@ -133,6 +144,80 @@ namespace tinymind {
         inline int32_t q15Mul(int32_t a, int32_t b)
         {
             return (a * b) >> 15;
+        }
+
+        /**
+         * One radix-2 DIT stage over n points with butterfly span halfSize:
+         * the twiddle for pair p is entry p * twiddleStride of the tables.
+         * Scale halves every output (forward); without it the sums are
+         * only saturated (inverse).
+         *
+         * Kept out of line, and written so that only three values (the end
+         * of the data and the two table bases) live across the inner loop,
+         * which itself carries seven. GCC 13 otherwise keeps the stage and
+         * group bookkeeping in registers and spills the butterfly's values
+         * to the stack: on a Cortex-M4 that cost 78 to 114 cycles per
+         * butterfly, varying by up to 45% with N and with unrelated code
+         * nearby. benchmarks/fft_onboard measures it.
+         */
+        template<bool Scale>
+        TINYMIND_NOINLINE void butterflyStage(int16_t* re, int16_t* im, std::size_t n,
+                                              std::size_t halfSize,
+                                              const int16_t* cosTable,
+                                              const int16_t* sinTable,
+                                              std::size_t twiddleStride)
+        {
+            const int32_t shift = Scale ? 1 : 0;
+            int16_t* const reEnd = re + n;
+            while (re != reEnd)
+            {
+                const int16_t* wc = cosTable;
+                const int16_t* ws = sinTable;
+                int16_t* const groupEnd = re + halfSize;
+
+                for (; re != groupEnd; ++re, ++im, wc += twiddleStride, ws += twiddleStride)
+                {
+                    const int32_t wCos = static_cast<int32_t>(*wc);
+                    const int32_t wSin = static_cast<int32_t>(*ws);
+
+                    const int32_t botReal = static_cast<int32_t>(re[halfSize]);
+                    const int32_t botImag = static_cast<int32_t>(im[halfSize]);
+
+                    const int32_t tReal = q15Mul(wCos, botReal) - q15Mul(wSin, botImag);
+                    const int32_t tImag = q15Mul(wCos, botImag) + q15Mul(wSin, botReal);
+
+                    const int32_t topReal = static_cast<int32_t>(*re);
+                    const int32_t topImag = static_cast<int32_t>(*im);
+
+                    *re = saturateInt16((topReal + tReal) >> shift);
+                    *im = saturateInt16((topImag + tImag) >> shift);
+                    re[halfSize] = saturateInt16((topReal - tReal) >> shift);
+                    im[halfSize] = saturateInt16((topImag - tImag) >> shift);
+                }
+
+                // re and im stopped at the bottom half; skip it.
+                re += halfSize;
+                im += halfSize;
+            }
+        }
+
+        /**
+         * The stages from span halfSize up to n, on bit-reversed data, with
+         * twiddles from tables of tableHalf entries. Shared by QFFT1D and
+         * QRFFT1D.
+         */
+        template<bool Scale>
+        inline void butterflyStages(int16_t* real, int16_t* imag,
+                                    std::size_t n, std::size_t halfSize,
+                                    const int16_t* cosTable,
+                                    const int16_t* sinTable,
+                                    std::size_t tableHalf)
+        {
+            for (; halfSize < n; halfSize <<= 1)
+            {
+                butterflyStage<Scale>(real, imag, n, halfSize, cosTable, sinTable,
+                                      tableHalf / halfSize);
+            }
         }
 
         /**
@@ -239,54 +324,13 @@ namespace tinymind {
         void forwardImpl(int16_t* real, int16_t* imag, bool scale) const
         {
             bitReversalPermute(real, imag);
-
-            std::size_t halfSize = 1;
-            for (std::size_t stage = 0; stage < NumStages; ++stage)
+            if (scale)
             {
-                const std::size_t fullSize = halfSize << 1;
-                const std::size_t twiddleStride = HalfLength / halfSize;
-
-                for (std::size_t group = 0; group < N; group += fullSize)
-                {
-                    for (std::size_t pair = 0; pair < halfSize; ++pair)
-                    {
-                        const std::size_t twiddleIdx = pair * twiddleStride;
-                        const int32_t wCos = static_cast<int32_t>(twiddle_cos[twiddleIdx]);
-                        const int32_t wSin = static_cast<int32_t>(twiddle_sin[twiddleIdx]);
-
-                        const std::size_t top = group + pair;
-                        const std::size_t bot = top + halfSize;
-
-                        const int32_t botReal = static_cast<int32_t>(real[bot]);
-                        const int32_t botImag = static_cast<int32_t>(imag[bot]);
-
-                        const int32_t tReal =
-                            qfft_detail::q15Mul(wCos, botReal) -
-                            qfft_detail::q15Mul(wSin, botImag);
-                        const int32_t tImag =
-                            qfft_detail::q15Mul(wCos, botImag) +
-                            qfft_detail::q15Mul(wSin, botReal);
-
-                        const int32_t topReal = static_cast<int32_t>(real[top]);
-                        const int32_t topImag = static_cast<int32_t>(imag[top]);
-
-                        if (scale)
-                        {
-                            real[top] = qfft_detail::saturateInt16((topReal + tReal) >> 1);
-                            imag[top] = qfft_detail::saturateInt16((topImag + tImag) >> 1);
-                            real[bot] = qfft_detail::saturateInt16((topReal - tReal) >> 1);
-                            imag[bot] = qfft_detail::saturateInt16((topImag - tImag) >> 1);
-                        }
-                        else
-                        {
-                            real[top] = qfft_detail::saturateInt16(topReal + tReal);
-                            imag[top] = qfft_detail::saturateInt16(topImag + tImag);
-                            real[bot] = qfft_detail::saturateInt16(topReal - tReal);
-                            imag[bot] = qfft_detail::saturateInt16(topImag - tImag);
-                        }
-                    }
-                }
-                halfSize = fullSize;
+                qfft_detail::butterflyStages<true>(real, imag, N, 1, twiddle_cos, twiddle_sin, HalfLength);
+            }
+            else
+            {
+                qfft_detail::butterflyStages<false>(real, imag, N, 1, twiddle_cos, twiddle_sin, HalfLength);
             }
         }
 
@@ -414,42 +458,7 @@ namespace tinymind {
 
             // The remaining stages of the N/2-point FFT, as QFFT1D's scaled
             // butterflies; stage twiddle W_{2h}^p = W_N^{p * M / h}.
-            for (; halfSize < M; halfSize <<= 1)
-            {
-                const std::size_t fullSize = halfSize << 1;
-                const std::size_t twiddleStride = M / halfSize;
-
-                for (std::size_t group = 0; group < M; group += fullSize)
-                {
-                    for (std::size_t pair = 0; pair < halfSize; ++pair)
-                    {
-                        const std::size_t twiddleIdx = pair * twiddleStride;
-                        const int32_t wCos = static_cast<int32_t>(cosTable[twiddleIdx]);
-                        const int32_t wSin = static_cast<int32_t>(sinTable[twiddleIdx]);
-
-                        const std::size_t top = group + pair;
-                        const std::size_t bot = top + halfSize;
-
-                        const int32_t botReal = static_cast<int32_t>(real[bot]);
-                        const int32_t botImag = static_cast<int32_t>(imag[bot]);
-
-                        const int32_t tReal =
-                            qfft_detail::q15Mul(wCos, botReal) -
-                            qfft_detail::q15Mul(wSin, botImag);
-                        const int32_t tImag =
-                            qfft_detail::q15Mul(wCos, botImag) +
-                            qfft_detail::q15Mul(wSin, botReal);
-
-                        const int32_t topReal = static_cast<int32_t>(real[top]);
-                        const int32_t topImag = static_cast<int32_t>(imag[top]);
-
-                        real[top] = qfft_detail::saturateInt16((topReal + tReal) >> 1);
-                        imag[top] = qfft_detail::saturateInt16((topImag + tImag) >> 1);
-                        real[bot] = qfft_detail::saturateInt16((topReal - tReal) >> 1);
-                        imag[bot] = qfft_detail::saturateInt16((topImag - tImag) >> 1);
-                    }
-                }
-            }
+            qfft_detail::butterflyStages<true>(real, imag, M, halfSize, cosTable, sinTable, M);
 
             // Split step. DC and Nyquist come from Z[0] alone. For N = 2 the
             // missing first-stage halving is taken here instead.

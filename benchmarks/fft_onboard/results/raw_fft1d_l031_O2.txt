@@ -1,0 +1,7 @@
+board=l031 level=O2 compiler=arm-none-eabi-g++ (15:13.2.rel1-2) 13.2.1 20231009
+# begin bench
+type=Q8.8
+N=64 fft1d_min=42382 fft1d_med=42382 fft1d_max=42382 fft1d_match=1 
+N=128 fft1d_min=97094 fft1d_med=97094 fft1d_max=97094 fft1d_match=1 
+N=256 fft1d_min=219379 fft1d_med=219379 fft1d_max=219379 fft1d_match=1 
+# end bench

@@ -1,8 +1,8 @@
 board=l031 level=O2 compiler=arm-none-eabi-g++ (15:13.2.rel1-2) 13.2.1 20231009
 # begin bench
 twiddles=flash
-N=64 load_med=735 qfft_min=27828 qfft_med=27828 qfft_max=27828 qrfft_min=12987 qrfft_med=12987 qrfft_max=12987 qfft_match=1 qrfft_match=1 
-N=128 load_med=1411 qfft_min=55177 qfft_med=55177 qfft_max=55177 qrfft_min=27998 qrfft_med=27998 qrfft_max=27998 qfft_match=1 qrfft_match=1 
-N=256 load_med=2755 qfft_min=188815 qfft_med=188815 qfft_max=188815 qrfft_min=65711 qrfft_med=65711 qrfft_max=65711 qfft_match=1 qrfft_match=1 
-N=512 load_med=5444 qfft_min=293176 qfft_med=293176 qfft_max=293176 qrfft_min=142151 qrfft_med=142151 qrfft_max=142151 qfft_match=1 qrfft_match=1 
+N=64 load_med=735 qfft_min=23709 qfft_med=23709 qfft_max=23709 qrfft_min=11253 qrfft_med=11253 qrfft_max=11253 qfft_match=1 qrfft_match=1 
+N=128 load_med=1411 qfft_min=53534 qfft_med=53534 qfft_max=53534 qrfft_min=25496 qrfft_med=25496 qrfft_max=25496 qfft_match=1 qrfft_match=1 
+N=256 load_med=2755 qfft_min=120048 qfft_med=120048 qfft_max=120048 qrfft_min=56916 qrfft_med=56916 qrfft_max=56916 qfft_match=1 qrfft_match=1 
+N=512 load_med=5442 qfft_min=266241 qfft_med=266241 qfft_max=266281 qrfft_min=126876 qrfft_med=126876 qrfft_max=126876 qfft_match=1 qrfft_match=1 
 # end bench
