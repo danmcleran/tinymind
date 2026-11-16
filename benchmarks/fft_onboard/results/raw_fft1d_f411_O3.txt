@@ -1,7 +1,7 @@
 board=f411 level=O3 compiler=arm-none-eabi-g++ (15:13.2.rel1-2) 13.2.1 20231009
 # begin bench
 type=Q8.8
-N=64 fft1d_min=19890 fft1d_med=19890 fft1d_max=19894 fft1d_match=1 
-N=128 fft1d_min=36480 fft1d_med=36480 fft1d_max=36480 fft1d_match=1 
-N=256 fft1d_min=101516 fft1d_med=101516 fft1d_max=101516 fft1d_match=1 
+N=64 fft1d_min=15047 fft1d_med=15047 fft1d_max=15051 fft1d_match=1 
+N=128 fft1d_min=33787 fft1d_med=33787 fft1d_max=33787 fft1d_match=1 
+N=256 fft1d_min=74548 fft1d_med=74548 fft1d_max=74548 fft1d_match=1 
 # end bench

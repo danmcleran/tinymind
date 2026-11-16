@@ -35,7 +35,7 @@ described in [`docs/architectures/fft.md`](../../docs/architectures/fft.md).
 
 ## Results
 
-tinymind at #284. Cycles per forward transform.
+tinymind at #285 (`FFT1D`) and #284 (`QFFT1D`, `QRFFT1D`). Cycles per forward transform.
 
 ### NUCLEO-F411RE (Cortex-M4F, 100 MHz)
 
@@ -76,11 +76,11 @@ RAM tables save 3 to 9% on the F411 and 1 to 3% on the L031.
 
 | N | F411 -O3 | F411 -O2 | L031 -O3 | L031 -O2 |
 |---:|---:|---:|---:|---:|
-| 64 | 19,890 | 15,328 | 48,398 | 42,382 |
-| 128 | 36,480 | 35,322 | 103,396 | 97,094 |
-| 256 | 101,516 | 78,516 | 245,116 | 219,379 |
+| 64 | 15,047 | 14,844 | 39,340 | 39,833 |
+| 128 | 33,787 | 33,336 | 89,790 | 90,911 |
+| 256 | 74,548 | 73,936 | 202,696 | 204,691 |
 
-`FFT1D<Q8.8, 256>` takes 6.9 ms on the 32 MHz M0+ at `-O2`. It is slower than `QFFT1D` at every size, on
+`FFT1D<Q8.8, 256>` takes 6.3 ms on the 32 MHz M0+ at `-O3`. It is slower than `QFFT1D` at every size, on
 both boards.
 
 ## What the numbers say
@@ -89,8 +89,8 @@ both boards.
   the Cortex-M0+. Across both levels and both table placements the range is 1.98 to 2.23.
 * The cost per radix-2 butterfly is smooth in N: on the F411 at `-O3`, 46 to 53 cycles for `QFFT1D`; on the
   L031, 117 to 128.
-* `FFT1D<Q8.8>` still varies with N on the F411 at `-O3` (81 to 104 cycles per butterfly), the pattern
-  #284 removed from `QFFT1D` (below).
+* `FFT1D<Q8.8>` costs 72 to 78 cycles per butterfly on the F411 at `-O3` and 198 to 205 on the L031, also
+  smooth in N since #285 (below).
 
 ## What changed in #284
 
@@ -116,6 +116,17 @@ code. Against the earlier results (the tables in this file's history):
   times faster at `-O3` and 1.10 to 1.15 times at `-O2`. Two L031 figures are slower: `QRFFT1D<128>` at `-O3`
   by 0.1% (27,013 against 26,987 cycles), and `QFFT1D<512>` with the tables in RAM by 5% (265,047 against
   252,922).
+
+## What changed in #285
+
+`FFT1D` had the same loop structure as `QFFT1D` before #284, and on the F411 at `-O3` its cost per butterfly
+varied with N in the same way: 104, 81 and 99 cycles at N = 64, 128 and 256. Its stages are now
+`detail::fftButterflyStage`, out of line, with the same three values across the inner loop; each butterfly's
+arithmetic is written exactly as before. The outputs are unchanged: for Q8.8 (round-up and truncating),
+Q16.16, float and double, forward and inverse, at N = 2 to 1,024, the new code matches the old bit for bit
+on the host at `-O2` and at `-O3 -march=x86-64-v3`, and the board hashes equal the host's. Against the
+earlier results, `FFT1D<Q8.8>` is 1.08 to 1.36 times faster on the F411 at `-O3`, 1.03 to 1.06 times at
+`-O2`, 1.15 to 1.23 times on the L031 at `-O3` and 1.06 to 1.07 times at `-O2`.
 
 ## Reproduce
 

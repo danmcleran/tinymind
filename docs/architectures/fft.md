@@ -271,15 +271,15 @@ The divide-by-2 scaling at each stage means intermediate values never exceed the
 
 ## Measured Performance
 
-`FFT1D<Q8.8, N>` (the type of the fixed-point example above), cycles per forward transform, arm-none-eabi-gcc 13.2.1, median of 33 runs, output bit-identical to the host's:
+`FFT1D<Q8.8, N>` (the type of the fixed-point example above), cycles per forward transform, arm-none-eabi-gcc 13.2.1, `-O3`, median of 33 runs, output bit-identical to the host's:
 
-| FFT Size | Cortex-M0+ (L031) `-O2` | Time @ 32 MHz | Cortex-M4F (F411) `-O2` | Time @ 100 MHz |
+| FFT Size | Cortex-M0+ (L031) | Time @ 32 MHz | Cortex-M4F (F411) | Time @ 100 MHz |
 |---|---|---|---|---|
-| 64 | 42,382 | 1.3 ms | 15,328 | 0.15 ms |
-| 128 | 97,094 | 3.0 ms | 35,322 | 0.35 ms |
-| 256 | 219,379 | 6.9 ms | 78,516 | 0.79 ms |
+| 64 | 39,340 | 1.2 ms | 15,047 | 0.15 ms |
+| 128 | 89,790 | 2.8 ms | 33,787 | 0.34 ms |
+| 256 | 202,696 | 6.3 ms | 74,548 | 0.75 ms |
 
-At `-O3` the M0+ is slower (245,116 cycles at N = 256). Real-time processing at a 1 kHz sample rate is feasible up to 256-point FFTs on a 32 MHz Cortex-M0+: a 256-sample window takes 256 ms to fill and 7 ms to transform. For int16 data, [`QFFT1D` and `QRFFT1D`](#int8-quantized-counterpart) are faster at every size. The bench is [`benchmarks/fft_onboard`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/fft_onboard) (`IMG=fft1d`).
+`-O2` is within 2% of these on both cores. Real-time processing at a 1 kHz sample rate is feasible up to 256-point FFTs on a 32 MHz Cortex-M0+: a 256-sample window takes 256 ms to fill and about 6 ms to transform. For int16 data, [`QFFT1D` and `QRFFT1D`](#int8-quantized-counterpart) are faster at every size. The bench is [`benchmarks/fft_onboard`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/fft_onboard) (`IMG=fft1d`).
 
 ## Use Cases
 

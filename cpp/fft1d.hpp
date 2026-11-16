@@ -89,6 +89,67 @@ namespace tinymind {
                 }
             }
         };
+
+        /**
+         * One radix-2 DIT stage of FFT1D over n points with butterfly span
+         * halfSize; the twiddle for pair p is entry p * twiddleStride of the
+         * tables. Scale halves every output (forward); without it the sums
+         * are kept whole (inverse).
+         *
+         * Kept out of line and written so that only three values (the end
+         * of the data and the two table bases) live across the inner loop,
+         * as QFFT1D's stage is (see qfft_detail::butterflyStage). With the
+         * stage loop, the group loop and the scale test in one function,
+         * GCC 13 left FFT1D<Q8.8> on a Cortex-M4 with a cost per butterfly
+         * that varied by about 25% with N. benchmarks/fft_onboard
+         * (IMG=fft1d) measures it.
+         */
+        template<typename ValueType, bool Scale>
+        TINYMIND_NOINLINE void fftButterflyStage(ValueType* re, ValueType* im, size_t n,
+                                                 size_t halfSize,
+                                                 const ValueType* cosTable,
+                                                 const ValueType* sinTable,
+                                                 size_t twiddleStride)
+        {
+            ValueType* const reEnd = re + n;
+            while (re != reEnd)
+            {
+                const ValueType* wc = cosTable;
+                const ValueType* ws = sinTable;
+                ValueType* const groupEnd = re + halfSize;
+
+                for (; re != groupEnd; ++re, ++im, wc += twiddleStride, ws += twiddleStride)
+                {
+                    const ValueType wCos = *wc;
+                    const ValueType wSin = *ws;
+
+                    const ValueType tReal = wCos * re[halfSize] - wSin * im[halfSize];
+                    const ValueType tImag = wCos * im[halfSize] + wSin * re[halfSize];
+
+                    const ValueType topReal = *re;
+                    const ValueType topImag = *im;
+
+                    if (Scale)
+                    {
+                        *re = (topReal + tReal) / 2;
+                        *im = (topImag + tImag) / 2;
+                        re[halfSize] = (topReal - tReal) / 2;
+                        im[halfSize] = (topImag - tImag) / 2;
+                    }
+                    else
+                    {
+                        *re = topReal + tReal;
+                        *im = topImag + tImag;
+                        re[halfSize] = topReal - tReal;
+                        im[halfSize] = topImag - tImag;
+                    }
+                }
+
+                // re and im stopped at the bottom half; skip it.
+                re += halfSize;
+                im += halfSize;
+            }
+        }
     }
 
     /**
@@ -171,7 +232,7 @@ namespace tinymind {
          */
         void forward(ValueType* real, ValueType* imag) const
         {
-            forwardImpl(real, imag, true);
+            forwardImpl<true>(real, imag);
         }
 
         /**
@@ -190,7 +251,7 @@ namespace tinymind {
             }
 
             // Unscaled DFT so that forward's 1/N and inverse cancel
-            forwardImpl(real, imag, false);
+            forwardImpl<false>(real, imag);
 
             // Conjugate output
             for (size_t i = 0; i < N; ++i)
@@ -224,53 +285,22 @@ namespace tinymind {
 
         /**
          * Core FFT implementation.
-         * @param scale  If true, divide by 2 each stage (forward FFT).
-         *               If false, no scaling (used by inverse FFT).
+         * @tparam Scale  If true, divide by 2 each stage (forward FFT).
+         *                If false, no scaling (used by inverse FFT).
+         *
+         * A template argument rather than a run-time flag, so a program
+         * that only calls forward() compiles no unscaled stage.
          */
-        void forwardImpl(ValueType* real, ValueType* imag, const bool scale) const
+        template<bool Scale>
+        void forwardImpl(ValueType* real, ValueType* imag) const
         {
             bitReversalPermute(real, imag);
 
-            size_t halfSize = 1;
-            for (size_t stage = 0; stage < NumStages; ++stage)
+            for (size_t halfSize = 1; halfSize < N; halfSize <<= 1)
             {
-                const size_t fullSize = halfSize << 1;
-                const size_t twiddleStride = HalfLength / halfSize;
-
-                for (size_t group = 0; group < N; group += fullSize)
-                {
-                    for (size_t pair = 0; pair < halfSize; ++pair)
-                    {
-                        const size_t twiddleIdx = pair * twiddleStride;
-                        const ValueType wCos = mTwiddleCos[twiddleIdx];
-                        const ValueType wSin = mTwiddleSin[twiddleIdx];
-
-                        const size_t top = group + pair;
-                        const size_t bot = top + halfSize;
-
-                        const ValueType tReal = wCos * real[bot] - wSin * imag[bot];
-                        const ValueType tImag = wCos * imag[bot] + wSin * real[bot];
-
-                        const ValueType topReal = real[top];
-                        const ValueType topImag = imag[top];
-
-                        if (scale)
-                        {
-                            real[top] = (topReal + tReal) / 2;
-                            imag[top] = (topImag + tImag) / 2;
-                            real[bot] = (topReal - tReal) / 2;
-                            imag[bot] = (topImag - tImag) / 2;
-                        }
-                        else
-                        {
-                            real[top] = topReal + tReal;
-                            imag[top] = topImag + tImag;
-                            real[bot] = topReal - tReal;
-                            imag[bot] = topImag - tImag;
-                        }
-                    }
-                }
-                halfSize = fullSize;
+                detail::fftButterflyStage<ValueType, Scale>(real, imag, N, halfSize,
+                                                            mTwiddleCos, mTwiddleSin,
+                                                            HalfLength / halfSize);
             }
         }
 
