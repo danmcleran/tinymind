@@ -269,17 +269,17 @@ Twiddle factors are sine/cosine values in [-1, 1]. Q8.8 gives 8 fractional bits 
 
 The divide-by-2 scaling at each stage means intermediate values never exceed the input range. A Q8.8 value with fixed part in [-128, 127] stays within bounds regardless of FFT size. This eliminates the need for saturation checks in the butterfly -- the `WrapPolicy` is sufficient.
 
-## ARM Cortex-M0 Performance Estimates
+## Measured Performance
 
-For Q8.8 with single-cycle 32-bit MUL:
+`FFT1D<Q8.8, N>` (the type of the fixed-point example above), cycles per forward transform, arm-none-eabi-gcc 13.2.1, median of 33 runs, output bit-identical to the host's:
 
-| FFT Size | Butterfly MACs | Estimated Cycles | Time @ 48 MHz |
-|---|---|---|---|
-| 64 | 192 | ~4,000 | ~83 us |
-| 128 | 448 | ~9,500 | ~198 us |
-| 256 | 1,024 | ~22,000 | ~458 us |
+| FFT Size | Cortex-M0+ (L031) `-O2` | Time @ 32 MHz | Cortex-M4F (F411) `-O2` | Time @ 100 MHz |
+|---|---|---|---|---|
+| 64 | 42,382 | 1.3 ms | 15,328 | 0.15 ms |
+| 128 | 97,094 | 3.0 ms | 35,322 | 0.35 ms |
+| 256 | 219,379 | 6.9 ms | 78,516 | 0.79 ms |
 
-These estimates include twiddle multiplication (2 multiplies + 2 adds per butterfly) plus bit-reversal permutation (table lookup, no shifts). Real-time processing at 1 kHz sample rate is feasible up to 256-point FFTs on a 48 MHz M0.
+At `-O3` the M0+ is slower (245,116 cycles at N = 256). Real-time processing at a 1 kHz sample rate is feasible up to 256-point FFTs on a 32 MHz Cortex-M0+: a 256-sample window takes 256 ms to fill and 7 ms to transform. For int16 data, [`QFFT1D` and `QRFFT1D`](#int8-quantized-counterpart) are faster at every size. The bench is [`benchmarks/fft_onboard`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/fft_onboard) (`IMG=fft1d`).
 
 ## Use Cases
 
@@ -318,12 +318,14 @@ Cycles per forward transform at `-O3`, arm-none-eabi-gcc 13.2.1, twiddle tables 
 
 | N | Cortex-M4F (F411) `QFFT1D` | `QRFFT1D` | Speedup | Cortex-M0+ (L031) `QFFT1D` | `QRFFT1D` | Speedup |
 |---:|---:|---:|---:|---:|---:|---:|
-| 64 | 21,196 | 9,133 | 2.32× | 30,644 | 12,383 | 2.47× |
-| 128 | 39,925 | 17,744 | 2.25× | 57,305 | 26,987 | 2.12× |
-| 256 | 107,095 | 47,181 | 2.27× | 165,570 | 77,747 | 2.13× |
-| 512 | 201,845 | 89,762 | 2.25× | 279,344 | 140,090 | 1.99× |
-| 1024 | 542,882 | 236,210 | 2.30× | | | |
+| 64 | 10,136 | 4,685 | 2.16× | 24,575 | 11,657 | 2.11× |
+| 128 | 22,757 | 10,808 | 2.11× | 55,290 | 27,013 | 2.05× |
+| 256 | 50,165 | 24,103 | 2.08× | 124,247 | 60,255 | 2.06× |
+| 512 | 112,346 | 53,427 | 2.10× | 269,153 | 133,729 | 2.01× |
+| 1024 | 233,516 | 118,027 | 1.98× | | | |
 
-At N = 256 that is 0.47 ms against 1.07 ms on the 100 MHz Cortex-M4F, and 2.4 ms against 5.2 ms on the 32 MHz Cortex-M0+ (whose 8 KB of RAM stops the bench at N = 512). The `QFFT1D` column leaves out copying the samples in and zeroing the imaginary buffer, which a real-input caller also pays (under 3%). The `-O2` figures, the tables placed in RAM, and the bench itself are in [`benchmarks/fft_onboard`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/fft_onboard); across all of them the speedup stays between 1.76 and 2.87.
+At N = 256 that is 0.24 ms against 0.50 ms on the 100 MHz Cortex-M4F, and 1.9 ms against 3.9 ms on the 32 MHz Cortex-M0+ (whose 8 KB of RAM stops the bench at N = 512). The `QFFT1D` column leaves out copying the samples in and zeroing the imaginary buffer, which a real-input caller also pays (1 to 3% at `-O3`). The `-O2` figures, the tables placed in RAM, and the bench itself are in [`benchmarks/fft_onboard`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/fft_onboard); across all of them the speedup stays between 1.98 and 2.23.
+
+On a core with a saturating instruction (`__ARM_FEATURE_SAT`, such as the Cortex-M4) each butterfly saturates its four outputs with `SSAT`; elsewhere with a plain conditional. On the Cortex-M4F at `-O3` a radix-2 butterfly costs 46 to 53 cycles, and 117 to 128 on the Cortex-M0+.
 
 Packing two real samples into one complex value lets a component of the inner FFT reach √2 times full scale, which a plain packed FFT would saturate on full-scale input such as clipped audio. `QRFFT1D` takes that headroom in the first inner stage, whose twiddle is exactly 1, so no int16 input can saturate an intermediate. The price is a little precision: against an exact DFT / N its largest bin error is about 1.3 to 1.7 times `QFFT1D`'s on the same input, which is a few LSB of the 16-bit spectrum, and its bins differ from `QFFT1D`'s by at most log2(N) LSB. Use `QFFT1D<N>` with a zeroed imaginary buffer when those LSB matter more than the halved work. The input buffer must not overlap the outputs.

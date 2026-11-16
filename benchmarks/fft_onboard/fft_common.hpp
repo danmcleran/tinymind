@@ -25,6 +25,8 @@
 #pragma once
 
 #include "tinymind_platform.hpp"
+#include "qformat.hpp"
+#include "fft1d.hpp"
 #include "qfft1d.hpp"
 
 #include <stddef.h>
@@ -105,6 +107,50 @@ void hashBoth(const tinymind::QFFT1D<N>& qfft, const tinymind::QRFFT1D<N>& qrfft
         runQrfft<N>(qrfft, in, re, im);
         *hr = fnv(fnv(*hr, re, N / 2 + 1), im, N / 2 + 1);
     }
+}
+
+// FFT1D on Q8.8, the fixed-point type docs/architectures/fft.md uses.
+typedef tinymind::QValue<8, 8, true, tinymind::RoundUpPolicy> Q8_8;
+
+// Frame `seed` of makeInput, scaled to a quarter of int16 range (|x| < 32
+// in Q8.8), with a zero imaginary part.
+inline void makeInputQ8_8(Q8_8* re, Q8_8* im, size_t n, uint32_t seed)
+{
+    uint32_t state = seed;
+    for (size_t i = 0; i < n; ++i)
+    {
+        re[i].setValue(static_cast<int16_t>(static_cast<int16_t>(lcg(state) >> 16) >> 2));
+        im[i].setValue(0);
+    }
+}
+
+inline uint32_t fnvQ8_8(uint32_t h, const Q8_8* v, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+    {
+        const int16_t raw = static_cast<int16_t>(v[i].getValue());
+        h = fnv(h, &raw, 1);
+    }
+    return h;
+}
+
+template<size_t N>
+__attribute__((noinline)) void runFft1d(const tinymind::FFT1D<Q8_8, N>& fft, Q8_8* re, Q8_8* im)
+{
+    fft.forward(re, im);
+}
+
+template<size_t N>
+uint32_t hashFft1d(const tinymind::FFT1D<Q8_8, N>& fft, Q8_8* re, Q8_8* im)
+{
+    uint32_t h = 0x811C9DC5u;
+    for (uint32_t seed = 1; seed <= 8; ++seed)
+    {
+        makeInputQ8_8(re, im, N, seed);
+        runFft1d<N>(fft, re, im);
+        h = fnvQ8_8(fnvQ8_8(h, re, N / 2 + 1), im, N / 2 + 1);
+    }
+    return h;
 }
 
 } // namespace fftbench
