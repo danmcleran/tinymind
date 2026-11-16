@@ -26,17 +26,44 @@ apps/import_onnx/
 | ONNX (QDQ form / QOperator form) | tinymind |
 |---|---|
 | `Conv` / `QLinearConv` (group 1, dilation 1, explicit pads) | `QConv2D`, or `QConv2DPerChannel` for per-channel weights |
+| `Conv` / `QLinearConv` with group = channels = filters (depthwise) | `QDepthwiseConv2D` (weights `[C][KH][KW]`, one requantizer per channel) |
+| `MaxPool` (QDQ, or on the int8 tensor in QOperator form; no padding, `ceil_mode` 0) | `QMaxPool2D`; input and output share one grid |
+| `AveragePool` / `QLinearAveragePool`, `GlobalAveragePool` / `QLinearGlobalAveragePool` (no padding, `ceil_mode` 0) | an `AveragePool` record for `QDepthwiseConv2D` (see below) |
+| `Add` / `QLinearAdd` of two activations (same shape) | an `Add` record for `QAdd` with `buildQAddParams` |
 | `Gemm` / `QGemm`, `MatMul` / `QLinearMatMul` | `QDense`, or (per-channel) `QConv2DPerChannel<..., 1, 1, NumInputs, 1, 1, 1, 1, NumOutputs>`, a dense layer with one requantizer per output |
 | `MatMul` + bias `Add` / `QLinearMatMul` + `QLinearAdd` | folded into one dense layer with that bias |
-| `Relu` / `Sigmoid` / `Tanh` / `Softmax` / `QLinearSigmoid` | activation records with the input and output `(scale, zero_point)` the graph uses; build the int8 LUTs (`buildQSigmoidLUT`, ...) from them |
+| `Relu` / `Sigmoid` / `Tanh` / `Softmax` / `QLinearSigmoid` / `QLinearSoftmax` (last axis) | activation records with the input and output `(scale, zero_point)` the graph uses; build the int8 LUTs (`buildQSigmoidLUT`, ...) or the softmax (`buildQSoftmaxFixedPointParams`) from them |
 | `Flatten`, `Reshape` to 2D, `Identity` | no layer (see the layout notes) |
 
 Anything else raises `ValueError`; a layer is never skipped silently. The
 importer also refuses a nonzero weight zero point (tinymind weights are
 symmetric), uint8 tensors (quantize with `QuantType.QInt8` for both
-weights and activations), grouped or dilated convolutions, `auto_pad`
-`SAME_*`, a `Gemm` with `transA` / `alpha` / `beta` other than 0 / 1 / 1,
-and a weight layer whose output is not quantized.
+weights and activations), grouped convolutions other than depthwise ones,
+dilated convolutions, `auto_pad` `SAME_*`, padded, dilated or `ceil_mode`
+pooling, a `Gemm` with `transA` / `alpha` / `beta` other than 0 / 1 / 1, an
+`Add` with broadcasting or a constant operand (other than a `MatMul`'s
+bias), a `Softmax` over another axis than the last, and a weight layer whose
+output is not quantized.
+
+Every layer must read the model's input or an earlier layer's output in the
+`(scale, zero_point)` that layer wrote it in. A tensor that ONNX Runtime
+requantizes between two layers (a `QuantizeLinear` to another grid on the
+way) is refused: no record carries that step, and a network built from the
+records would compute something else. Each record's `sources` lists the
+layers it reads (`-1` for the model's input; an `Add` has two), which is
+what a residual network needs to wire its buffers; the header's comment for
+each layer names them.
+
+An average pool becomes a depthwise convolution whose taps all weigh
+`AVG_POOL_WEIGHT` (64) and whose requantizer scales the window sum by
+`input_scale / (64 * area * output_scale)`. ONNX Runtime gives an average
+pool's output its own grid, which `QAvgPool2D` and `QGlobalAvgPool2D` (they
+keep the input's grid) cannot express; the requantizer does the average and
+the change of grid in one rounding. The weight is 64 rather than 1 so the
+ratio stays below 1/4: at a larger ratio the requantizer's shift is 0 or 1
+and its doubling multiply rounds to half a step first. On the test model a
+weight of 1 left 77% of the 2x2 pool's outputs equal to ONNX Runtime's in
+QOperator form; 64 leaves 98.6%.
 
 Layout notes:
 
@@ -71,8 +98,23 @@ same int8 inputs. The outputs agree to within 1 LSB (about 97% exactly;
 ONNX Runtime and tinymind round the requantization differently). The test
 model has a non-square kernel with unequal strides and padding, a second
 convolution, a `Flatten` into a dense layer and a bias-free `MatMul`, so a
-wrong weight layout, pad order or flattening order fails it. Not run in CI,
-because torch and onnxruntime are not CI dependencies.
+wrong weight layout, pad order or flattening order fails it.
+
+A residual model (convolution, max pooling, a depthwise and a pointwise
+convolution added back to their input, average and global average pooling, a
+dense layer, with and without a softmax) runs through a C++ program that
+wires every record by its `sources` onto `QConv2D`, `QMaxPool2D`,
+`QDepthwiseConv2D`, `QAdd`, `QDense` and `QSoftmaxFixedPoint1D`. In QOperator
+form the outputs agree with ONNX Runtime's to within 1 LSB (about 94%
+exactly). In QDQ form ONNX Runtime averages in float and rounds ties to
+even, where the integer pool rounds them away from zero (one output in eight
+of a 2x2 pool), and the global pool and dense layer after it carry that
+difference: within 3 LSB, more than half exact. Softmax probabilities agree
+to within 3/256. Further cases check the refusals: padded and `ceil_mode`
+pooling, `Concat`, groupings other than depthwise, a softmax over another
+axis, and a tensor requantized between two layers.
+
+Not run in CI, because torch and onnxruntime are not CI dependencies.
 
 ## Quick example
 

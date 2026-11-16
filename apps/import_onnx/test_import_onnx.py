@@ -37,6 +37,13 @@ with unequal strides and padding (catches OIHW vs OHWI and pad order), a
 second convolution (catches a wrong NHWC order between convolutions), a
 Flatten into a dense layer (catches the NCHW-to-NHWC column order) and a
 MatMul without bias (catches an untransposed [in][out] weight).
+
+The graph cases (GraphModels) run a small residual network -- convolution,
+max pooling, a depthwise convolution, a pointwise one, a residual Add, average
+pooling, global average pooling, a dense layer and optionally a softmax --
+through a C++ program that wires every record by its `sources` onto
+QConv2D, QMaxPool2D, QDepthwiseConv2D, QAdd (buildQAddParams), QDense and
+QSoftmaxFixedPoint1D.
 """
 
 import os
@@ -360,35 +367,370 @@ class EndToEnd(unittest.TestCase):
             self.assertGreater(sig.output_scale, 0.0)
 
     def test_unsupported_ops_are_refused(self):
-        class PoolNet(nn.Module):
+        class PadPoolNet(nn.Module):
             def __init__(self):
                 super().__init__()
                 self.c = nn.Conv2d(2, 3, 3)
 
             def forward(self, x):
-                return torch.nn.functional.max_pool2d(torch.relu(self.c(x)), 2)
-        for fmt in ("QDQ", "QOperator"):
-            path = export_and_quantize(PoolNet(), INPUT_SHAPE, self.workdir, fmt, False, "poolnet")
-            with self.assertRaises(ValueError, msg=fmt):
-                ti.parse_onnx_model(path)
+                return torch.nn.functional.max_pool2d(torch.relu(self.c(x)), 2, padding=1)
+
+        class CeilPoolNet(PadPoolNet):
+            def forward(self, x):
+                return torch.nn.functional.avg_pool2d(self.c(x), 2, ceil_mode=True)
+
+        class ConcatNet(PadPoolNet):
+            def forward(self, x):
+                h = self.c(x)
+                return torch.cat([h, h], dim=1)
+        for net, needle in ((PadPoolNet, "padded pooling"), (CeilPoolNet, "ceil_mode"),
+                            (ConcatNet, "unsupported ONNX op")):
+            for fmt in ("QDQ", "QOperator"):
+                path = export_and_quantize(net(), INPUT_SHAPE, self.workdir, fmt, False, net.__name__)
+                with self.assertRaisesRegex(ValueError, needle, msg=f"{net.__name__} {fmt}"):
+                    ti.parse_onnx_model(path)
 
     def test_grouped_conv_is_refused(self):
-        class DwNet(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.c = nn.Conv2d(2, 2, 3, groups=2)
+        """A depthwise convolution (group = channels = filters) is imported;
+        other groupings, and a depthwise one with two filters per channel,
+        are not."""
+        for c_in, c_out, groups in ((4, 4, 2), (2, 4, 2)):
+            class GroupNet(nn.Module):
+                def __init__(self):
+                    super().__init__()
+                    self.c = nn.Conv2d(c_in, c_out, 3, groups=groups)
 
-            def forward(self, x):
-                return self.c(x)
-        path = export_and_quantize(DwNet(), INPUT_SHAPE, self.workdir, "QDQ", False, "dwnet")
-        with self.assertRaisesRegex(ValueError, "group"):
-            ti.parse_onnx_model(path)
+                def forward(self, x):
+                    return self.c(x)
+            shape = (1, c_in, 8, 10)
+            path = export_and_quantize(GroupNet(), shape, self.workdir, "QDQ", False, f"g{c_in}{c_out}")
+            with self.assertRaisesRegex(ValueError, "group"):
+                ti.parse_onnx_model(path)
 
     def test_uint8_is_refused(self):
         path = export_and_quantize(ConvNet(), INPUT_SHAPE, self.workdir, "QDQ", False, "u8",
                                    activation_type=QuantType.QUInt8, weight_type=QuantType.QUInt8)
         with self.assertRaisesRegex(ValueError, "uint8"):
             ti.parse_onnx_model(path)
+
+
+if HAVE_STACK:
+    class ResNetish(nn.Module):
+        """Conv 3x3 (padding 1) + ReLU -> MaxPool 2x2 -> a residual block
+        (depthwise Conv 3x3 + ReLU -> pointwise Conv, added to the block's
+        input) -> AvgPool 2x2 -> global average pool -> Linear [-> Softmax].
+        Unequal channel counts and a 2x6 input after pooling catch a wrong
+        depthwise layout, swapped Add operands and a wrong pooling window."""
+
+        def __init__(self, softmax):
+            super().__init__()
+            self.softmax = softmax
+            self.c1 = nn.Conv2d(2, 5, 3, padding=1)
+            self.dw = nn.Conv2d(5, 5, 3, padding=1, groups=5)
+            self.pw = nn.Conv2d(5, 5, 1)
+            self.f = nn.Linear(5, 4)
+            with torch.no_grad():
+                for p in self.parameters():
+                    p.mul_(2.0)
+
+        def forward(self, x):
+            h = torch.nn.functional.max_pool2d(torch.relu(self.c1(x)), 2)
+            h = h + self.pw(torch.relu(self.dw(h)))
+            h = torch.nn.functional.avg_pool2d(h, 2)
+            h = torch.nn.functional.adaptive_avg_pool2d(h, 1).flatten(1)
+            y = self.f(h)
+            return torch.softmax(y, dim=1) if self.softmax else y
+
+    GRAPH_INPUT_SHAPE = (1, 2, 8, 24)
+
+
+def _out_size(layer, sizes):
+    g = layer.geometry
+    if layer.op_type in ("Conv", "DepthwiseConv", "AveragePool"):
+        return g["OutputHeight"] * g["OutputWidth"] * g["NumFilters"]
+    if layer.op_type == "MaxPool":
+        return g["OutputHeight"] * g["OutputWidth"] * g["InputChannels"]
+    if layer.op_type == "Dense":
+        return g["NumOutputs"]
+    return sizes[layer.sources[0]]
+
+
+def graph_harness_source(layers, namespace, header):
+    """C++ program that runs every imported record, each reading the
+    buffers its `sources` name, on int8 NHWC input from stdin, and prints the
+    last layer's int8 output."""
+    first = layers[0]
+    g = first.geometry
+    in_size = g["NumInputs"] if first.op_type == "Dense" else \
+        g["InputHeight"] * g["InputWidth"] * g["InputChannels"]
+    sizes = {-1: in_size}
+    lines = [
+        "#include <cstdint>",
+        "#include <cstdio>",
+        '#include "qaffine.hpp"',
+        '#include "qactivations.hpp"',
+        '#include "qadd.hpp"',
+        '#include "qcalibration.hpp"',
+        '#include "qconv2d.hpp"',
+        '#include "qdense.hpp"',
+        '#include "qdepthwiseconv2d.hpp"',
+        '#include "qpool2d.hpp"',
+        '#include "qsoftmax_fixedpoint.hpp"',
+        f'#include "{header}"',
+        "",
+        "typedef tinymind::Requantizer<int32_t, int8_t> Rq;",
+        "static Rq makeRq(int32_t m, int32_t s, int32_t zp)",
+        "{",
+        "    Rq r;",
+        "    r.multiplier = m;",
+        "    r.shift = s;",
+        "    r.zero_point = static_cast<int8_t>(zp);",
+        "    r.qmin = -128;",
+        "    r.qmax = 127;",
+        "    return r;",
+        "}",
+        "",
+        "int main()",
+        "{",
+        f"    static int8_t bufin[{in_size}];",
+        f"    for (int i = 0; i < {in_size}; ++i)",
+        "    {",
+        "        int v;",
+        "        if (std::scanf(\"%d\", &v) != 1) { return 2; }",
+        "        bufin[i] = static_cast<int8_t>(v);",
+        "    }",
+    ]
+
+    def buf(j):
+        return "bufin" if j < 0 else f"buf{j}"
+
+    for i, layer in enumerate(layers):
+        k = f"{namespace}::k{ti.sanitize(layer.name)}"
+        g = layer.geometry
+        n = _out_size(layer, sizes)
+        sizes[i] = n
+        x = buf(layer.sources[0])
+        lines.append(f"    static int8_t buf{i}[{n}];")
+        if layer.op_type in ("Conv", "DepthwiseConv", "AveragePool"):
+            dims = (f"{g['InputHeight']}, {g['InputWidth']}, {g['InputChannels']}, {g['KernelHeight']}, "
+                    f"{g['KernelWidth']}, {g['StrideH']}, {g['StrideW']}")
+            pads = f"{g['PadTop']}, {g['PadBottom']}, {g['PadLeft']}, {g['PadRight']}"
+            bias = f"{k}_Biases" if layer.bias is not None else "nullptr"
+            if layer.op_type == "Conv":
+                if layer.per_channel:
+                    lines += [f"    static Rq rq{i}[{g['NumFilters']}];",
+                              f"    for (int c = 0; c < {g['NumFilters']}; ++c) {{ rq{i}[c] = makeRq({k}_Multipliers[c], {k}_Shifts[c], {k}_OutputZeroPoint); }}",
+                              f"    tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, {dims}, {g['NumFilters']}, {pads}> layer{i};",
+                              f"    layer{i}.requantizers = rq{i};"]
+                else:
+                    lines += [f"    tinymind::QConv2D<int8_t, int8_t, int32_t, int8_t, {dims}, {g['NumFilters']}, {pads}> layer{i};",
+                              f"    layer{i}.requantizer = makeRq({k}_Multiplier, {k}_Shift, {k}_OutputZeroPoint);"]
+            else:
+                m = f"{k}_Multipliers[c], {k}_Shifts[c]" if layer.per_channel else f"{k}_Multiplier, {k}_Shift"
+                lines += [f"    static Rq rq{i}[{g['NumFilters']}];",
+                          f"    for (int c = 0; c < {g['NumFilters']}; ++c) {{ rq{i}[c] = makeRq({m}, {k}_OutputZeroPoint); }}",
+                          f"    tinymind::QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, {dims}, {pads}> layer{i};",
+                          f"    layer{i}.requantizers = rq{i};"]
+            lines += [f"    layer{i}.weights = {k}_Weights;",
+                      f"    layer{i}.biases = {bias};",
+                      f"    layer{i}.input_zero_point = static_cast<int8_t>({k}_InputZeroPoint);",
+                      f"    layer{i}.forward({x}, buf{i});"]
+        elif layer.op_type == "Dense":
+            if layer.per_channel:
+                lines += [f"    static Rq rq{i}[{g['NumOutputs']}];",
+                          f"    for (int c = 0; c < {g['NumOutputs']}; ++c) {{ rq{i}[c] = makeRq({k}_Multipliers[c], {k}_Shifts[c], {k}_OutputZeroPoint); }}",
+                          f"    tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 1, 1, {g['NumInputs']}, 1, 1, 1, 1, {g['NumOutputs']}> layer{i};",
+                          f"    layer{i}.requantizers = rq{i};"]
+            else:
+                lines += [f"    tinymind::QDense<int8_t, int8_t, int32_t, int8_t, {g['NumInputs']}, {g['NumOutputs']}> layer{i};",
+                          f"    layer{i}.requantizer = makeRq({k}_Multiplier, {k}_Shift, {k}_OutputZeroPoint);"]
+            bias = f"{k}_Biases" if layer.bias is not None else "nullptr"
+            lines += [f"    layer{i}.weights = {k}_Weights;",
+                      f"    layer{i}.biases = {bias};",
+                      f"    layer{i}.input_zero_point = static_cast<int8_t>({k}_InputZeroPoint);",
+                      f"    layer{i}.forward({x}, buf{i});"]
+        elif layer.op_type == "MaxPool":
+            lines += [f"    tinymind::QMaxPool2D<int8_t, {g['InputHeight']}, {g['InputWidth']}, {g['InputChannels']}, "
+                      f"{g['KernelHeight']}, {g['KernelWidth']}, {g['StrideH']}, {g['StrideW']}> layer{i};",
+                      f"    layer{i}.forward({x}, buf{i});"]
+        elif layer.op_type == "Add":
+            lines += [f"    const tinymind::QAddParams p{i} = tinymind::buildQAddParams({k}_InputScale, {k}_InputBScale, {k}_OutputScale);",
+                      f"    tinymind::QAdd<int8_t, int8_t, int8_t, {n}> layer{i};",
+                      f"    layer{i}.input_a_zero_point = static_cast<int8_t>({k}_InputZeroPoint);",
+                      f"    layer{i}.input_b_zero_point = static_cast<int8_t>({k}_InputBZeroPoint);",
+                      f"    layer{i}.left_shift = p{i}.left_shift;",
+                      f"    layer{i}.input_a_multiplier = p{i}.input_a_multiplier;",
+                      f"    layer{i}.input_a_shift = p{i}.input_a_shift;",
+                      f"    layer{i}.input_b_multiplier = p{i}.input_b_multiplier;",
+                      f"    layer{i}.input_b_shift = p{i}.input_b_shift;",
+                      f"    layer{i}.output_requantizer = makeRq(p{i}.output_multiplier, p{i}.output_shift, {k}_OutputZeroPoint);",
+                      f"    layer{i}.forward({x}, {buf(layer.sources[1])}, buf{i});"]
+        elif layer.op_type == "Softmax":
+            lines += [f"    int32_t mult{i} = 0, left{i} = 0, diff{i} = 0;",
+                      f"    tinymind::buildQSoftmaxFixedPointParams({k}_InputScale, 1.0, mult{i}, left{i}, diff{i});",
+                      f"    const tinymind::QSoftmaxFixedPoint1D<1, {n}> layer{i} = {{mult{i}, left{i}, diff{i}}};",
+                      f"    layer{i}.forward({x}, buf{i});"]
+        elif layer.op_type in ("Sigmoid", "Tanh"):
+            lines += [f"    static int8_t lut{i}[256];",
+                      f"    tinymind::buildQ{layer.op_type}LUT({k}_InputScale, {k}_InputZeroPoint, {k}_OutputScale, {k}_OutputZeroPoint, lut{i});",
+                      f"    for (int j = 0; j < {n}; ++j) {{ buf{i}[j] = tinymind::qApplyLUT({x}[j], lut{i}); }}"]
+        else:
+            raise ValueError(f"no harness wiring for {layer.op_type}")
+    last = len(layers) - 1
+    lines += [f"    for (int i = 0; i < {sizes[last]}; ++i)",
+              "    {",
+              f"        std::printf(\"%d\\n\", static_cast<int>(buf{last}[i]));",
+              "    }",
+              "    return 0;",
+              "}"]
+    return "\n".join(lines) + "\n"
+
+
+def compile_graph_harness(layers, workdir, tag):
+    header = os.path.join(workdir, f"{tag}_weights.hpp")
+    ti.emit_weights_header(header, tag, layers)
+    src = os.path.join(workdir, f"{tag}_graph.cpp")
+    with open(src, "w") as f:
+        f.write(graph_harness_source(layers, tag, os.path.basename(header)))
+    exe = os.path.join(workdir, f"{tag}_graph")
+    # The calibration helpers (buildQAddParams, the LUT and softmax builders)
+    # are host-side: they need the float and std switches.
+    subprocess.run([GXX, "-std=c++14", "-O1", "-Wall", "-Wextra", "-Werror", "-Wpedantic",
+                    "-DTINYMIND_ENABLE_QUANTIZATION=1", "-DTINYMIND_ENABLE_FLOAT=1", "-DTINYMIND_ENABLE_STD=1",
+                    "-I" + os.path.join(REPO, "cpp"), "-I" + os.path.join(REPO, "cpp", "include"),
+                    "-I" + os.path.join(REPO, "include"), "-I" + workdir,
+                    src, "-o", exe], check=True)
+    return exe
+
+
+def run_graph(model_path, layers, exe, n_samples=24, seed=5):
+    """ONNX Runtime's float output and tinymind's int8 output on the same
+    int8 inputs (in the first layer's input grid), half of them uniform
+    over int8, half calibration-like."""
+    sess = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+    s_in, zp_in = layers[0].input_scale, layers[0].input_zp
+    in_meta = sess.get_inputs()[0]
+    shape = [d if isinstance(d, int) else 1 for d in in_meta.shape]
+    rng = np.random.default_rng(seed)
+    ref, got = [], []
+    for i in range(n_samples):
+        if i % 2:
+            q_in = np.clip(np.rint(0.5 * rng.standard_normal(shape) / s_in) + zp_in, -128, 127).astype(np.int64)
+        else:
+            q_in = rng.integers(-128, 128, size=shape).astype(np.int64)
+        x = ((q_in - zp_in) * s_in).astype(np.float32)
+        ref.append(sess.run(None, {in_meta.name: x})[0].reshape(-1))
+        stdin = "\n".join(str(v) for v in np.transpose(q_in, (0, 2, 3, 1)).reshape(-1).tolist()) + "\n"
+        out = subprocess.run([exe], input=stdin, capture_output=True, text=True, check=True).stdout
+        got.append(np.array([int(v) for v in out.split()], dtype=np.int64))
+    return np.array(ref), np.array(got)
+
+
+@unittest.skipUnless(HAVE_STACK, "needs torch, onnx and onnxruntime")
+@unittest.skipIf(GXX is None, "needs g++")
+class GraphModels(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.workdir = cls.tmp.name
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def check(self, fmt, per_channel, softmax):
+        torch.manual_seed(1)
+        tag = f"res_{fmt}_{int(per_channel)}_{int(softmax)}"
+        path = export_and_quantize(ResNetish(softmax), GRAPH_INPUT_SHAPE, self.workdir, fmt, per_channel, tag)
+        layers = ti.parse_onnx_model(path)
+        kinds = [l.op_type for l in layers]
+        expected = ["Conv", "MaxPool", "DepthwiseConv", "Conv", "Add", "AveragePool", "AveragePool", "Dense"]
+        self.assertEqual(kinds, expected + (["Softmax"] if softmax else []), f"{fmt}: {kinds}")
+        self.assertEqual(layers[2].weight.shape, (5, 3, 3))       # [C][KH][KW]
+        self.assertEqual(sorted(layers[4].sources), [1, 3])        # the residual
+        self.assertEqual(layers[6].geometry["KernelHeight"], 2)    # global: the whole 2x6 map
+        self.assertEqual(layers[6].geometry["KernelWidth"], 6)
+        exe = compile_graph_harness(layers, self.workdir, tag)
+        ref, got = run_graph(path, layers, exe)
+        if softmax:
+            # tinymind's softmax gives probabilities on the 1/256 grid (as
+            # TFLite does); ONNX Runtime's QDQ output is on 1/255.
+            diff = np.abs((got + 128) / 256.0 - ref)
+            print(f"\n  residual {fmt:9s} per_channel={per_channel!s:5s} softmax: "
+                  f"max |ort - tinymind| = {diff.max() * 256:.2f}/256")
+            self.assertLessEqual(diff.max(), 3 / 256)
+        else:
+            last = layers[-1]
+            q_ref = np.rint(ref / last.output_scale).astype(np.int64) + last.output_zp
+            diff = np.abs(q_ref - got)
+            exact = float(np.mean(diff == 0))
+            print(f"\n  residual {fmt:9s} per_channel={per_channel!s:5s}: max |ort - tinymind| = "
+                  f"{diff.max()} LSB, {100 * exact:.1f}% exact over {got.size} outputs")
+            # QOperator form runs QLinearAveragePool and QLinearAdd, which
+            # match tinymind's integer layers to within a step. In QDQ form
+            # ONNX Runtime averages in float and rounds ties to even, where
+            # the integer layer rounds them away from zero: one output in
+            # eight of a 2x2 pool, which the global pool and the dense layer
+            # after it carry on.
+            limit, share = (1, 0.9) if fmt == "QOperator" else (3, 0.5)
+            self.assertLessEqual(int(diff.max()), limit)
+            self.assertGreater(exact, share)
+            self.assertGreater(len(np.unique(q_ref)), 8, "outputs must vary, or the comparison is empty")
+
+    def test_qdq_per_tensor(self):
+        self.check("QDQ", False, False)
+
+    def test_qdq_per_channel(self):
+        self.check("QDQ", True, False)
+
+    def test_qoperator_per_tensor(self):
+        self.check("QOperator", False, False)
+
+    def test_qoperator_per_channel(self):
+        self.check("QOperator", True, False)
+
+    def test_softmax_qdq(self):
+        self.check("QDQ", False, True)
+
+    def test_softmax_qoperator(self):
+        """QOperator's QLinearSoftmax."""
+        self.check("QOperator", False, True)
+
+    def test_requantization_between_layers_is_refused(self):
+        """A Q -> DQ pair at another scale between two layers changes the
+        tensor's grid, which no record carries."""
+        from onnx import helper, numpy_helper
+        path = export_and_quantize(ResNetish(False), GRAPH_INPUT_SHAPE, self.workdir, "QDQ", False, "requant")
+        model = onnx.load(path)
+        g = model.graph
+        gemm = next(n for n in g.node if n.op_type == "Gemm")
+        dq = next(n for n in g.node if n.output[0] == gemm.input[0])
+        scale = numpy_helper.to_array(next(i for i in g.initializer if i.name == dq.input[1]))
+        g.initializer.append(numpy_helper.from_array(np.array(scale * 1.5, dtype=np.float32), "rq_scale"))
+        nodes = list(g.node)
+        at = nodes.index(gemm)
+        nodes[at:at] = [helper.make_node("QuantizeLinear", [dq.output[0], "rq_scale", dq.input[2]], ["rq_q"]),
+                        helper.make_node("DequantizeLinear", ["rq_q", "rq_scale", dq.input[2]], ["rq_dq"])]
+        gemm.input[0] = "rq_dq"
+        del g.node[:]
+        g.node.extend(nodes)
+        edited = os.path.join(self.workdir, "requant_edited.onnx")
+        onnx.save(model, edited)
+        with self.assertRaisesRegex(ValueError, "another grid"):
+            ti.parse_onnx_model(edited)
+
+    def test_softmax_over_another_axis_is_refused(self):
+        class ColSoftmax(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.f = nn.Linear(5, 3)
+
+            def forward(self, x):
+                return torch.softmax(self.f(x), dim=0)
+        for fmt in ("QDQ", "QOperator"):
+            path = export_and_quantize(ColSoftmax(), (1, 5), self.workdir, fmt, False, "colsoftmax")
+            with self.assertRaisesRegex(ValueError, "axis", msg=fmt):
+                ti.parse_onnx_model(path)
 
 
 class Emitter(unittest.TestCase):
@@ -409,6 +751,25 @@ class Emitter(unittest.TestCase):
         for needle in ("kfc_Weights[12]", "kfc_Biases[2]", "kfc_Multiplier", "kfc_Shift",
                        "kfc_NumInputs = 6", "kfc_InputZeroPoint  = 3", "kfc_OutputZeroPoint = -5",
                        "kfc_HasBias = true", "kfc_PerChannel = false"):
+            self.assertIn(needle, text)
+
+    def test_add_and_maxpool_fields(self):
+        add = ti.OnnxQuantizedLayer(op_type="Add", name="res", input_name="a", input_scale=0.05,
+                                    input_zp=3, output_name="y", output_scale=0.1, output_zp=-5,
+                                    input_b_name="b", input_b_scale=0.02, input_b_zp=-7, sources=[0, -1])
+        pool = ti.OnnxQuantizedLayer(op_type="MaxPool", name="mp", input_name="y", input_scale=0.1,
+                                     input_zp=-5, output_name="z", output_scale=0.1, output_zp=-5,
+                                     geometry={"InputHeight": 4, "KernelHeight": 2}, sources=[1])
+        stand_in = ti.OnnxQuantizedLayer(op_type="Relu", name="first", input_name="x", input_scale=0.05,
+                                         input_zp=3, output_name="a", output_scale=0.05, output_zp=3,
+                                         sources=[-1])
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "w.hpp")
+            ti.emit_weights_header(path, "net", [stand_in, add, pool])
+            text = open(path).read()
+        for needle in ("kres_InputBScale     = 0.02f", "kres_InputBZeroPoint = -7",
+                       "// Add res (reads first, the model's input)", "kmp_InputHeight = 4",
+                       "kmp_KernelHeight = 2", "kb_ZeroPoint = -7"):
             self.assertIn(needle, text)
 
 
