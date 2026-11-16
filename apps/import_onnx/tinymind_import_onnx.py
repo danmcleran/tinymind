@@ -29,12 +29,29 @@ a tinymind-format weights.hpp. Both of ONNX Runtime's output formats are read:
       int8 weights, int32 biases and every (scale, zero_point) are read from
       those Q/DQ nodes.
   QOperator: QLinearConv / QGemm / QLinearMatMul (+ QLinearAdd bias) /
-      QLinearSigmoid nodes that carry the same values as inputs.
+      QLinearSigmoid / QLinearAdd / QLinearAveragePool /
+      QLinearGlobalAveragePool / QLinearSoftmax nodes that carry the same
+      values as inputs, and MaxPool on the int8 tensor.
 
 Mapping onto tinymind's int8 layers:
 
     Conv (group 1, dilation 1)  -> QConv2D, or QConv2DPerChannel when the
                                    weights are quantized per output channel
+    Conv with group = channels  -> QDepthwiseConv2D (one filter per channel,
+      (depthwise, multiplier 1)    weights [C][KH][KW], one requantizer per
+                                   channel)
+    MaxPool (no padding)        -> QMaxPool2D; input and output share one grid
+    AveragePool / GlobalAveragePool (no padding)
+                                -> an "AveragePool" record: a QDepthwiseConv2D
+                                   whose weights are all AVG_POOL_WEIGHT and
+                                   whose requantizer scales the window sum by
+                                   input_scale / (weight * area *
+                                   output_scale), so the
+                                   average and the change of grid ONNX Runtime
+                                   gives the output round once (QAvgPool2D and
+                                   QGlobalAvgPool2D keep the input's grid)
+    Add of two activations      -> an "Add" record with both inputs' (scale,
+                                   zero_point), for QAdd (buildQAddParams)
     Gemm / MatMul [+ Add bias]  -> QDense, or (per channel) QConv2DPerChannel
                                    with a 1x1 kernel over a 1x1xN input,
                                    which is a dense layer with one
@@ -54,11 +71,19 @@ layer's output range: the output zero point sits at the bottom of the int8
 range, so the requantizer's clamp applies the Relu and no separate layer is
 emitted.
 
+Every layer must read the model's input or an earlier layer's output, in the
+(scale, zero_point) that layer wrote it in; each record's `sources` lists the
+layers it reads (-1 for the model's input), which is all a residual network
+needs to wire its buffers.
+
 Anything else is refused with ValueError rather than skipped: an op this
 module does not map, a weight zero point other than 0 (tinymind weights are
-symmetric), uint8 tensors, grouped or dilated convolutions, Gemm with
-transA / alpha / beta other than the defaults, auto_pad SAME_*, and a
-compute layer whose output is not quantized.
+symmetric), uint8 tensors, grouped convolutions other than depthwise ones,
+dilated convolutions, padded, dilated or ceil_mode pooling, Gemm with
+transA / alpha / beta other than the defaults, auto_pad SAME_*, an Add with
+broadcasting or a constant operand (other than a MatMul's bias), a Softmax
+over another axis than the last, a compute layer whose output is not
+quantized, and a tensor requantized between two layers.
 
 The onnx package is imported lazily inside parse_onnx_model, so the emitter
 half of this module works without it.
@@ -119,15 +144,21 @@ COPYRIGHT_BLOCK = """/**
 class OnnxQuantizedLayer:
     """One tinymind layer recovered from a quantized ONNX graph.
 
-    op_type      : "Conv" / "Dense" for weight layers; "Relu" / "Sigmoid" /
-                   "Tanh" / "Softmax" for activation-only records.
+    op_type      : "Conv" / "DepthwiseConv" / "Dense" for weight layers;
+                   "AveragePool" for an average pool, weighted like a
+                   depthwise convolution (every weight AVG_POOL_WEIGHT,
+                   weight scale 1 / (AVG_POOL_WEIGHT * window area));
+                   "MaxPool" and "Add" (two inputs);
+                   "Relu" / "Sigmoid" / "Tanh" / "Softmax" for
+                   activation-only records.
     name         : C++-safe layer name (from the ONNX node name).
     input_name / output_name : ONNX tensor names of the quantized input and
                    output.
     input_scale / input_zp / output_scale / output_zp : per-tensor
                    activation quantization.
     weight       : int8 numpy array in tinymind layout -- OHWI
-                   [F][KH][KW][C] for Conv, [out][in] for Dense.
+                   [F][KH][KW][C] for Conv, [C][KH][KW] for DepthwiseConv
+                   and AveragePool, [out][in] for Dense.
     weight_scales: one scale per output channel when per_channel, else a
                    single-element list. weight_scale is weight_scales[0].
     bias         : int32 numpy array at scale input_scale * weight_scales[o],
@@ -135,9 +166,14 @@ class OnnxQuantizedLayer:
     multipliers / shifts : the Requantizer (multiplier, shift) per output
                    channel (one entry when per-tensor), for ratio
                    input_scale * weight_scale / output_scale.
-    geometry     : Conv: H, W, C, KH, KW, StrideH, StrideW, F, PadTop,
-                   PadBottom, PadLeft, PadRight, OutH, OutW.
+    geometry     : Conv, DepthwiseConv and AveragePool: H, W, C, KH, KW,
+                   StrideH, StrideW, F (= C for the last two), PadTop,
+                   PadBottom, PadLeft, PadRight, OutH, OutW. MaxPool: H, W,
+                   C, KH, KW, StrideH, StrideW, OutH, OutW.
                    Dense: NumInputs, NumOutputs.
+    input_b_name / input_b_scale / input_b_zp : an Add's second input.
+    sources      : the index of the layer each input comes from (input, then
+                   input_b for an Add); -1 for the model's input.
     """
 
     op_type: str
@@ -157,6 +193,21 @@ class OnnxQuantizedLayer:
     multipliers: list = field(default_factory=list)
     shifts: list = field(default_factory=list)
     geometry: dict = field(default_factory=dict)
+    input_b_name: str = ""
+    input_b_scale: float = 0.0
+    input_b_zp: int = 0
+    sources: list = field(default_factory=list)
+
+
+# The weight an average pool's depthwise record gives every tap. With weight
+# 1 the requantizer's ratio, about 1 / area, is often above 1/4: its shift is
+# then 0 or 1, and the requantizer's rounding doubling multiply rounds the
+# result to half a step before the shift rounds it again (round(round(x / 2)
+# / 2) is not round(x / 4)). A weight of 64 puts the ratio below 1/4, where
+# the multiply is exact for power-of-two areas and rounds at 2^-31 for the
+# others, so the average rounds once. The window sum, at most
+# area * 255 * 64, fits int32 for any window up to 131,000 taps.
+AVG_POOL_WEIGHT = 64
 
 
 def sanitize(name: str) -> str:
@@ -286,9 +337,9 @@ def parse_onnx_model(model_path: str) -> list[OnnxQuantizedLayer]:
         shapes[dst] = [shape[0], int(np.prod(shape[1:]))]
 
     def conv_geometry(node, x_name, weight_oihw):
+        """(geometry, output shape, depthwise) of a Conv."""
         a = attrs(node)
-        if a.get("group", 1) != 1:
-            raise ValueError(f"{node.name}: grouped/depthwise Conv (group={a['group']}) is not supported")
+        group = a.get("group", 1)
         if any(d != 1 for d in a.get("dilations", [1, 1])):
             raise ValueError(f"{node.name}: dilated Conv is not supported")
         auto_pad = a.get("auto_pad", b"NOTSET")
@@ -302,7 +353,11 @@ def parse_onnx_model(model_path: str) -> list[OnnxQuantizedLayer]:
             raise ValueError(f"{node.name}: Conv input shape is unknown or not 4D")
         _, c, h, w = x_shape
         f, wc, kh, kw = weight_oihw.shape
-        if wc != c:
+        depthwise = group != 1
+        if depthwise and not (group == c and f == c and wc == 1):
+            raise ValueError(f"{node.name}: grouped Conv (group={group}) is supported only as a depthwise "
+                             "convolution with one filter per channel (group = channels = filters)")
+        if not depthwise and wc != c:
             raise ValueError(f"{node.name}: weight has {wc} input channels, input has {c}")
         oh = (h + pads[0] + pads[2] - kh) // strides[0] + 1
         ow = (w + pads[1] + pads[3] - kw) // strides[1] + 1
@@ -310,10 +365,46 @@ def parse_onnx_model(model_path: str) -> list[OnnxQuantizedLayer]:
                 "KernelHeight": kh, "KernelWidth": kw,
                 "StrideH": strides[0], "StrideW": strides[1], "NumFilters": f,
                 "PadTop": pads[0], "PadLeft": pads[1], "PadBottom": pads[2], "PadRight": pads[3],
-                "OutputHeight": oh, "OutputWidth": ow}, [x_shape[0], f, oh, ow]
+                "OutputHeight": oh, "OutputWidth": ow}, [x_shape[0], f, oh, ow], depthwise
+
+    def pool_geometry(node, x_name, global_pool=False):
+        """(geometry, output shape) of an unpadded pooling node."""
+        a = attrs(node)
+        label = node_label(node)
+        x_shape = shapes.get(x_name)
+        if x_shape is None or len(x_shape) != 4:
+            raise ValueError(f"{label}: pooling input shape is unknown or not 4D")
+        if a.get("channels_last", 0) != 0:
+            raise ValueError(f"{label}: channels_last pooling is not supported")
+        _, c, h, w = x_shape
+        if global_pool:
+            kh, kw, sh, sw = h, w, 1, 1
+        else:
+            auto_pad = a.get("auto_pad", b"NOTSET")
+            auto_pad = auto_pad.decode() if isinstance(auto_pad, bytes) else auto_pad
+            if auto_pad not in ("NOTSET", "VALID") or any(p != 0 for p in a.get("pads", [0, 0, 0, 0])):
+                raise ValueError(f"{label}: padded pooling is not supported")
+            if a.get("ceil_mode", 0) != 0:
+                raise ValueError(f"{label}: ceil_mode pooling is not supported")
+            if any(d != 1 for d in a.get("dilations", [1, 1])):
+                raise ValueError(f"{label}: dilated pooling is not supported")
+            kh, kw = a["kernel_shape"]
+            sh, sw = a.get("strides", [1, 1])
+        oh = (h - kh) // sh + 1
+        ow = (w - kw) // sw + 1
+        return {"InputHeight": h, "InputWidth": w, "InputChannels": c,
+                "KernelHeight": kh, "KernelWidth": kw, "StrideH": sh, "StrideW": sw,
+                "NumFilters": c, "PadTop": 0, "PadLeft": 0, "PadBottom": 0, "PadRight": 0,
+                "OutputHeight": oh, "OutputWidth": ow}, [x_shape[0], c, oh, ow]
 
     def oihw_to_ohwi(weight):
         return np.ascontiguousarray(np.transpose(weight, (0, 2, 3, 1)))
+
+    def conv_weight(weight_oihw, depthwise):
+        """(tinymind weight layout, record op_type) of a Conv's weights."""
+        if depthwise:
+            return np.ascontiguousarray(weight_oihw[:, 0, :, :]), "DepthwiseConv"
+        return oihw_to_ohwi(weight_oihw), "Conv"
 
     def dense_from_out_in(weight_out_in, x_name, label):
         """Permute the input columns of a [out][in] dense weight from NCHW
@@ -436,10 +527,9 @@ def parse_onnx_model(model_path: str) -> list[OnnxQuantizedLayer]:
         a = attrs(node)
         out_tensor = node.output[0]
         if node.op_type == "Conv":
-            geometry, out_shape = conv_geometry(node, x_q, w_q)
+            geometry, out_shape, depthwise = conv_geometry(node, x_q, w_q)
             scales = weight_scales_for(w_scales, w_axis, w_q.shape[0], 0, label)
-            weight = oihw_to_ohwi(w_q)
-            kind = "Conv"
+            weight, kind = conv_weight(w_q, depthwise)
         else:
             if node.op_type == "Gemm":
                 if a.get("transA", 0) != 0 or a.get("alpha", 1.0) != 1.0 or a.get("beta", 1.0) != 1.0:
@@ -475,9 +565,17 @@ def parse_onnx_model(model_path: str) -> list[OnnxQuantizedLayer]:
         layers.append(_finish_weight_layer(kind, label, x_q, x_scale, x_zp, y_name, y_scale, y_zp,
                                            weight, scales, bias, geometry))
 
+    def check_softmax_axis(node, x_name, label):
+        rank = len(shapes.get(x_name, []))
+        axis = attrs(node).get("axis", -1)
+        if rank and axis not in (-1, rank - 1):
+            raise ValueError(f"{label}: Softmax over axis {axis} is not supported; only the last axis")
+
     def parse_qdq_activation(node):
         label = node_label(node)
         x_q, x_scale, x_zp = dq_activation(node.input[0], label)
+        if node.op_type == "Softmax":
+            check_softmax_axis(node, x_q, label)
         q_out = quantized_output(node.output[0], label)
         if q_out is None:
             raise ValueError(f"{label}: {node.op_type} output is not quantized by a single QuantizeLinear")
@@ -519,14 +617,13 @@ def parse_onnx_model(model_path: str) -> list[OnnxQuantizedLayer]:
         y_name = node.output[0]
         a = attrs(node)
         if node.op_type == "QLinearConv":
-            geometry, out_shape = conv_geometry(node, x, w_q)
+            geometry, out_shape, depthwise = conv_geometry(node, x, w_q)
             scales = weight_scales_for(w_scales, 0, w_q.shape[0], 0, label)
             bias = None
             if b is not None:
                 bq = np.asarray(inits[b], dtype=np.float64).reshape(-1)
                 bias = bq * x_scale * np.asarray(scales if len(scales) > 1 else scales * len(bq))
-            weight = oihw_to_ohwi(w_q)
-            kind = "Conv"
+            weight, kind = conv_weight(w_q, depthwise)
         else:
             if node.op_type == "QGemm":
                 if a.get("transA", 0) != 0 or a.get("alpha", 1.0) != 1.0:
@@ -571,6 +668,115 @@ def parse_onnx_model(model_path: str) -> list[OnnxQuantizedLayer]:
                                            weight, scales, bias, geometry))
         return y_name
 
+    # ------------------------------------------- pooling, Add, QLinearSoftmax
+    def int8_grid(tensor, label):
+        """(scale, zp) of an int8 tensor a QOperator graph hands on as is:
+        written by a layer recorded above or by a QuantizeLinear, possibly
+        through Flatten / Reshape / Identity."""
+        t = tensor
+        while True:
+            for layer in reversed(layers):
+                if layer.output_name == t:
+                    return layer.output_scale, layer.output_zp
+            node = producer.get(t)
+            if node is None:
+                break
+            if node.op_type == "QuantizeLinear":
+                zp = node.input[2] if len(node.input) > 2 else ""
+                return scalar_scale(node.input[1], label), int(zero_point(zp, label)[0])
+            if node.op_type not in ("Identity", "Flatten", "Reshape"):
+                break
+            t = node.input[0]
+        raise ValueError(f"{label}: the quantization of {tensor} is unknown")
+
+    def parse_maxpool(node):
+        label = node_label(node)
+        if dq_source(node.input[0]) is not None:  # QDQ: DQ -> MaxPool -> Q
+            x, x_scale, x_zp = dq_activation(node.input[0], label)
+            q_out = quantized_output(node.output[0], label)
+            if q_out is None:
+                raise ValueError(f"{label}: MaxPool output is not quantized by a single QuantizeLinear")
+            y_scale, y_zp, y_name = q_out
+        else:  # QOperator: MaxPool on the int8 tensor itself
+            x = node.input[0]
+            x_scale, x_zp = int8_grid(x, label)
+            y_scale, y_zp, y_name = x_scale, x_zp, node.output[0]
+        if np.float32(x_scale) != np.float32(y_scale) or x_zp != y_zp:
+            raise ValueError(f"{label}: MaxPool that changes the grid is not supported")
+        geometry, out_shape = pool_geometry(node, x)
+        for key in ("NumFilters", "PadTop", "PadLeft", "PadBottom", "PadRight"):
+            del geometry[key]
+        shapes[y_name] = out_shape
+        layers.append(OnnxQuantizedLayer(op_type="MaxPool", name=label, input_name=x,
+                                         input_scale=x_scale, input_zp=x_zp, output_name=y_name,
+                                         output_scale=y_scale, output_zp=y_zp, geometry=geometry))
+
+    def parse_avgpool(node):
+        label = node_label(node)
+        global_pool = node.op_type in ("GlobalAveragePool", "QLinearGlobalAveragePool")
+        if node.op_type.startswith("QLinear"):  # (X, Xs, Xz, Ys, Yz)
+            x = node.input[0]
+            x_scale, x_zp = qop_activation_params(node, 1, 2, label)
+            y_scale, y_zp = qop_activation_params(node, 3, 4, label)
+            y_name = node.output[0]
+        else:
+            x, x_scale, x_zp = dq_activation(node.input[0], label)
+            q_out = quantized_output(node.output[0], label)
+            if q_out is None:
+                raise ValueError(f"{label}: {node.op_type} output is not quantized by a single QuantizeLinear")
+            y_scale, y_zp, y_name = q_out
+        geometry, out_shape = pool_geometry(node, x, global_pool)
+        c, kh, kw = geometry["InputChannels"], geometry["KernelHeight"], geometry["KernelWidth"]
+        shapes[y_name] = out_shape
+        # The window sum of (x - x_zp) * AVG_POOL_WEIGHT, rescaled by
+        # x_scale / (AVG_POOL_WEIGHT * area * y_scale): the average, in the
+        # output's grid.
+        layers.append(_finish_weight_layer("AveragePool", label, x, x_scale, x_zp, y_name, y_scale, y_zp,
+                                           np.full((c, kh, kw), AVG_POOL_WEIGHT, dtype=np.int8),
+                                           [1.0 / (AVG_POOL_WEIGHT * kh * kw)], None, geometry))
+
+    def add_record(label, a, a_scale, a_zp, b, b_scale, b_zp, y_name, y_scale, y_zp):
+        if shapes.get(a) != shapes.get(b):
+            raise ValueError(f"{label}: Add of shapes {shapes.get(a)} and {shapes.get(b)} "
+                             "(broadcasting) is not supported")
+        same_shape(y_name, a)
+        layers.append(OnnxQuantizedLayer(op_type="Add", name=label, input_name=a,
+                                         input_scale=a_scale, input_zp=a_zp, output_name=y_name,
+                                         output_scale=y_scale, output_zp=y_zp, input_b_name=b,
+                                         input_b_scale=b_scale, input_b_zp=b_zp))
+
+    def parse_qdq_add(node):
+        label = node_label(node)
+        if is_constant(node.input[0]) or is_constant(node.input[1]):
+            raise ValueError(f"{label}: an Add with a constant operand is supported only as a MatMul's bias")
+        a, a_scale, a_zp = dq_activation(node.input[0], label)
+        b, b_scale, b_zp = dq_activation(node.input[1], label)
+        q_out = quantized_output(node.output[0], label)
+        if q_out is None:
+            raise ValueError(f"{label}: Add output is not quantized by a single QuantizeLinear")
+        add_record(label, a, a_scale, a_zp, b, b_scale, b_zp, q_out[2], q_out[0], q_out[1])
+
+    def parse_qop_add(node):
+        label = node_label(node)
+        a, b = node.input[0], node.input[3]  # (A, As, Az, B, Bs, Bz, Cs, Cz)
+        if a in inits or b in inits:
+            raise ValueError(f"{label}: a QLinearAdd with a constant operand is supported only as a "
+                             "QLinearMatMul's bias")
+        a_scale, a_zp = qop_activation_params(node, 1, 2, label)
+        b_scale, b_zp = qop_activation_params(node, 4, 5, label)
+        y_scale, y_zp = qop_activation_params(node, 6, 7, label)
+        add_record(label, a, a_scale, a_zp, b, b_scale, b_zp, node.output[0], y_scale, y_zp)
+
+    def parse_qop_softmax(node):
+        label = node_label(node)  # (X, Xs, Xz, Ys, Yz)
+        check_softmax_axis(node, node.input[0], label)
+        xs, xz = qop_activation_params(node, 1, 2, label)
+        ys, yz = qop_activation_params(node, 3, 4, label)
+        same_shape(node.output[0], node.input[0])
+        layers.append(OnnxQuantizedLayer(op_type="Softmax", name=label, input_name=node.input[0],
+                                         input_scale=xs, input_zp=xz, output_name=node.output[0],
+                                         output_scale=ys, output_zp=yz))
+
     # ------------------------------------------------------------- walk
     for node in graph.node:
         if id(node) in skip_nodes:
@@ -608,6 +814,21 @@ def parse_onnx_model(model_path: str) -> list[OnnxQuantizedLayer]:
         if op in ("Relu", "Sigmoid", "Tanh", "Softmax"):
             parse_qdq_activation(node)
             continue
+        if op == "MaxPool":
+            parse_maxpool(node)
+            continue
+        if op in ("AveragePool", "GlobalAveragePool", "QLinearAveragePool", "QLinearGlobalAveragePool"):
+            parse_avgpool(node)
+            continue
+        if op == "Add":
+            parse_qdq_add(node)
+            continue
+        if op == "QLinearAdd":
+            parse_qop_add(node)
+            continue
+        if op == "QLinearSoftmax":
+            parse_qop_softmax(node)
+            continue
         if op == "QLinearSigmoid":
             label = node_label(node)
             xs, xz = qop_activation_params(node, 1, 2, label)
@@ -618,9 +839,51 @@ def parse_onnx_model(model_path: str) -> list[OnnxQuantizedLayer]:
                                              output_scale=ys, output_zp=yz))
             continue
         raise ValueError(f"unsupported ONNX op {op} (node {node.name or node.output[0]}); "
-                         "tinymind_import_onnx maps Conv, Gemm, MatMul(+Add), Relu, Sigmoid, Tanh, "
-                         "Softmax, Flatten, Reshape-to-2D and their QOperator forms")
+                         "tinymind_import_onnx maps Conv (depthwise too), Gemm, MatMul(+Add), Add, "
+                         "MaxPool, AveragePool, GlobalAveragePool, Relu, Sigmoid, Tanh, Softmax, "
+                         "Flatten, Reshape-to-2D and their QOperator forms")
+    check_layer_graph(graph, inits, layers)
     return layers
+
+
+def check_layer_graph(graph, inits, layers: list[OnnxQuantizedLayer]) -> None:
+    """Fill each layer's `sources`, and raise ValueError unless every layer
+    reads the model's input or an earlier layer's output, in the (scale,
+    zero_point) that layer wrote it in. Q / DQ / Flatten / Reshape / Identity
+    move a tensor without changing its values, so a layer reading their output
+    reads the tensor they were given; a QuantizeLinear that gives the tensor
+    another grid on the way is a requantization, which no record carries."""
+    import numpy as np
+
+    moved = {node.output[0]: node.input[0] for node in graph.node
+             if node.op_type in ("QuantizeLinear", "DequantizeLinear", "Identity", "Flatten", "Reshape")}
+
+    def origin(tensor):
+        while tensor in moved:
+            tensor = moved[tensor]
+        return tensor
+
+    model_inputs = {origin(vi.name) for vi in graph.input if vi.name not in inits}
+    written: dict[str, int] = {}
+    for i, layer in enumerate(layers):
+        reads = [(layer.input_name, layer.input_scale, layer.input_zp)]
+        if layer.op_type == "Add":
+            reads.append((layer.input_b_name, layer.input_b_scale, layer.input_b_zp))
+        layer.sources = []
+        for tensor, scale, zp in reads:
+            src = origin(tensor)
+            if src in written:
+                prev = layers[written[src]]
+                if np.float32(prev.output_scale) != np.float32(scale) or prev.output_zp != zp:
+                    raise ValueError(f"{layer.name}: reads {prev.name}'s output in another grid (scale "
+                                     f"{scale}, zero point {zp}; written as {prev.output_scale}, "
+                                     f"{prev.output_zp}); a requantization between layers is not supported")
+                layer.sources.append(written[src])
+            elif src in model_inputs:
+                layer.sources.append(-1)
+            else:
+                raise ValueError(f"{layer.name}: reads {tensor}, which no supported layer writes")
+        written[origin(layer.output_name)] = i
 
 
 # ----------------------------------------------------------------------------
@@ -658,6 +921,8 @@ def emit_weights_header(path: str,
       Conv geometry (InputHeight ... OutputWidth) or NumInputs / NumOutputs
       PerChannel, WeightScale(s), Multiplier(s) / Shift(s) for the
       Requantizer, int8 Weights (OHWI or [out][in]), int32 Biases + HasBias.
+    An Add also gets InputBScale / InputBZeroPoint (its second input); a
+    MaxPool its geometry. Each layer's comment names the layers it reads.
     The per-tensor k<tensor>_Scale / k<tensor>_ZeroPoint block is kept for
     callers of the earlier header layout.
     """
@@ -673,8 +938,11 @@ def emit_weights_header(path: str,
     parts.append("    // Activation calibration per tensor.\n")
     seen: set[str] = set()
     for layer in layers:
-        for tensor, scale, zp in ((layer.input_name, layer.input_scale, layer.input_zp),
-                                  (layer.output_name or layer.name, layer.output_scale, layer.output_zp)):
+        tensors = [(layer.input_name, layer.input_scale, layer.input_zp),
+                   (layer.output_name or layer.name, layer.output_scale, layer.output_zp)]
+        if layer.input_b_name:
+            tensors.insert(1, (layer.input_b_name, layer.input_b_scale, layer.input_b_zp))
+        for tensor, scale, zp in tensors:
             nm = sanitize(tensor)
             if nm in seen:
                 continue
@@ -684,15 +952,19 @@ def emit_weights_header(path: str,
 
     for layer in layers:
         nm = sanitize(layer.name)
-        parts.append(f"\n    // {layer.op_type} {nm}\n")
+        reads = ", ".join("the model's input" if j < 0 else sanitize(layers[j].name) for j in layer.sources)
+        parts.append(f"\n    // {layer.op_type} {nm}" + (f" (reads {reads})" if reads else "") + "\n")
         parts.append(f"    constexpr float   k{nm}_InputScale      = {layer.input_scale!r}f;\n")
         parts.append(f"    constexpr int32_t k{nm}_InputZeroPoint  = {layer.input_zp};\n")
+        if layer.input_b_name:
+            parts.append(f"    constexpr float   k{nm}_InputBScale     = {layer.input_b_scale!r}f;\n")
+            parts.append(f"    constexpr int32_t k{nm}_InputBZeroPoint = {layer.input_b_zp};\n")
         parts.append(f"    constexpr float   k{nm}_OutputScale     = {layer.output_scale!r}f;\n")
         parts.append(f"    constexpr int32_t k{nm}_OutputZeroPoint = {layer.output_zp};\n")
-        if layer.weight is None:
-            continue
         for key, value in layer.geometry.items():
             parts.append(f"    constexpr std::size_t k{nm}_{key} = {value};\n")
+        if layer.weight is None:
+            continue
         parts.append(f"    constexpr bool k{nm}_PerChannel = {'true' if layer.per_channel else 'false'};\n")
         if layer.per_channel:
             parts.append(_fmt_float_array(f"k{nm}_WeightScales", layer.weight_scales))
