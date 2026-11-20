@@ -133,7 +133,7 @@ namespace tinymind {
             static const unsigned FractionalBits = ValueType::NumberOfFractionalBits;
 
             static_assert(ValueType::IsSigned, "The log, sin and cos lookups are generated for signed formats only.");
-            static_assert((8u * sizeof(Wide)) >= (2u * Bits), "The lookups need an intermediate twice the width of the format.");
+            static_assert((8u * sizeof(Wide)) >= static_cast<size_t>(2u * Bits), "The lookups need an intermediate twice the width of the format.");
 
             static Wide maxRaw()
             {
