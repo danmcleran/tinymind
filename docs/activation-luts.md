@@ -135,8 +135,9 @@ For each Q-format split and each activation function, the generator:
 
 1. Iterates over 96 evenly spaced x-values from -6.0 to +5.875 (step 0.125)
 2. Computes the activation using double-precision floating-point (`std::tanh`, `std::exp`, `std::sin`, `std::cos`, or the sigmoid formula `e^x / (e^x + 1)`)
-3. Converts the result to fixed-point by multiplying by `2^FractionalBits`
-4. Casts to the appropriate unsigned integer type and writes as a hex literal
+3. Converts the result to fixed-point by multiplying by `2^FractionalBits` and truncating toward zero
+4. Saturates the result to the signed range of the format, so a value the format cannot hold is stored as its largest (or smallest) value instead of wrapping. This applies mainly to exp, which passes 127.996 (the largest Q8.8 value) at x = 4.85, and to cos(0) = 1 in a Q1 format.
+5. Reinterprets the result as the table's unsigned storage type and writes it as a hex literal
 
 For example, `tanh(0.0) = 0.0` in Q8.8 becomes `0x0000`, while `tanh(3.0) = 0.9951` becomes `0x00FE` (254/256 = 0.9922 in Q8.8).
 

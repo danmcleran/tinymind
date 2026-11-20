@@ -222,8 +222,8 @@ static void writeSelectorMinMaxShift(const string& path)
     ofstream outFile;
     outFile.open(path, ofstream::app);
     outFile << "#define NUMBER_OF_ACTIVATION_TABLE_VALUES " << NUMBER_OF_ACTIVATION_TABLE_VALUES << endl;
-    outFile << "#define MIN_X_TABLE_VALUE " << MIN_X_TABLE_VALUE << endl;
-    outFile << "#define MAX_X_TABLE_VALUE " << MAX_X_TABLE_VALUE << endl;
+    outFile << "#define MIN_X_TABLE_VALUE (" << MIN_X_TABLE_VALUE << ")" << endl;
+    outFile << "#define MAX_X_TABLE_VALUE (" << MAX_X_TABLE_VALUE << ")" << endl;
     outFile << "#define ACTIVATION_DELTA_SHIFT " << ACTIVATION_DELTA_SHIFT << endl;
     outFile << endl;
 }
@@ -254,6 +254,47 @@ static void writeTableSelector(string path, const activation_e activationType)
                 "TableType " << structPrefixes[activationType] << "TableType;\n";
     outFile << spaces << "};" << endl;
 }
+
+// The raw value of `num` (the function value times 2^fracBits) in a signed
+// format `totalBits` wide: truncated toward zero, as the tables always were,
+// and saturated to the format's range. Casting an out-of-range double to an
+// integer is undefined; on x86 it wrapped, so exp(x) for x >= 4.875 came out
+// negative in Q8.8 and cos(0) came out as -1 in Q1.15.
+static int64_t toSaturatedFixed64(const double num, const unsigned totalBits)
+{
+    const double limit = std::ldexp(1.0, static_cast<int>(totalBits) - 1);
+    const int64_t maxValue = static_cast<int64_t>((static_cast<uint64_t>(1) << (totalBits - 1)) - 1);
+
+    if (num >= limit)
+    {
+        return maxValue;
+    }
+    else if (num < -limit)
+    {
+        return -maxValue - 1;
+    }
+
+    return static_cast<int64_t>(num);
+}
+
+#if TINYMIND_UINT128_SUPPORTED
+static __int128_t toSaturatedFixed128(const double num)
+{
+    const double limit = std::ldexp(1.0, 127);
+    const __int128_t maxValue = static_cast<__int128_t>((static_cast<__uint128_t>(1) << 127) - 1);
+
+    if (num >= limit)
+    {
+        return maxValue;
+    }
+    else if (num < -limit)
+    {
+        return -maxValue - 1;
+    }
+
+    return static_cast<__int128_t>(num);
+}
+#endif
 
 template <typename T>
 static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBits, uint64_t fracBits, const activation_e activationType)
@@ -323,19 +364,19 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
         switch (std::numeric_limits<T>::digits)
         {
             case 8:
-                outFile << spaces << "            0x" << std::hex << std::uppercase << (int)(uint8_t)num << "," << endl; // cast to uint8_t first for the correct value. cast next to int to write to file correctly as a number not a char.
+                outFile << spaces << "            0x" << std::hex << std::uppercase << (int)(uint8_t)toSaturatedFixed64(num, 8) << "," << endl; // cast to uint8_t first for the correct value. cast next to int to write to file correctly as a number not a char.
                 break;
 
             case 16:
-                outFile << spaces << "            0x" << std::hex << std::uppercase << (uint16_t)num << "," << endl;
+                outFile << spaces << "            0x" << std::hex << std::uppercase << (uint16_t)toSaturatedFixed64(num, 16) << "," << endl;
                 break;
 
             case 32:
-                outFile << spaces << "            0x" << std::hex << std::uppercase << (uint32_t)num << "," << endl;
+                outFile << spaces << "            0x" << std::hex << std::uppercase << (uint32_t)toSaturatedFixed64(num, 32) << "," << endl;
                 break;
 
             case 64:
-                outFile << spaces << "            0x" << std::hex << std::uppercase << (uint64_t)num << "," << endl;
+                outFile << spaces << "            0x" << std::hex << std::uppercase << (uint64_t)toSaturatedFixed64(num, 64) << "," << endl;
                 break;
 
             case 128:
@@ -343,7 +384,7 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
                     // Handle 128-bit case
 #if TINYMIND_UINT128_SUPPORTED
                     // Use native 128-bit support
-                    __uint128_t val128 = static_cast<__uint128_t>(num);
+                    __uint128_t val128 = static_cast<__uint128_t>(toSaturatedFixed128(num));
                     uint64_t high = static_cast<uint64_t>(val128 >> 64);
                     uint64_t low = static_cast<uint64_t>(val128);
                     

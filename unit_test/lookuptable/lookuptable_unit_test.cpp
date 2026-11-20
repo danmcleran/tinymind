@@ -54,17 +54,31 @@ using tinymind::LookupTable;
 
 namespace {
 
-// Convert a real value to the Q-format raw bit pattern using the same cast
-// chain the generator uses (truncate toward zero, then reinterpret as
-// unsigned). Matches activationTableGenerator.cpp:320 num = activate*scale,
-// then cast-to-unsigned.
+// Convert a real value to the Q-format raw bit pattern the way the generator
+// does (toSaturatedFixed64 in activationTableGenerator.cpp): truncate toward
+// zero, saturate to the format's range, then reinterpret as unsigned. Without
+// the saturation an out-of-range value wraps, as exp(5) did in Q8.8.
 template<typename Q>
 typename Q::FullWidthFieldType doubleToRaw(const double x)
 {
     using V = typename Q::FullWidthValueType;
     using F = typename Q::FullWidthFieldType;
     const double scale = std::ldexp(1.0, Q::NumberOfFractionalBits);
-    const V signedRaw = static_cast<V>(x * scale);
+    const double scaled = x * scale;
+    const double limit = std::ldexp(1.0, static_cast<int>(sizeof(V) * 8u) - 1);
+    V signedRaw;
+    if (scaled >= limit)
+    {
+        signedRaw = std::numeric_limits<V>::max();
+    }
+    else if (scaled < -limit)
+    {
+        signedRaw = std::numeric_limits<V>::min();
+    }
+    else
+    {
+        signedRaw = static_cast<V>(scaled);
+    }
     return static_cast<F>(signedRaw);
 }
 
@@ -314,6 +328,38 @@ BOOST_AUTO_TEST_CASE(table_bit_exact_exp_q16_16)
     static const tinymind::ExpValuesTableSelector<16, 16, true>::ExpTableType t;
     verifyBitExact<Q>(t, refExp);
 }
+// exp(x) passes Q8.8's largest value (127.996) at x = 4.85, so the last nine
+// entries (x = 4.875 .. 5.875) must saturate. A raw double-to-integer cast
+// wrapped them: x = 4.875 came out as -124.9 and x = 5.625 as +21.3.
+BOOST_AUTO_TEST_CASE(table_exp_q8_8_saturates_instead_of_wrapping)
+{
+    using Q = QValue<8, 8, true>;
+    static const tinymind::ExpValuesTableSelector<8, 8, true>::ExpTableType t;
+    constexpr ptrdiff_t MAX_INDEX = NUMBER_OF_ACTIVATION_TABLE_VALUES - 1;
+    const int16_t maxRaw = std::numeric_limits<int16_t>::max();
+
+    for (std::size_t i = 1; i < NUMBER_OF_ACTIVATION_TABLE_VALUES; ++i)
+    {
+        BOOST_REQUIRE_GE(static_cast<int16_t>(t.values[i]), static_cast<int16_t>(t.values[i - 1]));
+    }
+    BOOST_CHECK_EQUAL(static_cast<int16_t>(t.values[MAX_INDEX]), maxRaw);
+
+    for (double x = 4.0; x <= 7.0; x += 1.0 / 64.0)
+    {
+        const Q out = LookupTable<Q>::getValue(makeQ<Q>(x), &t.values[0], MAX_INDEX);
+        BOOST_REQUIRE_GT(qToDouble<Q>(out), 50.0);
+    }
+}
+
+// cos(0) = 1 does not fit Q1.15, whose largest value is 1 - 2^-15; the
+// wrapped entry was 0x8000, i.e. -1.
+BOOST_AUTO_TEST_CASE(table_cos_q1_15_saturates_at_zero)
+{
+    static const tinymind::CosValuesTableSelector<1, 15, true>::CosTableType t;
+    const std::size_t zeroIndex = static_cast<std::size_t>(-MIN_X_TABLE_VALUE) << ACTIVATION_DELTA_SHIFT;
+    BOOST_CHECK_EQUAL(static_cast<int16_t>(t.values[zeroIndex]), std::numeric_limits<int16_t>::max());
+}
+
 BOOST_AUTO_TEST_CASE(table_bit_exact_log_q8_8)
 {
     using Q = QValue<8, 8, true>;
