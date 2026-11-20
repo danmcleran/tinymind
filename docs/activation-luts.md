@@ -67,7 +67,10 @@ Each activation function has tables generated for every valid Q-format split wit
 | 16 | `uint16_t` | Q1.15, Q8.8, Q12.4, ... | 192 |
 | 32 | `uint32_t` | Q16.16, Q24.8, ... | 384 |
 | 64 | `uint64_t` | Q32.32, Q48.16, ... | 768 |
-| 128 | `uint128_t` | Q64.64, ... | 1,536 |
+
+The sizes are for the 96-entry activation tables; a 65-entry log, sin or cos table takes 65, 130, 260 or 520 bytes.
+
+There are no 128-bit tables: `QValue` caps a format at 64 bits (so that multiplication and division can widen into a 128-bit intermediate), so no format could read one.
 
 For a given total bit width `N`, tables are generated for every split from Q1.(N-1) through Q(N-1).1 -- that is, `N-1` tables per activation function per bit width.
 
@@ -135,12 +138,12 @@ The single argument is the output directory. The generator produces:
 |---|---|
 | `activation.hpp` | Table dimension constants (`NUMBER_OF_ACTIVATION_TABLE_VALUES`, etc.) |
 | `sigmoid.hpp`, `tanh.hpp`, `exp.hpp`, `log.hpp`, `sin.hpp`, `cos.hpp` | Template selector structs that map Q-format parameters to the correct table struct |
-| `sigmoidValues{8,16,32,64,128}Bit.hpp` | Table struct declarations for each bit width |
-| `tanhValues{8,16,32,64,128}Bit.hpp` | (same pattern for tanh) |
-| `expValues{8,16,32,64,128}Bit.hpp` | (same pattern for exp) |
-| `logValues{8,16,32,64,128}Bit.hpp` | (same pattern for log) |
-| `sinValues{8,16,32,64,128}Bit.hpp` | (same pattern for sin) |
-| `cosValues{8,16,32,64,128}Bit.hpp` | (same pattern for cos) |
+| `sigmoidValues{8,16,32,64}Bit.hpp` | Table struct declarations for each bit width |
+| `tanhValues{8,16,32,64}Bit.hpp` | (same pattern for tanh) |
+| `expValues{8,16,32,64}Bit.hpp` | (same pattern for exp) |
+| `logValues{8,16,32,64}Bit.hpp` | (same pattern for log) |
+| `sinValues{8,16,32,64}Bit.hpp` | (same pattern for sin) |
+| `cosValues{8,16,32,64}Bit.hpp` | (same pattern for cos) |
 | `lookupTables.cpp` | All table data -- the `const` arrays with pre-computed hex values |
 
 ### How Values Are Computed
@@ -196,7 +199,7 @@ Policies that do not need LUTs (`LinearActivationPolicy`, `ReluActivationPolicy`
 
 If you need a Q-format that is not yet enabled:
 
-1. Ensure the total bit width is one of 8, 16, 32, 64, or 128
+1. Ensure the total bit width is one of 8, 16, 32 or 64
 2. Add the appropriate `-D` flag to your build: `-DTINYMIND_USE_TANH_{Fixed}_{Frac}=1`
 3. The table data and selector specialization already exist in `lookupTables.cpp` and the generated headers -- the `#if` guard simply enables them
 
