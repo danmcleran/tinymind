@@ -8596,3 +8596,4 @@ BOOST_AUTO_TEST_SUITE_END()
 #include "momentum_rounding_tests.hpp"
 #include "sgd_step_rounding_tests.hpp"
 #include "head_finetune_tests.hpp"
+#include "output_preactivation_tests.hpp"

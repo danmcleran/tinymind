@@ -24,7 +24,7 @@ Each window is **32 timesteps** long. For every window the network:
    of each window or windows bleed into each other
 2. feeds all 32 timesteps through `feedForward`, training toward the
    (constant) window label at every step
-3. reads the prediction (argmax of `getLearnedValues`) at the final timestep
+3. reads the prediction (argmax of the output logits, `getPredictedClass()`) at the final timestep
 
 60 epochs of shuffled passes over the training split.
 

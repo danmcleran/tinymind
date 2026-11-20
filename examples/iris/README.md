@@ -8,7 +8,7 @@ using a Q16.16 fixed-point MLP from tinymind.
 - 4 inputs — sepal length/width, petal length/width (cm), z-score normalized
   (training-set statistics) then scaled by 1/3 to sit inside Q16.16's stable range
 - 1 hidden layer of 8 ReLU neurons
-- 3 sigmoid outputs — a one-hot encoding of the species; predicted class is argmax
+- 3 sigmoid outputs — a one-hot encoding of the species; the predicted class is the argmax of the output logits (`getPredictedClass()`)
 - 30k iterations of uniform random sampling from the 80% training split
 
 ## Build and run

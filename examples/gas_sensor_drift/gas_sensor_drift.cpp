@@ -514,8 +514,6 @@ static void runAdaptation(NeuralNetworkType& net, const std::vector<Sample>& dat
         ValueType h[EMBEDDING];
         size_t hiddenMismatches = 0;
         size_t argmaxMismatches = 0;
-        size_t tiedMismatches = 0;
-        ValueType learned[NUMBER_OF_OUTPUTS];
         for (size_t j = 0; j < data.size(); ++j)
         {
             toInput(data[j], input);
@@ -525,26 +523,12 @@ static void runAdaptation(NeuralNetworkType& net, const std::vector<Sample>& dat
             {
                 hiddenMismatches += (net.getLastHiddenLayer().getOutputValueForNeuron(k) != h[k]) ? 1U : 0U;
             }
-            net.getLearnedValues(learned);
-            size_t best = 0;
-            for (size_t o = 1; o < NUMBER_OF_OUTPUTS; ++o)
-            {
-                if (learned[o] > learned[best]) best = o;
-            }
-            const size_t headBest = head.predict(h);
-            if (best != headBest)
-            {
-                ++argmaxMismatches;
-                // The sigmoid table saturates, so two confident outputs can
-                // both read 1.0 and the MLP takes the first; the head
-                // compares the logits underneath.
-                tiedMismatches += (learned[best] == learned[headBest]) ? 1U : 0U;
-            }
+            // Both rank the same logits, so they must pick the same class.
+            argmaxMismatches += (net.getPredictedClass() != head.predict(h)) ? 1U : 0U;
         }
         std::cout << "\nBackbone + DenseHead vs the MLP over " << data.size()
                   << " samples: " << hiddenMismatches << " hidden values differ; "
-                  << argmaxMismatches << " predictions differ, " << tiedMismatches
-                  << " of them where two sigmoid outputs tie." << std::endl;
+                  << argmaxMismatches << " predictions differ." << std::endl;
     }
 
     std::vector<size_t> byBatchClass[NUM_BATCHES + 1][NUM_CLASSES];
@@ -744,7 +728,6 @@ int main(int argc, char* argv[])
     const unsigned reportEvery =  2000U;
     ValueType input[NUMBER_OF_INPUTS];
     ValueType target[NUMBER_OF_OUTPUTS];
-    ValueType learned[NUMBER_OF_OUTPUTS];
     double errSum = 0.0;
 
     std::ofstream lossCsv("gas_loss.csv");
@@ -782,14 +765,9 @@ int main(int argc, char* argv[])
     auto predictClass = [&](const Sample& s) -> int {
         toInput(s, input);
         net.feedForward(input);
-        net.getLearnedValues(learned);
-        int pred = 0;
-        double best = fromQ(learned[0]);
-        for (size_t k = 1; k < NUMBER_OF_OUTPUTS; ++k)
-        {
-            const double v = fromQ(learned[k]);
-            if (v > best) { best = v; pred = static_cast<int>(k); }
-        }
+        // Rank the logits, not the sigmoid outputs: the sigmoid table is flat
+        // beyond +/-6, so confident outputs tie there and argmax takes the first.
+        const int pred = static_cast<int>(net.getPredictedClass());
         return pred;
     };
 

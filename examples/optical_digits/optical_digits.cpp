@@ -255,7 +255,6 @@ int main(int argc, char* argv[])
     const unsigned reportEvery =  2000U;
     ValueType input[NUMBER_OF_INPUTS];
     ValueType target[NUMBER_OF_OUTPUTS];
-    ValueType learned[NUMBER_OF_OUTPUTS];
     double errSum = 0.0;
 
     std::ofstream lossCsv("digits_loss.csv");
@@ -302,14 +301,9 @@ int main(int argc, char* argv[])
         const Sample& s = test[i];
         toInput(s, input);
         net.feedForward(input);
-        net.getLearnedValues(learned);
-        int pred = 0;
-        double best = fromQ(learned[0]);
-        for (size_t k = 1; k < NUMBER_OF_OUTPUTS; ++k)
-        {
-            const double v = fromQ(learned[k]);
-            if (v > best) { best = v; pred = static_cast<int>(k); }
-        }
+        // Rank the logits, not the sigmoid outputs: the sigmoid table is flat
+        // beyond +/-6, so confident outputs tie there and argmax takes the first.
+        const int pred = static_cast<int>(net.getPredictedClass());
         predOf[i] = pred;
         ++confusion[s.label][pred];
         if (pred == s.label) ++correct;

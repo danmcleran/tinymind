@@ -14,7 +14,7 @@ produced by downsampling a 32×32 scan of a handwritten digit.
   border pixels are constant zero, so the normalizer guards `stdev < 1e-6`
   (mapping those features to a constant 0 input).
 - 1 hidden layer of 32 ReLU neurons
-- 10 sigmoid outputs — a one-hot encoding of the digit; predicted class is argmax
+- 10 sigmoid outputs — a one-hot encoding of the digit; the predicted class is the argmax of the output logits (`getPredictedClass()`)
 - 60k iterations of uniform random sampling from the training split
 
 ## Build and run

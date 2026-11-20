@@ -479,7 +479,6 @@ static int processWindow(NeuralNetworkType& net, const Window& w, bool train, do
 {
     ValueType input[NUMBER_OF_INPUTS];
     ValueType target[NUMBER_OF_OUTPUTS];
-    ValueType learned[NUMBER_OF_OUTPUTS];
 
     for (size_t k = 0; k < NUMBER_OF_OUTPUTS; ++k)
     {
@@ -520,15 +519,9 @@ static int processWindow(NeuralNetworkType& net, const Window& w, bool train, do
         }
     }
 
-    net.getLearnedValues(learned);
-    int pred = 0;
-    double best = fromQ(learned[0]);
-    for (size_t k = 1; k < NUMBER_OF_OUTPUTS; ++k)
-    {
-        const double v = fromQ(learned[k]);
-        if (v > best) { best = v; pred = static_cast<int>(k); }
-    }
-    return pred;
+    // Rank the logits, not the sigmoid outputs: the sigmoid table is flat
+    // beyond +/-6, so confident outputs tie there and argmax takes the first.
+    return static_cast<int>(net.getPredictedClass());
 }
 
 static const unsigned WEIGHT_INIT_SEED = 1U; // see main()
