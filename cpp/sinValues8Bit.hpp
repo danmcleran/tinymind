@@ -28,43 +28,43 @@ namespace tinymind {
     #if TINYMIND_USE_SIN_1_7
     struct SinValuesTableQ1_7
     {
-        static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint8_t values[NUMBER_OF_TRIG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_SIN_1_7
     #if TINYMIND_USE_SIN_2_6
     struct SinValuesTableQ2_6
     {
-        static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint8_t values[NUMBER_OF_TRIG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_SIN_2_6
     #if TINYMIND_USE_SIN_3_5
     struct SinValuesTableQ3_5
     {
-        static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint8_t values[NUMBER_OF_TRIG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_SIN_3_5
     #if TINYMIND_USE_SIN_4_4
     struct SinValuesTableQ4_4
     {
-        static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint8_t values[NUMBER_OF_TRIG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_SIN_4_4
     #if TINYMIND_USE_SIN_5_3
     struct SinValuesTableQ5_3
     {
-        static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint8_t values[NUMBER_OF_TRIG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_SIN_5_3
     #if TINYMIND_USE_SIN_6_2
     struct SinValuesTableQ6_2
     {
-        static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint8_t values[NUMBER_OF_TRIG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_SIN_6_2
     #if TINYMIND_USE_SIN_7_1
     struct SinValuesTableQ7_1
     {
-        static const uint8_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint8_t values[NUMBER_OF_TRIG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_SIN_7_1
 }

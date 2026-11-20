@@ -14,7 +14,7 @@ Traditional activation functions require either a hardware FPU or a software flo
 
 - **Constant-time evaluation** -- a table index computation and one interpolation, regardless of input value
 - **No FPU dependency** -- all arithmetic is integer-only using Q-format fixed-point
-- **Predictable memory cost** -- each table is exactly 96 entries, sized by the Q-format's storage type
+- **Predictable memory cost** -- each activation table is exactly 96 entries and each log, sin or cos table 65, sized by the Q-format's storage type
 - **Compile-time selectability** -- preprocessor switches include only the tables you use
 
 ## Supported Activation Functions
@@ -24,15 +24,15 @@ Traditional activation functions require either a hardware FPU or a software flo
 | Sigmoid | `SigmoidValuesTableQ` | `SigmoidActivationPolicy<ValueType>` | `f'(x) = f(x) * (1 - f(x))` |
 | Tanh | `TanhValuesTableQ` | `TanhActivationPolicy<ValueType>` | `f'(x) = 1 - f(x)^2` |
 | Exp | `ExpValuesTableQ` | Used by `SoftmaxActivationPolicy`, `EluActivationPolicy` | N/A (used internally) |
-| Log | `LogValuesTableQ` | Available for custom policies | N/A (used internally) |
-| Sin | `SinValuesTableQ` | Available for FFT twiddle factors and custom policies | N/A |
-| Cos | `CosValuesTableQ` | Available for FFT twiddle factors and custom policies | N/A |
+| Log | `LogValuesTableQ` | `LogLookup<ValueType>::log` in `cpp/lookupFunctions.hpp`; used by `CrossEntropyLossCalculator` | N/A (used internally) |
+| Sin | `SinValuesTableQ` | `TrigLookup<ValueType>::sin` in `cpp/lookupFunctions.hpp`; used by the fixed-point dual numbers | N/A |
+| Cos | `CosValuesTableQ` | `TrigLookup<ValueType>::cos` in `cpp/lookupFunctions.hpp`; used by the fixed-point dual numbers | N/A |
 
 Additionally, `GeluActivationPolicy` reuses the sigmoid LUT with a 1.702x input scaling factor.
 
 ## Table Parameters
 
-All LUTs share the same domain and resolution, defined in `cpp/activation.hpp`:
+The activation tables (sigmoid, tanh, exp) share one domain and resolution, defined in `cpp/activation.hpp`:
 
 | Parameter | Value | Meaning |
 |---|---|---|
@@ -42,6 +42,20 @@ All LUTs share the same domain and resolution, defined in `cpp/activation.hpp`:
 | `ACTIVATION_DELTA_SHIFT` | 3 | Spacing = `1 / 2^3 = 0.125` between sample points |
 
 The input domain [-6, 6] covers the full dynamic range where sigmoid and tanh have meaningful variation. Outside this range, sigmoid saturates at 0 or 1, and tanh at -1 or +1. The 96 entries at 0.125 spacing provide `96 * 0.125 = 12` units of range, exactly covering [-6, +6).
+
+### Log, sin and cos
+
+log, sin and cos do not saturate, so clamping them to [-6, 6) would be wrong for most inputs. Their tables cover a reduced range instead, and the functions in `cpp/lookupFunctions.hpp` reduce the input to it before the lookup:
+
+| Parameter | Value | Meaning |
+|---|---|---|
+| `NUMBER_OF_LOG_TABLE_VALUES` | 65 | Knots of log(m) for the mantissa m in [1, 2] |
+| `LOG_TABLE_SHIFT` | 6 | Spacing = `1 / 2^6` between knots |
+| `NUMBER_OF_TRIG_TABLE_VALUES` | 65 | Knots of sin or cos over one quarter wave, [0, pi/2] |
+| `TRIG_TABLE_SHIFT` | 6 | Spacing = `(pi/2) / 2^6` between knots |
+
+- `LogLookup<ValueType>::log(x)` writes x as m * 2^e with m in [1, 2), interpolates log(m) from the table and adds e * ln 2, so it holds over the whole positive range of the format. In Q16.16 it is within 8e-5 of `std::log` for every positive input. An input of 0 or below returns minus the largest value of the format, so a cross-entropy that negates the sum cannot wrap.
+- `TrigLookup<ValueType>::sin(x)` and `::cos(x)` reduce x by pi/2 in a type twice the width of the format, mirror the remainder into [0, pi/2], interpolate the quarter-wave table and set the sign from the quadrant. In Q16.16 they are within 1.2e-4 of `std::sin` and `std::cos` over the whole range of the format.
 
 ## Q-Format and Table Sizes
 
@@ -133,7 +147,7 @@ The single argument is the output directory. The generator produces:
 
 For each Q-format split and each activation function, the generator:
 
-1. Iterates over 96 evenly spaced x-values from -6.0 to +5.875 (step 0.125)
+1. Iterates over 96 evenly spaced x-values from -6.0 to +5.875 (step 0.125) for sigmoid, tanh and exp; over 65 knots from 1 to 2 (step 1/64) for log; and over 65 knots from 0 to pi/2 (step (pi/2)/64) for sin and cos
 2. Computes the activation using double-precision floating-point (`std::tanh`, `std::exp`, `std::sin`, `std::cos`, or the sigmoid formula `e^x / (e^x + 1)`)
 3. Converts the result to fixed-point by multiplying by `2^FractionalBits` and truncating toward zero
 4. Saturates the result to the signed range of the format, so a value the format cannot hold is stored as its largest (or smallest) value instead of wrapping. This applies mainly to exp, which passes 127.996 (the largest Q8.8 value) at x = 4.85, and to cos(0) = 1 in a Q1 format.

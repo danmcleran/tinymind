@@ -49,187 +49,187 @@ namespace tinymind {
     #if TINYMIND_USE_LOG_1_31
     struct LogValuesTableQ1_31
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_1_31
     #if TINYMIND_USE_LOG_2_30
     struct LogValuesTableQ2_30
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_2_30
     #if TINYMIND_USE_LOG_3_29
     struct LogValuesTableQ3_29
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_3_29
     #if TINYMIND_USE_LOG_4_28
     struct LogValuesTableQ4_28
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_4_28
     #if TINYMIND_USE_LOG_5_27
     struct LogValuesTableQ5_27
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_5_27
     #if TINYMIND_USE_LOG_6_26
     struct LogValuesTableQ6_26
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_6_26
     #if TINYMIND_USE_LOG_7_25
     struct LogValuesTableQ7_25
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_7_25
     #if TINYMIND_USE_LOG_8_24
     struct LogValuesTableQ8_24
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_8_24
     #if TINYMIND_USE_LOG_9_23
     struct LogValuesTableQ9_23
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_9_23
     #if TINYMIND_USE_LOG_10_22
     struct LogValuesTableQ10_22
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_10_22
     #if TINYMIND_USE_LOG_11_21
     struct LogValuesTableQ11_21
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_11_21
     #if TINYMIND_USE_LOG_12_20
     struct LogValuesTableQ12_20
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_12_20
     #if TINYMIND_USE_LOG_13_19
     struct LogValuesTableQ13_19
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_13_19
     #if TINYMIND_USE_LOG_14_18
     struct LogValuesTableQ14_18
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_14_18
     #if TINYMIND_USE_LOG_15_17
     struct LogValuesTableQ15_17
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_15_17
     #if TINYMIND_USE_LOG_16_16
     struct LogValuesTableQ16_16
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_16_16
     #if TINYMIND_USE_LOG_17_15
     struct LogValuesTableQ17_15
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_17_15
     #if TINYMIND_USE_LOG_18_14
     struct LogValuesTableQ18_14
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_18_14
     #if TINYMIND_USE_LOG_19_13
     struct LogValuesTableQ19_13
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_19_13
     #if TINYMIND_USE_LOG_20_12
     struct LogValuesTableQ20_12
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_20_12
     #if TINYMIND_USE_LOG_21_11
     struct LogValuesTableQ21_11
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_21_11
     #if TINYMIND_USE_LOG_22_10
     struct LogValuesTableQ22_10
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_22_10
     #if TINYMIND_USE_LOG_23_9
     struct LogValuesTableQ23_9
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_23_9
     #if TINYMIND_USE_LOG_24_8
     struct LogValuesTableQ24_8
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_24_8
     #if TINYMIND_USE_LOG_25_7
     struct LogValuesTableQ25_7
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_25_7
     #if TINYMIND_USE_LOG_26_6
     struct LogValuesTableQ26_6
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_26_6
     #if TINYMIND_USE_LOG_27_5
     struct LogValuesTableQ27_5
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_27_5
     #if TINYMIND_USE_LOG_28_4
     struct LogValuesTableQ28_4
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_28_4
     #if TINYMIND_USE_LOG_29_3
     struct LogValuesTableQ29_3
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_29_3
     #if TINYMIND_USE_LOG_30_2
     struct LogValuesTableQ30_2
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_30_2
     #if TINYMIND_USE_LOG_31_1
     struct LogValuesTableQ31_1
     {
-        static const uint32_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];
+        static const uint32_t values[NUMBER_OF_LOG_TABLE_VALUES];
     };
     #endif // TINYMIND_USE_LOG_31_1
 }

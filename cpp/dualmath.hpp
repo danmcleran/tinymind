@@ -51,6 +51,7 @@
 #include "activation.hpp" // NUMBER_OF_ACTIVATION_TABLE_VALUES
 #include "sin.hpp"
 #include "cos.hpp"
+#include "lookupFunctions.hpp" // TrigLookup (sin, cos)
 #include "exp.hpp"
 
 #if TINYMIND_ENABLE_STD
@@ -123,16 +124,10 @@ namespace tinymind {
             static const typename ExpValuesTableSelector<F, Fr, Sgn>::ExpTableType t;
             return LookupTable<V>::getValue(x, &t.values[0], kMaxIdx);
         }
-        static V sinVal(const V& x)
-        {
-            static const typename SinValuesTableSelector<F, Fr, Sgn>::SinTableType t;
-            return LookupTable<V>::getValue(x, &t.values[0], kMaxIdx);
-        }
-        static V cosVal(const V& x)
-        {
-            static const typename CosValuesTableSelector<F, Fr, Sgn>::CosTableType t;
-            return LookupTable<V>::getValue(x, &t.values[0], kMaxIdx);
-        }
+        // sin and cos reduce their input by the period first (TrigLookup), so
+        // they hold over the whole range of the format, not just [-6, 6).
+        static V sinVal(const V& x) { return TrigLookup<V>::sin(x); }
+        static V cosVal(const V& x) { return TrigLookup<V>::cos(x); }
         static V sqrtVal(const V& x) { return SquareRootApproximation<V>::sqrt(x); }
         static V one() { return Constants<V>::one(); }
         static V two() { return Constants<V>::one() + Constants<V>::one(); }
