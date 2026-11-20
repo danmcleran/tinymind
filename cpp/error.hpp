@@ -26,6 +26,7 @@
 
 #include "lookupTable.hpp"
 #include "log.hpp"
+#include "lookupFunctions.hpp"
 #include "constants.hpp"
 
 namespace tinymind {
@@ -58,31 +59,23 @@ namespace tinymind {
     template<typename ValueType, unsigned NumberOfOutputNeurons>
     struct CrossEntropyLossCalculator
     {
-        typedef typename ValueType::FullWidthFieldType FullWidthFieldType;
-        typedef LookupTable<ValueType> LookupTableType;
-        typedef typename LogValuesTableSelector<ValueType::NumberOfFixedBits, ValueType::NumberOfFractionalBits, ValueType::IsSigned>::LogTableType LogTableType;
-
         /**
-         * Cross-entropy loss
+         * Cross-entropy loss. log comes from LogLookup, which is accurate over
+         * the whole positive range of the format; an output of 0 or below
+         * takes minus the largest value of the format as its log.
          */
         static ValueType calculateError(ValueType const* const targetValues, ValueType const* const outputValues)
         {
-            static const ptrdiff_t MAX_ACTIVATION_INDEX = (((sizeof(FullWidthFieldType) * NUMBER_OF_ACTIVATION_TABLE_VALUES) / sizeof(logActivationTable.values[0])) - 1);
             ValueType error(0);
 
             for (uint32_t neuron = 0; neuron < NumberOfOutputNeurons; neuron++)
             {
-                error += (targetValues[neuron] * LookupTableType::getValue(outputValues[neuron], &logActivationTable.values[0], MAX_ACTIVATION_INDEX));
+                error += (targetValues[neuron] * LogLookup<ValueType>::log(outputValues[neuron]));
             }
 
             error *= Constants<ValueType>::negativeOne();
 
             return error;
         }
-    private:
-        static const LogTableType logActivationTable;
     };
-
-    template<typename ValueType, unsigned NumberOfOutputNeurons>
-    const typename LogValuesTableSelector<ValueType::NumberOfFixedBits, ValueType::NumberOfFractionalBits, ValueType::IsSigned>::LogTableType CrossEntropyLossCalculator<ValueType, NumberOfOutputNeurons>::logActivationTable;
 }

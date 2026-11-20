@@ -166,6 +166,54 @@ static void writeFileHeader(const string& path, const bool includeIntelCopyright
     outFile << "#include \"activation.hpp\"" << endl << endl;
 }
 
+// The log table holds log(m) for the mantissa m in [1, 2]; LogLookup in
+// logLookup.hpp adds the exponent times ln 2. The sin and cos tables hold one
+// quarter wave, [0, pi/2]; TrigLookup in trigLookup.hpp reduces the input by
+// the period and mirrors it into that quarter. The activation tables (tanh,
+// sigmoid, exp) span [MIN_X_TABLE_VALUE, MAX_X_TABLE_VALUE).
+static char const* tableSizeMacro(const activation_e activationType)
+{
+    if (logActivation == activationType)
+    {
+        return "NUMBER_OF_LOG_TABLE_VALUES";
+    }
+    else if ((sinActivation == activationType) || (cosActivation == activationType))
+    {
+        return "NUMBER_OF_TRIG_TABLE_VALUES";
+    }
+
+    return "NUMBER_OF_ACTIVATION_TABLE_VALUES";
+}
+
+static int tableSize(const activation_e activationType)
+{
+    if (logActivation == activationType)
+    {
+        return NUMBER_OF_LOG_TABLE_VALUES;
+    }
+    else if ((sinActivation == activationType) || (cosActivation == activationType))
+    {
+        return NUMBER_OF_TRIG_TABLE_VALUES;
+    }
+
+    return NUMBER_OF_ACTIVATION_TABLE_VALUES;
+}
+
+static double tableSampleX(const activation_e activationType, const int index)
+{
+    if (logActivation == activationType)
+    {
+        return 1.0 + std::ldexp(static_cast<double>(index), -LOG_TABLE_SHIFT);
+    }
+    else if ((sinActivation == activationType) || (cosActivation == activationType))
+    {
+        const double halfPi = std::acos(-1.0) / 2.0;
+        return halfPi * std::ldexp(static_cast<double>(index), -TRIG_TABLE_SHIFT);
+    }
+
+    return static_cast<double>(MIN_X_TABLE_VALUE) + std::ldexp(static_cast<double>(index), -ACTIVATION_DELTA_SHIFT);
+}
+
 static void writeTableHeader(const string& path, char const* const preprocessorTag, const int totalBits, const int fixedBits, const int fracBits, const activation_e activationType)
 {
     const string spaces("    ");
@@ -174,7 +222,7 @@ static void writeTableHeader(const string& path, char const* const preprocessorT
     outFile << spaces << "#if " << preprocessorTag << fixedBits << "_" << fracBits << endl;
     outFile << spaces << "struct " << structPrefixes[activationType] << "ValuesTableQ" << fixedBits << "_" << fracBits << endl;
     outFile << spaces << "{" << endl;
-    outFile << spaces << "    static const uint" << totalBits << "_t values[NUMBER_OF_ACTIVATION_TABLE_VALUES];" << endl;
+    outFile << spaces << "    static const uint" << totalBits << "_t values[" << tableSizeMacro(activationType) << "];" << endl;
     outFile << spaces << "};" << endl;
     outFile << spaces << "#endif // "  << preprocessorTag << fixedBits << "_" << fracBits << endl;
     outFile.close();
@@ -225,6 +273,10 @@ static void writeSelectorMinMaxShift(const string& path)
     outFile << "#define MIN_X_TABLE_VALUE (" << MIN_X_TABLE_VALUE << ")" << endl;
     outFile << "#define MAX_X_TABLE_VALUE (" << MAX_X_TABLE_VALUE << ")" << endl;
     outFile << "#define ACTIVATION_DELTA_SHIFT " << ACTIVATION_DELTA_SHIFT << endl;
+    outFile << "#define NUMBER_OF_LOG_TABLE_VALUES " << NUMBER_OF_LOG_TABLE_VALUES << endl;
+    outFile << "#define LOG_TABLE_SHIFT " << LOG_TABLE_SHIFT << endl;
+    outFile << "#define NUMBER_OF_TRIG_TABLE_VALUES " << NUMBER_OF_TRIG_TABLE_VALUES << endl;
+    outFile << "#define TRIG_TABLE_SHIFT " << TRIG_TABLE_SHIFT << endl;
     outFile << endl;
 }
 
@@ -300,8 +352,6 @@ template <typename T>
 static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBits, uint64_t fracBits, const activation_e activationType)
 {
     const string spaces("    ");
-    const double valueDelta = (static_cast<double>(1.0) / static_cast<double>(1 << ACTIVATION_DELTA_SHIFT));
-    double value = MIN_X_TABLE_VALUE;
     ofstream outFile;
     outFile.open(path, ofstream::app);
     double activate;
@@ -309,10 +359,12 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
 
     outFile << std::dec;
     outFile << spaces << "#if " << activationTags[activationType] << fixedBits << "_" << fracBits << endl;
-    outFile << spaces << "const uint" << totalBits << "_t " << structPrefixes[activationType] << "ValuesTableQ" << fixedBits << "_" << fracBits << "::values[NUMBER_OF_ACTIVATION_TABLE_VALUES] = {" << endl;
+    outFile << spaces << "const uint" << totalBits << "_t " << structPrefixes[activationType] << "ValuesTableQ" << fixedBits << "_" << fracBits << "::values[" << tableSizeMacro(activationType) << "] = {" << endl;
 
-    for (int i = 0; i < NUMBER_OF_ACTIVATION_TABLE_VALUES; ++i)
+    for (int i = 0; i < tableSize(activationType); ++i)
     {
+        const double value = tableSampleX(activationType, i);
+
         if (tanhActivation == activationType)
         {
             activate = tanh(value);
@@ -327,14 +379,7 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
         }
         else if (logActivation == activationType)
         {
-            if(value > 0.0f)
-            {
-                activate = log(value);
-            }
-            else
-            {
-                activate = 0.0;
-            }
+            activate = log(value);
         }
         else if (sinActivation == activationType)
         {
@@ -412,8 +457,6 @@ static void writeLutValues(string path, const size_t totalBits, uint64_t fixedBi
             default:
                 assert(0);
         }
-    
-        value += valueDelta;
     }
 
     outFile << std::dec;

@@ -47,6 +47,7 @@ The optional tiers below are summarized only in `docs/ARCHITECTURE.md`: int8 **Q
 - **`qlearn.hpp`** — Q-learning and DQN reinforcement learning implementation.
 - **`activationFunctions.hpp`**, **`fixedPointTransferFunctions.hpp`** — Activation functions (sigmoid, tanh, ReLU, etc.) with separate implementations for fixed-point vs. float.
 - **`lookupTables.cpp`** — Large pre-computed lookup tables for fixed-point activation functions (sigmoid, tanh, exp, log, sin, cos). This is the only `.cpp` file in the core library; everything else is headers.
+- **`lookupFunctions.hpp`** — `LogLookup` (log via mantissa and exponent) and `TrigLookup` (sin/cos via reduction by pi/2 into a quarter-wave table), over the whole range of a signed Q format. The activation tables clamp to [-6, 6); these do not.
 - **`cpp/include/nnproperties.hpp`** — Defines the property/policy classes used to configure neural network templates (layer sizes, learning rates, activation functions, etc.).
 - **`cpp/include/tinymind_rounding.hpp`** — `multiplyRoundNearest` / `multiplyRoundTowardZero`, the only way an SGD step is built (see the root `AGENTS.md`).
 - **`kan.hpp`**, **`bspline.hpp`**, **`kanTransferFunctions.hpp`** — Kolmogorov-Arnold networks (see `KAN.md`).
