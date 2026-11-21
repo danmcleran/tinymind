@@ -137,7 +137,7 @@ See [PyTorch Interoperability]({{ site.baseurl }}/training/pytorch-interop) for 
 
 ## Activation Function Lookup Tables
 
-Fixed-point activation functions (sigmoid, tanh, exp, log) and trigonometric functions (sin, cos) are implemented via pre-computed lookup tables with linear interpolation -- no FPU or math library needed. Each table is 96 entries, and compile-time preprocessor switches ensure you only pay for the tables you use (96 bytes for a Q8.8 tanh table). See [Activation Function Lookup Tables]({{ site.baseurl }}/activation-luts) for the full details on table generation, runtime lookup, and memory footprint.
+Fixed-point activation functions (sigmoid, tanh, exp, log) and trigonometric functions (sin, cos) are implemented via pre-computed lookup tables with linear interpolation -- no FPU or math library needed. The sigmoid, tanh and exp tables hold 96 entries over [-6, 6); log and sin/cos reduce their input first and read 65-entry tables over one octave and one quarter wave, so they hold across the whole format. Compile-time preprocessor switches ensure you only pay for the tables you use (192 bytes for a Q8.8 tanh table). See [Activation Function Lookup Tables]({{ site.baseurl }}/activation-luts) for the full details on table generation, runtime lookup, and memory footprint.
 
 ## Design Philosophy
 
