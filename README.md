@@ -39,6 +39,7 @@ Inspired by Andrei Alexandrescu's policy-based design from [Modern C++ Design](h
 - **Heterogeneous hidden layers** via `HiddenLayers<N0, N1, ...>` for different neuron counts per layer (`MultilayerPerceptron` is a convenience alias for uniform layers)
 - **Mini-batch training** -- with `BatchSize` = B, the gradients of B samples are accumulated and the weights move once per batch by their mean (feed-forward and recurrent networks)
 - **Softmax output** for multi-class classification
+- **Logit-ranked predictions** -- `getPredictedClass()` returns the argmax of the output layer's pre-activations (`getOutputPreActivations()`), so two confident outputs that the saturated sigmoid table maps to the same value are still told apart
 - **Xavier weight initialization** (uniform and normal distributions)
 - **Weight import/export** in CSV and binary formats for all network types (MLP, LSTM, GRU, KAN; interoperable with PyTorch)
 
@@ -106,10 +107,10 @@ Continuous-time recurrent cells from the MIT liquid-network line of work. Both a
 
 ### Fixed-Point Arithmetic
 
-- `QValue<IntegerBits, FractionalBits, IsSigned>` template supporting Q8.8, Q16.16, Q24.8, Q32.32, and other formats up to 128-bit
+- `QValue<IntegerBits, FractionalBits, IsSigned>` template supporting Q8.8, Q16.16, Q24.8, Q32.32, and other formats up to 64 bits in total (multiplication and division widen into a 128-bit intermediate)
 - Full operator overloading (`+`, `-`, `*`, `/`, comparisons)
 - Configurable rounding (`TruncatePolicy`, `RoundUpPolicy`) and saturation (`WrapPolicy`, `MinMaxSaturatePolicy`) policies
-- Pre-computed lookup tables for sigmoid, tanh, exp, and log across all supported bit-widths
+- Pre-computed lookup tables for sigmoid, tanh, exp, log, sin and cos for the 8-, 16-, 32- and 64-bit formats; table entries saturate rather than wrap, and log, sin and cos reduce their input into the table's interval first (`lookupFunctions.hpp`), so they stay accurate across the whole format
 - Also supports `float` and `double` as value types for prototyping
 
 ### Post-Training Int8 Quantization (optional, `TINYMIND_ENABLE_QUANTIZATION=1`)
@@ -1090,7 +1091,8 @@ tinymind/
     teacherForcing.hpp          # Scheduled sampling for recurrent training
     networkStats.hpp            # Compile-time network statistics
     xavier.hpp                  # Xavier weight initialization
-    lookupTables.cpp            # Pre-computed activation tables (~4.6 MB)
+    lookupFunctions.hpp         # Range-reduced log, sin and cos over the lookup tables
+    lookupTables.cpp            # Pre-computed activation tables (~1.6 MB)
     include/                    # Support headers
       tinymind_platform.hpp     # Platform feature gates (FLOAT/STD/HOSTED_IO/OSTREAMS/HOSTED_RAND/QUANTIZATION/FP16/INT16_ACCUM/SIMD_*/OPENMP), TINYMIND_NOINLINE
       tinymind_traits.hpp       # Minimal in-house enable_if / is_floating_point for STD=0 builds
