@@ -11,7 +11,7 @@ A six-way gas classifier that demonstrates **sensor drift** — the slow accurac
 
 ## How it works
 
-- Q16.16 fixed-point MLP, 128&nbsp;&rarr;&nbsp;32&nbsp;&rarr;&nbsp;6, ReLU hidden layer and 6 sigmoid outputs (one-hot, predicted class is the argmax).
+- Q16.16 fixed-point MLP, 128&nbsp;&rarr;&nbsp;32&nbsp;&rarr;&nbsp;6, ReLU hidden layer and 6 sigmoid outputs (one-hot; the predicted class is the argmax of the output logits, from `getPredictedClass()`).
 - The same `NeuralNet<>` fixed-point train-and-deploy path as [Iris](iris.html), scaled up to a 128-input classification task, used to make sensor drift visible as a **drift curve**: train once on batch 1, then evaluate every later batch.
 - The 128 inputs are z-score normalized using **batch-1 statistics**, which are then applied unchanged to every batch — normalization deliberately does not compensate for drift, which is the point. Each later batch applies a per-sensor-feature multiplicative gain and additive offset growing with the batch index, a documented stand-in for sensor aging.
 

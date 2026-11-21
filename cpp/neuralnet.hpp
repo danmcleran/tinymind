@@ -4628,6 +4628,41 @@ namespace tinymind {
             }
         }
 
+        // The output layer's pre-activations (the logits) for the last
+        // feedForward(), recomputed from the last hidden layer with the same
+        // sum the output layer forms, so they match it bit for bit. Rank these
+        // rather than getLearnedValues() to pick a class: an output activation
+        // that saturates, such as the fixed-point sigmoid table (flat beyond
+        // +/-6), gives every confident output the same value, and an argmax
+        // over tied values can only take the first.
+        void getOutputPreActivations(ValueType* output) const
+        {
+            for (size_t outputNeuron = 0; outputNeuron < NumberOfOutputLayerNeurons; ++outputNeuron)
+            {
+                output[outputNeuron] = this->outputPreActivationForNeuron(outputNeuron);
+            }
+        }
+
+        // The index of the largest output pre-activation for the last
+        // feedForward(); ties go to the lower index.
+        size_t getPredictedClass() const
+        {
+            size_t best = 0;
+            ValueType bestValue = this->outputPreActivationForNeuron(0);
+
+            for (size_t outputNeuron = 1; outputNeuron < NumberOfOutputLayerNeurons; ++outputNeuron)
+            {
+                const ValueType value = this->outputPreActivationForNeuron(outputNeuron);
+                if (value > bestValue)
+                {
+                    best = outputNeuron;
+                    bestValue = value;
+                }
+            }
+
+            return best;
+        }
+
         NeuralNetworkOutputLayerType& getOutputLayer()
         {
             return this->mOutputLayer;
@@ -4775,6 +4810,16 @@ namespace tinymind {
         void feedForwardOutputLayer()
         {
             this->mOutputLayer.feedForward(this->mLastHiddenLayer);
+        }
+
+        // Mirrors the sum in OutputLayer::feedForward and
+        // ClassifierOutputLayer::feedForward.
+        ValueType outputPreActivationForNeuron(const size_t outputNeuron) const
+        {
+            ValueType sum = this->mLastHiddenLayer.getBiasNeuronValueForOutgoingConnection(outputNeuron);
+            sum += this->mLastHiddenLayer.getOutputValueForOutgoingConnection(outputNeuron);
+
+            return sum;
         }
 
     protected:

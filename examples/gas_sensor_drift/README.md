@@ -40,7 +40,7 @@ physically-motivated dataset with documented rules (see `synthesizeDataset()`):
   The same batch-1 statistics are applied to every batch — normalization does
   **not** compensate for drift, which is the point.
 - 1 hidden layer of 32 ReLU neurons
-- 6 sigmoid outputs — one-hot encoding of the gas class; predicted class is argmax
+- 6 sigmoid outputs — one-hot encoding of the gas class; the predicted class is the argmax of the output logits (`getPredictedClass()`), because the sigmoid lookup table is flat beyond ±6 and confident outputs tie there
 - 50k iterations of uniform random sampling from the **batch-1** 80% train split
 - Evaluated on each batch 1..10 to produce the drift curve
 
@@ -83,9 +83,8 @@ batch from a few labelled samples per class drawn from that batch (1, 2, 5,
 10 or 20 "shots"), scores it on the rest of the batch, and averages over 10
 random draws of the shots. The trained MLP is split into a frozen backbone
 (the 128 → 32 ReLU layer) and a head (the 32 → 6 layer); the split reproduces
-the MLP's hidden layer bit for bit, and its predictions everywhere except where
-two sigmoid outputs saturate to the same value (the head compares the logits
-underneath). Seven methods are compared, each starting from the shipped model:
+the MLP's hidden layer bit for bit and its predictions exactly, since both rank
+the same logits. Seven methods are compared, each starting from the shipped model:
 
 | Method | What changes | Labels |
 |---|---|---|

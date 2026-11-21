@@ -12,7 +12,7 @@ A recurrent human-activity classifier over tri-axial accelerometer sequences, in
 ## How it works
 
 - Q16.16 fixed-point **LSTM**, 3 inputs &rarr; one hidden LSTM layer of 16 tanh neurons &rarr; 4 sigmoid outputs, with `GradientClipByValue`, learning rate 0.1 and no momentum (the library default of 0.25 with momentum 0.5 oscillates on this task in Q16.16).
-- Each window is 32 timesteps. The cell state is reset (`resetState()`) at the start of every window; all 32 steps are supervised toward the window label, trained on every step, and the prediction is read (argmax) at the final timestep. 60 epochs of shuffled passes.
+- Each window is 32 timesteps. The cell state is reset (`resetState()`) at the start of every window; all 32 steps are supervised toward the window label, trained on every step, and the prediction is read at the final timestep as the argmax of the output logits (`getPredictedClass()`). 60 epochs of shuffled passes.
 - The three walking classes share the step rate, lateral sway, gravity direction, and the per-axis mean and standard deviation. Level walking has a sinusoidal vertical acceleration; the stairs classes have a sawtooth, and WALKING_DOWNSTAIRS is WALKING_UPSTAIRS played backwards in time, so every individual sample has the same distribution in both. An LSTM that reads one timestep at a time can only separate them by remembering earlier samples.
 
 ## Build and run

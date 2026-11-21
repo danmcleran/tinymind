@@ -98,6 +98,10 @@ typedef tinymind::NeuralNetwork<ValueType, 2, tinymind::HiddenLayers<16, 8, 4>, 
     TransferFunctionsType> ThreeLayerNN;
 ```
 
+### Picking a class
+
+After `feedForward()`, `getLearnedValues()` returns the output layer's activations and `getOutputPreActivations()` returns the logits underneath them, recomputed from the last hidden layer so they match the output layer bit for bit. A classifier should call `getPredictedClass()`, the argmax of the logits (ties go to the lower index), rather than take the argmax of `getLearnedValues()`. The fixed-point sigmoid lookup table is flat beyond ±6, so every confident output reads the same value there and an argmax over them can only take the first. In `gas_sensor_drift` that tied 10% of the batch-10 samples and cost 3.9 points of batch-10 accuracy (mean over 10 seeds, better on every one). Because the output activation is monotonic, the logits give the same order as the activations wherever the activations do not tie, so nothing else changes.
+
 `NeuralNetwork` is also the base class for the recurrent network templates: `LstmNeuralNetwork`, `GruNeuralNetwork`, `ElmanNeuralNetwork`, and `RecurrentNeuralNetwork`. See the [LSTM and GRU Recurrent Networks]({{ site.baseurl }}/architectures/lstm-gru) page for details.
 
 # Training Policies
