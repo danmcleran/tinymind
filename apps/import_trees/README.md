@@ -17,7 +17,7 @@ quantization helper.
 
 | Library | Models |
 |---|---|
-| scikit-learn | `DecisionTree{Classifier,Regressor}`, `RandomForest{Classifier,Regressor}`, `ExtraTrees{Classifier,Regressor}`, `GradientBoosting{Classifier,Regressor}` |
+| scikit-learn | `DecisionTree{Classifier,Regressor}`, `RandomForest{Classifier,Regressor}`, `ExtraTrees{Classifier,Regressor}`, `GradientBoosting{Classifier,Regressor}`, `IsolationForest` |
 | XGBoost | `XGBClassifier`, `XGBRegressor`, `Booster` (gbtree) |
 | LightGBM | `LGBMClassifier`, `LGBMRegressor`, `Booster` |
 
@@ -98,6 +98,55 @@ rounding. On calibrated float features, a sample within one grid step of a
 threshold can flip; `model.agreement(X)` reports it on whatever data you give
 it, and should be checked on held-out data. Compiled with `-ffast-math`,
 `quantizeFeatures` may no longer match the importer's reference.
+
+## IsolationForest (anomaly detection)
+
+An `IsolationForest` exports as an additive ensemble whose sum is the forest's
+total path length.
+
+* **Leaves.** Each leaf holds its depth plus c(n). Here n is the number of
+  training samples that reached the leaf, and c(n) is the average path length
+  of an unbuilt subtree over n samples. That is the quantity
+  `score_samples` adds up.
+* **Feature subsets.** Each tree's feature subset (`estimators_features_`) is
+  mapped back to the input's columns.
+* **Base check.** The base check compares the summed path length with
+  `-T c(max_samples) log2(-score_samples)`, so a parsing error is refused
+  here, as it is for the other models.
+* **Threshold.** The header adds `kAnomalyThreshold`, which is
+  scikit-learn's `offset_` moved into path-length units:
+  `score_samples < offset_` is the same test as
+  `sum < -T c(max_samples) log2(-offset_)`.
+* **`predict()`** returns 1 for an outlier (scikit-learn's `predict() == -1`)
+  and 0 for an inlier.
+* **`kAveragePathLength`** is c(max_samples). With it,
+  `-2^(-(raw / kOutputScale) / (NumTrees * kAveragePathLength))` recovers
+  `score_samples`. On the host, `model.score_samples(X)` does the same.
+
+```python
+iso = IsolationForest(n_estimators=25, max_samples=64, contamination=0.01).fit(X_normal)
+model = export_trees(iso, X_normal, "anomaly.hpp", namespace="anomaly",
+                     quant=FeatureQuant.from_data(X_normal, "int8"))
+```
+
+On integer features, `predict` matches scikit-learn's sample for sample and the
+score matches to 1e-6. On a calibrated int8 grid, the tests hold agreement
+above 99% and the score within 0.02 on held-out data.
+
+Isolation trees grow to full depth, about 2 x `max_samples` nodes each, so
+`n_estimators` and `max_samples` set the flash size. Measured for a Cortex-M0+
+at `-Os` with 8 features, using `QTreeWalkEval` (12-byte nodes; with these
+deep trees, `QTreeCompactEval` comes out larger):
+
+| Trees | `max_samples` | Nodes | Flash |
+|---|---|---|---|
+| 25 | 64 | 1,257 | 15.8 KB |
+| 50 | 64 | 2,606 | 32.7 KB |
+| 100 | 256 (scikit-learn's defaults) | 13,720 | 167 KB |
+
+On a 32 KB part, about 25 trees of 64 samples is the practical ceiling. For a
+smaller detector there is `cpp/qanomaly.hpp`: a k-means detector that learns
+on the device takes 1.3 KB of code for 32 features.
 
 ## Verification
 
