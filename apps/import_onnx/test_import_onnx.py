@@ -992,14 +992,15 @@ int main()
 """
 
 
-def compile_model(layers, workdir, tag, in_place=True, extra=()):
+def compile_model(layers, workdir, tag, in_place=True, extra=(), int4_dense=False):
     """Generate weights.hpp + model.hpp and build a driver around forward().
     Built freestanding (FLOAT=0, STD=0): the generated model must not need
     the host-only builders."""
     weights = os.path.join(workdir, f"{tag}_weights.hpp")
     model = os.path.join(workdir, f"{tag}_model.hpp")
     ti.emit_weights_header(weights, tag, layers)
-    generated = cg.emit_model_header(model, tag, layers, os.path.basename(weights), in_place=in_place)
+    generated = cg.emit_model_header(model, tag, layers, os.path.basename(weights), in_place=in_place,
+                                     int4_dense=int4_dense)
     src = MODEL_DRIVER.replace("@HEADER@", os.path.basename(model)).replace("@NS@", tag)
     exe = _compile(src, workdir, f"{tag}_driver",
                    ["-DTINYMIND_ENABLE_QUANTIZATION=1", "-DTINYMIND_ENABLE_FLOAT=0", "-DTINYMIND_ENABLE_STD=0"]
@@ -1160,6 +1161,58 @@ class ModelCodegen(unittest.TestCase):
         res = subprocess.run([short], input=stdin, capture_output=True, text=True)
         self.assertNotEqual(res.returncode, 0)
         self.assertIn("AddressSanitizer", res.stderr)
+
+    def test_int4_dense_is_exact_when_int4_can_hold_the_weights(self):
+        """Clamp each dense layer's int8 weights to -7..7 with a 7 in every
+        row: then the int4 scale equals the int8 one, every code and bias is
+        unchanged, and the int4 model must equal the int8 model bit for bit.
+        That checks the packing order (including rows that start mid-byte,
+        the residual model's dense layer has 5 inputs), the biases and the
+        requantizers end to end."""
+        cases = ((ConvNet(), INPUT_SHAPE, 0), (ResNetish(False), GRAPH_INPUT_SHAPE, 1))
+        for k, (net, shape, seed) in enumerate(cases):
+            torch.manual_seed(seed)
+            tag = f"cg_i4x_{k}"
+            path = export_and_quantize(net, shape, self.workdir, "QDQ", True, tag)
+            layers = ti.parse_onnx_model(path)
+            dense = [l for l in layers if l.op_type == "Dense"]
+            self.assertTrue(dense)
+            for l in dense:
+                w = np.clip(l.weight.astype(np.int64), -7, 7)
+                for o in range(w.shape[0]):
+                    j = int(np.argmax(np.abs(w[o])))
+                    w[o, j] = 7 if w[o, j] >= 0 else -7
+                l.weight = w.astype(np.int8)
+                q4 = cg.requantize_dense_int4(l)
+                np.testing.assert_array_equal(q4.codes, l.weight)
+                self.assertEqual(q4.multipliers, l.multipliers if l.per_channel else l.multipliers * w.shape[0])
+            exe8, g8 = compile_model(layers, self.workdir, tag + "_8")
+            exe4, g4 = compile_model(layers, self.workdir, tag + "_4", int4_dense=True)
+            want, got = run_exes([exe8, exe4], nhwc_inputs(shape, layers[0]))
+            np.testing.assert_array_equal(got, want)
+            saved = sum(l.weight.size - (l.weight.size + 1) // 2 for l in dense)
+            self.assertEqual(g8.weight_bytes - g4.weight_bytes, saved)
+
+    def test_int4_dense_tracks_onnx_runtime(self):
+        """The real int4 requantization changes the weights, so the model
+        no longer matches ONNX Runtime exactly; it stays close."""
+        torch.manual_seed(0)
+        tag = "cg_i4"
+        path = export_and_quantize(ConvNet(), INPUT_SHAPE, self.workdir, "QDQ", True, tag)
+        layers = ti.parse_onnx_model(path)
+        exe8, _ = compile_model(layers, self.workdir, tag + "_8")
+        exe4, g4 = compile_model(layers, self.workdir, tag + "_4", int4_dense=True)
+        self.assertEqual(len(g4.int4_layers), 2)
+        ref8, got8 = run_both(path, layers, exe8, calibration_like=True)
+        ref4, got4 = run_both(path, layers, exe4, calibration_like=True)
+        err8 = np.abs(ref8 - got8)
+        err4 = np.abs(ref4 - got4)
+        corr = float(np.corrcoef(ref4.reshape(-1), got4.reshape(-1))[0, 1])
+        print(f"\n  int4 dense: mean |ort - tinymind| {err4.mean():.2f} LSB (int8: {err8.mean():.2f}), "
+              f"max {err4.max()} LSB, correlation {corr:.4f}")
+        self.assertLessEqual(int(err8.max()), 1)
+        self.assertGreater(corr, 0.98)
+        self.assertLess(err4.mean(), 4.0)
 
     def test_softmax_feeding_a_layer_is_refused(self):
         layers = [_rec("Softmax", [-1], "sm"), _rec("Relu", [0], "r")]

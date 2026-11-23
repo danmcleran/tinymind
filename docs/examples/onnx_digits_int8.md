@@ -37,12 +37,16 @@ ONNX Runtime int8 accuracy:     0.9699
 float (PyTorch) accuracy:       0.9699
 same class as ONNX Runtime:     1795 of 1797
 activation arena:               1024 bytes (unshared 2048, busiest layer 1024)
+int4 dense layer accuracy:      0.9683 (same class as int8 on 1775 of 1797)
+weights:                        3408 bytes int8, 2128 bytes with the dense layer in int4
 ```
 
 ![Memory plan and test confusion]({{ site.baseurl }}/assets/plots/onnx_digits_int8.png)
 
 On the left is the memory plan. Each box is one arena buffer, drawn across the layers its output is live for and at the bytes it occupies. The seven activations fit in 1,024 bytes, half of the 2,048 that one buffer per output would take. No plan can do better, because the two 512-byte convolution outputs are both live while the residual `Add` runs. On the right is the confusion matrix of the generated int8 model, which matches the float model's 97.0%. The generated model predicts a different class from ONNX Runtime on only two digits. On both of them, ONNX Runtime's two highest int8 logits are one step apart.
 
-For a Cortex-M0+ (`arm-none-eabi-g++ -mcpu=cortex-m0plus -Os`), `model.hpp` with a `main` that calls `forward` compiles to 7,326 bytes of code and read-only data. It has no `.data`, its 1,098 bytes of `.bss` are the arena plus the input and output buffers, and it makes no heap allocation.
+For a Cortex-M0+ (`arm-none-eabi-g++ -mcpu=cortex-m0plus -Os`), `model.hpp` with a `main` that calls `forward` compiles to 7,342 bytes of code and read-only data. It has no `.data`, its 1,100 bytes of `.bss` are the arena plus the input and output buffers, and it makes no heap allocation.
+
+`model_int4.hpp` runs the dense layer, which holds 2,560 of the 3,408 weight bytes, on packed per-channel int4 weights (`QDenseInt4`). That brings the weights down to 2,128 bytes and the Cortex-M0+ footprint to 6,008 bytes, 18% less. Accuracy goes from 97.0% to 96.8%, and the int4 variant predicts the same class as the int8 one for 1,775 of 1,797 digits. The int4 kernel is scalar, so it saves flash, not cycles.
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/onnx_digits_int8)

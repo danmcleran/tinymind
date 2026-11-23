@@ -9,6 +9,9 @@ ONNX model that ONNX Runtime quantized:
   * `model.hpp` holds one `constexpr` tinymind layer object per layer, a
     static memory plan for every intermediate activation, and
     `forward(input, output, arena)` (`apps/import_onnx/tinymind_model_codegen.py`);
+  * `model_int4.hpp` is the same model with its dense layer requantized to
+    packed, per-channel int4 weights (`QDenseInt4`), in namespace
+    `digits::int4`. It shares `weights.hpp`.
   * `reference.hpp` holds the input quantization table and, for each test
     digit, the class the float PyTorch model and ONNX Runtime's int8 model
     predict.
@@ -44,6 +47,8 @@ ONNX Runtime int8 accuracy:     0.9699
 float (PyTorch) accuracy:       0.9699
 same class as ONNX Runtime:     1795 of 1797
 activation arena:               1024 bytes (unshared 2048, busiest layer 1024)
+int4 dense layer accuracy:      0.9683 (same class as int8 on 1775 of 1797)
+weights:                        3408 bytes int8, 2128 bytes with the dense layer in int4
 ```
 
 The generated int8 model is as accurate as the float model. It predicts the
@@ -67,9 +72,28 @@ matrix of the generated int8 model.
 
 Compiled for a Cortex-M0+ (`arm-none-eabi-g++ -mcpu=cortex-m0plus -Os`), a
 translation unit holding only `model.hpp` and a `main` that calls `forward`
-is 7,326 bytes of code and read-only data (kernels, weights, requantizers
-and layer objects). It has no `.data`, and its 1,098 bytes of `.bss` are the
+is 7,342 bytes of code and read-only data (kernels, weights, requantizers
+and layer objects). It has no `.data`, and its 1,100 bytes of `.bss` are the
 arena plus the input and output buffers. Nothing is allocated on the heap.
+
+### int4 dense layer
+
+The dense layer holds 2,560 of the model's 3,408 weight bytes.
+`model_int4.hpp` requantizes it to symmetric int4, with one scale per
+output channel, and stores two weights per byte:
+
+| | int8 | int4 dense layer |
+|---|---|---|
+| Accuracy | 97.0% | 96.8% (3 more errors in 1,797) |
+| Same class as the int8 model | | 1,775 of 1,797 digits |
+| Weight bytes | 3,408 | 2,128 |
+| Cortex-M0+ code and read-only data | 7,342 bytes | 6,008 bytes |
+
+That is 18% less flash for the whole model. The int4 kernel is scalar: on
+a Cortex-M4 the int8 dense layer can use the SMLAD path and the int4 one
+cannot, so int4 saves flash, not cycles. The requantization is
+post-training, with no retraining; quantization-aware training would
+recover more of the accuracy.
 
 ## Build and run
 

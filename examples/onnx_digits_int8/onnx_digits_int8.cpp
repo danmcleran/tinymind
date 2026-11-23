@@ -39,6 +39,7 @@
 #include <cstring>
 
 #include "model.hpp"
+#include "model_int4.hpp"
 #include "reference.hpp"
 
 namespace
@@ -161,7 +162,7 @@ int main(int argc, char* argv[])
         std::fprintf(stderr, "cannot write %s\n", kResultsCsv);
         return 1;
     }
-    std::fprintf(results, "index,label,tinymind,onnxruntime,float");
+    std::fprintf(results, "index,label,tinymind,tinymind_int4,onnxruntime,float");
     for (std::size_t p = 0; p < digits::kModelInputSize; ++p)
     {
         std::fprintf(results, ",p%zu", p);
@@ -169,6 +170,8 @@ int main(int argc, char* argv[])
     std::fprintf(results, "\n");
 
     std::size_t correct = 0;
+    std::size_t correctInt4 = 0;
+    std::size_t agreeInt4 = 0;
     std::size_t agreeOrt = 0;
     std::size_t correctOrt = 0;
     std::size_t correctFloat = 0;
@@ -177,13 +180,17 @@ int main(int argc, char* argv[])
     {
         digits::forward(images[n], logits, arena);
         const int predicted = argmax(logits);
+        digits::int4::forward(images[n], logits, arena);
+        const int predictedInt4 = argmax(logits);
+        correctInt4 += (predictedInt4 == labels[n]) ? 1u : 0u;
+        agreeInt4 += (predictedInt4 == predicted) ? 1u : 0u;
         const int ort = digits::kOrtPrediction[n];
         const int flt = digits::kFloatPrediction[n];
         correct += (predicted == labels[n]) ? 1u : 0u;
         agreeOrt += (predicted == ort) ? 1u : 0u;
         correctOrt += (ort == labels[n]) ? 1u : 0u;
         correctFloat += (flt == labels[n]) ? 1u : 0u;
-        std::fprintf(results, "%zu,%d,%d,%d,%d", n, labels[n], predicted, ort, flt);
+        std::fprintf(results, "%zu,%d,%d,%d,%d,%d", n, labels[n], predicted, predictedInt4, ort, flt);
         for (std::size_t p = 0; p < digits::kModelInputSize; ++p)
         {
             std::fprintf(results, ",%d", static_cast<int>(pixels[n][p]));
@@ -218,6 +225,10 @@ int main(int argc, char* argv[])
     std::fprintf(summary, "arena_bytes,%zu\n", digits::kModelArenaSize);
     std::fprintf(summary, "unshared_bytes,%zu\n", digits::kModelUnsharedSize);
     std::fprintf(summary, "busiest_layer_bytes,%zu\n", digits::kModelPeakLiveSize);
+    std::fprintf(summary, "weight_bytes_int8,%zu\n", digits::kModelWeightBytes);
+    std::fprintf(summary, "weight_bytes_int4_dense,%zu\n", digits::int4::kModelWeightBytes);
+    std::fprintf(summary, "accuracy_int8,%.4f\n", correct / static_cast<double>(digits::kTestCount));
+    std::fprintf(summary, "accuracy_int4_dense,%.4f\n", correctInt4 / static_cast<double>(digits::kTestCount));
     std::fclose(summary);
 
     const double total = static_cast<double>(digits::kTestCount);
@@ -228,6 +239,10 @@ int main(int argc, char* argv[])
     std::printf("same class as ONNX Runtime:     %zu of %zu\n", agreeOrt, digits::kTestCount);
     std::printf("activation arena:               %zu bytes (unshared %zu, busiest layer %zu)\n",
                 digits::kModelArenaSize, digits::kModelUnsharedSize, digits::kModelPeakLiveSize);
+    std::printf("int4 dense layer accuracy:      %.4f (same class as int8 on %zu of %zu)\n",
+                correctInt4 / total, agreeInt4, digits::kTestCount);
+    std::printf("weights:                        %zu bytes int8, %zu bytes with the dense layer in int4\n",
+                digits::kModelWeightBytes, digits::int4::kModelWeightBytes);
     std::printf("wrote %s, %s and %s\n", kResultsCsv, kPlanCsv, kSummaryCsv);
     return 0;
 }

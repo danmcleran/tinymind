@@ -143,4 +143,5 @@ namespace digits {
         model_detail::pw_Conv_layer.forward((arena + 256), (arena + 0));
         model_detail::fc_Gemm_layer.forward((arena + 0), output);
     }
+    constexpr std::size_t kModelWeightBytes = 3408;
 } // namespace digits
