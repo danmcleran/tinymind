@@ -98,6 +98,7 @@
 #include "qcfc.hpp"
 #include "qfft1d.hpp"
 #include "qmel.hpp"
+#include "qanomaly.hpp"
 #include "qattention1d.hpp"
 #include "qattention_softmax.hpp"
 #include "qcausalattention1d.hpp"
@@ -825,6 +826,22 @@ bool exerciseQuantPipeline()
     int32_t mfcc_out[2] = {0, 0};
     qmfcc.forward(mel_out, mfcc_out);
 
+    // Anomaly scores: an on-device k-means baseline and a diagonal Gaussian.
+    tinymind::QKMeansAnomalyTrainer<4, 2> km_trainer;
+    static const int8_t km_a[4] = {10, -5, 3, 0};
+    static const int8_t km_b[4] = {-40, 20, 7, 9};
+    km_trainer.learn(km_a);
+    km_trainer.learn(km_b);
+    km_trainer.learn(km_a);
+    km_trainer.calibrate(km_a);
+    km_trainer.calibrate(km_b);
+    const int32_t km_score = km_trainer.model().score(km_b);
+    static const int8_t dg_means[4] = {0, 0, 0, 0};
+    static const uint32_t dg_precision[4] = {8388608u, 8388608u, 8388608u, 8388608u};
+    static const int32_t dg_bias[1] = {0};
+    const tinymind::QDiagGaussianAnomaly<4, 1> dg = {dg_means, dg_precision, dg_bias};
+    const int32_t dg_score = dg.score(km_a);
+
     typedef tinymind::QAttention1D<Q, Q, A, Q, Q, Q, 2, 4, 3> QAttnLinearType;
     static int8_t att_w[QAttnLinearType::TotalWeights] = {0};
     static int32_t att_b[QAttnLinearType::TotalBiases] = {0};
@@ -1025,6 +1042,7 @@ bool exerciseQuantPipeline()
         && valueIsLive(fft_re[0]) && valueIsLive(fft_mag[0])
         && valueIsLive(rfft_re[0]) && valueIsLive(rfft_mag[0])
         && valueIsLive(mel_out[0]) && valueIsLive(mfcc_out[0])
+        && valueIsLive(km_score) && valueIsLive(dg_score)
         && valueIsLive(attn_out[0])
         && valueIsLive(sm_out[0])
         && valueIsLive(mha_out[0])

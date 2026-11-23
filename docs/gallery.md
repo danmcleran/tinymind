@@ -112,6 +112,9 @@ these exactly.
 **Fixed-point log-mel front end** — `QLogMelSpectrogram<256, 32>` on a synthetic vibration run whose level rises 44 dB (a bearing fault starts halfway): the float and fixed-point spectrograms, their difference, and the error by how far a band sits below the frame's loudest band.
 ![Fixed-point log-mel vs float]({{ site.baseurl }}/assets/plots/logmel_vibration.png)
 
+**On-device vibration anomaly detection** — log-mel features of a synthetic machine and a k-means baseline learned frame by frame on the device: anomaly score over normal running and three growing faults, alarm rates, and how early each fault is caught, against a Euclidean k-means and a host-fitted Gaussian.
+![Vibration anomaly detection]({{ site.baseurl }}/assets/plots/vibration_anomaly.png)
+
 **Importer round trip (int8)** — a 3-8-4-2 MLP calibrated with three observers and cross-layer equalization; int8 vs float parity, error near 0.004.
 ![Importer int8 parity]({{ site.baseurl }}/assets/plots/import_demo_parity.png)
 
