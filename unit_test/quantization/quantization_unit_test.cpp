@@ -37,6 +37,8 @@
 #include <climits>
 #include <cmath>
 #include <vector>
+#include <algorithm>
+#include <random>
 
 #include "qaffine.hpp"
 #include "qcalibration.hpp"
@@ -60,6 +62,7 @@
 #include "qgru.hpp"
 #include "qcfc.hpp"
 #include "qfft1d.hpp"
+#include "qmel.hpp"
 #include "qattention1d.hpp"
 #include "qattention_softmax.hpp"
 #include "qcausalattention1d.hpp"
@@ -8985,5 +8988,7 @@ BOOST_AUTO_TEST_CASE(qstatic_gbdt_policies_match_qgbdt)
     BOOST_TEST(logits[0] == 108);
     BOOST_TEST(logits[1] == 1);
 }
+
+#include "qmel_tests.hpp"
 
 BOOST_AUTO_TEST_SUITE_END()

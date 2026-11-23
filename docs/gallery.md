@@ -109,6 +109,9 @@ these exactly.
 **Hybrid int8 + Q-format MLP** — int8 affine and Q8.8 layers joined by pure-integer bridges; per-element error under ~0.0043.
 ![Hybrid int8 + Q-format MLP parity]({{ site.baseurl }}/assets/plots/mixed_precision_mlp.png)
 
+**Fixed-point log-mel front end** — `QLogMelSpectrogram<256, 32>` on a synthetic vibration run whose level rises 44 dB (a bearing fault starts halfway): the float and fixed-point spectrograms, their difference, and the error by how far a band sits below the frame's loudest band.
+![Fixed-point log-mel vs float]({{ site.baseurl }}/assets/plots/logmel_vibration.png)
+
 **Importer round trip (int8)** — a 3-8-4-2 MLP calibrated with three observers and cross-layer equalization; int8 vs float parity, error near 0.004.
 ![Importer int8 parity]({{ site.baseurl }}/assets/plots/import_demo_parity.png)
 
