@@ -135,3 +135,4 @@ examples/gbdt_tabular_int8/output/
 examples/anfis_mackey_glass/output/
 examples/anfis_mackey_glass_int8/output/
 apps/import_onnx/.venv/
+apps/import_trees/.venv/

@@ -39,7 +39,8 @@ import tinymind_import_trees as T  # noqa: E402
 
 from sklearn.datasets import load_breast_cancer, load_diabetes, load_digits, load_iris, load_wine  # noqa: E402
 from sklearn.ensemble import (ExtraTreesClassifier, GradientBoostingClassifier,  # noqa: E402
-                              GradientBoostingRegressor, RandomForestClassifier, RandomForestRegressor)
+                              GradientBoostingRegressor, IsolationForest, RandomForestClassifier,
+                              RandomForestRegressor)
 from sklearn.model_selection import train_test_split  # noqa: E402
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor  # noqa: E402
 
@@ -333,6 +334,87 @@ class Toolchains(Base):
             subprocess.run([ARM, "-std=" + std, "-mcpu=cortex-m0plus", "-mthumb", "-mfloat-abi=soft", "-O2",
                             "-Wall", "-Wextra", "-Werror", "-Wpedantic", "-c", src, "-o", os.devnull] + inc,
                            check=True, capture_output=True, text=True)
+
+
+def anomaly_data(seed=0, integer=False):
+    """Two normal clusters in 4 features, plus uniform outliers for testing."""
+    rng = np.random.default_rng(seed)
+    X = np.vstack([rng.normal(0, 1, (900, 4)), rng.normal([3, -2, 0, 1], 0.5, (300, 4))])
+    out = rng.uniform(-6, 6, (100, 4))
+    if integer:
+        X, out = np.round(X * 10), np.round(out * 10)
+    return X, out
+
+
+class IsolationForests(Base):
+    """IsolationForest: the summed path length, scikit-learn's score_samples
+    rebuilt from it, and predict() through kAnomalyThreshold."""
+
+    def test_float_features(self):
+        X, out = anomaly_data()
+        m = IsolationForest(n_estimators=40, random_state=0).fit(X)
+        e = self.export(m, X)
+        self.assertEqual(e.task, "anomaly")
+        held_out = np.vstack([anomaly_data(seed=1)[0][:300], out])
+        # A sample within a grid step of a split can flip; the int8 grid holds
+        # agreement above 99% and the score within 0.02.
+        self.assertGreaterEqual(e.agreement(held_out), 0.99, e.report)
+        self.assertLess(np.max(np.abs(e.score_samples(held_out) - m.score_samples(held_out))), 0.02)
+        # The outliers are found: almost all of the uniform samples.
+        self.assertGreater(np.mean(e.predict(out)), 0.9)
+        self.check_compiled(e, held_out[:60])
+
+    def test_integer_features_are_exact(self):
+        # On integer features every split is exact; only the leaves' rounding
+        # (to 2^-k of a path step) is left, so predictions match sample for
+        # sample and scores to 1e-6.
+        X, out = anomaly_data(integer=True)
+        for kw in (dict(), dict(max_features=0.5), dict(contamination=0.1, max_samples=64)):
+            m = IsolationForest(n_estimators=30, random_state=0, **kw).fit(X)
+            e = self.export(m, X, quant=T.FeatureQuant.integer(4, "int8"))
+            both = np.vstack([X, out])
+            self.assertEqual(e.agreement(both), 1.0, "%s: %s" % (kw, e.report))
+            self.assertLess(np.max(np.abs(e.score_samples(both) - m.score_samples(both))), 1e-6, kw)
+            self.check_compiled(e, both[::25])
+
+    def test_contamination_sets_the_threshold(self):
+        X, _ = anomaly_data(integer=True)
+        m = IsolationForest(n_estimators=30, contamination=0.1, random_state=0).fit(X)
+        e = self.export(m, X, quant=T.FeatureQuant.integer(4, "int8"))
+        self.assertAlmostEqual(float(np.mean(e.predict(X))), 0.1, delta=0.005)
+        with open(e.path) as fh:
+            self.assertIn("kAnomalyThreshold = %d;" % e.anomaly_threshold, fh.read())
+
+    def test_feature_subsets_are_mapped_back(self):
+        # Plant the defect: ignore estimators_features_, so each tree splits
+        # on its own subset's column numbers. The path sums then disagree
+        # with score_samples sample by sample, and export must refuse.
+        X, _ = anomaly_data()
+        m = IsolationForest(n_estimators=10, max_features=0.5, random_state=0).fit(X)
+        good = T._iforest_tree
+        T._iforest_tree = lambda est, features: good(est, list(range(len(features))))
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                self.export(m, X)
+            self.assertIn("does not reproduce", str(ctx.exception))
+        finally:
+            T._iforest_tree = good
+
+    def test_freestanding_cortex_m0plus(self):
+        if ARM is None:
+            self.skipTest("no arm-none-eabi-g++")
+        X, _ = anomaly_data(integer=True)
+        m = IsolationForest(n_estimators=10, max_samples=64, random_state=0).fit(X)
+        e = self.export(m, X, quant=T.FeatureQuant.integer(4, "int8"))
+        src = os.path.join(self.tmp, "fs.cpp")
+        with open(src, "w") as fh:
+            fh.write('#include "%s"\n' % e.path)
+            fh.write("int run(const m::InputType* x)\n{\n"
+                     "    return static_cast<int>(m::predict<tinymind::QTreeCompactEval>(x));\n}\n")
+        inc = ["-I" + d for d in T._repo_include_dirs()]
+        subprocess.run([ARM, "-std=c++14", "-mcpu=cortex-m0plus", "-mthumb", "-mfloat-abi=soft", "-O2",
+                        "-Wall", "-Wextra", "-Werror", "-Wpedantic", "-c", src, "-o", os.devnull] + inc,
+                       check=True, capture_output=True, text=True)
 
 
 class Rejections(Base):
