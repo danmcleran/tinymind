@@ -28,6 +28,8 @@ Runtime, and generate the tinymind model the C++ example runs.
 Writes, next to this script:
   weights.hpp    int8 weights, biases and requantizers (tinymind_import_onnx)
   model.hpp      layer objects, memory plan and forward() (tinymind_model_codegen)
+  model_int4.hpp the same model with its dense layer requantized to packed,
+                 per-channel int4 weights, in namespace digits::int4
   reference.hpp  the input quantization table and, for every test digit, the
                  class the float model and ONNX Runtime's int8 model predict
 
@@ -138,6 +140,9 @@ def main():
     plan = generated.plan
     print(f"{len(layers)} layers: {[l.op_type for l in layers]}")
     print(f"arena {plan.arena_size} B (unshared {plan.unshared_size} B, busiest layer {plan.lower_bound} B)")
+    int4 = cg.emit_model_header(os.path.join(HERE, "model_int4.hpp"), NAMESPACE, layers, "weights.hpp",
+                                int4_dense=True, nested_namespace="int4")
+    print(f"weights: {generated.weight_bytes} B int8, {int4.weight_bytes} B with the dense layer in int4")
 
     # The input grid: pixel p in 0..16 is the float p / 16, which ONNX
     # Runtime's QuantizeLinear rounds half to even onto the int8 grid.

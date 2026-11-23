@@ -137,6 +137,18 @@ my_model::forward(input, output, arena);   // int8 NHWC in, int8 out
   * `static_assert`s that each layer type's output size matches the size
     that was planned for it.
 
+`int4_dense=True` runs every dense layer as a `QDenseInt4` (`cpp/qint4.hpp`)
+over packed int4 weights, emitted into `model.hpp`, which halves those
+layers' weight bytes. The int8 weights are dequantized, given one symmetric
+int4 scale per output channel (max |w| / 7), and rounded to codes in -7..7.
+Each bias moves to the new accumulator scale, and each requantizer to
+`input_scale * s4 / output_scale` (`requantize_dense_int4`). This is
+post-training requantization with no retraining, so it costs some accuracy.
+On `examples/onnx_digits_int8` the model's weights drop from 3,408 to 2,128
+bytes and the accuracy from 97.0% to 96.8%. `nested_namespace="int4"` lets
+the int4 variant share a `weights.hpp` with the int8 one, and
+`kModelWeightBytes` gives the weight bytes each variant reads.
+
 Include `model.hpp` (and `weights.hpp`) from one translation unit: the
 constants are namespace-scope `constexpr`, so every translation unit that
 includes them carries its own copy in flash.
@@ -150,7 +162,7 @@ to change the 4-byte alignment of every offset.
 On `examples/onnx_digits_int8` (a residual CNN on the optical digits) the
 plan needs 1,024 bytes of the 2,048 that one buffer per output would take,
 which equals the busiest layer's live bytes. Compiled for a Cortex-M0+ at
-`-Os`, the model and its weights are 7.3 KB of flash, with no `.data` and no
+`-Os`, the model and its weights are 7.3 KB of flash (6.0 KB with `int4_dense=True`), with no `.data` and no
 heap.
 
 The generator refuses a `Relu` whose output grid differs from its input's
@@ -196,6 +208,15 @@ graphs, with and without in-place layers, against a simulator that tags
 every arena byte with the layer that wrote it and fails when a layer reads
 an input that was overwritten. Planting a planner bug (every buffer at offset
 0) fails both the simulator and the compiled comparisons.
+
+Two more tests cover `int4_dense`:
+
+* One clamps the dense weights so that int4 holds them exactly (|w| <= 7,
+  with a 7 in every row). The int4 model must then equal the int8 model bit
+  for bit, which checks the packing order, rows that start mid-byte, the
+  biases and the requantizers. Swapping the nibble order fails it.
+* The other runs the real requantization against ONNX Runtime: correlation
+  0.996, mean error 3 LSB.
 
 Not run in CI, because torch and onnxruntime are not CI dependencies.
 `examples/onnx_digits_int8` commits a generated `model.hpp`, which `make

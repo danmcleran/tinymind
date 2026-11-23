@@ -99,6 +99,7 @@
 #include "qfft1d.hpp"
 #include "qmel.hpp"
 #include "qanomaly.hpp"
+#include "qint4.hpp"
 #include "qattention1d.hpp"
 #include "qattention_softmax.hpp"
 #include "qcausalattention1d.hpp"
@@ -842,6 +843,16 @@ bool exerciseQuantPipeline()
     const tinymind::QDiagGaussianAnomaly<4, 1> dg = {dg_means, dg_precision, dg_bias};
     const int32_t dg_score = dg.score(km_a);
 
+    // Packed int4 dense layer: 3 inputs (odd, so row 1 starts mid-byte) x 2 outputs.
+    static const int8_t i4_codes[6] = {-8, 7, 0, 3, -1, 5};
+    uint8_t i4_packed[tinymind::int4PackedBytes(6)] = {0, 0, 0};
+    tinymind::packInt4(i4_codes, 6, i4_packed);
+    static const tinymind::Requantizer<int32_t, int8_t> i4_rq[2] = {{1 << 30, 2, 0, -128, 127}, {1 << 30, 2, 0, -128, 127}};
+    const tinymind::QDenseInt4<int8_t, int32_t, int8_t, 3, 2> i4_layer = {i4_packed, nullptr, 0, i4_rq};
+    static const int8_t i4_x[3] = {10, -20, 30};
+    int8_t i4_out[2] = {0, 0};
+    i4_layer.forward(i4_x, i4_out);
+
     typedef tinymind::QAttention1D<Q, Q, A, Q, Q, Q, 2, 4, 3> QAttnLinearType;
     static int8_t att_w[QAttnLinearType::TotalWeights] = {0};
     static int32_t att_b[QAttnLinearType::TotalBiases] = {0};
@@ -1043,6 +1054,7 @@ bool exerciseQuantPipeline()
         && valueIsLive(rfft_re[0]) && valueIsLive(rfft_mag[0])
         && valueIsLive(mel_out[0]) && valueIsLive(mfcc_out[0])
         && valueIsLive(km_score) && valueIsLive(dg_score)
+        && valueIsLive(i4_out[0])
         && valueIsLive(attn_out[0])
         && valueIsLive(sm_out[0])
         && valueIsLive(mha_out[0])
