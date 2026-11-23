@@ -97,6 +97,7 @@
 #include "qgru.hpp"
 #include "qcfc.hpp"
 #include "qfft1d.hpp"
+#include "qmel.hpp"
 #include "qattention1d.hpp"
 #include "qattention_softmax.hpp"
 #include "qcausalattention1d.hpp"
@@ -807,6 +808,23 @@ bool exerciseQuantPipeline()
     int32_t rfft_mag[tinymind::QRFFT1D<8>::NumBins] = {0};
     tinymind::QRFFT1D<8>::magnitudeSquared(rfft_re, rfft_im, rfft_mag);
 
+    // Log-mel and MFCC front end on the same 8-point table: a flat window,
+    // two bands, and a 2x2 DCT. Checks the header stays freestanding-clean.
+    static const int16_t mel_window[8] = {32767, 32767, 32767, 32767, 32767, 32767, 32767, 32767};
+    static const uint16_t mel_start[2] = {1, 2};
+    static const uint16_t mel_length[2] = {2, 2};
+    static const uint16_t mel_weights[4] = {65535, 32768, 32768, 65535};
+    const tinymind::QLogMelSpectrogram<8, 2> qmel = {mel_window, fft_cos, fft_sin, mel_start, mel_length,
+                                                     mel_weights, 31785, -32768};
+    tinymind::QMelWorkspace<8> mel_ws;
+    static const int16_t mel_x[8] = {1000, 0, -1000, 0, 1000, 0, -1000, 0};
+    int16_t mel_out[2] = {0, 0};
+    qmel.forward(mel_x, 0, mel_out, mel_ws);
+    static const int16_t mel_dct[4] = {23170, 23170, 23170, -23170};
+    const tinymind::QMfcc<2, 2> qmfcc = {mel_dct};
+    int32_t mfcc_out[2] = {0, 0};
+    qmfcc.forward(mel_out, mfcc_out);
+
     typedef tinymind::QAttention1D<Q, Q, A, Q, Q, Q, 2, 4, 3> QAttnLinearType;
     static int8_t att_w[QAttnLinearType::TotalWeights] = {0};
     static int32_t att_b[QAttnLinearType::TotalBiases] = {0};
@@ -1006,6 +1024,7 @@ bool exerciseQuantPipeline()
         && valueIsLive(gru_h[0])
         && valueIsLive(fft_re[0]) && valueIsLive(fft_mag[0])
         && valueIsLive(rfft_re[0]) && valueIsLive(rfft_mag[0])
+        && valueIsLive(mel_out[0]) && valueIsLive(mfcc_out[0])
         && valueIsLive(attn_out[0])
         && valueIsLive(sm_out[0])
         && valueIsLive(mha_out[0])

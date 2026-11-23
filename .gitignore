@@ -60,6 +60,7 @@ examples/iris/output/
 examples/energy_efficiency/output/
 examples/optical_digits/output/
 examples/onnx_digits_int8/output/
+examples/logmel_vibration/output/
 examples/har_activity/output/
 examples/gas_sensor_drift/output/
 examples/air_quality/output/

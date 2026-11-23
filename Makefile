@@ -50,6 +50,7 @@ check :
 	cd examples/iris && make clean && make release && make run && cd -
 	cd examples/energy_efficiency && make clean && make release && make run && cd -
 	cd examples/optical_digits && make clean && make release && make run && cd -
+	cd examples/logmel_vibration && make clean && make && make release && make run && cd -
 	cd examples/har_activity && make clean && make release && make run && cd -
 	cd examples/gas_sensor_drift && make clean && make release && make run && cd -
 	cd examples/air_quality && make clean && make release && make run && cd -
