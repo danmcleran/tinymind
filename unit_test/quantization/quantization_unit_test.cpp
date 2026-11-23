@@ -63,6 +63,7 @@
 #include "qcfc.hpp"
 #include "qfft1d.hpp"
 #include "qmel.hpp"
+#include "qanomaly.hpp"
 #include "qattention1d.hpp"
 #include "qattention_softmax.hpp"
 #include "qcausalattention1d.hpp"
@@ -8990,5 +8991,6 @@ BOOST_AUTO_TEST_CASE(qstatic_gbdt_policies_match_qgbdt)
 }
 
 #include "qmel_tests.hpp"
+#include "qanomaly_tests.hpp"
 
 BOOST_AUTO_TEST_SUITE_END()
