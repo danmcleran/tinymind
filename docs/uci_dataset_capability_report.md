@@ -57,6 +57,7 @@ offline in float and then sweeps fixed-point formats to find the smallest one
 - **Data:** ships real data (`optdigits.tra` 3823 rows + `optdigits.tes` 1797 rows).
 - **Result:** ~96% test accuracy (1729/1797). Real 64-feature image task in fixed-point.
 - [`examples/optical_digits`](https://github.com/danmcleran/tinymind/tree/master/examples/optical_digits) · [page]({{ site.baseurl }}/examples/optical_digits)
+- **int8 CNN from ONNX:** a residual CNN trained in PyTorch, quantized by ONNX Runtime and run from a generated `model.hpp` reaches 97.0% (1743/1797) with all activations in a 1,024-byte arena. [`examples/onnx_digits_int8`](https://github.com/danmcleran/tinymind/tree/master/examples/onnx_digits_int8) · [page]({{ site.baseurl }}/examples/onnx_digits_int8)
 
 ### Predictive Maintenance — binary failure classifier
 - **Dataset:** [AI4I 2020 Predictive Maintenance](https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset) — milling-machine readings · binary (failure / no-failure).
