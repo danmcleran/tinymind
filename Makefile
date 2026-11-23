@@ -46,6 +46,7 @@ check :
 	cd examples/import_demo && make clean && make && make release && make run && cd -
 	cd examples/import_moe_demo && make clean && make && make release && make run && cd -
 	cd examples/import_lstm_demo && make clean && make && make release && make run && cd -
+	cd examples/onnx_digits_int8 && make clean && make && make release && make run && cd -
 	cd examples/iris && make clean && make release && make run && cd -
 	cd examples/energy_efficiency && make clean && make release && make run && cd -
 	cd examples/optical_digits && make clean && make release && make run && cd -
@@ -193,7 +194,13 @@ ANALYZE_SRCS = $(shell find cpp -name '*.hpp') cpp/lookupTables.cpp
 # gate's function count with one-off template instances. They are the suites
 # that catch QValue undefined behaviour (signed overflow in WrapPolicy and in
 # fromParts was found this way), so they must run under UBSan in CI.
-SAN_EXTRA_SUITES = unit_test/qformat unit_test/qformat_oracle unit_test/exhaustive
+# examples/onnx_digits_int8 runs a generated model.hpp from its planned arena;
+# ASan catches a plan that places a buffer past the arena's end. It stays out
+# of COV_EXAMPLES, whose 100% function floor would count every layer
+# instantiation the generated model brings in, including fallbacks such as
+# QAdd's out-of-line reference loop that a given model may never call.
+SAN_EXTRA_SUITES = unit_test/qformat unit_test/qformat_oracle unit_test/exhaustive \
+                   examples/onnx_digits_int8
 
 sanitize :
 	@for d in $(COV_SUITES) $(COV_EXAMPLES) $(SAN_EXTRA_SUITES); do \

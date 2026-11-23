@@ -59,6 +59,7 @@ examples/qcfc_liquid_int8/output/
 examples/iris/output/
 examples/energy_efficiency/output/
 examples/optical_digits/output/
+examples/onnx_digits_int8/output/
 examples/har_activity/output/
 examples/gas_sensor_drift/output/
 examples/air_quality/output/
@@ -131,3 +132,4 @@ examples/gbdt_tabular_int8/output/
 
 examples/anfis_mackey_glass/output/
 examples/anfis_mackey_glass_int8/output/
+apps/import_onnx/.venv/

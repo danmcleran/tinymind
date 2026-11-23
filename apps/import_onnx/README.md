@@ -18,7 +18,8 @@ apps/import_onnx/
     README.md
     Makefile                  # make test PY=<venv python>
     test_import_onnx.py       # end-to-end tests against ONNX Runtime
-    tinymind_import_onnx.py
+    tinymind_import_onnx.py   # parser + weights.hpp emitter
+    tinymind_model_codegen.py # model.hpp: layer objects, memory plan, forward()
 ```
 
 ## Supported ops
@@ -87,6 +88,75 @@ for a conv, `NumInputs` / `NumOutputs` for a dense layer), `PerChannel`,
 `WeightScales` / `Multipliers` / `Shifts`), `Weights`, `HasBias` and
 `Biases`.
 
+## Whole-model code generation (`model.hpp`)
+
+`weights.hpp` holds every constant, but a network built from it still needs
+someone to choose each layer type, wire each layer to the buffers its
+`sources` name, and decide where every activation lives.
+`tinymind_model_codegen.py` writes that program as a second header:
+
+```python
+from tinymind_model_codegen import import_onnx_model_with_code
+
+layers, generated = import_onnx_model_with_code(
+    "my_model_int8.onnx", "weights.hpp", "model.hpp", namespace="my_model")
+print(generated.plan.arena_size)   # bytes of activation RAM the model needs
+```
+
+```cpp
+#include "model.hpp"
+
+alignas(my_model::kModelArenaAlignment) static int8_t arena[my_model::kModelArenaSize];
+
+my_model::forward(input, output, arena);   // int8 NHWC in, int8 out
+```
+
+`model.hpp` contains:
+
+  * one `constexpr` layer object per record (`QConv2D`, `QConv2DPerChannel`,
+    `QDepthwiseConv2D`, `QDense`, `QMaxPool2D`, `QAdd`,
+    `QSoftmaxFixedPoint1D`) with its weights, biases and requantizers bound
+    at compile time. The objects live in flash, and the compiler folds their
+    fields into the kernels;
+  * the Sigmoid and Tanh lookup tables and the `QAdd` and softmax parameters,
+    computed in Python by mirrors of `buildQSigmoidLUT`, `buildQTanhLUT`,
+    `buildQAddParams` and `buildQSoftmaxFixedPointParams`. The tests check
+    each mirror against the C++ builder over 300 random scale pairs, and the
+    generated model builds with `TINYMIND_ENABLE_FLOAT=0` and
+    `TINYMIND_ENABLE_STD=0`;
+  * a static memory plan. Every intermediate activation gets a fixed offset
+    in one caller-owned arena, and two activations share bytes when no layer
+    needs both at once. A layer's output is live from the layer that writes it
+    to the last layer that reads it. An element-wise layer (`Relu`, `Sigmoid`,
+    `Tanh`, `Add`) writes over an input that dies there. Placement is TFLite
+    Micro's greedy-by-size. The header states the arena size, the size with
+    one buffer per output (`kModelUnsharedSize`), and the bytes live during
+    the busiest layer (`kModelPeakLiveSize`), which no plan can go below;
+  * `kModelBuffers` (offset, size, live range and the layers stored in each
+    buffer) and `kModelLayerNames`, for debugging and plotting;
+  * `static_assert`s that each layer type's output size matches the size
+    that was planned for it.
+
+Include `model.hpp` (and `weights.hpp`) from one translation unit: the
+constants are namespace-scope `constexpr`, so every translation unit that
+includes them carries its own copy in flash.
+
+The model's input and output are caller-owned and outside the arena. The
+first layers read `input` directly, and the last layer writes `output`. The
+arena needs no initialization and no contents carried between calls.
+Pass `in_place=False` to give every output its own region, and `alignment=`
+to change the 4-byte alignment of every offset.
+
+On `examples/onnx_digits_int8` (a residual CNN on the optical digits) the
+plan needs 1,024 bytes of the 2,048 that one buffer per output would take,
+which equals the busiest layer's live bytes. Compiled for a Cortex-M0+ at
+`-Os`, the model and its weights are 7.3 KB of flash, with no `.data` and no
+heap.
+
+The generator refuses a `Relu` whose output grid differs from its input's
+(no record carries that rescale) and a layer that reads a softmax's output
+(tinymind's softmax writes the 1/256 grid whatever the graph calibrated).
+
 ## Tests
 
 `make test PY=<python>` with a virtual environment holding `numpy`,
@@ -114,7 +184,22 @@ to within 3/256. Further cases check the refusals: padded and `ceil_mode`
 pooling, `Concat`, groupings other than depthwise, a softmax over another
 axis, and a tensor requantized between two layers.
 
+The model code generation tests build `model.hpp` for the same models,
+freestanding (`FLOAT=0`, `STD=0`), and require its outputs to equal the
+hand-wired program's exactly. They do this with and without in-place
+layers, for a chain, for the residual model in every format, and for a model
+with standalone Sigmoid and Tanh layers, which agrees with ONNX Runtime to
+within 1 LSB. Under AddressSanitizer and UBSan the model runs clean in
+exactly `kModelArenaSize` bytes, and an arena 4 bytes short is reported. The
+planner tests need no onnx. They check hand-built graphs and 400 random
+graphs, with and without in-place layers, against a simulator that tags
+every arena byte with the layer that wrote it and fails when a layer reads
+an input that was overwritten. Planting a planner bug (every buffer at offset
+0) fails both the simulator and the compiled comparisons.
+
 Not run in CI, because torch and onnxruntime are not CI dependencies.
+`examples/onnx_digits_int8` commits a generated `model.hpp`, which `make
+check` and the clang example build compile and run.
 
 ## Quick example
 

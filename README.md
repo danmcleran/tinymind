@@ -130,6 +130,7 @@ A parallel TFLite/CMSIS-NN style affine quantization path that runs **alongside*
 - **End-to-end examples**:
   - [`examples/pytorch_quant/xor/`](examples/pytorch_quant/xor/) -- PyTorch float training + per-tensor calibration + `weights.hpp` emission, then a pure-integer C++ forward pass through `QDense` + `qrelu` + `QDense` + int8 sigmoid LUT
   - [`examples/kws_cortex_m_int8/`](examples/kws_cortex_m_int8/) -- side-by-side counterpart to `examples/kws_cortex_m/`; same MobileNet-style KWS pipeline, comparable CSV cycle/byte report, ~4x smaller weight footprint on the convolutional layers
+  - [`examples/onnx_digits_int8/`](examples/onnx_digits_int8/) -- a residual CNN trained in PyTorch, quantized by ONNX Runtime, and run from the generated `model.hpp` (layer objects, a static activation memory plan and `forward()`): 97.0% on the UCI optical digits, the same class as ONNX Runtime on 1,795 of 1,797 test digits, all activations in a 1,024-byte arena
   - [`examples/resnet_block_int8/`](examples/resnet_block_int8/) -- int8 residual block (`QPad2D` -> `QConv2DPerChannel` -> `qrelu` -> `QPad2D` -> `QConv2DPerChannel` -> `QAdd` -> `qrelu`) with per-channel weight scales
   - [`examples/resnet18_block_int8/`](examples/resnet18_block_int8/) -- int8 ResNet-18-shaped stem + one basic-block stage. `make run`, `make bench`, `make golden`
   - [`examples/mobilenetv2_int8/`](examples/mobilenetv2_int8/) -- int8 MobileNetV2 inverted-residual block sequence with linear bottlenecks
@@ -172,6 +173,7 @@ ISA-capability-gated SIMD specializations on the inner reduction loop of `QDense
 
 - **`apps/import_pytorch/tinymind_import.py`** -- PyTorch -> tinymind int8 importer (pure-numpy core). Caller assembles `Dense` / `Conv2D` / `BatchNorm2D` / `ReLU` / `Sigmoid` / `Tanh` / `Softmax` descriptors carrying numpy weights from `torch.state_dict`. A model may start with one `nn.LSTM` (`LSTM` descriptor, int16 or int8 cell state), which becomes a `QLSTMCell`; bidirectional, projected and stacked LSTMs are rejected. `fuse_layers` folds Conv2D-then-BatchNorm pairs. `calibrate` streams data through the float reference with `MinMaxObserver` / `PercentileObserver` / `KLDivergenceObserver` per layer. `emit_weights_header` writes a tinymind-format `weights.hpp`. No PyTorch dependency at module import
 - **`apps/import_onnx/tinymind_import_onnx.py`** -- ONNX importer for models quantized by `onnxruntime.quantization.quantize_static`, in either QDQ (the default) or QOperator format. Maps `Conv` / `Gemm` / `MatMul` (+ bias `Add`) to `QConv2D` / `QConv2DPerChannel` / `QDense` with OHWI conv and `[out][in]` dense weights, depthwise `Conv` to `QDepthwiseConv2D`, `MaxPool` to `QMaxPool2D`, average and global average pooling to a `QDepthwiseConv2D` that averages and changes grid in one rounding, and a residual `Add` to `QAdd`; checks that each layer reads an earlier layer's output in the grid it was written in, and records which layers each one reads; permutes a flattened NCHW input to NHWC order, carries per-channel scales and precomputed requantizers, and raises `ValueError` for any op or setting it cannot map exactly. `make test` (with a torch + onnxruntime venv) compiles the emitted header and matches ONNX Runtime to 1 LSB (3 LSB for a residual model with average pooling in QDQ form, where ONNX Runtime averages in float and rounds ties to even). The `onnx` package is imported lazily inside `parse_onnx_model`
+- **`apps/import_onnx/tinymind_model_codegen.py`** -- whole-model code generation for the records the ONNX importer parses. Writes `model.hpp`: one `constexpr` layer object per layer (weights, biases and requantizers bound at compile time, so the objects sit in flash), the Sigmoid / Tanh lookup tables and the `QAdd` / softmax parameters (computed by Python mirrors of the host builders, checked against them, so the model builds with `FLOAT=0`, `STD=0`), a static memory plan that puts every intermediate activation at a fixed offset in one caller-owned arena (greedy-by-size placement over live ranges, element-wise layers written over an input that dies there), and `forward(input, output, arena)`. The header states the arena size, the size with one buffer per output and the bytes live during the busiest layer. The tests require the generated model to equal a hand-wired program bit for bit, run it clean under ASan and UBSan, and check the planner on 400 random graphs against a byte-tagging simulator. `examples/onnx_digits_int8` runs a generated model in CI
 - **`apps/import_trees/tinymind_import_trees.py`** -- tree-ensemble importer. scikit-learn decision trees, random forests, extra trees and gradient boosting, XGBoost and LightGBM, as classifiers or regressors, become a C++14 header of `QStaticDecisionTree` / `QStaticGBDT` pools that runs under every qtree policy (inline, compact, walk). Integer features reproduce every split exactly; calibrated float features go onto a per-feature int8 / uint8 / int16 grid. `verify()` compiles the header and checks it bit-exact against the importer's reference
 
 ### Activation Functions
@@ -1157,6 +1159,7 @@ tinymind/
     moe_regimes_int8/           # int8 top-1 Mixture-of-Experts: a linear router picks one of three experts
     import_moe_demo/            # PyTorch importer -> QMixtureOfExperts, reproduced by the C++ runtime
     import_lstm_demo/           # PyTorch importer: nn.LSTM + head -> QLSTMCell + QDense, int16 and int8 cell
+    onnx_digits_int8/           # ONNX model -> generated model.hpp (layer objects, planned arena, forward)
     perf_matrix/                # SIMD gate bench (CSV per backend, invariant output_checksum)
   unit_test/
     nn/                         # Neural network tests (251 test cases)
@@ -1184,7 +1187,7 @@ tinymind/
   apps/
     activation/                 # Lookup table generator tool
     import_pytorch/             # PyTorch -> tinymind int8 importer (numpy core)
-    import_onnx/                # ONNX Runtime-quantized ONNX (QDQ / QOperator) -> tinymind int8 importer
+    import_onnx/                # ONNX Runtime-quantized ONNX (QDQ / QOperator) -> tinymind int8 importer + model.hpp code generation
     anfis_train/                # Host ANFIS trainer (hybrid LSE + premise descent, numpy)
     import_trees/               # scikit-learn / XGBoost / LightGBM trees -> qtree.hpp pools
 ```

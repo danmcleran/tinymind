@@ -60,6 +60,7 @@ REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, HERE)
 
 import tinymind_import_onnx as ti  # noqa: E402
+import tinymind_model_codegen as cg  # noqa: E402
 
 try:
     import onnx  # noqa: F401
@@ -771,6 +772,400 @@ class Emitter(unittest.TestCase):
                        "// Add res (reads first, the model's input)", "kmp_InputHeight = 4",
                        "kmp_KernelHeight = 2", "kb_ZeroPoint = -7"):
             self.assertIn(needle, text)
+
+
+# ---------------------------------------------------------------------------
+# Whole-model code generation (tinymind_model_codegen).
+# ---------------------------------------------------------------------------
+
+def simulate_plan(layers, sizes, plan):
+    """Run the plan on a byte-tagged arena, independently of the planner's
+    own bookkeeping: each layer checks that every arena input still holds the
+    bytes its producer wrote, then stamps its output. An element-wise layer may
+    write over the input it reads. Returns the first violation, or None."""
+    last = len(layers) - 1
+    arena = [None] * max(plan.arena_size, 1)
+    for i, layer in enumerate(layers):
+        for j in layer.sources:
+            if j < 0:
+                continue
+            o = plan.offsets[j]
+            if any(arena[o + k] != j for k in range(sizes[j])):
+                return f"layer {i} reads layer {j}'s output after it was overwritten"
+        if i == last:
+            break
+        o = plan.offsets[i]
+        for j in layer.sources:
+            if j < 0 or layer.op_type in cg.IN_PLACE_OPS and plan.offsets[j] == o:
+                continue
+            if o < plan.offsets[j] + sizes[j] and plan.offsets[j] < o + sizes[i]:
+                return f"layer {i} writes over its input {j}"
+        for k in range(sizes[i]):
+            arena[o + k] = i
+    return None
+
+
+def _rec(op, sources, name=None):
+    return ti.OnnxQuantizedLayer(op_type=op, name=name or f"{op}{len(sources)}", input_name="x",
+                                 input_scale=0.1, input_zp=0, output_scale=0.1, output_zp=0,
+                                 sources=list(sources))
+
+
+class Planner(unittest.TestCase):
+    """Runs without onnx: the memory planner on hand-built graphs."""
+
+    def plan(self, layers, sizes, **kw):
+        plan = cg.plan_memory(layers, sizes, **kw)
+        cg.check_plan(plan)
+        self.assertIsNone(simulate_plan(layers, sizes, plan))
+        self.assertLessEqual(plan.lower_bound, plan.arena_size)
+        self.assertLessEqual(plan.arena_size, plan.unshared_size)
+        return plan
+
+    def test_chain_reuses_two_buffers(self):
+        layers = [_rec("Conv", [-1]), _rec("Conv", [0]), _rec("Conv", [1]), _rec("Conv", [2]), _rec("Dense", [3])]
+        sizes = {0: 100, 1: 52, 2: 100, 3: 12, 4: 4}
+        plan = self.plan(layers, sizes)
+        self.assertEqual(plan.arena_size, 152)
+        self.assertEqual(plan.unshared_size, 264)
+
+    def test_element_wise_layer_overwrites_its_dying_input(self):
+        layers = [_rec("Conv", [-1]), _rec("Sigmoid", [0]), _rec("Dense", [1])]
+        plan = self.plan(layers, {0: 40, 1: 40, 2: 4})
+        self.assertEqual(plan.offsets[0], plan.offsets[1])
+        self.assertEqual(plan.arena_size, 40)
+        off = self.plan(layers, {0: 40, 1: 40, 2: 4}, in_place=False)
+        self.assertEqual(off.arena_size, 80)
+
+    def test_element_wise_layer_keeps_an_input_read_later(self):
+        # conv -> relu -> add(relu, conv): the conv output is still needed.
+        layers = [_rec("Conv", [-1]), _rec("Relu", [0]), _rec("Add", [1, 0]), _rec("Dense", [2])]
+        plan = self.plan(layers, {0: 40, 1: 40, 2: 40, 3: 4})
+        self.assertNotEqual(plan.offsets[0], plan.offsets[1])
+        # The add may overwrite either input, both die there.
+        self.assertIn(plan.offsets[2], (plan.offsets[0], plan.offsets[1]))
+
+    def test_alignment(self):
+        layers = [_rec("Conv", [-1]), _rec("Conv", [0]), _rec("Conv", [1]), _rec("Dense", [2])]
+        plan = self.plan(layers, {0: 5, 1: 7, 2: 3, 3: 1}, alignment=8)
+        self.assertTrue(all(o % 8 == 0 for o in plan.offsets.values()))
+        self.assertEqual(plan.arena_size, 16)
+
+    def test_random_graphs(self):
+        rng = np.random.default_rng(3)
+        for trial in range(400):
+            n = int(rng.integers(2, 14))
+            layers, sizes = [], {}
+            for i in range(n):
+                op = str(rng.choice(["Conv", "Relu", "Sigmoid", "Add", "MaxPool"]))
+                if op == "Add" and i >= 1:
+                    srcs = [int(rng.integers(-1, i)), int(rng.integers(-1, i))]
+                    sizes[i] = sizes.get(srcs[0], 0) or int(rng.integers(1, 200))
+                    # an Add needs equal input sizes; make the second match the first
+                    if srcs[1] >= 0 and sizes.get(srcs[1]) != sizes[i]:
+                        srcs[1] = srcs[0]
+                    if srcs[0] < 0:
+                        sizes[i] = sizes.setdefault(-1, int(rng.integers(1, 200)))
+                        if srcs[1] >= 0 and sizes[srcs[1]] != sizes[i]:
+                            srcs[1] = -1
+                elif op in ("Relu", "Sigmoid") and i >= 1:
+                    srcs = [int(rng.integers(-1, i))]
+                    sizes[i] = sizes.setdefault(srcs[0], int(rng.integers(1, 200)))
+                else:
+                    op = "Conv"
+                    srcs = [int(rng.integers(-1, i)) if i else -1]
+                    sizes[i] = int(rng.integers(1, 200))
+                layers.append(_rec(op, srcs, name=f"l{i}"))
+            for in_place in (True, False):
+                with self.subTest(trial=trial, in_place=in_place):
+                    self.plan(layers, sizes, in_place=in_place)
+
+    def test_simulator_catches_a_broken_plan(self):
+        """The checks above must be able to fail: put every buffer at offset 0."""
+        layers = [_rec("Conv", [-1]), _rec("Conv", [0]), _rec("Add", [1, 0]), _rec("Dense", [2])]
+        sizes = {0: 16, 1: 16, 2: 16, 3: 4}
+        plan = cg.plan_memory(layers, sizes)
+        for b in plan.buffers:
+            b.offset = 0
+        plan.offsets = {i: 0 for i in plan.offsets}
+        self.assertIsNotNone(simulate_plan(layers, sizes, plan))
+        with self.assertRaises(AssertionError):
+            cg.check_plan(plan)
+
+
+BUILDER_SOURCE = r"""
+#include <cstdint>
+#include <cstdio>
+#include "qaffine.hpp"
+#include "qactivations.hpp"
+#include "qcalibration.hpp"
+
+int main()
+{
+    float s_in, s_out, s_b;
+    int zp_in, zp_out;
+    while (std::scanf("%f %d %f %d %f", &s_in, &zp_in, &s_out, &zp_out, &s_b) == 5)
+    {
+        int8_t lut[256];
+        tinymind::buildQSigmoidLUT(s_in, zp_in, s_out, zp_out, lut);
+        for (int i = 0; i < 256; ++i) { std::printf("%d ", lut[i]); }
+        tinymind::buildQTanhLUT(s_in, zp_in, s_out, zp_out, lut);
+        for (int i = 0; i < 256; ++i) { std::printf("%d ", lut[i]); }
+        const tinymind::QAddParams a = tinymind::buildQAddParams(s_in, s_b, s_out);
+        std::printf("%d %d %d %d %d %d %d ", a.left_shift, a.input_a_multiplier, a.input_a_shift,
+                    a.input_b_multiplier, a.input_b_shift, a.output_multiplier, a.output_shift);
+        int32_t m = 0, l = 0, d = 0;
+        tinymind::buildQSoftmaxFixedPointParams(s_in, 1.0, m, l, d);
+        std::printf("%d %d %d\n", m, l, d);
+    }
+    return 0;
+}
+"""
+
+
+def _compile(src_text, workdir, tag, defines):
+    src = os.path.join(workdir, f"{tag}.cpp")
+    with open(src, "w") as f:
+        f.write(src_text)
+    exe = os.path.join(workdir, tag)
+    subprocess.run([GXX, "-std=c++14", "-O1", "-Wall", "-Wextra", "-Werror", "-Wpedantic"] + defines +
+                   ["-I" + os.path.join(REPO, "cpp"), "-I" + os.path.join(REPO, "cpp", "include"),
+                    "-I" + os.path.join(REPO, "include"), "-I" + workdir, src, "-o", exe], check=True)
+    return exe
+
+
+@unittest.skipIf(GXX is None, "needs g++")
+class BuilderMirrors(unittest.TestCase):
+    """Runs without onnx: the constants model.hpp bakes in equal what the
+    host-only C++ builders compute for the same scales."""
+
+    def test_luts_and_parameters_match_the_cpp_builders(self):
+        rng = np.random.default_rng(11)
+        cases = [(0.05, 3, 1 / 256, -128, 0.02), (1 / 16, 0, 1 / 128, 0, 1 / 16), (0.2, -128, 1 / 256, -128, 0.7)]
+        for _ in range(300):
+            cases.append((float(np.float32(10 ** rng.uniform(-3.5, 0))), int(rng.integers(-128, 128)),
+                          float(np.float32(10 ** rng.uniform(-3, -1.5))), int(rng.integers(-128, 128)),
+                          float(np.float32(10 ** rng.uniform(-3.5, 0)))))
+        with tempfile.TemporaryDirectory() as d:
+            exe = _compile(BUILDER_SOURCE, d, "builders",
+                           ["-DTINYMIND_ENABLE_QUANTIZATION=1", "-DTINYMIND_ENABLE_FLOAT=1", "-DTINYMIND_ENABLE_STD=1"])
+            stdin = "".join(f"{a!r} {b} {c!r} {e} {f!r}\n" for a, b, c, e, f in cases)
+            out = subprocess.run([exe], input=stdin, capture_output=True, text=True, check=True).stdout
+        rows = out.strip().split("\n")
+        self.assertEqual(len(rows), len(cases))
+        for (s_in, zp_in, s_out, zp_out, s_b), row in zip(cases, rows):
+            v = [int(x) for x in row.split()]
+            self.assertEqual(cg.activation_lut("Sigmoid", s_in, zp_in, s_out, zp_out), v[:256], (s_in, zp_in))
+            self.assertEqual(cg.activation_lut("Tanh", s_in, zp_in, s_out, zp_out), v[256:512], (s_in, zp_in))
+            a = cg.qadd_params(s_in, s_b, s_out)
+            self.assertEqual([a["left_shift"], a["input_a_multiplier"], a["input_a_shift"], a["input_b_multiplier"],
+                              a["input_b_shift"], a["output_multiplier"], a["output_shift"]], v[512:519])
+            self.assertEqual(list(cg.softmax_params(s_in)), v[519:522])
+
+
+MODEL_DRIVER = r"""
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include "@HEADER@"
+
+int main()
+{
+    static int8_t input[@NS@::kModelInputSize];
+    static int8_t output[@NS@::kModelOutputSize];
+    alignas(@NS@::kModelArenaAlignment) static int8_t arena[@NS@::kModelArenaSize > 0 ? @NS@::kModelArenaSize : 1];
+    // Garbage in the arena: the model must not read a byte it did not write.
+    std::memset(arena, 0x5A, sizeof(arena));
+    for (std::size_t i = 0; i < @NS@::kModelInputSize; ++i)
+    {
+        int v;
+        if (std::scanf("%d", &v) != 1) { return 2; }
+        input[i] = static_cast<int8_t>(v);
+    }
+    @NS@::forward(input, output, arena);
+    for (std::size_t i = 0; i < @NS@::kModelOutputSize; ++i)
+    {
+        std::printf("%d\n", static_cast<int>(output[i]));
+    }
+    return 0;
+}
+"""
+
+
+def compile_model(layers, workdir, tag, in_place=True, extra=()):
+    """Generate weights.hpp + model.hpp and build a driver around forward().
+    Built freestanding (FLOAT=0, STD=0): the generated model must not need
+    the host-only builders."""
+    weights = os.path.join(workdir, f"{tag}_weights.hpp")
+    model = os.path.join(workdir, f"{tag}_model.hpp")
+    ti.emit_weights_header(weights, tag, layers)
+    generated = cg.emit_model_header(model, tag, layers, os.path.basename(weights), in_place=in_place)
+    src = MODEL_DRIVER.replace("@HEADER@", os.path.basename(model)).replace("@NS@", tag)
+    exe = _compile(src, workdir, f"{tag}_driver",
+                   ["-DTINYMIND_ENABLE_QUANTIZATION=1", "-DTINYMIND_ENABLE_FLOAT=0", "-DTINYMIND_ENABLE_STD=0"]
+                   + list(extra))
+    return exe, generated
+
+
+def run_exes(exes, q_inputs):
+    outs = [[] for _ in exes]
+    for q in q_inputs:
+        stdin = "\n".join(str(v) for v in q.reshape(-1).tolist()) + "\n"
+        for k, exe in enumerate(exes):
+            out = subprocess.run([exe], input=stdin, capture_output=True, text=True, check=True).stdout
+            outs[k].append([int(v) for v in out.split()])
+    return [np.array(o) for o in outs]
+
+
+def nhwc_inputs(shape, layer, n=24, seed=7):
+    rng = np.random.default_rng(seed)
+    s_in, zp_in = layer.input_scale, layer.input_zp
+    qs = []
+    for i in range(n):
+        if i % 2:
+            q = np.clip(np.rint(0.5 * rng.standard_normal(shape) / s_in) + zp_in, -128, 127).astype(np.int64)
+        else:
+            q = rng.integers(-128, 128, size=shape).astype(np.int64)
+        qs.append(np.transpose(q, (0, 2, 3, 1)) if q.ndim == 4 else q)
+    return qs
+
+
+if HAVE_STACK:
+    class ActNet(nn.Module):
+        """Linear -> Sigmoid -> Linear -> Tanh -> Linear: standalone LUT
+        activations, which no compute layer absorbs."""
+
+        def __init__(self):
+            super().__init__()
+            self.a = nn.Linear(6, 8)
+            self.b = nn.Linear(8, 8)
+            self.c = nn.Linear(8, 4)
+
+        def forward(self, x):
+            return self.c(torch.tanh(self.b(torch.sigmoid(self.a(x)))))
+
+
+@unittest.skipUnless(HAVE_STACK, "needs torch, onnx and onnxruntime")
+@unittest.skipIf(GXX is None, "needs g++")
+class ModelCodegen(unittest.TestCase):
+    """model.hpp must compute exactly what a hand-wired program computes from
+    the same records, with every activation in one planned arena."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.workdir = cls.tmp.name
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def check_graph(self, fmt, per_channel, softmax):
+        torch.manual_seed(1)
+        tag = f"cg_res_{fmt}_{int(per_channel)}_{int(softmax)}"
+        path = export_and_quantize(ResNetish(softmax), GRAPH_INPUT_SHAPE, self.workdir, fmt, per_channel, tag)
+        layers = ti.parse_onnx_model(path)
+        hand = compile_graph_harness(layers, self.workdir, tag + "_hand")
+        exes = {}
+        plans = {}
+        for in_place in (True, False):
+            exes[in_place], gen = compile_model(layers, self.workdir, f"{tag}_{int(in_place)}", in_place)
+            plans[in_place] = gen.plan
+            self.assertIsNone(simulate_plan(layers, gen.sizes, gen.plan))
+        want, got, got_no_in_place = run_exes([hand, exes[True], exes[False]],
+                                              nhwc_inputs(GRAPH_INPUT_SHAPE, layers[0]))
+        np.testing.assert_array_equal(got, want)
+        np.testing.assert_array_equal(got_no_in_place, want)
+        self.assertGreater(len(np.unique(want)), 4, "outputs must vary, or the comparison is empty")
+        p = plans[True]
+        print(f"\n  model.hpp residual {fmt:9s} per_channel={per_channel!s:5s} softmax={softmax!s:5s}: "
+              f"arena {p.arena_size} B (unshared {p.unshared_size} B, busiest layer {p.lower_bound} B, "
+              f"no in-place {plans[False].arena_size} B), bit-exact with hand wiring")
+        self.assertLess(p.arena_size, p.unshared_size)
+        # The first convolution's output and the pooled copy of it are live
+        # together and no plan can do better; the Add writes over its input.
+        self.assertEqual(p.arena_size, p.lower_bound)
+        self.assertEqual(len(p.buffers), len(plans[False].buffers) - 1, "the residual Add should run in place")
+
+    def test_residual_qdq_per_tensor(self):
+        self.check_graph("QDQ", False, False)
+
+    def test_residual_qdq_per_channel(self):
+        self.check_graph("QDQ", True, False)
+
+    def test_residual_qoperator_per_tensor(self):
+        self.check_graph("QOperator", False, False)
+
+    def test_residual_qoperator_per_channel(self):
+        self.check_graph("QOperator", True, True)
+
+    def test_residual_softmax_qdq(self):
+        self.check_graph("QDQ", False, True)
+
+    def test_chain_matches_hand_wiring(self):
+        for fmt, per_channel in (("QDQ", False), ("QOperator", True)):
+            tag = f"cg_chain_{fmt}_{int(per_channel)}"
+            torch.manual_seed(0)
+            path = export_and_quantize(ConvNet(), INPUT_SHAPE, self.workdir, fmt, per_channel, tag)
+            layers = ti.parse_onnx_model(path)
+            hand = compile_harness(layers, self.workdir, tag + "_hand")
+            exe, gen = compile_model(layers, self.workdir, tag)
+            want, got = run_exes([hand, exe], nhwc_inputs(INPUT_SHAPE, layers[0]))
+            np.testing.assert_array_equal(got, want, err_msg=fmt)
+            self.assertEqual(gen.plan.arena_size, gen.sizes[0] + gen.sizes[1])
+
+    def test_lut_activations_match_onnx_runtime(self):
+        for fmt in ("QDQ", "QOperator"):
+            tag = f"cg_act_{fmt}"
+            torch.manual_seed(2)
+            path = export_and_quantize(ActNet(), (1, 6), self.workdir, fmt, False, tag)
+            layers = ti.parse_onnx_model(path)
+            kinds = [l.op_type for l in layers]
+            self.assertIn("Sigmoid", kinds, f"{fmt}: {kinds}")
+            self.assertIn("Tanh", kinds, f"{fmt}: {kinds}")
+            exe, gen = compile_model(layers, self.workdir, tag)
+            # Both activations overwrite the dense output they read.
+            self.assertEqual(len(gen.plan.buffers), 2, f"{fmt}: {gen.plan.buffers}")
+            ref, got = run_both(path, layers, exe, calibration_like=True)
+            diff = np.abs(ref - got)
+            print(f"\n  model.hpp sigmoid/tanh {fmt:9s}: max |ort - tinymind| = {diff.max()} LSB, "
+                  f"{100 * np.mean(diff == 0):.1f}% exact, arena {gen.plan.arena_size} B")
+            self.assertLessEqual(int(diff.max()), 2)
+            self.assertGreater(len(np.unique(ref)), 4)
+
+    def test_sanitizers_and_a_short_arena(self):
+        """Under ASan and UBSan the model runs clean in exactly
+        kModelArenaSize bytes, and ASan reports an arena one alignment step
+        short (the arena in the driver is a static array of that size)."""
+        torch.manual_seed(1)
+        tag = "cg_asan"
+        path = export_and_quantize(ResNetish(True), GRAPH_INPUT_SHAPE, self.workdir, "QDQ", True, tag)
+        layers = ti.parse_onnx_model(path)
+        flags = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"]
+        exe, gen = compile_model(layers, self.workdir, tag, extra=flags)
+        hand = compile_graph_harness(layers, self.workdir, tag + "_hand")
+        q = nhwc_inputs(GRAPH_INPUT_SHAPE, layers[0], n=4)
+        want, got = run_exes([hand, exe], q)
+        np.testing.assert_array_equal(got, want)
+        model = os.path.join(self.workdir, f"{tag}_model.hpp")
+        text = open(model).read()
+        size = f"kModelArenaSize      = {gen.plan.arena_size};"
+        self.assertIn(size, text)
+        with open(model, "w") as f:
+            f.write(text.replace(size, f"kModelArenaSize      = {gen.plan.arena_size - 4};"))
+        src = MODEL_DRIVER.replace("@HEADER@", os.path.basename(model)).replace("@NS@", tag)
+        short = _compile(src, self.workdir, f"{tag}_short",
+                         ["-DTINYMIND_ENABLE_QUANTIZATION=1"] + flags)
+        stdin = "\n".join(str(v) for v in q[0].reshape(-1).tolist()) + "\n"
+        res = subprocess.run([short], input=stdin, capture_output=True, text=True)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("AddressSanitizer", res.stderr)
+
+    def test_softmax_feeding_a_layer_is_refused(self):
+        layers = [_rec("Softmax", [-1], "sm"), _rec("Relu", [0], "r")]
+        layers[0].geometry = {}
+        with tempfile.TemporaryDirectory() as d, self.assertRaisesRegex(ValueError, "input|softmax"):
+            cg.emit_model_header(os.path.join(d, "m.hpp"), "net", layers, "w.hpp")
 
 
 def lround_ref(x):

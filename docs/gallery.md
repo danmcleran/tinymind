@@ -115,6 +115,9 @@ these exactly.
 **Importer round trip, LSTM (int8)** — an `nn.LSTM` + linear head imported onto `QLSTMCell` + `QDense`: one sequence's hidden-state trace (int16 and int8 cell state against float) and the head output over 16 test sequences.
 ![LSTM importer int8 parity]({{ site.baseurl }}/assets/plots/import_lstm_demo.png)
 
+**Generated model from ONNX (int8)** — a residual CNN quantized by ONNX Runtime and run from the generated `model.hpp`: the activation memory plan (each box an arena buffer, spanning the layers it is live for; 1,024 bytes against 2,048 unshared) and the test confusion on the optical digits (97.0%).
+![Generated ONNX model memory plan]({{ site.baseurl }}/assets/plots/onnx_digits_int8.png)
+
 ## Mixture-of-Experts
 
 **int8 MoE regime routing** — a top-1 router partitions the input domain into three regimes; one of three linear experts runs per inference (color blocks = the routing map).
