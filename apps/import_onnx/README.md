@@ -149,6 +149,36 @@ bytes and the accuracy from 97.0% to 96.8%. `nested_namespace="int4"` lets
 the int4 variant share a `weights.hpp` with the int8 one, and
 `kModelWeightBytes` gives the weight bytes each variant reads.
 
+`activation_bits=16` generates the model with int16 activations and its
+int8 weights, TFLite's 16x8 scheme, from the same int8 records and with no
+recalibration:
+
+  * every activation tensor gets a symmetric int16 grid over the real range
+    its int8 grid covered, `[(-128 - zp) * s, (127 - zp) * s]`, so the int16
+    scale is `max(|lo|, |hi|) / 32767` (`int16_grid`). The layer that writes
+    the tensor clamps to that range, so a ReLU that the int8 model folded into
+    a zero point of -128 still clamps at zero;
+  * weight layers keep their int8 weights. Each bias `b`, held at
+    `input_scale * weight_scale`, becomes the int64 `round(b * input_scale /
+    s_in16)`, and each requantizer becomes a `Requantizer<int64_t, int16_t>`
+    for `s_in16 * weight_scale / s_out16` (`requantize_16x8`). A ratio of
+    2^7 or more, beyond TFLite's 64-bit requantizer, raises;
+  * `Add` uses TFLite's int16 parameters (`left_shift` 15, zero points 0),
+    `MaxPool` and `Relu` run on int16, and `Sigmoid` / `Tanh` get 513-entry
+    int16 tables (`activation_lut16`, mirroring `buildQLUT16`) read by
+    `qApplyLUT16`;
+  * `Softmax` raises (there is no int16 softmax), as does combining
+    `activation_bits=16` with `int4_dense`.
+
+The model's interface then takes `int16_t` buffers. `ModelActivationType`
+names the activation type in every generated model, and `kModelArenaSize`
+stays in bytes. `float_reference(layers, x)` runs the records in float, with
+the int8 weights, real activations and each layer clipped to its int8
+range: both the int8 and the 16x8 model approximate it, so it measures what
+each model's activation grids cost. On `examples/onnx_digits_int8` the 16x8
+logits are 126 times closer to it than the int8 logits, for twice the
+activation arena.
+
 Include `model.hpp` (and `weights.hpp`) from one translation unit: the
 constants are namespace-scope `constexpr`, so every translation unit that
 includes them carries its own copy in flash.
@@ -162,7 +192,8 @@ to change the 4-byte alignment of every offset.
 On `examples/onnx_digits_int8` (a residual CNN on the optical digits) the
 plan needs 1,024 bytes of the 2,048 that one buffer per output would take,
 which equals the busiest layer's live bytes. Compiled for a Cortex-M0+ at
-`-Os`, the model and its weights are 7.3 KB of flash (6.0 KB with `int4_dense=True`), with no `.data` and no
+`-Os`, the model and its weights are 7.3 KB of flash (6.0 KB with
+`int4_dense=True`, 7.6 KB with `activation_bits=16`), with no `.data` and no
 heap.
 
 The generator refuses a `Relu` whose output grid differs from its input's
@@ -217,6 +248,21 @@ Two more tests cover `int4_dense`:
   biases and the requantizers. Swapping the nibble order fails it.
 * The other runs the real requantization against ONNX Runtime: correlation
   0.996, mean error 3 LSB.
+
+Four cover `activation_bits=16`:
+
+* The chain, residual (per-channel and per-tensor) and sigmoid / tanh
+  models are generated both ways and compared with `float_reference`. The
+  16x8 model's largest error must stay below 5e-4 of the output range and
+  its mean error must be at least 40 times smaller than the int8 model's
+  (measured: 70 to 190 times). Dropping the clamp to the int8 range,
+  misscaling a bias by 2%, swapping the `Add` inputs' scales or misscaling
+  a LUT by 1% fails it.
+* The residual model runs clean under ASan and UBSan.
+* `activation_lut16` must equal `buildQSigmoidLUT16` / `buildQTanhLUT16`
+  entry for entry over 63 grids (spacing the knots as TFLite does fails
+  it), and `int16_grid` is checked on a ReLU-fused grid.
+* A softmax, `int4_dense` and a width other than 8 or 16 are refused.
 
 Not run in CI, because torch and onnxruntime are not CI dependencies.
 `examples/onnx_digits_int8` commits a generated `model.hpp`, which `make

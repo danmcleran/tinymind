@@ -185,6 +185,33 @@ namespace tinymind { namespace simd {
     }
 
     /**
+     * int16 activations against int8 weights into an int64 accumulator (the
+     * 16x8 layers). Each block of 256 terms is summed in int32 and then
+     * widened: |x - zp| <= 65535 and |w| <= 128, so a block stays below
+     * 256 * 65535 * 128 < 2^31. The sum is the template's exactly, without
+     * a 64-bit multiply per term (a libgcc call on Cortex-M0+).
+     */
+    template<>
+    inline int64_t dotProductWithZeroPoint<int16_t, int8_t, int64_t>(
+        const int16_t* x, const int8_t* w, std::size_t n, int16_t zp)
+    {
+        const int32_t z = static_cast<int32_t>(zp);
+        int64_t acc = 0;
+        std::size_t i = 0;
+        while (i < n)
+        {
+            const std::size_t end = (n - i > 256u) ? (i + 256u) : n;
+            int32_t block = 0;
+            for (; i < end; ++i)
+            {
+                block += (static_cast<int32_t>(x[i]) - z) * static_cast<int32_t>(w[i]);
+            }
+            acc += static_cast<int64_t>(block);
+        }
+        return acc;
+    }
+
+    /**
      * Two inputs against two weight rows (two output pixels times two
      * filters of a convolution), accumulated into acc:
      *   acc[0] += w0 . (x0 - zp)    acc[1] += w1 . (x0 - zp)

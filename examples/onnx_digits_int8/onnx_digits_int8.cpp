@@ -40,6 +40,7 @@
 
 #include "model.hpp"
 #include "model_int4.hpp"
+#include "model_int16x8.hpp"
 #include "reference.hpp"
 
 namespace
@@ -48,10 +49,13 @@ namespace
     const char* const kResultsCsv = "onnx_digits_int8.csv";
     const char* const kPlanCsv = "onnx_digits_int8_plan.csv";
     const char* const kSummaryCsv = "onnx_digits_int8_summary.csv";
+    const char* const kLogitsCsv = "onnx_digits_int8_logits.csv";
 
     alignas(digits::kModelArenaAlignment) int8_t arena[digits::kModelArenaSize];
+    alignas(digits::int16x8::kModelArenaAlignment) int16_t arena16[digits::int16x8::kModelArenaSize / sizeof(int16_t)];
 
     int8_t images[digits::kTestCount][digits::kModelInputSize];
+    int16_t images16[digits::kTestCount][digits::kModelInputSize];
     uint8_t pixels[digits::kTestCount][digits::kModelInputSize];
     int labels[digits::kTestCount];
 
@@ -77,6 +81,7 @@ namespace
                 pixels[n][p] = static_cast<uint8_t>(v);
                 // One input channel, so the row-major 8x8 image is already NHWC.
                 images[n][p] = digits::kPixelToInput[v];
+                images16[n][p] = digits::kPixelToInput16[v];
             }
             if (std::fscanf(f, "%d", &labels[n]) != 1)
             {
@@ -89,7 +94,8 @@ namespace
         return true;
     }
 
-    int argmax(const int8_t* logits)
+    template<typename T>
+    int argmax(const T* logits)
     {
         int best = 0;
         for (std::size_t c = 1; c < digits::kModelOutputSize; ++c)
@@ -162,7 +168,7 @@ int main(int argc, char* argv[])
         std::fprintf(stderr, "cannot write %s\n", kResultsCsv);
         return 1;
     }
-    std::fprintf(results, "index,label,tinymind,tinymind_int4,onnxruntime,float");
+    std::fprintf(results, "index,label,tinymind,tinymind_int4,tinymind_16x8,onnxruntime,float");
     for (std::size_t p = 0; p < digits::kModelInputSize; ++p)
     {
         std::fprintf(results, ",p%zu", p);
@@ -175,11 +181,49 @@ int main(int argc, char* argv[])
     std::size_t agreeOrt = 0;
     std::size_t correctOrt = 0;
     std::size_t correctFloat = 0;
+    std::size_t correct16 = 0;
+    std::size_t agreeFloat = 0;
+    std::size_t agreeFloat16 = 0;
+    double error8 = 0.0;
+    double error16 = 0.0;
+    double worst8 = 0.0;
+    double worst16 = 0.0;
+    std::FILE* logitsCsv = std::fopen(kLogitsCsv, "w");
+    if (logitsCsv == nullptr)
+    {
+        std::fprintf(stderr, "cannot write %s\n", kLogitsCsv);
+        return 1;
+    }
+    std::fprintf(logitsCsv, "index,class,reference,int8,int16x8\n");
     int8_t logits[digits::kModelOutputSize];
+    int16_t logits16[digits::kModelOutputSize];
     for (std::size_t n = 0; n < digits::kTestCount; ++n)
     {
         digits::forward(images[n], logits, arena);
         const int predicted = argmax(logits);
+        digits::int16x8::forward(images16[n], logits16, arena16);
+        const int predicted16 = argmax(logits16);
+        correct16 += (predicted16 == labels[n]) ? 1u : 0u;
+        agreeFloat += (predicted == digits::kFloatPrediction[n]) ? 1u : 0u;
+        agreeFloat16 += (predicted16 == digits::kFloatPrediction[n]) ? 1u : 0u;
+        if (n < digits::kReferenceLogitCount)
+        {
+            // Logits in real units, against the int8-weight model run in float.
+            for (std::size_t c = 0; c < digits::kModelOutputSize; ++c)
+            {
+                const double ref = digits::kReferenceLogits[n * digits::kModelOutputSize + c];
+                const double v8 = (logits[c] - digits::kModelOutputZeroPoint) *
+                                  static_cast<double>(digits::kModelOutputScale);
+                const double v16 = logits16[c] * static_cast<double>(digits::int16x8::kModelOutputScale);
+                const double e8 = (v8 > ref) ? v8 - ref : ref - v8;
+                const double e16 = (v16 > ref) ? v16 - ref : ref - v16;
+                error8 += e8;
+                error16 += e16;
+                worst8 = (e8 > worst8) ? e8 : worst8;
+                worst16 = (e16 > worst16) ? e16 : worst16;
+                std::fprintf(logitsCsv, "%zu,%zu,%.6f,%.6f,%.6f\n", n, c, ref, v8, v16);
+            }
+        }
         digits::int4::forward(images[n], logits, arena);
         const int predictedInt4 = argmax(logits);
         correctInt4 += (predictedInt4 == labels[n]) ? 1u : 0u;
@@ -190,7 +234,7 @@ int main(int argc, char* argv[])
         agreeOrt += (predicted == ort) ? 1u : 0u;
         correctOrt += (ort == labels[n]) ? 1u : 0u;
         correctFloat += (flt == labels[n]) ? 1u : 0u;
-        std::fprintf(results, "%zu,%d,%d,%d,%d,%d", n, labels[n], predicted, predictedInt4, ort, flt);
+        std::fprintf(results, "%zu,%d,%d,%d,%d,%d,%d", n, labels[n], predicted, predictedInt4, predicted16, ort, flt);
         for (std::size_t p = 0; p < digits::kModelInputSize; ++p)
         {
             std::fprintf(results, ",%d", static_cast<int>(pixels[n][p]));
@@ -198,6 +242,8 @@ int main(int argc, char* argv[])
         std::fprintf(results, "\n");
     }
     std::fclose(results);
+    std::fclose(logitsCsv);
+    const double referenceCount = static_cast<double>(digits::kReferenceLogitCount * digits::kModelOutputSize);
 
     std::FILE* plan = std::fopen(kPlanCsv, "w");
     if (plan == nullptr)
@@ -229,6 +275,14 @@ int main(int argc, char* argv[])
     std::fprintf(summary, "weight_bytes_int4_dense,%zu\n", digits::int4::kModelWeightBytes);
     std::fprintf(summary, "accuracy_int8,%.4f\n", correct / static_cast<double>(digits::kTestCount));
     std::fprintf(summary, "accuracy_int4_dense,%.4f\n", correctInt4 / static_cast<double>(digits::kTestCount));
+    std::fprintf(summary, "accuracy_16x8,%.4f\n", correct16 / static_cast<double>(digits::kTestCount));
+    std::fprintf(summary, "arena_bytes_16x8,%zu\n", digits::int16x8::kModelArenaSize);
+    std::fprintf(summary, "same_class_as_float_int8,%zu\n", agreeFloat);
+    std::fprintf(summary, "same_class_as_float_16x8,%zu\n", agreeFloat16);
+    std::fprintf(summary, "mean_logit_error_int8,%.6f\n", error8 / referenceCount);
+    std::fprintf(summary, "mean_logit_error_16x8,%.6f\n", error16 / referenceCount);
+    std::fprintf(summary, "max_logit_error_int8,%.6f\n", worst8);
+    std::fprintf(summary, "max_logit_error_16x8,%.6f\n", worst16);
     std::fclose(summary);
 
     const double total = static_cast<double>(digits::kTestCount);
@@ -243,6 +297,13 @@ int main(int argc, char* argv[])
                 correctInt4 / total, agreeInt4, digits::kTestCount);
     std::printf("weights:                        %zu bytes int8, %zu bytes with the dense layer in int4\n",
                 digits::kModelWeightBytes, digits::int4::kModelWeightBytes);
-    std::printf("wrote %s, %s and %s\n", kResultsCsv, kPlanCsv, kSummaryCsv);
+    std::printf("16x8 accuracy:                  %.4f (arena %zu bytes, same weights)\n", correct16 / total,
+                digits::int16x8::kModelArenaSize);
+    std::printf("same class as the float model:  int8 %zu, 16x8 %zu of %zu\n", agreeFloat, agreeFloat16,
+                digits::kTestCount);
+    std::printf("logit error vs float activations (first %zu digits): mean %.4f int8, %.5f 16x8; "
+                "max %.4f int8, %.5f 16x8\n", digits::kReferenceLogitCount, error8 / referenceCount,
+                error16 / referenceCount, worst8, worst16);
+    std::printf("wrote %s, %s, %s and %s\n", kResultsCsv, kPlanCsv, kSummaryCsv, kLogitsCsv);
     return 0;
 }

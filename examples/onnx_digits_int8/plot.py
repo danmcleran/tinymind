@@ -20,7 +20,8 @@
 # SOFTWARE.
 #
 
-"""Generated ONNX model: the activation memory plan and the test confusion."""
+"""Generated ONNX model: the activation memory plan, the test confusion, and
+how far the int8 and 16x8 models' logits sit from float activations."""
 
 import csv
 import os
@@ -33,6 +34,7 @@ import tinymind_plot as tp  # noqa: E402
 RESULTS = os.path.join(HERE, "output", "onnx_digits_int8.csv")
 PLAN = os.path.join(HERE, "output", "onnx_digits_int8_plan.csv")
 SUMMARY = os.path.join(HERE, "output", "onnx_digits_int8_summary.csv")
+LOGITS = os.path.join(HERE, "output", "onnx_digits_int8_logits.csv")
 
 
 def main():
@@ -50,12 +52,18 @@ def main():
     agree = sum(r["tinymind"] == r["onnxruntime"] for r in rows)
 
     with open(SUMMARY, newline="") as f:
-        summary = {r["metric"]: int(r["value"]) for r in csv.DictReader(f)}
-    arena, unshared, layers = summary["arena_bytes"], summary["unshared_bytes"], summary["layers"]
+        summary = {r["metric"]: float(r["value"]) for r in csv.DictReader(f)}
+    arena, unshared, layers = (int(summary[k]) for k in ("arena_bytes", "unshared_bytes", "layers"))
+    with open(LOGITS, newline="") as f:
+        logits = list(csv.DictReader(f))
 
     tp.apply_style()
-    fig, (ax1, ax2) = tp.plt.subplots(1, 2, figsize=(13, 5.4), gridspec_kw={"width_ratios": [1.35, 1]})
-    fig.suptitle("Generated int8 CNN from ONNX: one planned arena, 97% on optical digits",
+    fig = tp.plt.figure(figsize=(13, 10))
+    grid = fig.add_gridspec(2, 2, width_ratios=[1.35, 1], height_ratios=[1.15, 1])
+    ax1 = fig.add_subplot(grid[0, 0])
+    ax2 = fig.add_subplot(grid[0, 1])
+    ax3 = fig.add_subplot(grid[1, :])
+    fig.suptitle("Generated CNN from ONNX: one planned arena, 97% on optical digits, int8 or 16x8 activations",
                  fontsize=14, fontweight="bold")
 
     # 1) memory plan: each buffer is a box spanning the layers it is live for,
@@ -96,6 +104,26 @@ def main():
                   % (acc, agree, len(rows)), fontsize=10, color=tp.MUTED)
     ax2.grid(False)
     fig.colorbar(im, ax=ax2, fraction=0.046, pad=0.04)
+
+    # 3) logit error against the same int8 weights run with float activations
+    import numpy as np
+    bins = np.logspace(-6, 0.5, 66)
+    for key, label, color in (("int8", "int8 activations", tp.PALETTE[3]),
+                              ("int16x8", "int16 activations (16x8)", tp.PALETTE[0])):
+        err = np.array([abs(float(r[key]) - float(r["reference"])) for r in logits])
+        ax3.hist(np.maximum(err, 1.1e-6), bins=bins, color=color, alpha=0.75,
+                 label="%s: mean %.4f, max %.4f" % (label, err.mean(), err.max()))
+    ax3.set_xscale("log")
+    ax3.set_xlabel("|logit - logit with float activations| (same int8 weights; logits span about %.0f)"
+                   % (max(float(r["reference"]) for r in logits) - min(float(r["reference"]) for r in logits)))
+    ax3.set_ylabel("logits (%d digits x 10)" % (len(logits) // 10))
+    ax3.set_title("activation precision: the 16x8 model's logits are %.0fx closer on average, for %.0f B of arena "
+                  "instead of %d\n16x8 accuracy %.4f; same class as the float model on %d of %d digits (int8: %d)"
+                  % (summary["mean_logit_error_int8"] / summary["mean_logit_error_16x8"],
+                     summary["arena_bytes_16x8"], arena, summary["accuracy_16x8"],
+                     summary["same_class_as_float_16x8"], len(rows), summary["same_class_as_float_int8"]),
+                  fontsize=10, color=tp.MUTED)
+    ax3.legend(loc="upper left")
 
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     tp.finish(fig, tp.png_for(RESULTS))

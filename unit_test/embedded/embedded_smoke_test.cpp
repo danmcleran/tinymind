@@ -853,6 +853,22 @@ bool exerciseQuantPipeline()
     int8_t i4_out[2] = {0, 0};
     i4_layer.forward(i4_x, i4_out);
 
+    // 16x8: int16 activations, int8 weights, int64 accumulator and requantizer,
+    // then a 513-entry int16 activation table.
+    static const int8_t w16x8[6] = {-128, 127, 3, -7, 64, 1};
+    static const int64_t b16x8[2] = {-100000, 250000};
+    const tinymind::QDense<int16_t, int8_t, int64_t, int16_t, 3, 2> dense16x8 = {
+        w16x8, b16x8, 0, {1 << 30, 6, 0, -32768, 32767}};
+    static const int16_t x16x8[3] = {-32768, 32767, 1234};
+    int16_t out16x8[2] = {0, 0};
+    dense16x8.forward(x16x8, out16x8);
+    static int16_t lut16[tinymind::kQActivationLUT16Size];
+    for (std::size_t i = 0; i < tinymind::kQActivationLUT16Size; ++i)
+    {
+        lut16[i] = static_cast<int16_t>(static_cast<int32_t>(i) * 128 - 32768 + ((i == 512) ? -1 : 0));
+    }
+    const int16_t act16 = tinymind::qApplyLUT16(out16x8[0], lut16);
+
     typedef tinymind::QAttention1D<Q, Q, A, Q, Q, Q, 2, 4, 3> QAttnLinearType;
     static int8_t att_w[QAttnLinearType::TotalWeights] = {0};
     static int32_t att_b[QAttnLinearType::TotalBiases] = {0};
@@ -1055,6 +1071,7 @@ bool exerciseQuantPipeline()
         && valueIsLive(mel_out[0]) && valueIsLive(mfcc_out[0])
         && valueIsLive(km_score) && valueIsLive(dg_score)
         && valueIsLive(i4_out[0])
+        && valueIsLive(out16x8[1]) && valueIsLive(act16)
         && valueIsLive(attn_out[0])
         && valueIsLive(sm_out[0])
         && valueIsLive(mha_out[0])

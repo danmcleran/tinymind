@@ -105,7 +105,7 @@ The precision-tier pattern â€” int8 front + classifier bracketing an fp16 head â
 
 - **Not QAT.** Mixed precision is a deployment story, not a training story.
 - **Not fp16 arithmetic.** The library treats fp16 as a storage tier; inner arithmetic promotes to float. The vector fp16 ISA gates (`SIMD_NEON_FP16`, AVX-512 fp16) get there on hardware that supports it, but the library does not synthesize fp16 software arithmetic.
-- **Not int4.** Storage is int8 / int16 / int32 / fp16 / bf16 / float / double. Sub-byte storage is out of scope.
+- **Not a converter for int4 or 16x8.** These converters cross int8 / int16 / int32 / fp16 / bf16 / float / double grids. Packed int4 weights (`QDenseInt4`) and int16-activation layers (16x8) are layer types of their own, described in the int8 quantization page.
 
 ## See Also
 

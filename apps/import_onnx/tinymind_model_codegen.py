@@ -228,6 +228,152 @@ def activation_lut(kind: str, in_scale: float, in_zp: int, out_scale: float, out
     return lut
 
 
+def round_half_away(x: float) -> int:
+    """std::round semantics on a double (ties away from zero), exactly."""
+    if x < 0.0:
+        return -round_half_away(-x)
+    r = math.floor(x)
+    return int(r) + 1 if x - r >= 0.5 else int(r)
+
+
+def activation_lut16(kind: str, in_scale: float, in_zp: int, out_scale: float) -> list:
+    """Mirror qactivations.hpp::buildQLUT16 (buildQSigmoidLUT16 /
+    buildQTanhLUT16): 513 int16 entries, entry i the function at int16 input
+    -32768 + 128 i less half the interval's midpoint interpolation error,
+    on the symmetric output grid of out_scale. All in double, as there."""
+    if kind == "Sigmoid":
+        def fn(x):
+            return 1.0 / (1.0 + math.exp(-x))
+    elif kind == "Tanh":
+        fn = math.tanh
+    else:
+        raise ValueError(kind)
+    inv = 1.0 / out_scale
+    lut = []
+    for i in range(513):
+        x = in_scale * float(-32768 + 128 * i - in_zp)
+        sample = float(round_half_away(fn(x) * inv))
+        v = sample
+        if i < 512:
+            x_next = in_scale * float(-32768 + 128 * (i + 1) - in_zp)
+            mid_interp = float(round_half_away((fn(x_next) * inv + sample) / 2))
+            mid = float(round_half_away(fn((x + x_next) / 2) * inv))
+            v = sample - float(round_half_away((mid_interp - mid) / 2))
+        lut.append(int(max(-32768.0, min(32767.0, v))))
+    return lut
+
+
+@dataclass
+class Grid16:
+    """An int8 activation grid widened to int16: symmetric (zero point 0)
+    over the same real range, with the int8 range's ends as clamp bounds."""
+    scale: float
+    qmin: int
+    qmax: int
+
+
+def int16_grid(scale: float, zp: int) -> Grid16:
+    """The int16 grid for an int8 tensor of (scale, zp). The int8 tensor
+    holds reals in [lo, hi] = [(-128 - zp) * scale, (127 - zp) * scale]; the
+    int16 grid is symmetric with scale max(|lo|, |hi|) / 32767, and a layer
+    writing the tensor clamps to [lo, hi] on it. The clamp keeps whatever
+    the int8 grid implied: a ReLU fused into the requantizer (zero point
+    -128, so lo = 0) still clamps at zero."""
+    lo = (-128 - zp) * scale
+    hi = (127 - zp) * scale
+    s16 = max(abs(lo), abs(hi)) / 32767.0
+    return Grid16(scale=s16, qmin=max(-32768, round_half_away(lo / s16)),
+                  qmax=min(32767, round_half_away(hi / s16)))
+
+
+@dataclass
+class Wide16x8:
+    """A weight layer moved to int16 activations: int64 biases at the int16
+    input scale, and one 64-bit requantizer per output channel."""
+    biases: Optional[list]
+    multipliers: list
+    shifts: list
+    qmin: int
+    qmax: int
+
+
+def requantize_16x8(layer) -> Wide16x8:
+    """Move a weight record (Conv, DepthwiseConv, AveragePool, Dense) to
+    int16 activations, keeping its int8 weights: the bias b (at input_scale *
+    weight_scale) becomes round(b * input_scale / s_in16) at s_in16 *
+    weight_scale, and each requantizer's ratio becomes s_in16 *
+    weight_scale / s_out16. Raises ValueError for a ratio of 2^7 or more,
+    beyond the 64-bit Requantizer's (TFLite's) shift contract."""
+    gin = int16_grid(layer.input_scale, layer.input_zp)
+    gout = int16_grid(layer.output_scale, layer.output_zp)
+    multipliers, shifts = [], []
+    for ws in layer.weight_scales:
+        m, sh = ti.quantize_multiplier(gin.scale * float(ws) / gout.scale)
+        if sh < -7:
+            raise ValueError(f"{layer.name}: scale ratio {gin.scale * float(ws) / gout.scale:g} is 2^7 or more, "
+                             "beyond the int64 requantizer's range")
+        multipliers.append(m)
+        shifts.append(sh)
+    biases = None
+    if layer.bias is not None:
+        ratio = layer.input_scale / gin.scale
+        biases = [round_half_away(float(b) * ratio) for b in layer.bias.tolist()]
+    return Wide16x8(biases=biases, multipliers=multipliers, shifts=shifts, qmin=gout.qmin, qmax=gout.qmax)
+
+
+def float_reference(layers, x):
+    """Run parsed records in float: dequantized int8 weights and biases,
+    real activations, every layer's output clipped to the real range its
+    int8 grid holds, and no other rounding. Both the int8 and the 16x8 model
+    approximate exactly this, so their distance from it measures what their
+    activation grids cost. x is the model input (reals, flattened NHWC);
+    returns the output, flattened. Softmax records are not supported."""
+    import numpy as np
+    vals = {-1: np.asarray(x, dtype=np.float64)}
+    for i, l in enumerate(layers):
+        g = l.geometry
+        src = vals[l.sources[0]]
+        op = l.op_type
+        if l.weight is not None:
+            out_ch = l.weight.shape[0]
+            ws = np.array(l.weight_scales, dtype=np.float64)
+            ws = np.repeat(ws, out_ch) if ws.size == 1 else ws
+            w = l.weight.astype(np.float64) * ws.reshape((-1,) + (1,) * (l.weight.ndim - 1))
+            b = np.zeros(out_ch) if l.bias is None else l.bias.astype(np.float64) * l.input_scale * ws
+        if op == "Dense":
+            y = w @ src + b
+        elif op in ("Conv", "DepthwiseConv", "AveragePool", "MaxPool"):
+            H, W, C = g["InputHeight"], g["InputWidth"], g["InputChannels"]
+            KH, KW, SH, SW = g["KernelHeight"], g["KernelWidth"], g["StrideH"], g["StrideW"]
+            pads = ((g.get("PadTop", 0), g.get("PadBottom", 0)), (g.get("PadLeft", 0), g.get("PadRight", 0)), (0, 0))
+            xp = np.pad(src.reshape(H, W, C), pads)
+            OH, OW = g["OutputHeight"], g["OutputWidth"]
+            y = np.zeros((OH, OW, g.get("NumFilters", C)))
+            for oh in range(OH):
+                for ow in range(OW):
+                    patch = xp[oh * SH:oh * SH + KH, ow * SW:ow * SW + KW, :]
+                    if op == "Conv":
+                        y[oh, ow] = np.tensordot(w, patch, axes=([1, 2, 3], [0, 1, 2])) + b
+                    elif op == "MaxPool":
+                        y[oh, ow] = patch.max(axis=(0, 1))
+                    else:
+                        y[oh, ow] = np.einsum("hwc,chw->c", patch, w.reshape(C, KH, KW)) + b
+        elif op == "Add":
+            y = src + vals[l.sources[1]]
+        elif op == "Relu":
+            y = np.maximum(src, 0.0)
+        elif op == "Sigmoid":
+            y = 1.0 / (1.0 + np.exp(-src))
+        elif op == "Tanh":
+            y = np.tanh(src)
+        else:
+            raise ValueError(op)
+        lo = (-128 - l.output_zp) * l.output_scale
+        hi = (127 - l.output_zp) * l.output_scale
+        vals[i] = np.clip(np.asarray(y, dtype=np.float64).reshape(-1), lo, hi)
+    return vals[len(layers) - 1]
+
+
 # ----------------------------------------------------------------------------
 # Emitter.
 # ----------------------------------------------------------------------------
@@ -321,9 +467,102 @@ class GeneratedModel:
     int4_layers: list = field(default_factory=list)
 
 
+def _rows(values, per_row: int, fmt=str) -> str:
+    rows = [", ".join(fmt(v) for v in values[r:r + per_row]) for r in range(0, len(values), per_row)]
+    return ",\n            ".join(rows)
+
+
+def _emit_layer_16x8(p: list, body: list, layer, nm: str, k: str, src: str, dst: str, n: int, ptr) -> int:
+    """One record of a 16x8 model (see emit_model_header's activation_bits).
+    Appends its constants to p and its call to body; returns the int8 weight
+    bytes it reads."""
+    g = layer.geometry
+    op = layer.op_type
+    if op in ("Conv", "DepthwiseConv", "AveragePool", "Dense"):
+        q = requantize_16x8(layer)
+        bias = "nullptr"
+        if q.biases is not None:
+            p.append(f"        constexpr int64_t {nm}_biases16[{len(q.biases)}] = {{\n            "
+                     + _rows(q.biases, 6) + "\n        };\n")
+            bias = f"{nm}_biases16"
+        entries = [f"{{{m}, {sh}, 0, {q.qmin}, {q.qmax}}}" for m, sh in zip(q.multipliers, q.shifts)]
+        per_channel = layer.per_channel or op in ("DepthwiseConv", "AveragePool")
+        if per_channel:
+            count = g["NumFilters"] if op != "Dense" else g["NumOutputs"]
+            if len(entries) == 1:
+                entries = entries * count
+            p.append(f"        constexpr tinymind::Requantizer<int64_t, int16_t> {nm}_requantizers[{count}] = {{\n"
+                     "            " + _rows(entries, 3) + "\n        };\n")
+        types = "int16_t, int8_t, int64_t, int16_t"
+        if op == "Dense" and not layer.per_channel:
+            p.append(f"        typedef tinymind::QDense<{types}, {g['NumInputs']}, {g['NumOutputs']}> {nm}_type;\n")
+            p.append(f"        constexpr {nm}_type {nm}_layer = {{{k}_Weights, {bias}, 0, {entries[0]}}};\n")
+            p.append(f"        static_assert({nm}_type::OutputLength == {n}, \"{nm}: output size\");\n")
+        elif op in ("DepthwiseConv", "AveragePool"):
+            dims = (f"{g['InputHeight']}, {g['InputWidth']}, {g['InputChannels']}, {g['KernelHeight']}, "
+                    f"{g['KernelWidth']}, {g['StrideH']}, {g['StrideW']}, "
+                    f"{g['PadTop']}, {g['PadBottom']}, {g['PadLeft']}, {g['PadRight']}")
+            p.append(f"        typedef tinymind::QDepthwiseConv2D<{types}, {dims}> {nm}_type;\n")
+            p.append(f"        constexpr {nm}_type {nm}_layer = {{{k}_Weights, {bias}, 0, {nm}_requantizers}};\n")
+            p.append(f"        static_assert({nm}_type::OutputSize == {n}, \"{nm}: output size\");\n")
+        else:
+            if op == "Conv":
+                dims = (f"{g['InputHeight']}, {g['InputWidth']}, {g['InputChannels']}, {g['KernelHeight']}, "
+                        f"{g['KernelWidth']}, {g['StrideH']}, {g['StrideW']}, {g['NumFilters']}, "
+                        f"{g['PadTop']}, {g['PadBottom']}, {g['PadLeft']}, {g['PadRight']}")
+            else:
+                dims = f"1, 1, {g['NumInputs']}, 1, 1, 1, 1, {g['NumOutputs']}"
+            if per_channel:
+                p.append(f"        typedef tinymind::QConv2DPerChannel<{types}, {dims}> {nm}_type;\n")
+                p.append(f"        constexpr {nm}_type {nm}_layer = {{{k}_Weights, {bias}, 0, {nm}_requantizers}};\n")
+            else:
+                p.append(f"        typedef tinymind::QConv2D<{types}, {dims}> {nm}_type;\n")
+                p.append(f"        constexpr {nm}_type {nm}_layer = {{{k}_Weights, {bias}, 0, {entries[0]}}};\n")
+            p.append(f"        static_assert({nm}_type::OutputSize == {n}, \"{nm}: output size\");\n")
+        body.append(f"        model_detail::{nm}_layer.forward({src}, {dst});\n")
+        return int(layer.weight.size)
+    if op == "MaxPool":
+        p.append(f"        typedef tinymind::QMaxPool2D<int16_t, {g['InputHeight']}, {g['InputWidth']}, "
+                 f"{g['InputChannels']}, {g['KernelHeight']}, {g['KernelWidth']}, {g['StrideH']}, "
+                 f"{g['StrideW']}> {nm}_type;\n")
+        p.append(f"        constexpr {nm}_type {nm}_layer = {{}};\n")
+        p.append(f"        static_assert({nm}_type::OutputSize == {n}, \"{nm}: output size\");\n")
+        body.append(f"        model_detail::{nm}_layer.forward({src}, {dst});\n")
+        return 0
+    if op == "Add":
+        ga = int16_grid(layer.input_scale, layer.input_zp)
+        gb = int16_grid(layer.input_b_scale, layer.input_b_zp)
+        go = int16_grid(layer.output_scale, layer.output_zp)
+        a = qadd_params(ga.scale, gb.scale, go.scale, left_shift=15)
+        p.append(f"        typedef tinymind::QAdd<int16_t, int16_t, int16_t, {n}> {nm}_type;\n")
+        p.append(f"        constexpr {nm}_type {nm}_layer = {{0, 0, 15, "
+                 f"{a['input_a_multiplier']}, {a['input_a_shift']}, "
+                 f"{a['input_b_multiplier']}, {a['input_b_shift']}, "
+                 f"{{{a['output_multiplier']}, {a['output_shift']}, 0, {go.qmin}, {go.qmax}}}}};\n")
+        body.append(f"        model_detail::{nm}_layer.forward({src}, {ptr(layer.sources[1])}, {dst});\n")
+        return 0
+    if op in ("Sigmoid", "Tanh"):
+        gin = int16_grid(layer.input_scale, layer.input_zp)
+        gout = int16_grid(layer.output_scale, layer.output_zp)
+        lut = activation_lut16(op, gin.scale, 0, gout.scale)
+        lut = [max(gout.qmin, min(gout.qmax, v)) for v in lut]
+        p.append(f"        constexpr int16_t {nm}_lut16[513] = {{\n            "
+                 + _rows(lut, 12, lambda v: f"{v:6d}") + "\n        };\n")
+        body.append(f"        for (std::size_t j = 0; j < {n}; ++j)\n        {{\n"
+                    f"            {dst}[j] = tinymind::qApplyLUT16({src}[j], model_detail::{nm}_lut16);\n"
+                    f"        }}\n")
+        return 0
+    if op == "Relu":
+        body.append(f"        for (std::size_t j = 0; j < {n}; ++j)\n        {{\n"
+                    f"            {dst}[j] = tinymind::qrelu<int16_t>({src}[j], 0);\n"
+                    f"        }}\n")
+        return 0
+    raise ValueError(f"{layer.name}: no 16x8 code generation for {op}")
+
+
 def emit_model_header(path: str, namespace: str, layers, weights_header: str,
                       alignment: int = 4, in_place: bool = True, int4_dense: bool = False,
-                      nested_namespace: Optional[str] = None) -> GeneratedModel:
+                      nested_namespace: Optional[str] = None, activation_bits: int = 8) -> GeneratedModel:
     """Write model.hpp for parsed records whose constants weights_header
     (written by emit_weights_header with the same namespace) holds.
 
@@ -332,6 +571,14 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     int8 weights in weights_header then go unused.
     nested_namespace: put the model inside namespace::nested_namespace, so
     several generated variants can share one weights header.
+    activation_bits: 16 runs the model with int16 activations and its int8
+    weights (TFLite's 16x8 scheme): every activation grid is widened to a
+    symmetric int16 grid over the same real range (int16_grid()), weight
+    layers take int64 biases and 64-bit requantizers (requantize_16x8()),
+    Add uses TFLite's int16 parameters (left_shift 15), and Sigmoid / Tanh
+    use 513-entry interpolated int16 tables. The weights header is shared
+    with the int8 model; the biases and requantizers live in model.hpp.
+    Softmax is not supported at 16 bits.
 
     Raises ValueError for a graph this generator cannot run as planned: a
     Relu whose input and output grids differ (no record carries the
@@ -339,6 +586,15 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     writes the 1/256 grid whatever the graph calibrated)."""
     if not layers:
         raise ValueError("no layers to generate")
+    if activation_bits not in (8, 16):
+        raise ValueError(f"activation_bits must be 8 or 16, not {activation_bits}")
+    wide = activation_bits == 16
+    act = "int16_t" if wide else "int8_t"
+    elem = 2 if wide else 1
+    if wide and int4_dense:
+        raise ValueError("int4 dense layers take int8 activations; int4_dense needs activation_bits=8")
+    if wide and alignment % elem != 0:
+        raise ValueError("int16 activations need an even arena alignment")
     for i, layer in enumerate(layers):
         if any(j >= i for j in layer.sources):
             raise ValueError(f"{layer.name}: reads a layer that runs after it")
@@ -354,6 +610,8 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     sizes = {-1: in_size}
     for i, layer in enumerate(layers):
         sizes[i] = output_size(layer, sizes)
+        if layer.op_type == "Softmax" and wide:
+            raise ValueError(f"{layer.name}: no int16 softmax; generate this model with activation_bits=8")
         if layer.op_type == "Softmax":
             for k, later in enumerate(layers[i + 1:], start=i + 1):
                 if i in later.sources:
@@ -364,7 +622,7 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             raise ValueError(f"{layer.name}: a Relu whose output grid differs from its input's "
                              "needs a rescale no record carries")
 
-    plan = plan_memory(layers, sizes, alignment=alignment, in_place=in_place)
+    plan = plan_memory(layers, {j: v * elem for j, v in sizes.items()}, alignment=alignment, in_place=in_place)
     check_plan(plan)
 
     last = len(layers) - 1
@@ -374,6 +632,10 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     else:
         out_scale, out_zp = out_layer.output_scale, out_layer.output_zp
     first_reader = next(l for l in layers if -1 in l.sources)
+    in_scale, in_zp = first_reader.input_scale, first_reader.input_zp
+    if wide:
+        in_scale, in_zp = int16_grid(in_scale, in_zp).scale, 0
+        out_scale, out_zp = int16_grid(out_scale, out_zp).scale, 0
 
     ops = sorted({l.op_type for l in layers})
     includes = ["qaffine.hpp"]
@@ -401,16 +663,17 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     p.append(f"namespace {namespace} {{\n")
     if nested_namespace:
         p.append(f"namespace {nested_namespace} {{\n")
-    p.append("    // Model interface. input and output are caller-owned int8 buffers in\n"
+    p.append(f"    // Model interface. input and output are caller-owned {act} buffers in\n"
              "    // NHWC order; arena is caller-owned scratch of kModelArenaSize bytes,\n"
              "    // aligned to kModelArenaAlignment, overlapping neither of them.\n")
+    p.append(f"    typedef {act} ModelActivationType;\n")
     p.append(f"    constexpr std::size_t kModelInputSize      = {in_size};\n")
     p.append(f"    constexpr std::size_t kModelOutputSize     = {sizes[last]};\n")
     p.append(f"    constexpr std::size_t kModelArenaSize      = {plan.arena_size};\n")
     p.append(f"    constexpr std::size_t kModelArenaAlignment = {alignment};\n")
-    p.append(f"    constexpr float   kModelInputScale      = {first_reader.input_scale!r}f;\n")
-    p.append(f"    constexpr int32_t kModelInputZeroPoint  = {first_reader.input_zp};\n")
-    p.append(f"    constexpr float   kModelOutputScale     = {out_scale!r}f;\n")
+    p.append(f"    constexpr float   kModelInputScale      = {_f32(in_scale)!r}f;\n")
+    p.append(f"    constexpr int32_t kModelInputZeroPoint  = {in_zp};\n")
+    p.append(f"    constexpr float   kModelOutputScale     = {_f32(out_scale)!r}f;\n")
     p.append(f"    constexpr int32_t kModelOutputZeroPoint = {out_zp};\n\n")
 
     p.append(f"    // Memory plan: {len(plan.buffers)} arena buffers in {plan.arena_size} bytes "
@@ -445,7 +708,7 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             return "input"
         if j == last:
             return "output"
-        return f"(arena + {plan.offsets[j]})"
+        return f"(arena + {plan.offsets[j] // elem})"
 
     for i, layer in enumerate(layers):
         nm = ti.sanitize(layer.name)
@@ -457,6 +720,10 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
         bias = f"{k}_Biases" if layer.bias is not None else "nullptr"
         reads = ", ".join("input" if j < 0 else ti.sanitize(layers[j].name) for j in layer.sources)
         p.append(f"\n        // [{i}] {layer.op_type} {nm} <- {reads}\n")
+
+        if wide:
+            weight_bytes += _emit_layer_16x8(p, body, layer, nm, k, src, dst, n, ptr)
+            continue
 
         def rq_array(count: int) -> None:
             if layer.per_channel:
@@ -569,13 +836,13 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
 
     p.append("    } // namespace model_detail\n\n")
     p.append("    /**\n"
-             "     * Run the model: input (kModelInputSize int8 values on the input grid)\n"
+             f"     * Run the model: input (kModelInputSize {act[:-2]} values on the input grid)\n"
              "     * to output (kModelOutputSize values on the output grid). arena\n"
              "     * holds every intermediate activation; its contents need not be\n"
              "     * kept between calls.\n"
              "     */\n")
     unused_arena = plan.arena_size == 0
-    p.append("    inline void forward(const int8_t* input, int8_t* output, int8_t* arena)\n    {\n")
+    p.append(f"    inline void forward(const {act}* input, {act}* output, {act}* arena)\n    {{\n")
     if unused_arena:
         p.append("        (void)arena;\n")
     p.append("".join(body))
@@ -594,11 +861,13 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
 
 def import_onnx_model_with_code(model_path: str, weights_path: str, model_header_path: str,
                                 namespace: str, alignment: int = 4, in_place: bool = True,
-                                int4_dense: bool = False, nested_namespace: Optional[str] = None):
+                                int4_dense: bool = False, nested_namespace: Optional[str] = None,
+                                activation_bits: int = 8):
     """Parse an ONNX model and write both the weights header and model.hpp.
     Returns (layers, GeneratedModel)."""
     layers = ti.import_onnx_model(model_path, weights_path, namespace)
     generated = emit_model_header(model_header_path, namespace, layers,
                                   os.path.basename(weights_path), alignment=alignment, in_place=in_place,
-                                  int4_dense=int4_dense, nested_namespace=nested_namespace)
+                                  int4_dense=int4_dense, nested_namespace=nested_namespace,
+                                  activation_bits=activation_bits)
     return layers, generated

@@ -380,6 +380,77 @@ namespace tinymind {
         }
     };
 
+    /**
+     * Requantizer for a 64-bit accumulator: the int16-activation, int8-weight
+     * ("16x8") layers of TFLite and TFLite Micro, whose biases and
+     * accumulators are int64. apply() computes exactly what TFLite's int64
+     * MultiplyByQuantizedMultiplier computes (identical in its single- and
+     * double-rounding builds), followed by the zero point and the clamp:
+     *
+     *   m16    = multiplier < 0x7FFF0000 ? (multiplier + 2^15) >> 16 : 0x7FFF
+     *   scaled = (acc * m16 + 2^(14 + shift)) >> (15 + shift)
+     *
+     * The Q0.31 multiplier is reduced to Q0.15 so that acc * m16 fits int64
+     * for any |acc| < 2^47, and there is one rounding. shift has this
+     * library's sign (positive shifts right; TFLite's shift is -shift).
+     *
+     * Contract, TFLite's: multiplier >= 0, -7 <= shift <= 31 and
+     * |acc| < 2^47 (a 16x8 dot product of n terms needs n < 2^24). Outside
+     * it the result is defined but not meaningful: acc is clamped to
+     * [-2^47, 2^47 - 1] and shift to [-14, 47], which keeps every shift and
+     * product inside int64 and leaves every in-contract result unchanged;
+     * the zero point is added and the clamp applied in int64.
+     */
+    template<typename DstStorage_>
+    struct Requantizer<int64_t, DstStorage_>
+    {
+        typedef int64_t SrcAccumType;
+        typedef DstStorage_ DstStorageType;
+
+        int32_t multiplier;
+        int32_t shift;
+        DstStorageType zero_point;
+        DstStorageType qmin;
+        DstStorageType qmax;
+
+        /**
+         * Always true: the 64-bit form has one rounding and no saturating
+         * path, so kernels that split their output loop on oneRounding()
+         * (see TINYMIND_SPLIT_REQUANTIZER_FORMS) always take the first one.
+         */
+        bool oneRounding() const
+        {
+            return true;
+        }
+
+        DstStorageType applyOneRounding(SrcAccumType acc) const
+        {
+            return apply(acc);
+        }
+
+        DstStorageType apply(SrcAccumType acc) const
+        {
+            const int64_t accLimit = static_cast<int64_t>(1) << 47;
+            const int64_t x = (acc < -accLimit) ? -accLimit : ((acc > accLimit - 1) ? accLimit - 1 : acc);
+            const int32_t s = (shift < -14) ? -14 : ((shift > 47) ? 47 : shift);
+            const int64_t reduced = (multiplier < 0x7FFF0000)
+                ? ((static_cast<int64_t>(multiplier) + (static_cast<int64_t>(1) << 15)) >> 16)
+                : static_cast<int64_t>(0x7FFF);
+            const int32_t totalShift = 15 + s;
+            const int64_t round = static_cast<int64_t>(1) << (totalShift - 1);
+            int64_t wide = ((x * reduced + round) >> totalShift) + static_cast<int64_t>(zero_point);
+            if (wide < static_cast<int64_t>(qmin))
+            {
+                wide = static_cast<int64_t>(qmin);
+            }
+            if (wide > static_cast<int64_t>(qmax))
+            {
+                wide = static_cast<int64_t>(qmax);
+            }
+            return static_cast<DstStorageType>(wide);
+        }
+    };
+
     namespace detail {
 
         /**
@@ -407,6 +478,23 @@ namespace tinymind {
                 // GCC 13 lowers the compare form to two compare-and-move
                 // pairs; the ACLE intrinsic is one SSAT.
                 return __ssat(v, 8);
+#else
+                return (v < min) ? min : ((v > max) ? max : v);
+#endif
+            }
+        };
+
+        template<>
+        struct StorageRange<int16_t>
+        {
+            static constexpr bool known = true;
+            static constexpr int32_t min = -32768;
+            static constexpr int32_t max = 32767;
+
+            static int32_t saturate(int32_t v)
+            {
+#if defined(__ARM_FEATURE_SAT)
+                return __ssat(v, 16);
 #else
                 return (v < min) ? min : ((v > max) ? max : v);
 #endif
@@ -459,7 +547,10 @@ namespace tinymind {
             template<typename SrcAccum_>
             bool init(const Requantizer<SrcAccum_, DstStorageType>& rq)
             {
-                if (!Range::known || (rq.multiplier < 0) || (rq.shift < 2) || (rq.shift > 31) ||
+                // The fast form takes an int32 accumulator; a 64-bit one
+                // (Requantizer<int64_t, ...>) rounds differently.
+                if ((sizeof(SrcAccum_) != sizeof(int32_t)) ||
+                    !Range::known || (rq.multiplier < 0) || (rq.shift < 2) || (rq.shift > 31) ||
                     (static_cast<int32_t>(rq.qmin) != Range::min) ||
                     (static_cast<int32_t>(rq.qmax) != Range::max))
                 {
