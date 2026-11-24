@@ -1,0 +1,10 @@
+img=features board=l031 level=O2 dsp=0 compiler=arm-none-eabi-g++ (15:13.2.rel1-2) 13.2.1 20231009
+size   11192	      4	   3308	  14504	   38a8	build/l031/O2/features.elf
+# begin bench
+work=logmel_256x32 med=187724 min=187628 max=187960 stack=496 match=1 
+work=mfcc_32x13 med=33561 min=33561 max=33561 stack=352 match=1 
+work=kmeans_score_32x8 med=23685 min=23675 max=23695 stack=372 match=1 
+work=gaussian_score_32x4 med=13331 min=13327 max=13339 stack=388 match=1 
+work=kmeans_learn_32x8 med=31093 min=30500 max=31476 stack=396 match=1 
+stack_baseline=352 static_ram=3308 
+# end bench

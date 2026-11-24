@@ -204,6 +204,21 @@ A tree walk's length depends on the input, so the spread between fastest and slo
 
 **M0+ against M4F, same code.** At `-O3` the MLP takes 1.6× the cycles of the F411's scalar build and the CNN 2.9×. Requantization's 64-bit multiply becomes a library call (`__aeabi_lmul`) on ARMv6-M, and the 3×3 stem is 69% of the CNN, so those are where M0+ tuning would start.
 
+## Newer workloads: int4, 16x8, log-mel and anomaly scores
+
+[`benchmarks/tier1_onboard`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/tier1_onboard) times what [#295](https://github.com/danmcleran/tinymind/pull/295) to [#300](https://github.com/danmcleran/tinymind/pull/300) added, tinymind against itself, on the same two boards at `-O3`. Every output matched the host's bit for bit. Cycles per call:
+
+| | NUCLEO-F411RE, scalar | NUCLEO-F411RE, Arm DSP | NUCLEO-L031K6 |
+|---|---:|---:|---:|
+| Digits CNN ([`onnx_digits_int8`]({{ site.baseurl }}/examples/onnx_digits_int8)), int8 | 479,524 | 171,384 | 760,608 |
+| Same, dense layer on packed int4 weights | 484,344 | 186,613 | 780,075 |
+| Same, int16 activations (16x8) | 561,802 | 561,802 | 1,202,720 |
+| Log-mel frame, 256 samples, 32 bands | 46,878 | 46,878 | 185,172 |
+| k-means anomaly score, 32 features x 8 clusters | 3,569 | 3,569 | 23,571 |
+| k-means learning step | 5,461 | 5,461 | 30,700 |
+
+int4 costs 1 to 3% over int8, and 9% where the int8 dense layer uses SMLAD. 16x8 has no SMLAD path yet, its int16 add runs the reference loop and its depthwise layer multiplies in 64 bits, so it is 17% slower than scalar int8 on the Cortex-M4, 58% slower on the Cortex-M0+, and 3.3 times slower than int8 with the DSP backend. A log-mel frame plus a k-means score takes 6.5 ms on the Cortex-M0+ at 32 MHz, 8% of an 80 ms frame at 3.2 kHz. Per-layer cycles, `-O2` figures and stack use are in the [bench README](https://github.com/danmcleran/tinymind/tree/master/benchmarks/tier1_onboard).
+
 ## tinymind under Clang
 
 Every table above is GCC. `make TOOLCHAIN=clang` rebuilds the tinymind images with Clang 18.1.3 instead (TFLM and emlearn stay on GCC), linked against the same newlib and startup code, and every one of them is bit-exact with the GCC build on both boards.

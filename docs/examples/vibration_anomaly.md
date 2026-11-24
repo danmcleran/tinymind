@@ -36,6 +36,6 @@ The Euclidean k-means never raises a sustained alarm on the imbalance fault. Tha
 
 Over machine seeds 11 to 15, the weighted k-means averages alarm rates of 92.0% (bearing), 65.2% (imbalance) and 84.9% (looseness), with 0.10 to 0.17% false alarms.
 
-For a Cortex-M0+ at `-Os`, the detector is 1,274 bytes of code and the trainer 1,256 bytes of RAM, with at most 72 bytes of stack. With the log-mel front end, the node needs about 3 KB of RAM.
+For a Cortex-M0+ at `-Os`, the detector is 1,274 bytes of code and the trainer 1,256 bytes of RAM, with at most 72 bytes of stack. With the log-mel front end, the node needs about 3 KB of RAM. On the NUCLEO-L031K6 at 32 MHz a k-means score takes 0.74 ms and a learning step 0.96 ms; with the 5.8 ms log-mel frame, scoring takes 8% of the CPU at 3.2 kHz ([`benchmarks/tier1_onboard`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/tier1_onboard)).
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/vibration_anomaly)

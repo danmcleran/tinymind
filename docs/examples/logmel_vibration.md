@@ -48,4 +48,6 @@ For a Cortex-M0+ at `-Os`, with N = 256 and 32 bands:
 - the workspace is 1,028 bytes;
 - the host-built tables are 1,644 bytes of flash, plus 832 for a 13-coefficient DCT.
 
+Measured on the boards at `-O3` ([`benchmarks/tier1_onboard`](https://github.com/danmcleran/tinymind/tree/master/benchmarks/tier1_onboard)), a log-mel frame takes 185,172 cycles on the Cortex-M0+ of a NUCLEO-L031K6 (5.8 ms at 32 MHz) and 46,878 on the Cortex-M4 of a NUCLEO-F411RE (0.47 ms); the 13 MFCCs add 33,567 and 4,112.
+
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/logmel_vibration)

@@ -99,9 +99,14 @@ output channel, and stores two weights per byte:
 | Weight bytes | 3,408 | 2,128 |
 | Cortex-M0+ code and read-only data | 7,326 bytes | 5,988 bytes |
 
-That is 18% less flash for the whole model. The int4 kernel is scalar: on
-a Cortex-M4 the int8 dense layer can use the SMLAD path and the int4 one
-cannot, so int4 saves flash, not cycles. The requantization is
+That is 18% less flash for the whole model. The int4 kernel is scalar, and
+on the boards it costs a little time
+([`benchmarks/tier1_onboard`](../../benchmarks/tier1_onboard)): the whole
+model takes 2.6% longer on the Cortex-M0+ (780k cycles against 761k at
+`-O3`) and 1% longer on the Cortex-M4 with scalar kernels. With the Arm DSP
+backend the int8 dense layer uses SMLAD and the int4 one cannot, so there
+the dense layer is 2.85 times slower and the model 9% (187k cycles against
+171k). The requantization is
 post-training, with no retraining; quantization-aware training would
 recover more of the accuracy.
 
@@ -137,10 +142,21 @@ accuracy, so the 16x8 model is no more accurate. What 16-bit activations
 buy is precision in the outputs: a regression target, a spectrogram feature
 or a control signal that int8's 256 steps would quantize coarsely. The
 price is twice the activation RAM. Code grows by 248 bytes, for the 64-bit
-requantization. The weights do not change. On Cortex-M0+ every output
-costs a 64-bit multiply in the requantizer, but the dot products stay in
-32 bits: they sum in blocks of 256 terms before widening. No cycle counts
-were measured on target.
+requantization. The weights do not change. The dot products stay in 32
+bits, summing blocks of 256 terms before widening, but the model is slower
+on the boards
+([`benchmarks/tier1_onboard`](../../benchmarks/tier1_onboard), `-O3`):
+
+| | int8 | 16x8 |
+|---|---:|---:|
+| Cortex-M0+ (NUCLEO-L031K6, 32 MHz) | 760,608 cycles (23.8 ms) | 1,202,720 cycles (37.6 ms) |
+| Cortex-M4, scalar kernels (NUCLEO-F411RE, 100 MHz) | 479,524 (4.8 ms) | 561,802 (5.6 ms) |
+| Cortex-M4, Arm DSP backend | 171,384 (1.7 ms) | 561,802 (5.6 ms) |
+
+There is no 16x8 SMLAD path yet, so the DSP backend does not speed the 16x8
+convolutions up; the int16 add runs `QAdd`'s reference loop (TFLite's left
+shift of 15 leaves its fast form too little headroom), and the depthwise
+layer multiplies in 64 bits.
 
 ## Build and run
 
