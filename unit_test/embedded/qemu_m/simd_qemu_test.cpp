@@ -61,6 +61,7 @@
 #endif
 
 #include "include/simd/simd_dispatch.hpp"
+#include "qadd.hpp"
 #include "qaffine.hpp"
 #include "qconv2d.hpp"
 #include "qdense.hpp"
@@ -836,6 +837,46 @@ namespace {
         }
     }
 
+    // QAdd's int16 input rescales as the target compiles them (SMLAL on the
+    // Cortex-M4 and M55), against multiplyByQuantizedMultiplier, for every
+    // int16 input at TFLite's int16 left shift of 15 and its neighbours.
+    void testAddRescales16()
+    {
+        static const int32_t kMultipliers[] = {1, 1 << 30, 1372513147, 2147483647};
+        static const int32_t kShifts[] = {0, 1, 2, 15, 31};
+        for (int32_t ls = 13; ls <= 15; ++ls)
+        {
+            for (const int32_t m : kMultipliers)
+            {
+                for (const int32_t e : kShifts)
+                {
+                    tinymind::detail::FastAddInputWide<int16_t> wide;
+                    tinymind::detail::FastAddInputZeroPoint0<int16_t> scaled;
+                    tinymind::detail::FastAddInputHalf<int16_t> half;
+                    const bool useWide = wide.init(0, ls, m, e);
+                    const bool useScaled = scaled.init(0, ls, m, e);
+                    const bool useHalf = half.init(0, ls, m, e);
+                    if (!useWide)
+                    {
+                        fail("addrescale16 init", static_cast<uint32_t>(ls), static_cast<uint32_t>(m), e, 0);
+                        continue;
+                    }
+                    for (int32_t q = -32768; q <= 32767; ++q)
+                    {
+                        const int32_t want = tinymind::multiplyByQuantizedMultiplier(q * (1 << ls), m, e);
+                        ++g_cases;
+                        if ((wide.apply(q) != want) || (useScaled && (scaled.apply(q) != want)) ||
+                            (useHalf && (half.apply(q) != want)))
+                        {
+                            fail("addrescale16 ls,m", static_cast<uint32_t>(ls), static_cast<uint32_t>(m), q, e);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 } // namespace
 
 extern "C" int run_tests()
@@ -860,6 +901,7 @@ extern "C" int run_tests()
     testDense();
     testInt16x8Dot();
     testFastRequantizer64();
+    testAddRescales16();
 #if TINYMIND_ENABLE_SIMD_HELIUM_MVE_F
     testFloatDot();
 #endif

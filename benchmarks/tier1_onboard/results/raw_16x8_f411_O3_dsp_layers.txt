@@ -1,13 +1,13 @@
 img=16x8 board=f411 level=O3 dsp=1 compiler=arm-none-eabi-g++ (15:13.2.rel1-2) 13.2.1 20231009
-size   32600	      0	   5192	  37792	   93a0	build/f411/O3_dsp_layers/16x8.elf
+size   33336	      0	   5192	  38528	   9680	build/f411/O3_dsp_layers/16x8.elf
 # begin bench
-work=digits_16x8 med=220380 min=220380 max=220381 stack=1208 match=1 
-layer=c1_conv med=32463 
+work=digits_16x8 med=202690 min=202690 max=202691 stack=1208 match=1 
+layer=c1_conv med=32511 
 layer=c2_conv med=115427 
-layer=add med=35036 
-layer=maxpool med=2113 
+layer=add med=17315 
+layer=maxpool med=2112 
 layer=dw_conv med=10484 
-layer=pw_conv med=13801 
+layer=pw_conv med=13784 
 layer=fc med=11533 
 layers_match=1 
 stack_baseline=272 static_ram=5192 

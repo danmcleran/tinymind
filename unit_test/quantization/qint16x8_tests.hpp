@@ -619,8 +619,8 @@ BOOST_AUTO_TEST_CASE(qint16x8_int32_accumulator_variant)
 BOOST_AUTO_TEST_CASE(qint16x8_add_uses_tflite_int16_parameters)
 {
     // TFLite's int16 ADD: zero points 0, left_shift 15, the int8 arithmetic
-    // otherwise. QAdd's wide form (FastAddInput64) runs it; the int8 fast
-    // form needs more headroom than 15 bits leave.
+    // otherwise. QAdd's wide form (FastAddInputWide) runs it; the int8 fast
+    // form keeps a bit of headroom that 15 bits do not leave.
     const float scaleA = 0.0021f;
     const float scaleB = 0.0007f;
     const float scaleOut = 0.0025f;
@@ -675,10 +675,11 @@ BOOST_AUTO_TEST_CASE(qint16x8_add_uses_tflite_int16_parameters)
         BOOST_TEST(out[i] == v);
     }
 
-    // A zero point of 1 with 15 bits of left shift leaves FastAddInput64 too
-    // little headroom (|q - zp| reaches 32769), so QAdd falls back to its
-    // reference loop, which must still give the TFLite arithmetic.
-    tinymind::detail::FastAddInput64<int16_t> wideIn;
+    // A zero point of 1 with 15 bits of left shift takes 2(q - zp) << 15 past
+    // int32 (q - zp reaches -32769), so FastAddInputWide refuses it and QAdd
+    // falls back to its reference loop, which must still give the TFLite
+    // arithmetic.
+    tinymind::detail::FastAddInputWide<int16_t> wideIn;
     BOOST_TEST(!wideIn.init(1, leftShift, ma, sa));
     tinymind::quantizeMultiplier(twiceMax / ((1 << leftShift) * static_cast<double>(scaleOut)), mo, so);
     const tinymind::QAdd<int16_t, int16_t, int16_t, 64> addZp = {
@@ -694,14 +695,97 @@ BOOST_AUTO_TEST_CASE(qint16x8_add_uses_tflite_int16_parameters)
     }
 }
 
+BOOST_AUTO_TEST_CASE(qint16x8_add_output_clamps_and_fallback)
+{
+    // QAdd's wide form in each of its loops, against the reference
+    // arithmetic over every int16 value of each input:
+    //   TFLite's int16 ADD (left shift 15, zero points 0), the exact input
+    //   second, then first (the inputs swap places);
+    //   a zero point of 1 at left shift 14, where no input is exact and
+    //   FastAddInputWide rescales both;
+    // each with the output over the whole int16 range, a fused ReLU (qmin
+    // 0), an asymmetric clamp, and an output shift below 2, which
+    // FastRequantizer refuses and Requantizer::apply runs.
+    int32_t mScaled = 0, sScaled = 0;
+    tinymind::quantizeMultiplier(0.0007 / (2.0 * 0.0021), mScaled, sScaled);
+    const int32_t half = 1 << 30;
+    struct Inputs
+    {
+        int16_t zpA;
+        int32_t leftShift;
+        int32_t ma, sa, mb, sb;
+    };
+    const Inputs inputs[] = {
+        {0, 15, mScaled, sScaled, half, 0},
+        {0, 15, half, 0, mScaled, sScaled},
+        {1, 14, mScaled, sScaled, half, 0}};
+    struct Output
+    {
+        int32_t shift;
+        int16_t zero_point;
+        int16_t qmin;
+        int16_t qmax;
+    };
+    const Output outputs[] = {{0, 0, -32768, 32767}, {0, 0, 0, 32767}, {0, 5, -32767, 14174}, {1, 0, -32768, 32767}};
+    // Two input sets of every int16 value on one side and a spread on the
+    // other, so whichever input a loop rescales by multiplication sees every
+    // value, ties included.
+    const std::size_t n = 65536;
+    std::vector<int16_t> every(n);
+    std::vector<int16_t> spread(n);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        every[i] = static_cast<int16_t>(static_cast<int32_t>(i) - 32768);
+        spread[i] = static_cast<int16_t>(static_cast<int32_t>((i * 40503u) & 0xFFFFu) - 32768);
+    }
+    for (const Inputs& in : inputs)
+    {
+        tinymind::detail::FastAddInputWide<int16_t> wideA;
+        BOOST_TEST(wideA.init(in.zpA, in.leftShift, in.ma, in.sa));
+        tinymind::detail::FastAddInput<int16_t> narrowA;
+        BOOST_TEST(!narrowA.init(in.zpA, in.leftShift, in.ma, in.sa));
+        int32_t mo = 0, so = 0;
+        tinymind::quantizeMultiplier(2.0 * 0.0021 / ((1 << in.leftShift) * 0.0025), mo, so);
+        for (const Output& o : outputs)
+        {
+            const tinymind::Requantizer<int32_t, int16_t> rq = {
+                (o.shift == 1) ? half : mo, (o.shift == 1) ? 1 : so, o.zero_point, o.qmin, o.qmax};
+            const tinymind::QAdd<int16_t, int16_t, int16_t, n> add = {
+                in.zpA, 0, in.leftShift, in.ma, in.sa, in.mb, in.sb, rq};
+            for (int set = 0; set < 2; ++set)
+            {
+                const std::vector<int16_t>& a = (set == 0) ? every : spread;
+                const std::vector<int16_t>& b = (set == 0) ? spread : every;
+                std::vector<int16_t> out(n);
+                add.forward(a.data(), b.data(), out.data());
+                bool same = true;
+                for (std::size_t i = 0; i < n && same; ++i)
+                {
+                    const int32_t sumA = tinymind::multiplyByQuantizedMultiplier(
+                        (a[i] - in.zpA) * (1 << in.leftShift), in.ma, in.sa);
+                    const int32_t sumB =
+                        tinymind::multiplyByQuantizedMultiplier(b[i] * (1 << in.leftShift), in.mb, in.sb);
+                    same = (out[i] == rq.apply(sumA + sumB));
+                    BOOST_TEST(same, "zp " << in.zpA << " ls " << in.leftShift << " ma " << in.ma
+                                           << " output shift " << rq.shift << " qmin " << o.qmin << " a " << a[i]
+                                           << " b " << b[i]);
+                }
+            }
+        }
+    }
+    tinymind::detail::FastRequantizer<int16_t> fastOut;
+    const tinymind::Requantizer<int32_t, int16_t> refused = {half, 1, 0, -32768, 32767};
+    BOOST_TEST(!fastOut.init(refused));
+}
+
 BOOST_AUTO_TEST_CASE(qint16x8_add_wide_rescale_matches_reference)
 {
-    // FastAddInput64, QAdd's one-rounding input rescale for int16, against
+    // FastAddInputWide, QAdd's one-rounding input rescale for int16, against
     // the reference multiplyByQuantizedMultiplier((q - zp) << left_shift, m,
     // e) for every int16 input. It must accept every left shift up to 15
-    // with a zero point of 0 (TFLite's int16 ADD), and refuse what would
-    // overflow.
-    const int32_t multipliers[] = {0, 1, 1 << 30, 1518500250, 2147483647};
+    // with a zero point of 0 (TFLite's int16 ADD), and refuse exactly what
+    // takes 2(q - zp) << left_shift past int32.
+    const int32_t multipliers[] = {0, 1, 1 << 30, 1372513147, 1518500250, 2147483647};
     const int32_t shifts[] = {0, 1, 2, 3, 7, 15, 16, 30, 31};
     const int32_t leftShifts[] = {0, 1, 8, 13, 14, 15};
     const int16_t zeroPoints[] = {0, -1, 1, 300};
@@ -714,10 +798,11 @@ BOOST_AUTO_TEST_CASE(qint16x8_add_wide_rescale_matches_reference)
             {
                 for (int16_t zp : zeroPoints)
                 {
-                    tinymind::detail::FastAddInput64<int16_t> fast;
-                    // The largest |q - zp| over int16.
-                    const int32_t span = std::max(static_cast<int32_t>(zp) + 32768, 32767 - static_cast<int32_t>(zp));
-                    const bool fits = ((static_cast<int64_t>(span) << ls) <= (static_cast<int64_t>(1) << 30)) && (e <= 30);
+                    tinymind::detail::FastAddInputWide<int16_t> fast;
+                    // 2(q - zp) << ls over int16 must stay inside int32.
+                    const int64_t scale = static_cast<int64_t>(1) << (ls + 1);
+                    const bool fits = ((-32768 - static_cast<int64_t>(zp)) * scale >= INT32_MIN) &&
+                                      ((32767 - static_cast<int64_t>(zp)) * scale <= INT32_MAX);
                     BOOST_TEST(fast.init(zp, ls, m, e) == fits, "m " << m << " e " << e << " ls " << ls << " zp " << zp);
                     if (!fits)
                     {
@@ -736,10 +821,61 @@ BOOST_AUTO_TEST_CASE(qint16x8_add_wide_rescale_matches_reference)
         }
     }
     BOOST_TEST(configurations >= 200u);
-    // Out of its domain: a negative multiplier or shift.
-    tinymind::detail::FastAddInput64<int16_t> fast;
+    // Out of its domain: a negative multiplier or shift, a shift past 31, a
+    // left shift past 29.
+    tinymind::detail::FastAddInputWide<int16_t> fast;
     BOOST_TEST(!fast.init(0, 15, -1, 3));
     BOOST_TEST(!fast.init(0, 15, 1 << 30, -1));
+    BOOST_TEST(!fast.init(0, 15, 1 << 30, 32));
+    BOOST_TEST(!fast.init(0, 30, 1 << 30, 3));
+    BOOST_TEST(fast.init(0, 15, 1 << 30, 31));
+}
+
+BOOST_AUTO_TEST_CASE(qint16x8_add_zero_point_0_and_half_rescales)
+{
+    // QAdd's two rescales for TFLite's int16 ADD against the reference
+    // multiplyByQuantizedMultiplier(q << left_shift, m, e) for every int16
+    // input: FastAddInputZeroPoint0 (zero point 0, shift >= 1) and
+    // FastAddInputHalf (m = 2^30, shift 0). Each must take exactly
+    // FastAddInputWide's domain narrowed by those conditions.
+    const int32_t half = 1 << 30;
+    const int32_t multipliers[] = {0, 1, half, 1372513147, 1518500250, 2147483647};
+    const int32_t shifts[] = {0, 1, 2, 3, 7, 15, 16, 30, 31};
+    const int32_t leftShifts[] = {0, 1, 8, 13, 14, 15, 16};
+    const int16_t zeroPoints[] = {0, 1};
+    std::size_t scaledConfigurations = 0;
+    std::size_t halfConfigurations = 0;
+    for (int32_t m : multipliers)
+    {
+        for (int32_t e : shifts)
+        {
+            for (int32_t ls : leftShifts)
+            {
+                for (int16_t zp : zeroPoints)
+                {
+                    tinymind::detail::FastAddInputWide<int16_t> wide;
+                    const bool wideFits = wide.init(zp, ls, m, e);
+                    tinymind::detail::FastAddInputZeroPoint0<int16_t> scaled;
+                    tinymind::detail::FastAddInputHalf<int16_t> halved;
+                    const bool scaledFits = wideFits && (zp == 0) && (e >= 1);
+                    const bool halfFits = wideFits && (zp == 0) && (m == half) && (e == 0) && (ls >= 1);
+                    BOOST_TEST(scaled.init(zp, ls, m, e) == scaledFits, "m " << m << " e " << e << " ls " << ls);
+                    BOOST_TEST(halved.init(zp, ls, m, e) == halfFits, "m " << m << " e " << e << " ls " << ls);
+                    bool same = true;
+                    for (int32_t q = -32768; q <= 32767 && same && (scaledFits || halfFits); ++q)
+                    {
+                        const int32_t want = tinymind::multiplyByQuantizedMultiplier(q * (1 << ls), m, e);
+                        same = (!scaledFits || (scaled.apply(q) == want)) && (!halfFits || (halved.apply(q) == want));
+                        BOOST_TEST(same, "m " << m << " e " << e << " ls " << ls << " q " << q);
+                    }
+                    scaledConfigurations += scaledFits ? 1u : 0u;
+                    halfConfigurations += halfFits ? 1u : 0u;
+                }
+            }
+        }
+    }
+    BOOST_TEST(scaledConfigurations >= 200u);
+    BOOST_TEST(halfConfigurations == 5u); // left shifts 1 to 15; 16 leaves int32
 }
 
 BOOST_AUTO_TEST_CASE(qint16x8_lut16)
