@@ -778,6 +778,64 @@ namespace {
         }
     }
 
+    // The 16x8 layers' fast requantizer as the target compiles it (SMLAL on
+    // the Cortex-M4 and M55) and its 32-bit split form, against the int64
+    // Requantizer, over every shift it accepts and accumulators to the
+    // int32 rails.
+    void testFastRequantizer64()
+    {
+        static const int32_t kMultipliers[] = {0, 1, 1 << 30, 0x7FFEFFFF, 0x7FFF0000, 2147483647, 1990989975};
+        for (int32_t shift = 1; shift <= 17; ++shift)
+        {
+            for (const int32_t m : kMultipliers)
+            {
+                for (int variant = 0; variant < 3; ++variant)
+                {
+                    tinymind::Requantizer<int64_t, int16_t> rq;
+                    rq.multiplier = m;
+                    rq.shift = shift;
+                    rq.zero_point = static_cast<int16_t>((variant == 1) ? -300 : 0);
+                    rq.qmin = static_cast<int16_t>((variant == 2) ? 0 : -32768);
+                    rq.qmax = static_cast<int16_t>((variant == 2) ? 14174 : 32767);
+                    tinymind::detail::FastRequantizer64<int16_t> fast;
+                    if (!fast.initWindow<int8_t>(rq, 0, 1, static_cast<int16_t>(0)))
+                    {
+                        fail("fastrq64 init", static_cast<uint32_t>(shift), static_cast<uint32_t>(m), 0, 0);
+                        continue;
+                    }
+                    for (int j = 0; j < 200; ++j)
+                    {
+                        g_rng ^= g_rng << 13;
+                        g_rng ^= g_rng >> 17;
+                        g_rng ^= g_rng << 5;
+                        int32_t acc = static_cast<int32_t>(g_rng);
+                        if (j == 0)
+                        {
+                            acc = INT32_MIN;
+                        }
+                        else if (j == 1)
+                        {
+                            acc = INT32_MAX;
+                        }
+                        else if ((j & 1) != 0)
+                        {
+                            acc >>= (g_rng >> 27);
+                        }
+                        const int16_t want = rq.apply(static_cast<int64_t>(acc));
+                        const int16_t wide = fast.apply(static_cast<int64_t>(acc));
+                        const int16_t split = fast.applySplit(acc);
+                        g_cases += 2;
+                        if ((wide != want) || (split != want))
+                        {
+                            fail("fastrq64 shift,m", static_cast<uint32_t>(shift), static_cast<uint32_t>(m),
+                                 acc, static_cast<int32_t>(wide - want) * 65536 + (split - want));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 } // namespace
 
 extern "C" int run_tests()
@@ -801,6 +859,7 @@ extern "C" int run_tests()
     testPaddedConv();
     testDense();
     testInt16x8Dot();
+    testFastRequantizer64();
 #if TINYMIND_ENABLE_SIMD_HELIUM_MVE_F
     testFloatDot();
 #endif

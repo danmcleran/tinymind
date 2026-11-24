@@ -75,8 +75,8 @@ namespace tinymind {
                                          const Requantizer<AccumType, OutputType>& rq,
                                          OutputType* out)
         {
-            FastRequantizer<OutputType> fast;
-            if (fast.init(rq))
+            typename FastRequantizerFor<AccumType, OutputType>::type fast;
+            if (fast.template initWindow<WeightType>(rq, bias, InChannels_, zeroPoint))
             {
                 const FilterWeights<WeightType, InChannels_> w(filterWeights);
                 for (std::size_t p = 0; p < Pixels_; ++p)
@@ -135,10 +135,10 @@ namespace tinymind {
 
             // Value-initialized: GCC cannot see that both are set whenever
             // the fast forms are used, and warns.
-            FastRequantizer<OutputType> fast0 = {};
-            FastRequantizer<OutputType> fast1 = {};
-            const bool fast0Ready = fast0.init(rq0);
-            const bool fast1Ready = fast1.init(rq1);
+            typename FastRequantizerFor<AccumType, OutputType>::type fast0 = {};
+            typename FastRequantizerFor<AccumType, OutputType>::type fast1 = {};
+            const bool fast0Ready = fast0.template initWindow<WeightType>(rq0, bias0, InChannels_, zeroPoint);
+            const bool fast1Ready = fast1.template initWindow<WeightType>(rq1, bias1, InChannels_, zeroPoint);
             if (fast0Ready && fast1Ready)
             {
                 for (std::size_t p = 0; p < pairedPixels; p += 2)
