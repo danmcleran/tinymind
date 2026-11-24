@@ -212,12 +212,12 @@ A tree walk's length depends on the input, so the spread between fastest and slo
 |---|---:|---:|---:|
 | Digits CNN ([`onnx_digits_int8`]({{ site.baseurl }}/examples/onnx_digits_int8)), int8 | 479,524 | 171,384 | 760,608 |
 | Same, dense layer on packed int4 weights | 484,344 | 186,613 | 780,075 |
-| Same, int16 activations (16x8) | 470,563 | 220,380 | 906,538 |
+| Same, int16 activations (16x8) | 452,807 | 202,690 | 853,668 |
 | Log-mel frame, 256 samples, 32 bands | 46,878 | 46,878 | 185,172 |
 | k-means anomaly score, 32 features x 8 clusters | 3,569 | 3,569 | 23,571 |
 | k-means learning step | 5,461 | 5,461 | 30,700 |
 
-int4 costs 1 to 3% over int8, and 9% where the int8 dense layer uses SMLAD. 16x8 is 2% faster than scalar int8 on the Cortex-M4, 19% slower on the Cortex-M0+, and 29% slower than int8 with the DSP backend, where both use SMLAD but each 16x8 load carries half as many activations and the int16 add rescales in 64 bits. A log-mel frame plus a k-means score takes 6.5 ms on the Cortex-M0+ at 32 MHz, 8% of an 80 ms frame at 3.2 kHz. Per-layer cycles, `-O2` figures and stack use are in the [bench README](https://github.com/danmcleran/tinymind/tree/master/benchmarks/tier1_onboard).
+int4 costs 1 to 3% over int8, and 9% where the int8 dense layer uses SMLAD. 16x8 is 6% faster than scalar int8 on the Cortex-M4, 12% slower on the Cortex-M0+, and 18% slower than int8 with the DSP backend, where both use SMLAD but each 16x8 load carries half as many activations. A log-mel frame plus a k-means score takes 6.5 ms on the Cortex-M0+ at 32 MHz, 8% of an 80 ms frame at 3.2 kHz. Per-layer cycles, `-O2` figures and stack use are in the [bench README](https://github.com/danmcleran/tinymind/tree/master/benchmarks/tier1_onboard).
 
 ## tinymind under Clang
 

@@ -643,6 +643,23 @@ namespace tinymind {
                 const int32_t r = static_cast<int32_t>(static_cast<uint32_t>(v >> 32)) >> highShift;
                 return static_cast<DstStorageType>(Range::saturate(r));
             }
+
+            // apply() before the saturation to the storage range: the scaled
+            // value plus the zero point, for a caller that clamps to a range
+            // inside the storage's itself (QAdd's wide form, see qadd.hpp).
+            // A copy of apply()'s arithmetic rather than a call from it:
+            // routing apply() through it changed the int8 kernels' code at
+            // -O2 on the Cortex-M4.
+            int32_t applyUnsaturated(int32_t acc) const
+            {
+                const uint32_t negative = static_cast<uint32_t>(acc) >> 31;
+                const uint32_t high = nudgeHigh - negative;
+                const uint32_t low = (negative << 31) | static_cast<uint32_t>(0x40000000u);
+                const uint64_t nudge = (static_cast<uint64_t>(high) << 32) | low;
+                const uint64_t v = nudge + static_cast<uint64_t>(
+                    static_cast<int64_t>(acc) * static_cast<int64_t>(multiplier));
+                return static_cast<int32_t>(static_cast<uint32_t>(v >> 32)) >> highShift;
+            }
         };
 
         /**
