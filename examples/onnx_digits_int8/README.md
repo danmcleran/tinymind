@@ -99,14 +99,14 @@ output channel, and stores two weights per byte:
 | Weight bytes | 3,408 | 2,128 |
 | Cortex-M0+ code and read-only data | 7,326 bytes | 5,988 bytes |
 
-That is 18% less flash for the whole model. The int4 kernel is scalar, and
-on the boards it costs a little time
-([`benchmarks/tier1_onboard`](../../benchmarks/tier1_onboard)): the whole
-model takes 2.6% longer on the Cortex-M0+ (780k cycles against 761k at
-`-O3`) and 1% longer on the Cortex-M4 with scalar kernels. With the Arm DSP
-backend the int8 dense layer uses SMLAD and the int4 one cannot, so there
-the dense layer is 2.85 times slower and the model 9% (187k cycles against
-171k). The requantization is
+That is 18% less flash for the whole model. On the boards
+([`benchmarks/tier1_onboard`](../../benchmarks/tier1_onboard)) the scalar
+int4 kernel costs a little time: the whole model takes 2.6% longer on the
+Cortex-M0+ (780k cycles against 761k at `-O3`) and 1% longer on the
+Cortex-M4 with scalar kernels. With the Arm DSP backend the int4 dense
+layer runs on SMLAD too, faster than the int8 one (7.6k cycles against
+8.4k), and the model is 0.6% faster than int8 (170k cycles against 171k).
+The requantization is
 post-training, with no retraining; quantization-aware training would
 recover more of the accuracy.
 

@@ -115,6 +115,32 @@ namespace tinymind { namespace simd { namespace arm_dsp {
 #endif
     }
 
+    // PKHBT a, b, LSL #16: the low halfword of a under the low halfword of b,
+    // and PKHTB b, a, ASR #16: the high halfword of a under the high
+    // halfword of b. Clang selects both from the plain expressions; GCC 13
+    // builds them from two or three instructions, so it gets the encodings.
+    inline uint32_t pkhLowHalves(uint32_t a, uint32_t b)
+    {
+#if defined(__clang__)
+        return (a & 0xFFFFu) | (b << 16);
+#else
+        uint32_t r;
+        __asm__("pkhbt %0, %1, %2, lsl #16" : "=r"(r) : "r"(a), "r"(b));
+        return r;
+#endif
+    }
+
+    inline uint32_t pkhHighHalves(uint32_t a, uint32_t b)
+    {
+#if defined(__clang__)
+        return (a >> 16) | (b & 0xFFFF0000u);
+#else
+        uint32_t r;
+        __asm__("pkhtb %0, %1, %2, asr #16" : "=r"(r) : "r"(b), "r"(a));
+        return r;
+#endif
+    }
+
     inline int32_t int8DotWithZeroPoint(const int8_t* x, const int8_t* w,
                                         std::size_t n, int8_t zp)
     {
@@ -193,6 +219,151 @@ namespace tinymind { namespace simd { namespace arm_dsp {
             n -= chunk;
         }
         return total;
+    }
+
+    /**
+     * int8 inputs against packed int4 weights (qint4.hpp's layout, element 0
+     * in the low nibble of packed[0]): sum_i w[i] * (x[i] - zp).
+     *
+     * A block of eight is one weight word and two input words. Masking the
+     * weight word with 0xF0F0F0F0, before and after shifting it left by 4,
+     * leaves every nibble in the top half of its own byte, which SXTB16 then
+     * reads as 16 * w: (16 w0, 16 w4) and (16 w2, 16 w6) from the low
+     * nibbles, (16 w1, 16 w5) and (16 w3, 16 w7) from the high ones. The
+     * input words are repacked by halfword (PKHBT / PKHTB) into
+     * (x0, x1, x4, x5) and (x2, x3, x6, x7), so SXTAB16 yields the matching
+     * pairs with the zero point subtracted, as in int8DotWithZeroPoint.
+     * Four SMLADs sum 16 times the eight products. A term is at most
+     * 128 * 255 = 32,640 in magnitude, so blocks of at most 32,768 terms stay
+     * inside int32; each block's sum is an exact multiple of 16 and is
+     * divided back before it is added. A scalar loop handles the n % 8 tail.
+     * Same products, so bit-exact with the scalar loop.
+     */
+    inline int32_t int4DotWithZeroPoint(const int8_t* x, const uint8_t* packed, std::size_t n, int8_t zp)
+    {
+        const uint32_t nzp16 = static_cast<uint16_t>(static_cast<int16_t>(-static_cast<int16_t>(zp)));
+        const int16x2_t negZpPair = static_cast<int16x2_t>(nzp16 | (nzp16 << 16));
+
+        int32_t total = 0;
+        std::size_t blocks = n >> 3;
+        while (blocks != 0)
+        {
+            const std::size_t chunk = (blocks > 4096u) ? 4096u : blocks;
+            int32_t acc = 0;
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
+            for (std::size_t b = chunk; b != 0; --b)
+            {
+                uint32_t wv;
+                uint32_t x03;
+                uint32_t x47;
+                __builtin_memcpy(&wv, packed, sizeof(wv));
+                __builtin_memcpy(&x03, x, sizeof(x03));
+                __builtin_memcpy(&x47, x + 4, sizeof(x47));
+                packed += 4;
+                x += 8;
+                const int8x4_t lo = static_cast<int8x4_t>((wv << 4) & 0xF0F0F0F0u);
+                const int8x4_t hi = static_cast<int8x4_t>(wv & 0xF0F0F0F0u);
+                // Little-endian: byte k of a word is element k.
+                const int8x4_t x0145 = static_cast<int8x4_t>(pkhLowHalves(x03, x47));
+                const int8x4_t x2367 = static_cast<int8x4_t>(pkhHighHalves(x03, x47));
+                acc = __smlad(__sxtb16(lo), __sxtab16(negZpPair, x0145), acc);
+                acc = __smlad(sxtb16Ror8(lo), __sxtab16(negZpPair, x2367), acc);
+                acc = __smlad(__sxtb16(hi), sxtab16Ror8(negZpPair, x0145), acc);
+                acc = __smlad(sxtb16Ror8(hi), sxtab16Ror8(negZpPair, x2367), acc);
+            }
+            total += acc / 16;
+            blocks -= chunk;
+        }
+
+        const int32_t z = static_cast<int32_t>(zp);
+        for (std::size_t i = 0; i < (n & 7u); ++i)
+        {
+            const uint32_t nibble = (static_cast<uint32_t>(packed[i >> 1]) >> ((i & 1u) * 4u)) & 15u;
+            total += (static_cast<int32_t>(nibble ^ 8u) - 8) * (static_cast<int32_t>(x[i]) - z);
+        }
+        return total;
+    }
+
+    /**
+     * One input against two packed int4 weight rows, both starting at a byte
+     * boundary: acc[0] += w0 . (x - zp), acc[1] += w1 . (x - zp). The input
+     * pairs of int4DotWithZeroPoint are built once and feed both rows, so a
+     * block of eight elements is 3 loads, 2 packs, 4 input extends,
+     * 4 masks, 8 weight extends and 8 SMLADs for 16 multiply-accumulates.
+     * Same blocks, same bound and same products as int4DotWithZeroPoint, so
+     * the same sums. Unlike the other kernels here this loop is kept rolled:
+     * it holds two accumulators and four input pairs, and on the F411 the
+     * rolled loop gave the digits model's fastest whole-model time at both
+     * -O3 and -O2 and its smallest code. Unrolling by 2 ran the int4 layer
+     * itself 5% faster at -O3 (7.2k cycles against 7.6k) but 5% slower at
+     * -O2, and unrolling by 4 or 8 was slower at both.
+     */
+    inline void int4Dot1x2WithZeroPoint(const int8_t* x, const uint8_t* w0, const uint8_t* w1, std::size_t n,
+                                        int8_t zp, int32_t* acc)
+    {
+        const uint32_t nzp16 = static_cast<uint16_t>(static_cast<int16_t>(-static_cast<int16_t>(zp)));
+        const int16x2_t negZpPair = static_cast<int16x2_t>(nzp16 | (nzp16 << 16));
+
+        int32_t total0 = 0;
+        int32_t total1 = 0;
+        std::size_t blocks = n >> 3;
+        while (blocks != 0)
+        {
+            const std::size_t chunk = (blocks > 4096u) ? 4096u : blocks;
+            int32_t acc0 = 0;
+            int32_t acc1 = 0;
+#pragma GCC unroll 1
+            for (std::size_t b = chunk; b != 0; --b)
+            {
+                uint32_t wa;
+                uint32_t wb;
+                uint32_t x03;
+                uint32_t x47;
+                __builtin_memcpy(&wa, w0, sizeof(wa));
+                __builtin_memcpy(&wb, w1, sizeof(wb));
+                __builtin_memcpy(&x03, x, sizeof(x03));
+                __builtin_memcpy(&x47, x + 4, sizeof(x47));
+                w0 += 4;
+                w1 += 4;
+                x += 8;
+                const int8x4_t x0145 = static_cast<int8x4_t>(pkhLowHalves(x03, x47));
+                const int8x4_t x2367 = static_cast<int8x4_t>(pkhHighHalves(x03, x47));
+                const int16x2_t xa = __sxtab16(negZpPair, x0145);
+                const int16x2_t xb = __sxtab16(negZpPair, x2367);
+                const int16x2_t xc = sxtab16Ror8(negZpPair, x0145);
+                const int16x2_t xd = sxtab16Ror8(negZpPair, x2367);
+                const int8x4_t loA = static_cast<int8x4_t>((wa << 4) & 0xF0F0F0F0u);
+                const int8x4_t hiA = static_cast<int8x4_t>(wa & 0xF0F0F0F0u);
+                const int8x4_t loB = static_cast<int8x4_t>((wb << 4) & 0xF0F0F0F0u);
+                const int8x4_t hiB = static_cast<int8x4_t>(wb & 0xF0F0F0F0u);
+                acc0 = __smlad(__sxtb16(loA), xa, acc0);
+                acc0 = __smlad(sxtb16Ror8(loA), xb, acc0);
+                acc0 = __smlad(__sxtb16(hiA), xc, acc0);
+                acc0 = __smlad(sxtb16Ror8(hiA), xd, acc0);
+                acc1 = __smlad(__sxtb16(loB), xa, acc1);
+                acc1 = __smlad(sxtb16Ror8(loB), xb, acc1);
+                acc1 = __smlad(__sxtb16(hiB), xc, acc1);
+                acc1 = __smlad(sxtb16Ror8(hiB), xd, acc1);
+            }
+            total0 += acc0 / 16;
+            total1 += acc1 / 16;
+            blocks -= chunk;
+        }
+
+        const int32_t z = static_cast<int32_t>(zp);
+        for (std::size_t i = 0; i < (n & 7u); ++i)
+        {
+            const uint32_t shift = (i & 1u) * 4u;
+            const uint32_t n0 = (static_cast<uint32_t>(w0[i >> 1]) >> shift) & 15u;
+            const uint32_t n1 = (static_cast<uint32_t>(w1[i >> 1]) >> shift) & 15u;
+            const int32_t xi = static_cast<int32_t>(x[i]) - z;
+            total0 += (static_cast<int32_t>(n0 ^ 8u) - 8) * xi;
+            total1 += (static_cast<int32_t>(n1 ^ 8u) - 8) * xi;
+        }
+        acc[0] += total0;
+        acc[1] += total1;
     }
 
     /**

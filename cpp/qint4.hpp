@@ -23,6 +23,7 @@
 #pragma once
 
 #include "include/tinymind_platform.hpp"
+#include "include/simd/simd_dispatch.hpp"
 #include "qaffine.hpp"
 
 #include <cstddef>
@@ -48,6 +49,12 @@
  * Helpers: unpackInt4 / packInt4 (freestanding), and, under FLOAT && STD,
  * quantizeInt4PerChannel, which picks one symmetric scale per output channel
  * (max |w| / 7, so the codes are -7..7) and rounds the weights onto it.
+ *
+ * With int8 inputs and the Arm DSP backend (TINYMIND_ENABLE_SIMD_ARM_DSP),
+ * the dot product runs on SMLAD: arm_dsp::int4DotWithZeroPoint widens eight
+ * weights per word load, and with an even input count QDenseInt4 computes
+ * two rows per pass (int4Dot1x2WithZeroPoint). Every other build keeps the
+ * scalar loop.
  *
  * Pure integer at runtime; freestanding-safe.
  */
@@ -101,6 +108,73 @@ namespace tinymind {
             }
             return static_cast<AccumType>(acc);
         }
+
+#if defined(TINYMIND_SIMD_INT4_DOT)
+        // int8 inputs on the Arm DSP backend: an odd first element (a row that
+        // starts in the middle of a byte) is taken alone, the rest by the
+        // SMLAD kernel from the next byte boundary. Same sum.
+        template<>
+        inline int32_t dotInt4<int8_t, int32_t>(const int8_t* x, const uint8_t* packed, std::size_t first,
+                                                std::size_t n, int32_t zp)
+        {
+            int32_t acc = 0;
+            const uint8_t* p = packed + first / 2;
+            if ((first & 1u) != 0u && n > 0u)
+            {
+                acc = (static_cast<int32_t>(x[0]) - zp) * highNibble(*p);
+                ++p;
+                ++x;
+                --n;
+            }
+            return acc + simd::int4DotWithZeroPoint(x, p, n, static_cast<int8_t>(zp));
+        }
+#endif
+
+        /**
+         * Outputs QDenseInt4 computes two at a time before its one-row loop:
+         * none, except with int8 inputs on the Arm DSP backend and an even
+         * input count, where every row starts at a byte boundary and a pair
+         * of rows shares one widening of the input.
+         */
+        template<typename InputType, typename AccumType, std::size_t NumInputs, std::size_t NumOutputs>
+        struct Int4RowPairs
+        {
+            template<typename OutputType>
+            static std::size_t apply(const InputType*, const uint8_t*, const AccumType*, int32_t,
+                                     const Requantizer<AccumType, OutputType>*, OutputType*)
+            {
+                return 0;
+            }
+        };
+
+#if defined(TINYMIND_SIMD_INT4_DOT)
+        template<std::size_t NumInputs, std::size_t NumOutputs>
+        struct Int4RowPairs<int8_t, int32_t, NumInputs, NumOutputs>
+        {
+            template<typename OutputType>
+            static std::size_t apply(const int8_t* input, const uint8_t* packed, const int32_t* biases, int32_t zp,
+                                     const Requantizer<int32_t, OutputType>* rqs, OutputType* output)
+            {
+                if ((NumInputs & 1u) != 0u)
+                {
+                    return 0;
+                }
+                const std::size_t pairs = NumOutputs & ~static_cast<std::size_t>(1);
+                for (std::size_t o = 0; o < pairs; o += 2)
+                {
+                    int32_t acc[2];
+                    acc[0] = (biases != nullptr) ? biases[o] : 0;
+                    acc[1] = (biases != nullptr) ? biases[o + 1] : 0;
+                    const uint8_t* const w0 = packed + (o * NumInputs) / 2;
+                    simd::int4Dot1x2WithZeroPoint(input, w0, w0 + NumInputs / 2, NumInputs,
+                                                  static_cast<int8_t>(zp), acc);
+                    output[o] = rqs[o].apply(acc[0]);
+                    output[o + 1] = rqs[o + 1].apply(acc[1]);
+                }
+                return pairs;
+            }
+        };
+#endif
 
     } // namespace qint4_detail
 
@@ -177,7 +251,9 @@ namespace tinymind {
             const AccumulatorType* const layerBiases = biases;
             const int32_t zp = static_cast<int32_t>(input_zero_point);
             const Requantizer<AccumulatorType, OutputType>* const rqs = requantizers;
-            for (std::size_t o = 0; o < NumOutputs_; ++o)
+            std::size_t o = qint4_detail::Int4RowPairs<InputType, AccumulatorType, NumInputs_, NumOutputs_>::apply(
+                input, packed, layerBiases, zp, rqs, output);
+            for (; o < NumOutputs_; ++o)
             {
                 AccumulatorType acc = (layerBiases != nullptr) ? layerBiases[o] : static_cast<AccumulatorType>(0);
                 acc += qint4_detail::dotInt4<InputType, AccumulatorType>(input, packed, o * NumInputs_, NumInputs_, zp);
