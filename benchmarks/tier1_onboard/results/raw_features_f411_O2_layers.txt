@@ -1,0 +1,10 @@
+img=features board=f411 level=O2 dsp=0 compiler=arm-none-eabi-g++ (15:13.2.rel1-2) 13.2.1 20231009
+size    9464	      4	   3304	  12772	   31e4	build/f411/O2_layers/features.elf
+# begin bench
+work=logmel_256x32 med=47564 min=47553 max=47586 stack=392 match=1 
+work=mfcc_32x13 med=4103 min=4103 max=4104 stack=296 match=1 
+work=kmeans_score_32x8 med=3900 min=3900 max=3900 stack=296 match=1 
+work=gaussian_score_32x4 med=2476 min=2476 max=2479 stack=296 match=1 
+work=kmeans_learn_32x8 med=5622 min=5602 max=5666 stack=288 match=1 
+stack_baseline=288 static_ram=3304 
+# end bench

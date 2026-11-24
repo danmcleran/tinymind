@@ -81,6 +81,12 @@ bands:
 
 The tables are host-built constants, so they live in flash.
 
+On the boards
+([`benchmarks/tier1_onboard`](../../benchmarks/tier1_onboard), `-O3`, with
+pre-emphasis 0.97), a log-mel frame takes 185,172 cycles on the Cortex-M0+
+of a NUCLEO-L031K6 (5.8 ms at 32 MHz) and 46,878 on the Cortex-M4 of a
+NUCLEO-F411RE (0.47 ms at 100 MHz); the 13 MFCCs add 33,567 and 4,112.
+
 ## Build and run
 
 ```bash

@@ -114,6 +114,13 @@ Together with the log-mel front end (1,710 bytes of code and a 1,028-byte
 workspace) and a 512-byte frame buffer, the whole node fits in about 3 KB of
 RAM. The STM32L031K6 has 8 KB.
 
+On the NUCLEO-L031K6 at 32 MHz
+([`benchmarks/tier1_onboard`](../../benchmarks/tier1_onboard), `-O3`), a
+k-means score takes 23,571 cycles (0.74 ms), a learning step 30,700
+(0.96 ms) and a 4-component Gaussian score 12,436 (0.39 ms). With the
+185,172-cycle log-mel frame, scoring one frame takes 6.5 ms of the 80 ms
+the frame lasts at 3.2 kHz: 8% of the CPU.
+
 ## Build and run
 
 ```bash
