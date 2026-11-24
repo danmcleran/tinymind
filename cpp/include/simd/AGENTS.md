@@ -17,6 +17,7 @@ are in the root `AGENTS.md`; the design (bit-exactness, non-goals, OpenMP) is in
 - SVE also runs under `qemu-aarch64 -cpu max,sve-default-vector-length=N` at 128/256/512/2048 bits (exhaustive dispatched + direct cases and the quantization suite), since SVE code is vector-length agnostic.
 - Each target greps the suite's log for the backend it meant to run, so a silent scalar fallback fails; the job was shown to fail on three planted defects (a dropped tail element, an SVE stride fixed at 16 bytes, NEON switched off).
 - `check-clang-avx2` (HARD) builds and runs the `TSAN_SUITES` dispatch consumers with the AVX2 backend compiled in; plain `check-clang` never reaches the hand-written intrinsics.
+- The Arm DSP backend also has a 16x8 kernel, `arm_dsp::int16x8Dot` (int16 activations with zero point 0 against int8 weights, int64 sum), reached through `simd::int16x8DotWithZeroPoint` / `dotProductWithZeroPoint<int16_t, int8_t, int64_t>`; any other zero point, and every other backend, takes `int16x8DotWithZeroPointScalar`.
 - The Arm DSP (SMLAD) and Helium backends cannot run on any CI host; they run on QEMU through `arm_dsp_qemu` and `helium_qemu` in `unit_test/embedded` (see its `AGENTS.md`), and the SMLAD dot product has a CBMC proof in `unit_test/formal`.
 
 A new backend needs: its gate in `tinymind_platform.hpp` (default 0), a prerequisite `static_assert` with a compile-failure case in `simd_prereq_regressions`, a direct-call case in `unit_test/exhaustive`, and a CI target that greps the log for the backend name and was shown to fail on a planted defect.

@@ -249,6 +249,20 @@ BOOST_AUTO_TEST_CASE(qint16x8_requantizer_matches_tflite)
     BOOST_TEST(left.apply(1000) == 32767);
     BOOST_TEST(left.apply(-1000) == -32768);
 
+    // A quotient far beyond int32 (out of contract, as TFLite checks) must
+    // saturate towards its own sign rather than wrap.
+    const int64_t huge[] = {static_cast<int64_t>(1) << 46, (static_cast<int64_t>(1) << 47) - 1, INT64_MAX};
+    const int32_t steep[] = {-14, -10, -7, -1, 0, 5};
+    for (int64_t a : huge)
+    {
+        for (int32_t s : steep)
+        {
+            const qint16x8_test::Rq64 rq = {0x7FFFFFFF, s, 0, -32768, 32767};
+            BOOST_TEST(rq.apply(a) == 32767, "acc " << a << " s " << s);
+            BOOST_TEST(rq.apply(-a) == -32768, "acc " << -a << " s " << s);
+        }
+    }
+
     // Out of contract: defined, and still clamped to [qmin, qmax].
     const int64_t extremes[] = {INT64_MIN, INT64_MAX, -(static_cast<int64_t>(1) << 50), static_cast<int64_t>(1) << 50, 0};
     const int32_t shifts[] = {-100, -31, -15, -14, 31, 47, 48, 100};
@@ -338,6 +352,8 @@ BOOST_AUTO_TEST_CASE(qint16x8_dense_conv_depthwise_match_reference)
     // Depthwise: the unpadded and padded loops.
     qint16x8_test::checkDepthwise<7, 6, 3, 3, 1, 0>(rng);
     qint16x8_test::checkDepthwise<7, 6, 3, 3, 2, 1>(rng);
+    // 289 taps: past the 256 an int32 window holds, so summed in int64.
+    qint16x8_test::checkDepthwise<17, 17, 2, 17, 1, 0>(rng);
 
     // Max pooling compares in the storage type.
     const std::vector<int16_t> x = qint16x8_test::randomVector<int16_t>(4 * 4 * 2, -32768, 32767, rng);
@@ -417,8 +433,8 @@ BOOST_AUTO_TEST_CASE(qint16x8_int32_accumulator_variant)
 BOOST_AUTO_TEST_CASE(qint16x8_add_uses_tflite_int16_parameters)
 {
     // TFLite's int16 ADD: zero points 0, left_shift 15, the int8 arithmetic
-    // otherwise. QAdd's reference loop runs it (its fast form needs more
-    // headroom than 15 bits leave).
+    // otherwise. QAdd's wide form (FastAddInput64) runs it; the int8 fast
+    // form needs more headroom than 15 bits leave.
     const float scaleA = 0.0021f;
     const float scaleB = 0.0007f;
     const float scaleOut = 0.0025f;
@@ -454,8 +470,8 @@ BOOST_AUTO_TEST_CASE(qint16x8_add_uses_tflite_int16_parameters)
         }
     }
 
-    // With 15 bits of left shift, an int16 input needs the reference loop; at
-    // 13 the fast one-rounding form has the headroom and must agree with it.
+    // With 15 bits of left shift, the int8 fast form refuses an int16 input;
+    // at 13 it has the headroom and must agree with the reference.
     tinymind::detail::FastAddInput<int16_t> fastIn;
     BOOST_TEST(!fastIn.init(0, 15, ma, sa));
     BOOST_TEST(fastIn.init(0, 13, ma, sa));
@@ -472,6 +488,72 @@ BOOST_AUTO_TEST_CASE(qint16x8_add_uses_tflite_int16_parameters)
         v = std::max(-32768, std::min(32767, v));
         BOOST_TEST(out[i] == v);
     }
+
+    // A zero point of 1 with 15 bits of left shift leaves FastAddInput64 too
+    // little headroom (|q - zp| reaches 32769), so QAdd falls back to its
+    // reference loop, which must still give the TFLite arithmetic.
+    tinymind::detail::FastAddInput64<int16_t> wideIn;
+    BOOST_TEST(!wideIn.init(1, leftShift, ma, sa));
+    tinymind::quantizeMultiplier(twiceMax / ((1 << leftShift) * static_cast<double>(scaleOut)), mo, so);
+    const tinymind::QAdd<int16_t, int16_t, int16_t, 64> addZp = {
+        1, 0, leftShift, ma, sa, mb, sb, {mo, so, 0, -32768, 32767}};
+    addZp.forward(a.data(), b.data(), out);
+    for (std::size_t i = 0; i < 64; ++i)
+    {
+        const int32_t sumA = tinymind::multiplyByQuantizedMultiplier((a[i] - 1) * (1 << leftShift), ma, sa);
+        const int32_t sumB = tinymind::multiplyByQuantizedMultiplier(b[i] * (1 << leftShift), mb, sb);
+        int32_t v = tinymind::multiplyByQuantizedMultiplier(sumA + sumB, mo, so);
+        v = std::max(-32768, std::min(32767, v));
+        BOOST_TEST(out[i] == v);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qint16x8_add_wide_rescale_matches_reference)
+{
+    // FastAddInput64, QAdd's one-rounding input rescale for int16, against
+    // the reference multiplyByQuantizedMultiplier((q - zp) << left_shift, m,
+    // e) for every int16 input. It must accept every left shift up to 15
+    // with a zero point of 0 (TFLite's int16 ADD), and refuse what would
+    // overflow.
+    const int32_t multipliers[] = {0, 1, 1 << 30, 1518500250, 2147483647};
+    const int32_t shifts[] = {0, 1, 2, 3, 7, 15, 16, 30, 31};
+    const int32_t leftShifts[] = {0, 1, 8, 13, 14, 15};
+    const int16_t zeroPoints[] = {0, -1, 1, 300};
+    std::size_t configurations = 0;
+    for (int32_t m : multipliers)
+    {
+        for (int32_t e : shifts)
+        {
+            for (int32_t ls : leftShifts)
+            {
+                for (int16_t zp : zeroPoints)
+                {
+                    tinymind::detail::FastAddInput64<int16_t> fast;
+                    // The largest |q - zp| over int16.
+                    const int32_t span = std::max(static_cast<int32_t>(zp) + 32768, 32767 - static_cast<int32_t>(zp));
+                    const bool fits = ((static_cast<int64_t>(span) << ls) <= (static_cast<int64_t>(1) << 30)) && (e <= 30);
+                    BOOST_TEST(fast.init(zp, ls, m, e) == fits, "m " << m << " e " << e << " ls " << ls << " zp " << zp);
+                    if (!fits)
+                    {
+                        continue;
+                    }
+                    ++configurations;
+                    bool same = true;
+                    for (int32_t q = -32768; q <= 32767 && same; ++q)
+                    {
+                        const int32_t x = (q - zp) * (1 << ls);
+                        same = fast.apply(q) == tinymind::multiplyByQuantizedMultiplier(x, m, e);
+                    }
+                    BOOST_TEST(same, "m " << m << " e " << e << " ls " << ls << " zp " << zp);
+                }
+            }
+        }
+    }
+    BOOST_TEST(configurations >= 200u);
+    // Out of its domain: a negative multiplier or shift.
+    tinymind::detail::FastAddInput64<int16_t> fast;
+    BOOST_TEST(!fast.init(0, 15, -1, 3));
+    BOOST_TEST(!fast.init(0, 15, 1 << 30, -1));
 }
 
 BOOST_AUTO_TEST_CASE(qint16x8_lut16)

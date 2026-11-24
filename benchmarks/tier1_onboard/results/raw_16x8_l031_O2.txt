@@ -1,6 +1,6 @@
 img=16x8 board=l031 level=O2 dsp=0 compiler=arm-none-eabi-g++ (15:13.2.rel1-2) 13.2.1 20231009
-size   15232	      0	   3228	  18460	   481c	build/l031/O2/16x8.elf
+size   16288	      0	   3228	  19516	   4c3c	build/l031/O2/16x8.elf
 # begin bench
-work=digits_16x8 med=1407416 min=1407386 max=1407455 stack=1492 match=1 
+work=digits_16x8 med=1269623 min=1269573 max=1269681 stack=1396 match=1 
 stack_baseline=280 static_ram=3228 
 # end bench
