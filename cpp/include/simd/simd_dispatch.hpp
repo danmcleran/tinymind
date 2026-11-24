@@ -186,14 +186,12 @@ namespace tinymind { namespace simd {
 
     /**
      * int16 activations against int8 weights into an int64 accumulator (the
-     * 16x8 layers). Each block of 256 terms is summed in int32 and then
-     * widened: |x - zp| <= 65535 and |w| <= 128, so a block stays below
-     * 256 * 65535 * 128 < 2^31. The sum is the template's exactly, without
-     * a 64-bit multiply per term (a libgcc call on Cortex-M0+).
+     * 16x8 layers), scalar. Each block of 256 terms is summed in int32 and
+     * then widened: |x - zp| <= 65535 and |w| <= 128, so a block stays below
+     * 256 * 65535 * 128 < 2^31. The sum is the generic template's exactly,
+     * without a 64-bit multiply per term (a libgcc call on Cortex-M0+).
      */
-    template<>
-    inline int64_t dotProductWithZeroPoint<int16_t, int8_t, int64_t>(
-        const int16_t* x, const int8_t* w, std::size_t n, int16_t zp)
+    inline int64_t int16x8DotWithZeroPointScalar(const int16_t* x, const int8_t* w, std::size_t n, int16_t zp)
     {
         const int32_t z = static_cast<int32_t>(zp);
         int64_t acc = 0;
@@ -209,6 +207,31 @@ namespace tinymind { namespace simd {
             acc += static_cast<int64_t>(block);
         }
         return acc;
+    }
+
+    /**
+     * The 16x8 dot product: the Arm DSP backend's SMLAD kernel when the zero
+     * point is 0 (TFLite's 16x8 scheme always has it; with another one an
+     * int16 x - zp can leave int16), the scalar loop otherwise.
+     */
+    inline int64_t int16x8DotWithZeroPoint(const int16_t* x, const int8_t* w, std::size_t n, int16_t zp)
+    {
+#if TINYMIND_ENABLE_SIMD_ARM_DSP && !TINYMIND_ENABLE_SIMD_HELIUM_MVE_I && \
+    !defined(TINYMIND_SIMD_X86_VECTOR_DOT) && !TINYMIND_ENABLE_SIMD_NEON && \
+    !TINYMIND_ENABLE_SIMD_NEON_DOTPROD && !TINYMIND_ENABLE_SIMD_SVE
+        if (zp == 0)
+        {
+            return arm_dsp::int16x8Dot(x, w, n);
+        }
+#endif
+        return int16x8DotWithZeroPointScalar(x, w, n, zp);
+    }
+
+    template<>
+    inline int64_t dotProductWithZeroPoint<int16_t, int8_t, int64_t>(
+        const int16_t* x, const int8_t* w, std::size_t n, int16_t zp)
+    {
+        return int16x8DotWithZeroPoint(x, w, n, zp);
     }
 
     /**

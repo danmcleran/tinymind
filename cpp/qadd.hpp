@@ -137,6 +137,77 @@ namespace tinymind {
         };
 
         /**
+         * The same one-rounding rescale for inputs FastAddInput has too little
+         * headroom for: int16 storage at TFLite's int16 left shift of 15,
+         * where |q - zp| << (left_shift + 1) reaches 2^31. Here x itself
+         * (not 2x) only has to fit, |x| = |q - zp| << left_shift <= 2^30, and
+         * the 64-bit sum is shifted by 31 + e rather than taken as a high word:
+         *
+         *   e == 0:  floor((x*m + 2^30) / 2^31)
+         *   e >= 1:  floor((x*m + 2^30 + 2^(30+e) - [x < 0] * 2^31) / 2^(31+e))
+         *
+         * which is FastAddInput's derivation before the doubling: the
+         * reference's two roundings, h = floor((x*m + 2^30) / 2^31) and
+         * roundingDivideByPOT(h, e), composed into one floor, with [h < 0]
+         * replaced by [x < 0] (valid for m >= 0). For e <= 30, |x*m| <= 2^61 and
+         * the nudge is at most 2^60 + 2^30, so the sum v lies within 2^62 and
+         * floor(v / 2^31) fits int32: it is formed from v's 32-bit halves and
+         * shifted by e, with no 64-bit shift (a libgcc call on Cortex-M0+). e
+         * = 31, a multiplier below 2^-31, is refused and runs the reference. unit_test/quantization compares it with the reference for
+         * every int16 input over a sweep of multipliers, shifts, left shifts
+         * and zero points. QAdd uses it only for storage wider than 8 bits
+         * (see QAddWideForm), so the int8 kernels are unchanged.
+         */
+        template<typename Storage_>
+        struct FastAddInput64
+        {
+            int32_t zero_point;
+            int32_t leftScale;
+            int32_t multiplier;
+            int32_t shift;
+            int64_t nudgeNonNegative;
+            int64_t nudgeNegative;
+
+            bool init(Storage_ zp, int32_t left_shift, int32_t mult, int32_t sh)
+            {
+                typedef StorageRange<Storage_> Range;
+                if (!Range::known || (mult < 0) || (sh < 0) || (sh > 30) ||
+                    (left_shift < 0) || (left_shift > 30))
+                {
+                    return false;
+                }
+                const int32_t z = static_cast<int32_t>(zp);
+                const int32_t below = z - Range::min;
+                const int32_t above = Range::max - z;
+                const int32_t span = (below > above) ? below : above;
+                if (span > (static_cast<int32_t>(1) << (30 - left_shift)))
+                {
+                    return false;
+                }
+                zero_point = z;
+                leftScale = static_cast<int32_t>(1) << left_shift;
+                multiplier = mult;
+                shift = sh;
+                const int64_t half = static_cast<int64_t>(1) << 30;
+                nudgeNonNegative = half + ((sh > 0) ? (static_cast<int64_t>(1) << (30 + sh)) : 0);
+                nudgeNegative = nudgeNonNegative - ((sh > 0) ? (static_cast<int64_t>(1) << 31) : 0);
+                return true;
+            }
+
+            int32_t apply(int32_t q) const
+            {
+                const int32_t x = (q - zero_point) * leftScale;
+                const uint64_t v = static_cast<uint64_t>(static_cast<int64_t>(x) * static_cast<int64_t>(multiplier)) +
+                                   static_cast<uint64_t>((x < 0) ? nudgeNegative : nudgeNonNegative);
+                const uint32_t lo = static_cast<uint32_t>(v);
+                const uint32_t hi = static_cast<uint32_t>(v >> 32);
+                // floor(v / 2^31), then floor(... / 2^e).
+                const int32_t v31 = static_cast<int32_t>((hi << 1) | (lo >> 31));
+                return v31 >> shift;
+            }
+        };
+
+        /**
          * QAdd's reference loop: the TFLite arithmetic, for any parameters.
          * Kept out of line so that QAdd::forward stays small enough to be
          * inlined into its caller (see there), and templated on the storage
@@ -175,6 +246,52 @@ namespace tinymind {
                 out[i] = rq.apply(sum);
             }
         }
+
+        /**
+         * QAdd's loop with FastAddInput64 rescaling, for storage wider than 8
+         * bits (Wide true). Returns false, having written nothing, when the
+         * parameters do not fit it. The int8 instantiation is an inline
+         * `return false`, so it adds no code to the int8 kernels; the wide
+         * one is kept out of line for the reason qaddReference is.
+         */
+        template<bool Wide>
+        struct QAddWideForm
+        {
+            template<typename InA, typename InB, typename Out>
+            static bool run(const InA*, const InB*, Out*, std::size_t, InA, InB, int32_t,
+                            int32_t, int32_t, int32_t, int32_t, const Requantizer<int32_t, Out>&)
+            {
+                return false;
+            }
+        };
+
+        template<>
+        struct QAddWideForm<true>
+        {
+            template<typename InA, typename InB, typename Out>
+            TINYMIND_NOINLINE static bool run(const InA* a, const InB* b, Out* out, std::size_t n,
+                                              InA zeroPointA, InB zeroPointB, int32_t left_shift,
+                                              int32_t multA, int32_t shiftA, int32_t multB, int32_t shiftB,
+                                              const Requantizer<int32_t, Out>& requantizer)
+            {
+                FastAddInput64<InA> fastA;
+                FastAddInput64<InB> fastB;
+                if (!fastA.init(zeroPointA, left_shift, multA, shiftA) ||
+                    !fastB.init(zeroPointB, left_shift, multB, shiftB))
+                {
+                    return false;
+                }
+                // A local copy: an output store may alias the requantizer.
+                const Requantizer<int32_t, Out> rq = requantizer;
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    const int32_t sum = fastA.apply(static_cast<int32_t>(a[i])) +
+                                        fastB.apply(static_cast<int32_t>(b[i]));
+                    out[i] = rq.apply(sum);
+                }
+                return true;
+            }
+        };
 
     } // namespace detail
 
@@ -223,6 +340,13 @@ namespace tinymind {
                                         fastB.apply(static_cast<int32_t>(b[i]));
                     out[i] = fastOut.apply(sum);
                 }
+                return;
+            }
+            // int16 at TFLite's left shift of 15: the 64-bit one-rounding form.
+            if (detail::QAddWideForm<(sizeof(InAType) > 1) || (sizeof(InBType) > 1)>::run(
+                    a, b, out, N_, input_a_zero_point, input_b_zero_point, left_shift,
+                    input_a_multiplier, input_a_shift, input_b_multiplier, input_b_shift, output_requantizer))
+            {
                 return;
             }
             detail::qaddReference(a, b, out, N_, input_a_zero_point, input_b_zero_point, left_shift,

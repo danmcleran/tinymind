@@ -38,7 +38,8 @@ Cycles per call, measured on two Cortex-M boards, for what #295 to #300 added:
 
 ## Results
 
-tinymind at #300. Cycles per call; milliseconds at the board's clock in brackets.
+tinymind at #303 (the 16x8 kernels below; every other figure is unchanged from #300, cycle for cycle).
+Cycles per call; milliseconds at the board's clock in brackets.
 
 ### Digits model (`examples/onnx_digits_int8`)
 
@@ -46,21 +47,24 @@ tinymind at #300. Cycles per call; milliseconds at the board's clock in brackets
 |---|---:|---:|---:|---:|---:|---:|
 | int8 | 479,524 (4.80) | 171,384 (1.71) | 493,987 | 193,213 | 760,608 (23.8) | 799,322 (25.0) |
 | int4 dense layer | 484,344 (4.84) | 186,613 (1.87) | 501,290 | 209,517 | 780,075 (24.4) | 818,340 (25.6) |
-| 16x8 | 561,802 (5.62) | 561,802 (5.62) | 660,141 | 660,141 | 1,202,720 (37.6) | 1,407,416 (44.0) |
+| 16x8 | 552,158 (5.52) | 314,476 (3.14) | 630,391 | 333,536 | 1,106,337 (34.6) | 1,269,623 (39.7) |
+| 16x8 at #300 | 561,802 | 561,802 | 660,141 | 660,141 | 1,202,720 | 1,407,416 |
 | int4 / int8 | 1.01 | 1.09 | 1.01 | 1.08 | 1.03 | 1.02 |
-| 16x8 / int8 | 1.17 | 3.28 | 1.34 | 3.42 | 1.58 | 1.76 |
+| 16x8 / int8 | 1.15 | 1.83 | 1.28 | 1.73 | 1.45 | 1.59 |
 
 ### Per layer, F411 -O3
 
-| Layer (MACs) | int8 scalar | int8 DSP | int4 DSP | 16x8 |
-|---|---:|---:|---:|---:|
-| c1_conv 3x3, 1 -> 8 (4,608) | 40,011 | 30,068 | 29,995 | 62,423 |
-| c2_conv 3x3, 8 -> 8 (36,864) | 381,302 | 96,429 | 96,415 | 378,204 |
-| add (512 elements) | 12,353 | 12,353 | 12,353 | 43,750 |
-| maxpool 2x2 | 2,070 | 2,070 | 2,067 | 2,113 |
-| dw_conv 3x3 (1,152) | 9,014 | 9,014 | 9,016 | 17,997 |
-| pw_conv 1x1, 8 -> 16 (2,048) | 17,743 | 14,006 | 13,993 | 30,523 |
-| fc 256 -> 10 (2,560) | 17,564 | 8,366 | 23,823 | 24,844 |
+| Layer (MACs) | int8 scalar | int8 DSP | int4 DSP | 16x8 scalar | 16x8 DSP | 16x8 at #300 |
+|---|---:|---:|---:|---:|---:|---:|
+| c1_conv 3x3, 1 -> 8 (4,608) | 40,011 | 30,068 | 29,995 | 60,240 | 60,980 | 62,423 |
+| c2_conv 3x3, 8 -> 8 (36,864) | 381,302 | 96,429 | 96,415 | 378,050 | 159,332 | 378,204 |
+| add (512 elements) | 12,353 | 12,353 | 12,353 | 35,037 | 35,036 | 43,750 |
+| maxpool 2x2 | 2,070 | 2,070 | 2,067 | 2,113 | 2,112 | 2,113 |
+| dw_conv 3x3 (1,152) | 9,014 | 9,014 | 9,016 | 17,688 | 17,762 | 17,997 |
+| pw_conv 1x1, 8 -> 16 (2,048) | 17,743 | 14,006 | 13,993 | 27,883 | 28,736 | 30,523 |
+| fc 256 -> 10 (2,560) | 17,564 | 8,366 | 23,823 | 23,590 | 11,530 | 24,844 |
+
+The 16x8 columns at #300 were the same with and without `DSP=1`, since there was no 16x8 DSP path.
 
 ### Log-mel front end and anomaly scores
 
@@ -82,7 +86,7 @@ The deepest stack each workload adds, above what the harness itself uses at the 
 |---|---:|---:|
 | digits int8 | 636 B | 1,588 B |
 | digits int4 | 636 B | 1,524 B |
-| digits 16x8 | 996 B | 1,364 B |
+| digits 16x8 | 980 B | 1,332 B |
 | log-mel frame | 88 B | 148 B |
 | MFCC, k-means, Gaussian, learning | 0 to 36 B | 0 to 36 B |
 
@@ -94,15 +98,16 @@ The deepest stack each workload adds, above what the harness itself uses at the 
   is 35% slower than the scalar int8 one and the model 1 to 3%. The flash it saves (1,280 weight bytes here)
   is the reason to use it; an SMLAD path that unpacks two nibbles into a halfword pair would close the gap
   on the M4.
-* **16x8 costs 17% on the F411 without the DSP backend, 58% on the Cortex-M0+, and 3.3 times on the F411
-  with it.** Three layers carry the difference. The convolutions run at the speed of the scalar int8 kernels
-  even with `DSP=1`, because there is no 16x8 SMLAD path (c2_conv: 378k cycles against 96k), although SMLAD
-  multiplies int16 pairs natively. The add takes 3.5 times as long as the int8 one: TFLite's int16 left shift
-  of 15 leaves too little headroom for `QAdd`'s one-rounding fast form, so it runs the reference loop. And
-  the depthwise layer, whose taps are held in the accumulator type, multiplies in 64 bits (2 times). The
-  Cortex-M0+ has no SMLAD either, and there the 16x8 model costs 58% more than int8; its per-layer split was
-  not measured, since the layered images do not fit. A 16x8 SMLAD dot product, 32-bit taps in the depthwise
-  loop and a fast form of the int16 add are the follow-ups.
+* **16x8 costs 15% on the F411 without the DSP backend, 45% on the Cortex-M0+, and 1.83 times on the F411
+  with it.** At #300 these were 17%, 58% and 3.28 times. #303 added three things. An SMLAD kernel for the
+  int16 x int8 dot product, with a zero point of 0 as TFLite's 16x8 scheme has: SMLAD multiplies int16 pairs
+  natively, so two activations and two sign-extended weights per instruction (c2_conv 378k -> 159k cycles,
+  fc 25k -> 12k). A one-rounding form of `QAdd`'s int16 input rescale (TFLite's left shift of 15 leaves the
+  int8 fast form too little headroom; the add went from 43.8k to 35.0k). And 32-bit depthwise windows in
+  place of 64-bit ones (37% at `-O2`, 2% at `-O3`). The 64-bit requantizer and the add's rescales now work
+  on 32-bit halves, which on the Cortex-M0+ avoids a libgcc call per output. What remains: the 16x8 add is
+  2.8 times the int8 one, and every 16x8 convolution output pays a 64-bit requantization; the 16x8 c2_conv is
+  1.65 times the int8 one with SMLAD, which reads four int8 activations per load to the 16x8 kernel's two.
 * **The audio front end fits a Cortex-M0+ in real time.** At 3.2 kHz a 256-sample frame lasts 80 ms; the
   log-mel frame and a k-means score take 6.5 ms of it at 32 MHz (8% of the CPU), and learning one frame
   takes 1 ms more. On the F411 the same work takes 0.5 ms.

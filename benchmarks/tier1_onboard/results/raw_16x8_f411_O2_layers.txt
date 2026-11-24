@@ -1,14 +1,14 @@
 img=16x8 board=f411 level=O2 dsp=0 compiler=arm-none-eabi-g++ (15:13.2.rel1-2) 13.2.1 20231009
-size   15192	      0	   5192	  20384	   4fa0	build/f411/O2_layers/16x8.elf
+size   15984	      0	   5192	  21176	   52b8	build/f411/O2_layers/16x8.elf
 # begin bench
-work=digits_16x8 med=660141 min=660141 max=660141 stack=980 match=1 
-layer=c1_conv med=87450 
-layer=c2_conv med=423910 
-layer=add med=43309 
-layer=maxpool med=2113 
-layer=dw_conv med=35019 
-layer=pw_conv med=42634 
-layer=fc med=26157 
+work=digits_16x8 med=630391 min=630391 max=630391 stack=976 match=1 
+layer=c1_conv med=88639 
+layer=c2_conv med=414123 
+layer=add med=35144 
+layer=maxpool med=2116 
+layer=dw_conv med=22006 
+layer=pw_conv med=42625 
+layer=fc med=26182 
 layers_match=1 
 stack_baseline=272 static_ram=5192 
 # end bench

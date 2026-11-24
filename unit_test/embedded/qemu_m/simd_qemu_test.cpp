@@ -699,6 +699,85 @@ namespace {
     }
 #endif
 
+    // The 16x8 dot product (int16 activations, int8 weights, int64 sum):
+    // the dispatched form, and on the Arm DSP backend the SMLAD kernel
+    // itself, against the scalar loop, for lengths across the 256-term
+    // block boundary, every x/w misalignment, and the int16 x int8 extremes.
+    void testInt16x8Dot()
+    {
+        constexpr std::size_t kMax16 = 600;
+        alignas(4) static int16_t xbuf[kMax16 + kSlack];
+        alignas(4) static int8_t wbuf[kMax16 + kSlack];
+        static const std::size_t kLengths[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 63, 64, 65,
+                                               255, 256, 257, 259, 511, 512, 513, 600};
+        static const int16_t kZeroPoints[] = {0, 7, -32768};
+        for (int fill = 0; fill < 4; ++fill)
+        {
+            for (std::size_t i = 0; i < kMax16 + kSlack; ++i)
+            {
+                switch (fill)
+                {
+                case 0:
+                    xbuf[i] = static_cast<int16_t>((static_cast<uint32_t>(static_cast<uint8_t>(nextByte())) << 8) |
+                                                   static_cast<uint8_t>(nextByte()));
+                    wbuf[i] = nextByte();
+                    break;
+                case 1: // every product +2^22, the block bound
+                    xbuf[i] = -32768;
+                    wbuf[i] = -128;
+                    break;
+                case 2:
+                    xbuf[i] = 32767;
+                    wbuf[i] = -128;
+                    break;
+                default:
+                    xbuf[i] = (i & 1u) ? static_cast<int16_t>(32767) : static_cast<int16_t>(-32768);
+                    wbuf[i] = (i & 2u) ? static_cast<int8_t>(-128) : static_cast<int8_t>(127);
+                    break;
+                }
+            }
+            for (const std::size_t n : kLengths)
+            {
+                for (std::size_t xo = 0; xo < kSlack; ++xo)
+                {
+                    for (std::size_t wo = 0; wo < kSlack; ++wo)
+                    {
+                        if (xo + n > kMax16 + kSlack || wo + n > kMax16 + kSlack)
+                        {
+                            continue;
+                        }
+                        for (const int16_t zp : kZeroPoints)
+                        {
+                            const int64_t want =
+                                tinymind::simd::int16x8DotWithZeroPointScalar(xbuf + xo, wbuf + wo, n, zp);
+                            const int64_t got =
+                                tinymind::simd::int16x8DotWithZeroPoint(xbuf + xo, wbuf + wo, n, zp);
+                            ++g_cases;
+                            if (got != want)
+                            {
+                                fail("dot16x8 n,offsets", static_cast<uint32_t>(n),
+                                     static_cast<uint32_t>((xo << 8) | wo), static_cast<int32_t>(got - want), 0);
+                            }
+#if TINYMIND_ENABLE_SIMD_ARM_DSP
+                            if (zp == 0)
+                            {
+                                const int64_t direct = tinymind::simd::arm_dsp::int16x8Dot(xbuf + xo, wbuf + wo, n);
+                                ++g_cases;
+                                if (direct != want)
+                                {
+                                    fail("smlad16x8 n,offsets", static_cast<uint32_t>(n),
+                                         static_cast<uint32_t>((xo << 8) | wo),
+                                         static_cast<int32_t>(direct - want), 0);
+                                }
+                            }
+#endif
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 } // namespace
 
 extern "C" int run_tests()
@@ -721,6 +800,7 @@ extern "C" int run_tests()
     testPointwiseWide();
     testPaddedConv();
     testDense();
+    testInt16x8Dot();
 #if TINYMIND_ENABLE_SIMD_HELIUM_MVE_F
     testFloatDot();
 #endif

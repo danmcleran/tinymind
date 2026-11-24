@@ -149,6 +149,53 @@ namespace tinymind { namespace simd { namespace arm_dsp {
     }
 
     /**
+     * int16 activations with a zero point of 0 (TFLite's 16x8 scheme)
+     * against int8 weights: sum_i w[i] * x[i], in int64. SMLAD multiplies
+     * int16 pairs natively, so a block of four is one weight word split by
+     * SXTB16 into (w0, w2) and (w1, w3), two activation words repacked into
+     * (x0, x2) and (x1, x3), and two SMLADs. Blocks of at most 256 terms are
+     * summed in int32 (each term is at most 2^22 in magnitude, so a block
+     * stays below 2^30) and widened. Same products and sum as the scalar
+     * int16 x int8 loop, so bit-exact.
+     */
+    inline int64_t int16x8Dot(const int16_t* x, const int8_t* w, std::size_t n)
+    {
+        int64_t total = 0;
+        while (n != 0)
+        {
+            const std::size_t chunk = (n > 256u) ? 256u : n;
+            int32_t acc = 0;
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
+            for (std::size_t blocks = chunk >> 2; blocks != 0; --blocks)
+            {
+                uint32_t x01;
+                uint32_t x23;
+                __builtin_memcpy(&x01, x, sizeof(x01));
+                __builtin_memcpy(&x23, x + 2, sizeof(x23));
+                const int8x4_t wv = load4(w);
+                x += 4;
+                w += 4;
+                // Little-endian: x01 holds x0 in its low half, x1 in its high.
+                const int16x2_t x02 = static_cast<int16x2_t>((x01 & 0xFFFFu) | (x23 << 16));
+                const int16x2_t x13 = static_cast<int16x2_t>((x01 >> 16) | (x23 & 0xFFFF0000u));
+                acc = __smlad(__sxtb16(wv), x02, acc);
+                acc = __smlad(sxtb16Ror8(wv), x13, acc);
+            }
+            for (std::size_t i = 0; i < (chunk & 3u); ++i)
+            {
+                acc += static_cast<int32_t>(w[i]) * static_cast<int32_t>(x[i]);
+            }
+            x += chunk & 3u;
+            w += chunk & 3u;
+            total += static_cast<int64_t>(acc);
+            n -= chunk;
+        }
+        return total;
+    }
+
+    /**
      * Two inputs against two weight rows, n elements each:
      *   acc[0] += w0 . (x0 - zp)    acc[1] += w1 . (x0 - zp)
      *   acc[2] += w0 . (x1 - zp)    acc[3] += w1 . (x1 - zp)

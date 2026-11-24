@@ -149,14 +149,16 @@ on the boards
 
 | | int8 | 16x8 |
 |---|---:|---:|
-| Cortex-M0+ (NUCLEO-L031K6, 32 MHz) | 760,608 cycles (23.8 ms) | 1,202,720 cycles (37.6 ms) |
-| Cortex-M4, scalar kernels (NUCLEO-F411RE, 100 MHz) | 479,524 (4.8 ms) | 561,802 (5.6 ms) |
-| Cortex-M4, Arm DSP backend | 171,384 (1.7 ms) | 561,802 (5.6 ms) |
+| Cortex-M0+ (NUCLEO-L031K6, 32 MHz) | 760,608 cycles (23.8 ms) | 1,106,337 cycles (34.6 ms) |
+| Cortex-M4, scalar kernels (NUCLEO-F411RE, 100 MHz) | 479,524 (4.8 ms) | 552,158 (5.5 ms) |
+| Cortex-M4, Arm DSP backend | 171,384 (1.7 ms) | 314,476 (3.1 ms) |
 
-There is no 16x8 SMLAD path yet, so the DSP backend does not speed the 16x8
-convolutions up; the int16 add runs `QAdd`'s reference loop (TFLite's left
-shift of 15 leaves its fast form too little headroom), and the depthwise
-layer multiplies in 64 bits.
+With the Arm DSP backend the 16x8 convolutions and dense layer use SMLAD on
+int16 activation pairs, but each 16x8 load carries two activations to
+int8's four, every output pays a 64-bit requantization, and the int16 add
+rescales its inputs in 64 bits: the 16x8 model is 1.83 times as slow as
+int8 there, 15% slower without the DSP backend and 45% slower on the
+Cortex-M0+. The per-layer split is in the bench README.
 
 ## Build and run
 

@@ -75,6 +75,46 @@ namespace tinymind {
 #define TINYMIND_CONV_PAD_BAND_MAX_BYTES 4096
 #endif
 
+        /**
+         * The type a depthwise window is summed in. Normally the accumulator,
+         * starting from the bias. For int16 inputs and int8 weights (16x8)
+         * with an int64 accumulator, a window of up to 256 taps cannot leave
+         * int32 (|x| <= 32768 and |w| <= 128, since the zero point is folded
+         * into the bias, so each term is at most 2^22), so it is summed in
+         * int32 and widened once: a 64-bit multiply per tap is a libgcc call
+         * on Cortex-M0+ and twice the work on Cortex-M4. start() is the
+         * window's initial value and finish() the accumulator it yields; for
+         * the plain case they are the identity, so that code is unchanged.
+         */
+        template<typename Input, typename Weight, typename Accum, std::size_t Taps,
+                 bool Narrow = (Taps <= 256)>
+        struct DepthwiseWindow
+        {
+            typedef Accum type;
+            static Accum start(Accum bias)
+            {
+                return bias;
+            }
+            static Accum finish(Accum, Accum window)
+            {
+                return window;
+            }
+        };
+
+        template<std::size_t Taps>
+        struct DepthwiseWindow<int16_t, int8_t, int64_t, Taps, true>
+        {
+            typedef int32_t type;
+            static int32_t start(int64_t)
+            {
+                return 0;
+            }
+            static int64_t finish(int64_t bias, int32_t window)
+            {
+                return bias + static_cast<int64_t>(window);
+            }
+        };
+
     } // namespace detail
 
     template<
@@ -119,6 +159,9 @@ namespace tinymind {
         static constexpr std::size_t WeightsPerChannel = KH_ * KW_;
         static constexpr std::size_t TotalWeights      = Channels_ * WeightsPerChannel;
 
+        typedef detail::DepthwiseWindow<InputStorage_, WeightStorage_, AccumType_, KH_ * KW_> Window;
+        typedef typename Window::type WindowType;
+
         static_assert(H_ + PadTop_ + PadBottom_ >= KH_, "Padded input height must be >= kernel height.");
         static_assert(W_ + PadLeft_ + PadRight_ >= KW_, "Padded input width must be >= kernel width.");
         static_assert(StrideH_ > 0, "Vertical stride must be > 0.");
@@ -158,12 +201,12 @@ namespace tinymind {
             InputType band[KH_ * PaddedWidth];
             for (std::size_t c = 0; c < Channels_; ++c)
             {
-                AccumulatorType taps[WeightsPerChannel];
+                WindowType taps[WeightsPerChannel];
                 AccumulatorType weightSum = static_cast<AccumulatorType>(0);
                 for (std::size_t k = 0; k < WeightsPerChannel; ++k)
                 {
-                    taps[k] = static_cast<AccumulatorType>(layerWeights[c * WeightsPerChannel + k]);
-                    weightSum += taps[k];
+                    taps[k] = static_cast<WindowType>(layerWeights[c * WeightsPerChannel + k]);
+                    weightSum += static_cast<AccumulatorType>(taps[k]);
                 }
                 const AccumulatorType bias = ((layerBiases != nullptr)
                     ? layerBiases[c]
@@ -215,7 +258,7 @@ namespace tinymind {
                     OutputType* const rowOut = output + oh * OutputWidth * Channels_ + c;
                     for (std::size_t ow = 0; ow < OutputWidth; ++ow)
                     {
-                        AccumulatorType acc = bias;
+                        WindowType acc = Window::start(bias);
 #if !defined(__OPTIMIZE_SIZE__)
 #pragma GCC unroll 8
 #endif
@@ -227,10 +270,11 @@ namespace tinymind {
                             for (std::size_t kw = 0; kw < KW_; ++kw)
                             {
                                 acc += taps[kh * KW_ + kw] *
-                                       static_cast<AccumulatorType>(rows[kh][ow * StrideW_ + kw]);
+                                       static_cast<WindowType>(rows[kh][ow * StrideW_ + kw]);
                             }
                         }
-                        rowOut[ow * Channels_] = useFast ? fast.apply(acc) : rq.apply(acc);
+                        const AccumulatorType sum = Window::finish(bias, acc);
+                        rowOut[ow * Channels_] = useFast ? fast.apply(sum) : rq.apply(sum);
                     }
                 }
             }
@@ -254,12 +298,12 @@ namespace tinymind {
             // so bit-exact with the per-pixel, per-tap form.
             for (std::size_t c = 0; c < Channels_; ++c)
             {
-                AccumulatorType taps[WeightsPerChannel];
+                WindowType taps[WeightsPerChannel];
                 AccumulatorType weightSum = static_cast<AccumulatorType>(0);
                 for (std::size_t k = 0; k < WeightsPerChannel; ++k)
                 {
-                    taps[k] = static_cast<AccumulatorType>(layerWeights[c * WeightsPerChannel + k]);
-                    weightSum += taps[k];
+                    taps[k] = static_cast<WindowType>(layerWeights[c * WeightsPerChannel + k]);
+                    weightSum += static_cast<AccumulatorType>(taps[k]);
                 }
 
                 const AccumulatorType bias = ((layerBiases != nullptr)
@@ -281,7 +325,7 @@ namespace tinymind {
                             const InputType* const window =
                                 input + ((oh * StrideH_) * W_ + ow * StrideW_) * Channels_ + c;
 
-                            AccumulatorType acc = bias;
+                            WindowType acc = Window::start(bias);
 #if !defined(__OPTIMIZE_SIZE__)
 #pragma GCC unroll 8
 #endif
@@ -293,12 +337,12 @@ namespace tinymind {
                                 for (std::size_t kw = 0; kw < KW_; ++kw)
                                 {
                                     acc += taps[kh * KW_ + kw] *
-                                           static_cast<AccumulatorType>(
+                                           static_cast<WindowType>(
                                                window[(kh * W_ + kw) * Channels_]);
                                 }
                             }
 
-                            output[(oh * OutputWidth + ow) * Channels_ + c] = fast.apply(acc);
+                            output[(oh * OutputWidth + ow) * Channels_ + c] = fast.apply(Window::finish(bias, acc));
                         }
                     }
                 }
@@ -311,7 +355,7 @@ namespace tinymind {
                             const InputType* const window =
                                 input + ((oh * StrideH_) * W_ + ow * StrideW_) * Channels_ + c;
 
-                            AccumulatorType acc = bias;
+                            WindowType acc = Window::start(bias);
 #if !defined(__OPTIMIZE_SIZE__)
 #pragma GCC unroll 8
 #endif
@@ -323,12 +367,12 @@ namespace tinymind {
                                 for (std::size_t kw = 0; kw < KW_; ++kw)
                                 {
                                     acc += taps[kh * KW_ + kw] *
-                                           static_cast<AccumulatorType>(
+                                           static_cast<WindowType>(
                                                window[(kh * W_ + kw) * Channels_]);
                                 }
                             }
 
-                            output[(oh * OutputWidth + ow) * Channels_ + c] = rq.apply(acc);
+                            output[(oh * OutputWidth + ow) * Channels_ + c] = rq.apply(Window::finish(bias, acc));
                         }
                     }
                 }

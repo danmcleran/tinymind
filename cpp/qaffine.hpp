@@ -395,11 +395,17 @@ namespace tinymind {
      * library's sign (positive shifts right; TFLite's shift is -shift).
      *
      * Contract, TFLite's: multiplier >= 0, -7 <= shift <= 31 and
-     * |acc| < 2^47 (a 16x8 dot product of n terms needs n < 2^24). Outside
-     * it the result is defined but not meaningful: acc is clamped to
+     * |acc| < 2^47 (a 16x8 dot product of n terms needs n < 2^24), and the
+     * scaled value fits int32 (TFLite checks that it does). Outside it the
+     * result is defined but not meaningful: acc is clamped to
      * [-2^47, 2^47 - 1] and shift to [-14, 47], which keeps every shift and
-     * product inside int64 and leaves every in-contract result unchanged;
-     * the zero point is added and the clamp applied in int64.
+     * product inside int64 and leaves every in-contract result unchanged, and
+     * a scaled value beyond int32 saturates to the int32 rails before the
+     * zero point is added.
+     *
+     * The 64-bit sum is split into 32-bit halves for the rounding term and
+     * the final shift: a variable 64-bit shift is a libgcc call on
+     * Cortex-M0+ and a long sequence on Cortex-M4.
      */
     template<typename DstStorage_>
     struct Requantizer<int64_t, DstStorage_>
@@ -433,12 +439,55 @@ namespace tinymind {
             const int64_t accLimit = static_cast<int64_t>(1) << 47;
             const int64_t x = (acc < -accLimit) ? -accLimit : ((acc > accLimit - 1) ? accLimit - 1 : acc);
             const int32_t s = (shift < -14) ? -14 : ((shift > 47) ? 47 : shift);
-            const int64_t reduced = (multiplier < 0x7FFF0000)
-                ? ((static_cast<int64_t>(multiplier) + (static_cast<int64_t>(1) << 15)) >> 16)
-                : static_cast<int64_t>(0x7FFF);
-            const int32_t totalShift = 15 + s;
-            const int64_t round = static_cast<int64_t>(1) << (totalShift - 1);
-            int64_t wide = ((x * reduced + round) >> totalShift) + static_cast<int64_t>(zero_point);
+            const int32_t reduced = (multiplier < 0x7FFF0000)
+                ? static_cast<int32_t>((static_cast<int64_t>(multiplier) + (static_cast<int64_t>(1) << 15)) >> 16)
+                : static_cast<int32_t>(0x7FFF);
+            const int32_t totalShift = 15 + s; // 1 .. 62
+
+            // v = x * reduced + 2^(totalShift - 1), formed modulo 2^64 (its
+            // true value fits int64), with the rounding term built from halves.
+            const uint32_t roundLow = (totalShift <= 32) ? (static_cast<uint32_t>(1) << (totalShift - 1)) : 0u;
+            const uint32_t roundHigh = (totalShift > 32) ? (static_cast<uint32_t>(1) << (totalShift - 33)) : 0u;
+            const uint64_t v = static_cast<uint64_t>(x * static_cast<int64_t>(reduced)) +
+                               ((static_cast<uint64_t>(roundHigh) << 32) | roundLow);
+            const uint32_t lo = static_cast<uint32_t>(v);
+            const int32_t hi = static_cast<int32_t>(static_cast<uint32_t>(v >> 32));
+
+            // floor(v / 2^totalShift). From 32 up it is the high half shifted.
+            // Below 32 it fits int32 exactly when floor(hi / 2^(totalShift - 1))
+            // is 0 or -1, and is then the high half's low bits above the low
+            // half's high bits; otherwise it saturates.
+            int32_t scaled;
+            if (totalShift >= 32)
+            {
+                scaled = hi >> (totalShift - 32);
+            }
+            else
+            {
+                const int32_t top = hi >> (totalShift - 1);
+                if ((top == 0) || (top == -1))
+                {
+                    scaled = static_cast<int32_t>((static_cast<uint32_t>(hi) << (32 - totalShift)) |
+                                                  (lo >> totalShift));
+                }
+                else
+                {
+                    scaled = (hi < 0) ? INT32_MIN : INT32_MAX;
+                }
+            }
+
+            if (sizeof(DstStorageType) < sizeof(int32_t))
+            {
+                // |zero_point|, |qmin| and |qmax| are below 2^16, so clamping
+                // to +-2^30 first keeps the sum in int32 and changes no result.
+                const int32_t rail = static_cast<int32_t>(1) << 30;
+                scaled = (scaled > rail) ? rail : ((scaled < -rail) ? -rail : scaled);
+                int32_t narrow = scaled + static_cast<int32_t>(zero_point);
+                narrow = (narrow < static_cast<int32_t>(qmin)) ? static_cast<int32_t>(qmin) : narrow;
+                narrow = (narrow > static_cast<int32_t>(qmax)) ? static_cast<int32_t>(qmax) : narrow;
+                return static_cast<DstStorageType>(narrow);
+            }
+            int64_t wide = static_cast<int64_t>(scaled) + static_cast<int64_t>(zero_point);
             if (wide < static_cast<int64_t>(qmin))
             {
                 wide = static_cast<int64_t>(qmin);
