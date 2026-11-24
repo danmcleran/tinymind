@@ -377,6 +377,192 @@ BOOST_AUTO_TEST_CASE(qint16x8_dense_conv_depthwise_match_reference)
     }
 }
 
+namespace qint16x8_test
+{
+    // FastRequantizer64 against Requantizer<int64_t, Dst>::apply, both of its
+    // forms, over shifts 1 to 17 and accumulators across the int32 range.
+    template<typename Dst>
+    void checkFastRequantizer64(std::mt19937& rng, std::size_t& compared)
+    {
+        typedef tinymind::Requantizer<int64_t, Dst> Rq;
+        typedef tinymind::detail::StorageRange<Dst> Range;
+        const int32_t lo = Range::min;
+        const int32_t hi = Range::max;
+        const int32_t multipliers[] = {0, 1, 32767, 1 << 30, 0x7FFEFFFF, 0x7FFF0000, 2147483647, 1372513147};
+        std::uniform_int_distribution<int32_t> anyMultiplier(0, 2147483647);
+        for (int32_t shift = 1; shift <= 17; ++shift)
+        {
+            for (std::size_t k = 0; k < 16; ++k)
+            {
+                Rq rq;
+                rq.multiplier = (k < 8) ? multipliers[k] : anyMultiplier(rng);
+                rq.shift = shift;
+                rq.zero_point = static_cast<Dst>((k % 3 == 0) ? 0 : ((k % 3 == 1) ? lo / 3 : hi / 5));
+                rq.qmin = static_cast<Dst>((k % 2 == 0) ? lo : rq.zero_point);
+                rq.qmax = static_cast<Dst>((k % 4 == 3) ? hi / 2 : hi);
+                tinymind::detail::FastRequantizer64<Dst> fast;
+                // One tap with no bias: the bound is 32768 * 128, far below
+                // 2^31; the accumulators below go to the int32 rails, which
+                // apply() handles exactly whatever the window.
+                BOOST_TEST_REQUIRE(fast.template initWindow<int8_t>(rq, 0, 1, static_cast<int16_t>(0)));
+                bool same = true;
+                for (int j = 0; j < 4000 && same; ++j)
+                {
+                    int32_t acc;
+                    switch (j)
+                    {
+                    case 0: acc = INT32_MIN; break;
+                    case 1: acc = INT32_MAX; break;
+                    case 2: acc = 0; break;
+                    case 3: acc = -1; break;
+                    default: acc = (j & 1) ? static_cast<int32_t>(rng())
+                                           : (static_cast<int32_t>(rng()) >> (rng() % 31));
+                    }
+                    const Dst want = rq.apply(acc);
+                    same = (fast.applyWide(acc) == want) && (fast.applySplit(acc) == want) &&
+                           (fast.apply(static_cast<int64_t>(acc)) == want);
+                    BOOST_TEST(same, "m " << rq.multiplier << " shift " << shift << " zp " << +rq.zero_point
+                                          << " acc " << acc);
+                    ++compared;
+                }
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qint16x8_fast_requantizer64_matches_reference)
+{
+    std::mt19937 rng(36);
+    std::size_t compared = 0;
+    qint16x8_test::checkFastRequantizer64<int16_t>(rng, compared);
+    qint16x8_test::checkFastRequantizer64<int8_t>(rng, compared);
+    BOOST_TEST(compared == 2u * 17u * 16u * 4000u);
+
+    // And TFLite's own arithmetic, for the int16 output of a 16x8 layer.
+    const qint16x8_test::Rq64 rq = {1990989975, 9, 0, 0, 32767};
+    tinymind::detail::FastRequantizer64<int16_t> fast;
+    BOOST_TEST_REQUIRE(fast.initWindow<int8_t>(rq, 0, 72, static_cast<int16_t>(0)));
+    for (int32_t acc = -(1 << 26); acc < (1 << 26); acc += 997)
+    {
+        BOOST_TEST(fast.apply(acc) == qint16x8_test::tfliteRequantize16(acc, rq));
+    }
+
+    // Refused: a negative multiplier, a shift outside 1 to 17, and any
+    // window whose accumulator could leave int32 (|bias| + taps * 2^22 for
+    // int16 inputs and int8 weights with a zero point of 0).
+    BOOST_TEST(!fast.initWindow<int8_t>(qint16x8_test::Rq64{-1, 9, 0, -32768, 32767}, 0, 9, static_cast<int16_t>(0)));
+    BOOST_TEST(!fast.initWindow<int8_t>(qint16x8_test::Rq64{1 << 30, 0, 0, -32768, 32767}, 0, 9, static_cast<int16_t>(0)));
+    BOOST_TEST(!fast.initWindow<int8_t>(qint16x8_test::Rq64{1 << 30, 18, 0, -32768, 32767}, 0, 9, static_cast<int16_t>(0)));
+    BOOST_TEST(fast.initWindow<int8_t>(qint16x8_test::Rq64{1 << 30, 17, 0, -32768, 32767}, 0, 9, static_cast<int16_t>(0)));
+    const int64_t window511 = 511LL << 22;
+    const int64_t spare = (1LL << 31) - 1 - window511;
+    BOOST_TEST(fast.initWindow<int8_t>(rq, spare, 511, static_cast<int16_t>(0)));
+    BOOST_TEST(fast.initWindow<int8_t>(rq, -spare, 511, static_cast<int16_t>(0)));
+    BOOST_TEST(!fast.initWindow<int8_t>(rq, spare + 1, 511, static_cast<int16_t>(0)));
+    BOOST_TEST(!fast.initWindow<int8_t>(rq, -spare - 1, 511, static_cast<int16_t>(0)));
+    BOOST_TEST(!fast.initWindow<int8_t>(rq, 0, 512, static_cast<int16_t>(0)));
+    BOOST_TEST(!fast.initWindow<int8_t>(rq, INT64_MIN, 1, static_cast<int16_t>(0)));
+    // A zero point widens |x - zp|: 32768 + 300 by 128 over 511 taps passes 2^31.
+    BOOST_TEST(fast.initWindow<int8_t>(rq, 0, 511, static_cast<int16_t>(0)));
+    BOOST_TEST(!fast.initWindow<int8_t>(rq, 0, 511, static_cast<int16_t>(300)));
+    BOOST_TEST((tinymind::detail::windowProductBound<int16_t, int8_t>(511, static_cast<int16_t>(300)) ==
+                511ull * 33068ull * 128ull));
+    // Storage of unknown range has no bound, so the fast form is refused.
+    BOOST_TEST((tinymind::detail::windowProductBound<int32_t, int8_t>(4, 0) == 0u));
+    BOOST_TEST(!fast.initWindow<int8_t>(rq, 0, 4, static_cast<int32_t>(0)));
+}
+
+BOOST_AUTO_TEST_CASE(qint16x8_kernels_fall_back_outside_fast_form)
+{
+    // One filter (or channel) of each layer outside FastRequantizer64's
+    // domain: a bias near 2^31, and a shift of 0. Those take
+    // Requantizer::apply, the rest the fast form; all must match the
+    // reference convolution.
+    std::mt19937 rng(37);
+    const int64_t bigBias = (1LL << 31) - 1000;
+    std::vector<qint16x8_test::Rq64> rqs = qint16x8_test::spreadRequantizers(4, 32768.0 * 127.0 * 9.0, rng);
+    int32_t m = 0;
+    int32_t s = 0;
+    tinymind::quantizeMultiplier(16384.0 / static_cast<double>(bigBias), m, s);
+    rqs[1].multiplier = m;
+    rqs[1].shift = s;
+    rqs[2].multiplier = 1 << 30;
+    rqs[2].shift = 0;
+    tinymind::detail::FastRequantizer64<int16_t> fast;
+    BOOST_TEST(fast.initWindow<int8_t>(rqs[0], 0, 72, static_cast<int16_t>(0)));
+    BOOST_TEST(!fast.initWindow<int8_t>(rqs[1], bigBias, 18, static_cast<int16_t>(0)));
+    BOOST_TEST(!fast.initWindow<int8_t>(rqs[2], 0, 18, static_cast<int16_t>(0)));
+
+    std::vector<int64_t> bias = qint16x8_test::randomVector<int64_t>(4, -200000, 200000, rng);
+    bias[1] = bigBias;
+
+    // Convolution: the patch path (window 18) and the row path (window 72).
+    {
+        typedef tinymind::QConv2DPerChannel<int16_t, int8_t, int64_t, int16_t, 5, 5, 2, 3, 3, 1, 1, 4> Patch;
+        const std::vector<int8_t> w = qint16x8_test::randomVector<int8_t>(4 * 18, -127, 127, rng);
+        const std::vector<int16_t> x = qint16x8_test::randomVector<int16_t>(5 * 5 * 2, -32768, 32767, rng);
+        Patch layer;
+        layer.weights = w.data();
+        layer.biases = bias.data();
+        layer.input_zero_point = 0;
+        layer.requantizers = rqs.data();
+        std::vector<int16_t> got(Patch::OutputSize);
+        layer.forward(x.data(), got.data());
+        BOOST_TEST(got == qint16x8_test::naiveConv<false>(x, 5, 5, 2, w, bias, 3, 3, 1, 4, 0, 0, 0, 0, 0, rqs));
+    }
+    {
+        typedef tinymind::QConv2DPerChannel<int16_t, int8_t, int64_t, int16_t, 6, 6, 8, 3, 3, 1, 1, 4> Rows;
+        const std::vector<int8_t> w = qint16x8_test::randomVector<int8_t>(4 * 72, -127, 127, rng);
+        const std::vector<int16_t> x = qint16x8_test::randomVector<int16_t>(6 * 6 * 8, -32768, 32767, rng);
+        Rows layer;
+        layer.weights = w.data();
+        layer.biases = bias.data();
+        layer.input_zero_point = 0;
+        layer.requantizers = rqs.data();
+        std::vector<int16_t> got(Rows::OutputSize);
+        layer.forward(x.data(), got.data());
+        BOOST_TEST(got == qint16x8_test::naiveConv<false>(x, 6, 6, 8, w, bias, 3, 3, 1, 4, 0, 0, 0, 0, 0, rqs));
+    }
+    // Pointwise, over several pixels.
+    {
+        typedef tinymind::QPointwiseConv2DPerChannel<int16_t, int8_t, int64_t, int16_t, 3, 3, 8, 4> Pointwise;
+        const std::vector<int8_t> w = qint16x8_test::randomVector<int8_t>(4 * 8, -127, 127, rng);
+        const std::vector<int16_t> x = qint16x8_test::randomVector<int16_t>(3 * 3 * 8, -32768, 32767, rng);
+        Pointwise layer;
+        layer.weights = w.data();
+        layer.biases = bias.data();
+        layer.input_zero_point = 0;
+        layer.requantizers = rqs.data();
+        std::vector<int16_t> got(Pointwise::OutputSize);
+        layer.forward(x.data(), got.data());
+        BOOST_TEST(got == qint16x8_test::naiveConv<false>(x, 3, 3, 8, w, bias, 1, 1, 1, 4, 0, 0, 0, 0, 0, rqs));
+    }
+    // Depthwise, unpadded and padded.
+    {
+        typedef tinymind::QDepthwiseConv2D<int16_t, int8_t, int64_t, int16_t, 6, 6, 4, 3, 3, 1, 1> Unpadded;
+        typedef tinymind::QDepthwiseConv2D<int16_t, int8_t, int64_t, int16_t, 6, 6, 4, 3, 3, 1, 1, 1, 1, 1, 1>
+            Padded;
+        const std::vector<int8_t> w = qint16x8_test::randomVector<int8_t>(4 * 9, -127, 127, rng);
+        const std::vector<int16_t> x = qint16x8_test::randomVector<int16_t>(6 * 6 * 4, -32768, 32767, rng);
+        Unpadded unpadded;
+        unpadded.weights = w.data();
+        unpadded.biases = bias.data();
+        unpadded.input_zero_point = 0;
+        unpadded.requantizers = rqs.data();
+        std::vector<int16_t> got(Unpadded::OutputSize);
+        unpadded.forward(x.data(), got.data());
+        BOOST_TEST(got == qint16x8_test::naiveConv<true>(x, 6, 6, 4, w, bias, 3, 3, 1, 4, 0, 0, 0, 0, 0, rqs));
+        Padded padded;
+        padded.weights = w.data();
+        padded.biases = bias.data();
+        padded.input_zero_point = 0;
+        padded.requantizers = rqs.data();
+        std::vector<int16_t> gotPadded(Padded::OutputSize);
+        padded.forward(x.data(), gotPadded.data());
+        BOOST_TEST(gotPadded == qint16x8_test::naiveConv<true>(x, 6, 6, 4, w, bias, 3, 3, 1, 4, 1, 1, 1, 1, 0, rqs));
+    }
+}
+
 BOOST_AUTO_TEST_CASE(qint16x8_int32_accumulator_variant)
 {
     // TFLite's other 16x8 variant keeps int32 biases and accumulators; the

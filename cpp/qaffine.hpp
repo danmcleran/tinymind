@@ -618,6 +618,18 @@ namespace tinymind {
                 return true;
             }
 
+            /**
+             * init() with the interface the kernels share with
+             * FastRequantizer64: a window of taps products of Input - zp by
+             * Weight, starting from bias. The int32 form needs no bound on
+             * the accumulator, so it ignores everything but rq.
+             */
+            template<typename Weight_, typename SrcAccum_, typename Input_>
+            bool initWindow(const Requantizer<SrcAccum_, DstStorageType>& rq, SrcAccum_, std::size_t, Input_)
+            {
+                return init(rq);
+            }
+
             // Same derivation as roundingHighMulDivideByPOT, with the zero
             // point already in nudgeHigh.
             DstStorageType apply(int32_t acc) const
@@ -631,6 +643,163 @@ namespace tinymind {
                 const int32_t r = static_cast<int32_t>(static_cast<uint32_t>(v >> 32)) >> highShift;
                 return static_cast<DstStorageType>(Range::saturate(r));
             }
+        };
+
+        /**
+         * The largest |acc - bias| a window of taps products of (Input - zp)
+         * by Weight can reach, or 0 when either storage range is unknown
+         * (initWindow then refuses).
+         */
+        template<typename Input_, typename Weight_>
+        inline uint64_t windowProductBound(std::size_t taps, Input_ zp)
+        {
+            typedef StorageRange<Input_> In;
+            typedef StorageRange<Weight_> W;
+            if (!In::known || !W::known)
+            {
+                return 0;
+            }
+            // Copied to locals: a static constexpr member bound to a
+            // reference needs an out-of-class definition under C++14.
+            const int64_t inMin = In::min;
+            const int64_t inMax = In::max;
+            const int64_t wMin = W::min;
+            const int64_t wMax = W::max;
+            const int64_t z = static_cast<int64_t>(zp);
+            const int64_t below = z - inMin;
+            const int64_t above = inMax - z;
+            const uint64_t x = static_cast<uint64_t>((below > above) ? below : above);
+            const uint64_t w = static_cast<uint64_t>((-wMin > wMax) ? -wMin : wMax);
+            return static_cast<uint64_t>(taps) * x * w;
+        }
+
+        /**
+         * A Requantizer<int64_t, Dst> (the 16x8 layers) decoded once for a
+         * kernel's inner loop, for an accumulator that provably fits int32.
+         * apply() then returns exactly what Requantizer<int64_t>::apply
+         * returns, with one 32 x 32 -> 64 multiply-accumulate (SMLAL on
+         * Cortex-M4) in place of the 64-bit decode, clamp and shifts.
+         *
+         * With m16 the Q0.15 multiplier and t = 15 + shift, the requantizer
+         * computes floor((acc * m16 + 2^(t-1)) / 2^t) + zero_point. For
+         * 16 <= t <= 32 (1 <= shift <= 17), scaling numerator and
+         * denominator by 2^(32-t) gives
+         *   floor((acc * M + 2^31 + zero_point * 2^32) / 2^32),
+         *   M = m16 * 2^(32-t) < 2^31,
+         * the high word of one multiply-accumulate. For |acc| < 2^31 the
+         * scaled value stays below 2^30 in magnitude, so the requantizer's
+         * own saturation never acts and the results agree exactly; then
+         * the clamp to [qmin, qmax].
+         *
+         * initWindow() checks the bound: |bias| plus the window's largest
+         * |sum of products| (windowProductBound) must stay below 2^31, so
+         * every accumulator of that window fits int32. A 16x8 window of up
+         * to 511 taps does with a small bias.
+         *
+         * Cortex-M0+ has no 64-bit multiply instruction (a libgcc call), so
+         * there apply() takes applySplit(): acc split into 16-bit halves,
+         * each multiplied by the 15-bit m16 in 32 bits. Same result.
+         */
+        template<typename DstStorage_>
+        struct FastRequantizer64
+        {
+            typedef DstStorage_ DstStorageType;
+
+            int32_t scaledMultiplier; // M = m16 * 2^(32 - t)
+            int32_t reducedMultiplier; // m16
+            int32_t splitShift; // t - 16, 0 .. 16
+            uint32_t roundTerm; // 2^(t - 1)
+            int32_t zero_point;
+            int32_t qmin;
+            int32_t qmax;
+
+            template<typename Weight_, typename Input_>
+            bool initWindow(const Requantizer<int64_t, DstStorageType>& rq, int64_t bias, std::size_t taps,
+                            Input_ zp)
+            {
+                if ((rq.multiplier < 0) || (rq.shift < 1) || (rq.shift > 17))
+                {
+                    return false;
+                }
+                const uint64_t window = windowProductBound<Input_, Weight_>(taps, zp);
+                const uint64_t limit = static_cast<uint64_t>(1) << 31;
+                const uint64_t magnitude = (bias < 0) ? (static_cast<uint64_t>(0) - static_cast<uint64_t>(bias))
+                                                      : static_cast<uint64_t>(bias);
+                if ((window == 0) || (window >= limit) || (magnitude >= limit - window))
+                {
+                    return false;
+                }
+                const int32_t m16 = (rq.multiplier < 0x7FFF0000)
+                    ? static_cast<int32_t>((static_cast<int64_t>(rq.multiplier) + (static_cast<int64_t>(1) << 15)) >> 16)
+                    : static_cast<int32_t>(0x7FFF);
+                const int32_t t = 15 + rq.shift;
+                scaledMultiplier = m16 << (32 - t);
+                reducedMultiplier = m16;
+                splitShift = t - 16;
+                roundTerm = static_cast<uint32_t>(1) << (t - 1);
+                zero_point = static_cast<int32_t>(rq.zero_point);
+                qmin = static_cast<int32_t>(rq.qmin);
+                qmax = static_cast<int32_t>(rq.qmax);
+                return true;
+            }
+
+            // The accumulator's low word is all of it (see initWindow), so a
+            // kernel's 64-bit bias + window sum reduces to a 32-bit one.
+            DstStorageType apply(int64_t acc) const
+            {
+#if defined(__ARM_ARCH_6M__) || defined(__ARM_ARCH_8M_BASE__)
+                return applySplit(static_cast<int32_t>(acc));
+#else
+                return applyWide(static_cast<int32_t>(acc));
+#endif
+            }
+
+            DstStorageType applyWide(int32_t acc) const
+            {
+                const uint64_t nudge = (static_cast<uint64_t>(static_cast<uint32_t>(zero_point)) << 32) |
+                                       static_cast<uint64_t>(0x80000000u);
+                const uint64_t v = static_cast<uint64_t>(static_cast<int64_t>(acc) *
+                                                         static_cast<int64_t>(scaledMultiplier)) + nudge;
+                return clamp(static_cast<int32_t>(static_cast<uint32_t>(v >> 32)));
+            }
+
+            // acc = high * 2^16 + low (low unsigned): low * m16 + 2^(t-1)
+            // stays below 2^32 and high * m16 below 2^30 in magnitude, and
+            // floor((high * m16 * 2^16 + L) / 2^t)
+            //   == (high * m16 + floor(L / 2^16)) >> (t - 16).
+            DstStorageType applySplit(int32_t acc) const
+            {
+                const int32_t high = acc >> 16;
+                const uint32_t low = static_cast<uint32_t>(acc) & 0xFFFFu;
+                const uint32_t lowTerm = low * static_cast<uint32_t>(reducedMultiplier) + roundTerm;
+                const int32_t scaled = (high * reducedMultiplier + static_cast<int32_t>(lowTerm >> 16)) >> splitShift;
+                return clamp(scaled + zero_point);
+            }
+
+        private:
+            DstStorageType clamp(int32_t v) const
+            {
+                v = (v < qmin) ? qmin : v;
+                v = (v > qmax) ? qmax : v;
+                return static_cast<DstStorageType>(v);
+            }
+        };
+
+        /**
+         * The fast requantizer a kernel's output loop uses for an
+         * accumulator type: FastRequantizer for int32, FastRequantizer64 for
+         * the 16x8 layers' int64.
+         */
+        template<typename Accum_, typename Dst_>
+        struct FastRequantizerFor
+        {
+            typedef FastRequantizer<Dst_> type;
+        };
+
+        template<typename Dst_>
+        struct FastRequantizerFor<int64_t, Dst_>
+        {
+            typedef FastRequantizer64<Dst_> type;
         };
 
         // Windows and weight rows up to this many bytes are copied into a

@@ -134,31 +134,32 @@ in float by `float_reference` in the code generator:
 | Accuracy | 97.0% | 96.9% (2 more errors in 1,797) |
 | Activation arena | 1,024 bytes | 2,048 bytes |
 | Weight bytes | 3,408 | 3,408 |
-| Cortex-M0+ code and read-only data | 7,326 bytes | 7,574 bytes |
+| Cortex-M0+ code and read-only data | 7,326 bytes | 8,818 bytes |
 | Cortex-M0+ `.bss` | 1,098 bytes | 2,196 bytes |
 
 For a classifier this small, int8 activations already cost nothing in
 accuracy, so the 16x8 model is no more accurate. What 16-bit activations
 buy is precision in the outputs: a regression target, a spectrogram feature
 or a control signal that int8's 256 steps would quantize coarsely. The
-price is twice the activation RAM. Code grows by 248 bytes, for the 64-bit
-requantization. The weights do not change. The dot products stay in 32
-bits, summing blocks of 256 terms before widening, but the model is slower
-on the boards
+price is twice the activation RAM, and 1,492 bytes more code: the 64-bit
+requantization, and a second copy of each layer's output loop for the fast
+32-bit form. The weights do not change. The dot products stay in 32 bits,
+summing blocks of 256 terms before widening. On the boards
 ([`benchmarks/tier1_onboard`](../../benchmarks/tier1_onboard), `-O3`):
 
 | | int8 | 16x8 |
 |---|---:|---:|
-| Cortex-M0+ (NUCLEO-L031K6, 32 MHz) | 760,608 cycles (23.8 ms) | 1,106,337 cycles (34.6 ms) |
-| Cortex-M4, scalar kernels (NUCLEO-F411RE, 100 MHz) | 479,524 (4.8 ms) | 552,158 (5.5 ms) |
-| Cortex-M4, Arm DSP backend | 171,384 (1.7 ms) | 314,476 (3.1 ms) |
+| Cortex-M0+ (NUCLEO-L031K6, 32 MHz) | 760,608 cycles (23.8 ms) | 906,538 cycles (28.3 ms) |
+| Cortex-M4, scalar kernels (NUCLEO-F411RE, 100 MHz) | 479,524 (4.8 ms) | 470,563 (4.7 ms) |
+| Cortex-M4, Arm DSP backend | 171,384 (1.7 ms) | 220,380 (2.2 ms) |
 
 With the Arm DSP backend the 16x8 convolutions and dense layer use SMLAD on
-int16 activation pairs, but each 16x8 load carries two activations to
-int8's four, every output pays a 64-bit requantization, and the int16 add
-rescales its inputs in 64 bits: the 16x8 model is 1.83 times as slow as
-int8 there, 15% slower without the DSP backend and 45% slower on the
-Cortex-M0+. The per-layer split is in the bench README.
+int16 activation pairs, and each convolution output is requantized with one
+32 x 32 -> 64 multiply-accumulate while its accumulator provably fits int32.
+Each 16x8 load still carries two activations to int8's four, and the int16
+add still rescales its inputs in 64 bits: the 16x8 model is 29% slower than
+int8 there, 19% slower on the Cortex-M0+, and 2% faster without the DSP
+backend. The per-layer split is in the bench README.
 
 ## Build and run
 

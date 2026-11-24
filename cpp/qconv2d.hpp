@@ -270,8 +270,8 @@ namespace tinymind {
             // the weights can stay in registers across the outputs.
             WeightType w[WindowLength_];
 
-            FastRequantizer<OutputType> fast;
-            if (fast.init(rq))
+            typename FastRequantizerFor<AccumType, OutputType>::type fast;
+            if (fast.template initWindow<WeightType>(rq, bias, WindowLength_, zeroPoint))
             {
                 for (std::size_t i = 0; i < WindowLength_; ++i)
                 {
@@ -418,10 +418,10 @@ namespace tinymind {
 
             // Value-initialized: GCC cannot see that both are set whenever
             // the fast forms are used, and warns.
-            FastRequantizer<OutputType> fast0 = {};
-            FastRequantizer<OutputType> fast1 = {};
-            const bool fast0Ready = fast0.init(rq0);
-            const bool fast1Ready = fast1.init(rq1);
+            typename FastRequantizerFor<AccumType, OutputType>::type fast0 = {};
+            typename FastRequantizerFor<AccumType, OutputType>::type fast1 = {};
+            const bool fast0Ready = fast0.template initWindow<WeightType>(rq0, bias0, windowLength, zeroPoint);
+            const bool fast1Ready = fast1.template initWindow<WeightType>(rq1, bias1, windowLength, zeroPoint);
             if (fast0Ready && fast1Ready)
             {
                 for (std::size_t ow = 0; ow < pairedWidth; ow += 2)

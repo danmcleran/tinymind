@@ -213,8 +213,11 @@ namespace tinymind {
                     : static_cast<AccumulatorType>(0)) -
                     static_cast<AccumulatorType>(inputZeroPoint) * weightSum;
                 const Requantizer<AccumulatorType, OutputType> rq = rqs[c];
-                detail::FastRequantizer<OutputType> fast;
-                const bool useFast = fast.init(rq);
+                // The zero point is in the bias, so the window's products are
+                // of x by w, and their bound is that of a zero point of 0.
+                typename detail::FastRequantizerFor<AccumulatorType, OutputType>::type fast;
+                const bool useFast = fast.template initWindow<WeightType>(
+                    rq, bias, WeightsPerChannel, static_cast<InputType>(0));
 
                 std::size_t next = 0; // the next padded row to build
                 for (std::size_t oh = 0; oh < OutputHeight; ++oh)
@@ -315,8 +318,8 @@ namespace tinymind {
                 // The pixel loop is written out twice, once with the
                 // requantizer's FastRequantizer form and once with the
                 // Requantizer itself, chosen per channel.
-                detail::FastRequantizer<OutputType> fast;
-                if (fast.init(rq))
+                typename detail::FastRequantizerFor<AccumulatorType, OutputType>::type fast;
+                if (fast.template initWindow<WeightType>(rq, bias, WeightsPerChannel, static_cast<InputType>(0)))
                 {
                     for (std::size_t oh = 0; oh < OutputHeight; ++oh)
                     {
