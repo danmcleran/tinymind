@@ -39,14 +39,19 @@ same class as ONNX Runtime:     1795 of 1797
 activation arena:               1024 bytes (unshared 2048, busiest layer 1024)
 int4 dense layer accuracy:      0.9683 (same class as int8 on 1775 of 1797)
 weights:                        3408 bytes int8, 2128 bytes with the dense layer in int4
+16x8 accuracy:                  0.9688 (arena 2048 bytes, same weights)
+same class as the float model:  int8 1791, 16x8 1795 of 1797
+logit error vs float activations (first 256 digits): mean 0.1619 int8, 0.00128 16x8; max 0.6565 int8, 0.00633 16x8
 ```
 
 ![Memory plan and test confusion]({{ site.baseurl }}/assets/plots/onnx_digits_int8.png)
 
-On the left is the memory plan. Each box is one arena buffer, drawn across the layers its output is live for and at the bytes it occupies. The seven activations fit in 1,024 bytes, half of the 2,048 that one buffer per output would take. No plan can do better, because the two 512-byte convolution outputs are both live while the residual `Add` runs. On the right is the confusion matrix of the generated int8 model, which matches the float model's 97.0%. The generated model predicts a different class from ONNX Runtime on only two digits. On both of them, ONNX Runtime's two highest int8 logits are one step apart.
+At the top left is the memory plan. Each box is one arena buffer, drawn across the layers its output is live for and at the bytes it occupies. The seven activations fit in 1,024 bytes, half of the 2,048 that one buffer per output would take. No plan can do better, because the two 512-byte convolution outputs are both live while the residual `Add` runs. At the top right is the confusion matrix of the generated int8 model, which matches the float model's 97.0%. The generated model predicts a different class from ONNX Runtime on only two digits. On both of them, ONNX Runtime's two highest int8 logits are one step apart.
 
-For a Cortex-M0+ (`arm-none-eabi-g++ -mcpu=cortex-m0plus -Os`), `model.hpp` with a `main` that calls `forward` compiles to 7,342 bytes of code and read-only data. It has no `.data`, its 1,100 bytes of `.bss` are the arena plus the input and output buffers, and it makes no heap allocation.
+For a Cortex-M0+ (`arm-none-eabi-g++ -std=c++14 -mcpu=cortex-m0plus -mthumb -Os -ffunction-sections -fdata-sections -c`), `model.hpp` with static buffers and a `main` that calls `forward` compiles to 7,326 bytes of code and read-only data. It has no `.data`, its 1,098 bytes of `.bss` are the arena plus the input and output buffers, and it makes no heap allocation.
 
-`model_int4.hpp` runs the dense layer, which holds 2,560 of the 3,408 weight bytes, on packed per-channel int4 weights (`QDenseInt4`). That brings the weights down to 2,128 bytes and the Cortex-M0+ footprint to 6,008 bytes, 18% less. Accuracy goes from 97.0% to 96.8%, and the int4 variant predicts the same class as the int8 one for 1,775 of 1,797 digits. The int4 kernel is scalar, so it saves flash, not cycles.
+`model_int4.hpp` runs the dense layer, which holds 2,560 of the 3,408 weight bytes, on packed per-channel int4 weights (`QDenseInt4`). That brings the weights down to 2,128 bytes and the Cortex-M0+ footprint to 5,988 bytes, 18% less. Accuracy goes from 97.0% to 96.8%, and the int4 variant predicts the same class as the int8 one for 1,775 of 1,797 digits. The int4 kernel is scalar, so it saves flash, not cycles.
+
+`model_int16x8.hpp` is the same model with int16 activations and its int8 weights (TFLite's 16x8 scheme), generated from the same int8 records without recalibration: each activation gets a symmetric int16 grid over the real range its int8 grid covered, 256 times finer, and each layer clamps to that range. The bottom panel compares both models with the int8 weights run on float activations, computed for the first 256 digits by `float_reference` in the code generator. The 16x8 logits are 126 times closer on average (mean error 0.0013 against 0.162, on logits that span about 73), and the 16x8 model picks the float PyTorch model's class on 1,795 digits against 1,791. Its accuracy is 96.9%, two errors more than int8: on a classifier this small int8 activations already cost nothing, and the gain is the precision of the outputs, which a regression or feature-extraction model would keep. It costs twice the activation RAM (2,048-byte arena, 2,196 bytes of `.bss`) and 248 bytes more code (7,574 bytes on the Cortex-M0+); the weights are unchanged. No cycle counts were measured on target.
 
 [Source on GitHub](https://github.com/danmcleran/tinymind/tree/master/examples/onnx_digits_int8)

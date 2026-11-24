@@ -963,6 +963,59 @@ class BuilderMirrors(unittest.TestCase):
             self.assertEqual(list(cg.softmax_params(s_in)), v[519:522])
 
 
+LUT16_SOURCE = r"""
+#include <cstdint>
+#include <cstdio>
+#include "qactivations.hpp"
+
+int main()
+{
+    double s_in, s_out;
+    int zp_in;
+    while (std::scanf("%lf %d %lf", &s_in, &zp_in, &s_out) == 3)
+    {
+        int16_t lut[tinymind::kQActivationLUT16Size];
+        tinymind::buildQSigmoidLUT16(s_in, zp_in, s_out, lut);
+        for (int i = 0; i < 513; ++i) { std::printf("%d ", lut[i]); }
+        tinymind::buildQTanhLUT16(s_in, zp_in, s_out, lut);
+        for (int i = 0; i < 513; ++i) { std::printf("%d ", lut[i]); }
+        std::printf("\n");
+    }
+    return 0;
+}
+"""
+
+
+@unittest.skipIf(GXX is None, "needs g++")
+class Lut16Mirror(unittest.TestCase):
+    def test_lut16_matches_the_cpp_builders(self):
+        rng = np.random.default_rng(12)
+        cases = [(8.0 / 32768, 0, 1.0 / 32768), (6.0 / 32768, 0, 1.0 / 32768), (4.0 / 32768, -16384, 1.0 / 32768)]
+        for _ in range(60):
+            cases.append((10 ** rng.uniform(-6, -2.5), int(rng.integers(-2000, 2000)), 10 ** rng.uniform(-5, -4)))
+        with tempfile.TemporaryDirectory() as d:
+            exe = _compile(LUT16_SOURCE, d, "lut16",
+                           ["-DTINYMIND_ENABLE_QUANTIZATION=1", "-DTINYMIND_ENABLE_FLOAT=1", "-DTINYMIND_ENABLE_STD=1"])
+            stdin = "".join(f"{a!r} {b} {c!r}\n" for a, b, c in cases)
+            out = subprocess.run([exe], input=stdin, capture_output=True, text=True, check=True).stdout
+        rows = out.strip().split("\n")
+        self.assertEqual(len(rows), len(cases))
+        for (s_in, zp_in, s_out), row in zip(cases, rows):
+            v = [int(x) for x in row.split()]
+            self.assertEqual(cg.activation_lut16("Sigmoid", s_in, zp_in, s_out), v[:513], (s_in, zp_in, s_out))
+            self.assertEqual(cg.activation_lut16("Tanh", s_in, zp_in, s_out), v[513:], (s_in, zp_in, s_out))
+
+    def test_int16_grid(self):
+        g = cg.int16_grid(1 / 256, -128)  # a ReLU-fused int8 grid: [0, 255 / 256]
+        self.assertEqual((g.qmin, g.qmax), (0, 32767))
+        self.assertAlmostEqual(g.scale * 32767, 255 / 256)
+        g = cg.int16_grid(0.1, 0)  # [-12.8, 12.7]
+        self.assertEqual((g.qmin, g.qmax), (-32767, round(12.7 / 12.8 * 32767)))
+        self.assertEqual(cg.round_half_away(2.5), 3)
+        self.assertEqual(cg.round_half_away(-2.5), -3)
+        self.assertEqual(cg.round_half_away(0.49999999999999994), 0)
+
+
 MODEL_DRIVER = r"""
 #include <cstdint>
 #include <cstdio>
@@ -971,16 +1024,17 @@ MODEL_DRIVER = r"""
 
 int main()
 {
-    static int8_t input[@NS@::kModelInputSize];
-    static int8_t output[@NS@::kModelOutputSize];
-    alignas(@NS@::kModelArenaAlignment) static int8_t arena[@NS@::kModelArenaSize > 0 ? @NS@::kModelArenaSize : 1];
+    typedef @NS@::ModelActivationType T;
+    static T input[@NS@::kModelInputSize];
+    static T output[@NS@::kModelOutputSize];
+    alignas(@NS@::kModelArenaAlignment) static T arena[@NS@::kModelArenaSize > 0 ? @NS@::kModelArenaSize / sizeof(T) : 1];
     // Garbage in the arena: the model must not read a byte it did not write.
     std::memset(arena, 0x5A, sizeof(arena));
     for (std::size_t i = 0; i < @NS@::kModelInputSize; ++i)
     {
         int v;
         if (std::scanf("%d", &v) != 1) { return 2; }
-        input[i] = static_cast<int8_t>(v);
+        input[i] = static_cast<T>(v);
     }
     @NS@::forward(input, output, arena);
     for (std::size_t i = 0; i < @NS@::kModelOutputSize; ++i)
@@ -992,7 +1046,7 @@ int main()
 """
 
 
-def compile_model(layers, workdir, tag, in_place=True, extra=(), int4_dense=False):
+def compile_model(layers, workdir, tag, in_place=True, extra=(), int4_dense=False, activation_bits=8):
     """Generate weights.hpp + model.hpp and build a driver around forward().
     Built freestanding (FLOAT=0, STD=0): the generated model must not need
     the host-only builders."""
@@ -1000,7 +1054,7 @@ def compile_model(layers, workdir, tag, in_place=True, extra=(), int4_dense=Fals
     model = os.path.join(workdir, f"{tag}_model.hpp")
     ti.emit_weights_header(weights, tag, layers)
     generated = cg.emit_model_header(model, tag, layers, os.path.basename(weights), in_place=in_place,
-                                     int4_dense=int4_dense)
+                                     int4_dense=int4_dense, activation_bits=activation_bits)
     src = MODEL_DRIVER.replace("@HEADER@", os.path.basename(model)).replace("@NS@", tag)
     exe = _compile(src, workdir, f"{tag}_driver",
                    ["-DTINYMIND_ENABLE_QUANTIZATION=1", "-DTINYMIND_ENABLE_FLOAT=0", "-DTINYMIND_ENABLE_STD=0"]
@@ -1213,6 +1267,65 @@ class ModelCodegen(unittest.TestCase):
         self.assertLessEqual(int(err8.max()), 1)
         self.assertGreater(corr, 0.98)
         self.assertLess(err4.mean(), 4.0)
+
+    def check_16x8(self, net, shape, tag, fmt="QDQ", per_channel=True, seed=0, extra=()):
+        """Generate the int8 and the 16x8 model from one quantized ONNX
+        model and compare both with cg.float_reference(): the 16x8 model must
+        track it far more closely. Returns (err8, err16) in output-range units."""
+        torch.manual_seed(seed)
+        path = export_and_quantize(net, shape, self.workdir, fmt, per_channel, tag)
+        layers = ti.parse_onnx_model(path)
+        exe8, g8 = compile_model(layers, self.workdir, tag + "_8")
+        exe16, g16 = compile_model(layers, self.workdir, tag + "_16", activation_bits=16, extra=extra)
+        self.assertIsNone(simulate_plan(layers, g16.sizes, g16.plan))
+        self.assertEqual(g16.weight_bytes, g8.weight_bytes)
+        first = next(l for l in layers if -1 in l.sources)
+        last = layers[-1]
+        gin = cg.int16_grid(first.input_scale, first.input_zp)
+        gout = cg.int16_grid(last.output_scale, last.output_zp)
+        q8 = nhwc_inputs(shape, first)
+        reals = [(q.reshape(-1) - first.input_zp) * first.input_scale for q in q8]
+        q16 = [np.clip(np.rint(x / gin.scale), -32768, 32767).astype(np.int64) for x in reals]
+        out8, = run_exes([exe8], q8)
+        out16, = run_exes([exe16], q16)
+        ref = np.array([cg.float_reference(layers, x) for x in reals])
+        span = (255 * last.output_scale)
+        err8 = np.abs((out8 - last.output_zp) * last.output_scale - ref) / span
+        err16 = np.abs(out16 * gout.scale - ref) / span
+        print(f"\n  16x8 {tag}: max |model - float| / output range: int8 {err8.max():.2e}, "
+              f"16x8 {err16.max():.2e} (mean {err8.mean():.2e} / {err16.mean():.2e}); "
+              f"arena {g8.plan.arena_size} -> {g16.plan.arena_size} B")
+        self.assertGreater(len(np.unique(out16)), 4)
+        self.assertEqual(g16.plan.arena_size, 2 * g8.plan.arena_size)
+        return err8, err16
+
+    def test_16x8_tracks_float_far_closer_than_int8(self):
+        for net, shape, tag in ((ConvNet(), INPUT_SHAPE, "cg16_chain"),
+                                (ResNetish(False), GRAPH_INPUT_SHAPE, "cg16_res"),
+                                (ActNet(), (1, 6), "cg16_act")):
+            err8, err16 = self.check_16x8(net, shape, tag)
+            self.assertLess(err16.max(), 5e-4, tag)
+            self.assertLess(40 * err16.mean(), err8.mean(), tag)
+        # Per-tensor weights take QConv2D / QDense with a single requantizer.
+        err8, err16 = self.check_16x8(ResNetish(False), GRAPH_INPUT_SHAPE, "cg16_res_pt", per_channel=False, seed=1)
+        self.assertLess(40 * err16.mean(), err8.mean())
+
+    def test_16x8_under_sanitizers(self):
+        flags = ("-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer")
+        self.check_16x8(ResNetish(False), GRAPH_INPUT_SHAPE, "cg16_asan", extra=flags)
+
+    def test_16x8_refusals(self):
+        torch.manual_seed(0)
+        path = export_and_quantize(ResNetish(True), GRAPH_INPUT_SHAPE, self.workdir, "QDQ", True, "cg16_sm")
+        layers = ti.parse_onnx_model(path)
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaisesRegex(ValueError, "int16 softmax"):
+                cg.emit_model_header(os.path.join(d, "m.hpp"), "net", layers, "w.hpp", activation_bits=16)
+            with self.assertRaisesRegex(ValueError, "int4"):
+                cg.emit_model_header(os.path.join(d, "m.hpp"), "net", layers[:-1], "w.hpp", activation_bits=16,
+                                     int4_dense=True)
+            with self.assertRaisesRegex(ValueError, "8 or 16"):
+                cg.emit_model_header(os.path.join(d, "m.hpp"), "net", layers[:-1], "w.hpp", activation_bits=12)
 
     def test_softmax_feeding_a_layer_is_refused(self):
         layers = [_rec("Softmax", [-1], "sm"), _rec("Relu", [0], "r")]

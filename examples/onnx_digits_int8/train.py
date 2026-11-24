@@ -30,8 +30,13 @@ Writes, next to this script:
   model.hpp      layer objects, memory plan and forward() (tinymind_model_codegen)
   model_int4.hpp the same model with its dense layer requantized to packed,
                  per-channel int4 weights, in namespace digits::int4
-  reference.hpp  the input quantization table and, for every test digit, the
-                 class the float model and ONNX Runtime's int8 model predict
+  model_int16x8.hpp
+                 the same model with int16 activations and its int8 weights
+                 (TFLite's 16x8 scheme), in namespace digits::int16x8
+  reference.hpp  the input quantization tables; for every test digit, the
+                 class the float model and ONNX Runtime's int8 model predict;
+                 and, for the first REFERENCE_LOGITS digits, the logits of the
+                 int8-weight model computed in float (float_reference)
 
 The generated headers are committed, so building and running the example needs
 no Python.
@@ -54,6 +59,7 @@ import tinymind_model_codegen as cg  # noqa: E402
 SEED = 1
 EPOCHS = 60
 NAMESPACE = "digits"
+REFERENCE_LOGITS = 256
 
 
 def load(name):
@@ -143,12 +149,22 @@ def main():
     int4 = cg.emit_model_header(os.path.join(HERE, "model_int4.hpp"), NAMESPACE, layers, "weights.hpp",
                                 int4_dense=True, nested_namespace="int4")
     print(f"weights: {generated.weight_bytes} B int8, {int4.weight_bytes} B with the dense layer in int4")
+    wide = cg.emit_model_header(os.path.join(HERE, "model_int16x8.hpp"), NAMESPACE, layers, "weights.hpp",
+                                nested_namespace="int16x8", activation_bits=16)
+    print(f"16x8: arena {wide.plan.arena_size} B, weights {wide.weight_bytes} B")
 
     # The input grid: pixel p in 0..16 is the float p / 16, which ONNX
     # Runtime's QuantizeLinear rounds half to even onto the int8 grid.
     first = next(l for l in layers if -1 in l.sources)
     table = [int(np.clip(np.rint(np.float32(p / 16.0) / np.float32(first.input_scale)) + first.input_zp,
                          -128, 127)) for p in range(17)]
+    # The 16x8 model's symmetric int16 input grid.
+    s16 = cg.int16_grid(first.input_scale, first.input_zp).scale
+    table16 = [min(32767, cg.round_half_away((p / 16.0) / s16)) for p in range(17)]
+    # The logits both quantized models approximate: int8 weights, float
+    # activations clipped to their calibrated ranges, on the exact pixels.
+    reference = [cg.float_reference(layers, x_test[n].reshape(-1)) for n in range(REFERENCE_LOGITS)]
+    flat = [f"{v:.6g}f" for row in reference for v in row]
 
     def arr(name, values, ctype, per_line=32):
         rows = [", ".join(str(v) for v in values[i:i + per_line]) for i in range(0, len(values), per_line)]
@@ -160,11 +176,17 @@ def main():
                 f"namespace {NAMESPACE} {{\n"
                 "    // Pixel value 0..16 -> the model's int8 input grid.\n"
                 + arr("kPixelToInput", table, "int8_t")
+                + "    // Pixel value 0..16 -> the 16x8 model's int16 input grid.\n"
+                + arr("kPixelToInput16", table16, "int16_t", 17)
                 + f"    constexpr std::size_t kTestCount = {len(test_y)};\n"
                 "    // The class the float PyTorch model predicts for each test digit.\n"
                 + arr("kFloatPrediction", float_pred.tolist(), "uint8_t")
                 + "    // The class ONNX Runtime's int8 model predicts for each test digit.\n"
                 + arr("kOrtPrediction", ort_pred.tolist(), "uint8_t")
+                + f"    // Logits of the first {REFERENCE_LOGITS} test digits from the int8-weight model run in\n"
+                "    // float (float_reference): what the int8 and 16x8 models approximate.\n"
+                f"    constexpr std::size_t kReferenceLogitCount = {REFERENCE_LOGITS};\n"
+                + arr("kReferenceLogits", flat, "float", 10)
                 + f"}} // namespace {NAMESPACE}\n")
 
 

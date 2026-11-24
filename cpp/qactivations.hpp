@@ -53,6 +53,14 @@
  * every int8 input value, dequantize to float, apply the float reference,
  * and requantize into the destination tensor's grid; the resulting int8
  * table is embedded as a constant for the deployable build.
+ *
+ * int16 activations use TFLite's 513-entry interpolated table instead of
+ * one entry per input: qApplyLUT16 indexes it with the top 9 bits of the
+ * input and interpolates linearly with the low 7, exactly as TFLite's
+ * LUTLookup does. buildQLUT16 (host-only) fills one for any function, as
+ * TFLite's LUTPopulate<int16_t> does but with its samples on the lookup's
+ * knots; buildQSigmoidLUT16 and buildQTanhLUT16 are the two this library's
+ * importers use.
  */
 
 namespace tinymind {
@@ -149,6 +157,41 @@ namespace tinymind {
         {
             buf[i] = lut[qActivationLUTIndex(buf[i])];
         }
+    }
+
+    /**
+     * Size of an int16 lookup table: 512 base values and one more for the
+     * slope of the last interval.
+     */
+    static constexpr std::size_t kQActivationLUT16Size = 513;
+
+    namespace detail {
+
+        // Two's complement wrap to int16, as TFLite's int16 arithmetic does,
+        // without an implementation-defined narrowing conversion.
+        inline int32_t wrapToInt16(int32_t v)
+        {
+            return static_cast<int32_t>((static_cast<uint32_t>(v) + 32768u) & 0xFFFFu) - 32768;
+        }
+
+    } // namespace detail
+
+    /**
+     * Look up an int16 input in a 513-entry table: the top 9 bits of the
+     * input pick an interval, the low 7 interpolate along it, rounding
+     * half up. Bit-exact with TFLite's LUTLookup(int16_t, const int16_t*),
+     * including its int16 wrap of a slope wider than 32767 (a table that
+     * steep is not one buildQLUT16 makes for a monotone function).
+     */
+    inline int16_t qApplyLUT16(int16_t x, const int16_t* lut)
+    {
+        const uint32_t biased = static_cast<uint32_t>(static_cast<int32_t>(x) + 32768);
+        const std::size_t index = static_cast<std::size_t>(biased >> 7);
+        const int32_t offset = static_cast<int32_t>(biased & 0x7Fu);
+        const int32_t base = static_cast<int32_t>(lut[index]);
+        const int32_t slope = detail::wrapToInt16(static_cast<int32_t>(lut[index + 1]) - base);
+        const int32_t delta = (slope * offset + 64) >> 7;
+        return static_cast<int16_t>(detail::wrapToInt16(base + delta));
     }
 
     /**
@@ -296,6 +339,77 @@ namespace tinymind {
                               y_f / output_scale;
             lut_out[idx] = qSaturateRoundToInt8(y_q);
         }
+    }
+
+    /**
+     * Fill a 513-entry int16 table for qApplyLUT16 with transform(x), from
+     * the input grid (input_scale, input_zero_point) to the symmetric int16
+     * output grid of output_scale (zero point 0, as TFLite requires of int16
+     * tensors). lut_out must hold kQActivationLUT16Size entries.
+     *
+     * Entry i is the function at input -32768 + 128 i, the knot qApplyLUT16
+     * interpolates from, less half the linear interpolation's error at the
+     * interval's midpoint, as TFLite's LUTPopulateInt16 does, so the error
+     * is shared between the knots and the midpoint. Unlike TFLite's, the
+     * samples sit exactly on the knots: TFLite spaces them 65535 / 512
+     * inputs apart and scales by 65536 / 65535 / output_scale, which skews
+     * its table by up to half an input step (tanh(0) reads -3 steps on a
+     * 6 / 32768 input grid). The last entry, at input 32768, only sets the
+     * slope of the last interval.
+     */
+    inline void buildQLUT16(double input_scale, int32_t input_zero_point, double output_scale,
+                            double (*transform)(double), int16_t* lut_out)
+    {
+        const int steps = 512;
+        const double inv = 1.0 / output_scale;
+        for (int i = 0; i <= steps; ++i)
+        {
+            const double x = input_scale * static_cast<double>(-32768 + 128 * i - input_zero_point);
+            const double sample = std::round(transform(x) * inv);
+            double v = sample;
+            if (i < steps)
+            {
+                const double x_next = input_scale * static_cast<double>(-32768 + 128 * (i + 1) - input_zero_point);
+                const double mid_interp = std::round((transform(x_next) * inv + sample) / 2);
+                const double mid = std::round(transform((x + x_next) / 2) * inv);
+                v = sample - std::round((mid_interp - mid) / 2);
+            }
+            lut_out[i] = static_cast<int16_t>((v < -32768.0) ? -32768.0 : ((v > 32767.0) ? 32767.0 : v));
+        }
+    }
+
+    namespace detail {
+
+        inline double logisticTransform(double x)
+        {
+            return 1.0 / (1.0 + std::exp(-x));
+        }
+
+        inline double tanhTransform(double x)
+        {
+            return std::tanh(x);
+        }
+
+    } // namespace detail
+
+    /**
+     * 513-entry int16 sigmoid table for qApplyLUT16 (see buildQLUT16);
+     * output_scale = 2^-15 covers (0, 1).
+     */
+    inline void buildQSigmoidLUT16(double input_scale, int32_t input_zero_point, double output_scale,
+                                   int16_t* lut_out)
+    {
+        buildQLUT16(input_scale, input_zero_point, output_scale, detail::logisticTransform, lut_out);
+    }
+
+    /**
+     * 513-entry int16 tanh table for qApplyLUT16; output_scale = 2^-15
+     * covers (-1, 1).
+     */
+    inline void buildQTanhLUT16(double input_scale, int32_t input_zero_point, double output_scale,
+                                int16_t* lut_out)
+    {
+        buildQLUT16(input_scale, input_zero_point, output_scale, detail::tanhTransform, lut_out);
     }
 
 } // namespace tinymind

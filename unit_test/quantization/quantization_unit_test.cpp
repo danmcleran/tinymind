@@ -8994,5 +8994,6 @@ BOOST_AUTO_TEST_CASE(qstatic_gbdt_policies_match_qgbdt)
 #include "qmel_tests.hpp"
 #include "qanomaly_tests.hpp"
 #include "qint4_tests.hpp"
+#include "qint16x8_tests.hpp"
 
 BOOST_AUTO_TEST_SUITE_END()

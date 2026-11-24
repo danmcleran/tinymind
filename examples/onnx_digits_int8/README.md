@@ -12,9 +12,13 @@ ONNX model that ONNX Runtime quantized:
   * `model_int4.hpp` is the same model with its dense layer requantized to
     packed, per-channel int4 weights (`QDenseInt4`), in namespace
     `digits::int4`. It shares `weights.hpp`.
-  * `reference.hpp` holds the input quantization table and, for each test
+  * `model_int16x8.hpp` is the same model with int16 activations and its
+    int8 weights (TFLite's 16x8 scheme), in namespace `digits::int16x8`. It
+    shares `weights.hpp` too.
+  * `reference.hpp` holds the input quantization tables; for each test
     digit, the class the float PyTorch model and ONNX Runtime's int8 model
-    predict.
+    predict; and, for the first 256 digits, the logits of the int8-weight
+    model computed with float activations.
 
 `onnx_digits_int8.cpp` reads the test set, maps each pixel onto the
 model's int8 input grid, calls `forward()`, and compares the result with
@@ -49,6 +53,9 @@ same class as ONNX Runtime:     1795 of 1797
 activation arena:               1024 bytes (unshared 2048, busiest layer 1024)
 int4 dense layer accuracy:      0.9683 (same class as int8 on 1775 of 1797)
 weights:                        3408 bytes int8, 2128 bytes with the dense layer in int4
+16x8 accuracy:                  0.9688 (arena 2048 bytes, same weights)
+same class as the float model:  int8 1791, 16x8 1795 of 1797
+logit error vs float activations (first 256 digits): mean 0.1619 int8, 0.00128 16x8; max 0.6565 int8, 0.00633 16x8
 ```
 
 The generated int8 model is as accurate as the float model. It predicts the
@@ -66,15 +73,18 @@ layer to read.
 
 ![Memory plan and test confusion](../../docs/assets/plots/onnx_digits_int8.png)
 
-On the left, each box is one arena buffer. It spans the layers its output is
-live for and sits at the bytes it occupies. On the right is the confusion
-matrix of the generated int8 model.
+At the top left, each box is one arena buffer. It spans the layers its
+output is live for and sits at the bytes it occupies. At the top right is the
+confusion matrix of the generated int8 model. The bottom panel is the
+16x8 model's logit error next to the int8 model's, described below.
 
-Compiled for a Cortex-M0+ (`arm-none-eabi-g++ -mcpu=cortex-m0plus -Os`), a
-translation unit holding only `model.hpp` and a `main` that calls `forward`
-is 7,342 bytes of code and read-only data (kernels, weights, requantizers
-and layer objects). It has no `.data`, and its 1,100 bytes of `.bss` are the
-arena plus the input and output buffers. Nothing is allocated on the heap.
+Compiled for a Cortex-M0+ (`arm-none-eabi-g++ -std=c++14 -mcpu=cortex-m0plus
+-mthumb -Os -ffunction-sections -fdata-sections -c`), a translation unit
+holding only `model.hpp`, static input, output and arena buffers, and a
+`main` that calls `forward` is 7,326 bytes of code and read-only data
+(kernels, weights, requantizers and layer objects). It has no `.data`, and
+its 1,098 bytes of `.bss` are the arena plus the input and output buffers.
+Nothing is allocated on the heap.
 
 ### int4 dense layer
 
@@ -87,13 +97,50 @@ output channel, and stores two weights per byte:
 | Accuracy | 97.0% | 96.8% (3 more errors in 1,797) |
 | Same class as the int8 model | | 1,775 of 1,797 digits |
 | Weight bytes | 3,408 | 2,128 |
-| Cortex-M0+ code and read-only data | 7,342 bytes | 6,008 bytes |
+| Cortex-M0+ code and read-only data | 7,326 bytes | 5,988 bytes |
 
 That is 18% less flash for the whole model. The int4 kernel is scalar: on
 a Cortex-M4 the int8 dense layer can use the SMLAD path and the int4 one
 cannot, so int4 saves flash, not cycles. The requantization is
 post-training, with no retraining; quantization-aware training would
 recover more of the accuracy.
+
+### int16 activations (16x8)
+
+`model_int16x8.hpp` keeps the int8 weights and runs every activation in
+int16, as TFLite's 16x8 scheme does. The code generator derives it from the
+same int8 ONNX model with no recalibration. Each activation tensor gets a
+symmetric int16 grid over the real range its int8 grid covered, 256 times
+finer, and each layer clamps to that range, so a ReLU that the int8 model
+folded into a zero point of -128 still clamps at zero. Biases become int64,
+and each layer requantizes its int64 accumulator with TFLite's 64-bit
+rounding.
+
+Both quantized models approximate the same thing: the int8 weights run with
+real-valued activations, each clipped to its calibrated range.
+`reference.hpp` holds those logits for the first 256 test digits, computed
+in float by `float_reference` in the code generator:
+
+| | int8 | 16x8 |
+|---|---|---|
+| Mean logit error (logits span about 73) | 0.162 | 0.0013 (126x smaller) |
+| Largest logit error | 0.657 | 0.0063 |
+| Same class as the float PyTorch model | 1,791 of 1,797 | 1,795 of 1,797 |
+| Accuracy | 97.0% | 96.9% (2 more errors in 1,797) |
+| Activation arena | 1,024 bytes | 2,048 bytes |
+| Weight bytes | 3,408 | 3,408 |
+| Cortex-M0+ code and read-only data | 7,326 bytes | 7,574 bytes |
+| Cortex-M0+ `.bss` | 1,098 bytes | 2,196 bytes |
+
+For a classifier this small, int8 activations already cost nothing in
+accuracy, so the 16x8 model is no more accurate. What 16-bit activations
+buy is precision in the outputs: a regression target, a spectrogram feature
+or a control signal that int8's 256 steps would quantize coarsely. The
+price is twice the activation RAM. Code grows by 248 bytes, for the 64-bit
+requantization. The weights do not change. On Cortex-M0+ every output
+costs a 64-bit multiply in the requantizer, but the dot products stay in
+32 bits: they sum in blocks of 256 terms before widening. No cycle counts
+were measured on target.
 
 ## Build and run
 
@@ -107,10 +154,12 @@ make plot     # output/onnx_digits_int8.png (needs matplotlib in a venv)
 ```
 
 `make run` writes `output/onnx_digits_int8.csv` (one row per test digit:
-label, tinymind, ONNX Runtime and float predictions, and the 64 pixels),
-`output/onnx_digits_int8_plan.csv` (the arena buffers) and
-`output/onnx_digits_int8_summary.csv` (arena, unshared and busiest-layer
-bytes).
+label, the int8, int4 and 16x8 predictions, ONNX Runtime and float
+predictions, and the 64 pixels), `output/onnx_digits_int8_plan.csv` (the
+arena buffers), `output/onnx_digits_int8_summary.csv` (arena, unshared and
+busiest-layer bytes, accuracies and logit errors) and
+`output/onnx_digits_int8_logits.csv` (each of the first 256 digits' logits
+from the float-activation reference, the int8 model and the 16x8 model).
 
 ## Regenerating the model
 

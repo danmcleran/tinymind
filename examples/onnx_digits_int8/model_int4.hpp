@@ -23,9 +23,10 @@
 
 namespace digits {
 namespace int4 {
-    // Model interface. input and output are caller-owned int8 buffers in
+    // Model interface. input and output are caller-owned int8_t buffers in
     // NHWC order; arena is caller-owned scratch of kModelArenaSize bytes,
     // aligned to kModelArenaAlignment, overlapping neither of them.
+    typedef int8_t ModelActivationType;
     constexpr std::size_t kModelInputSize      = 64;
     constexpr std::size_t kModelOutputSize     = 10;
     constexpr std::size_t kModelArenaSize      = 1024;
