@@ -9,9 +9,10 @@ ONNX model that ONNX Runtime quantized:
   * `model.hpp` holds one `constexpr` tinymind layer object per layer, a
     static memory plan for every intermediate activation, and
     `forward(input, output, arena)` (`apps/import_onnx/tinymind_model_codegen.py`);
-  * `model_int4.hpp` is the same model with its dense layer requantized to
-    packed, per-channel int4 weights (`QDenseInt4`), in namespace
-    `digits::int4`. It shares `weights.hpp`.
+  * `model_int4.hpp` is the same model with every weight layer requantized
+    to packed, per-channel int4 weights (`QConv2DInt4`,
+    `QDepthwiseConv2DInt4`, `QDenseInt4`), in namespace `digits::int4`. It
+    shares `weights.hpp`.
   * `model_int16x8.hpp` is the same model with int16 activations and its
     int8 weights (TFLite's 16x8 scheme), in namespace `digits::int16x8`. It
     shares `weights.hpp` too.
@@ -51,8 +52,8 @@ ONNX Runtime int8 accuracy:     0.9699
 float (PyTorch) accuracy:       0.9699
 same class as ONNX Runtime:     1795 of 1797
 activation arena:               1024 bytes (unshared 2048, busiest layer 1024)
-int4 dense layer accuracy:      0.9683 (same class as int8 on 1775 of 1797)
-weights:                        3408 bytes int8, 2128 bytes with the dense layer in int4
+int4 weights accuracy:          0.9672 (same class as int8 on 1759 of 1797)
+weights:                        3408 bytes int8, 1704 bytes in int4
 16x8 accuracy:                  0.9688 (arena 2048 bytes, same weights)
 same class as the float model:  int8 1791, 16x8 1795 of 1797
 logit error vs float activations (first 256 digits): mean 0.1619 int8, 0.00128 16x8; max 0.6565 int8, 0.00633 16x8
@@ -86,29 +87,41 @@ holding only `model.hpp`, static input, output and arena buffers, and a
 its 1,098 bytes of `.bss` are the arena plus the input and output buffers.
 Nothing is allocated on the heap.
 
-### int4 dense layer
+### int4 weights
 
-The dense layer holds 2,560 of the model's 3,408 weight bytes.
-`model_int4.hpp` requantizes it to symmetric int4, with one scale per
-output channel, and stores two weights per byte:
+`model_int4.hpp` requantizes every weight layer (the three convolutions,
+the depthwise layer and the dense layer) to symmetric int4, with one scale
+per output channel, and stores two weights per byte:
 
-| | int8 | int4 dense layer |
+| | int8 | int4 |
 |---|---|---|
-| Accuracy | 97.0% | 96.8% (3 more errors in 1,797) |
-| Same class as the int8 model | | 1,775 of 1,797 digits |
-| Weight bytes | 3,408 | 2,128 |
-| Cortex-M0+ code and read-only data | 7,326 bytes | 5,988 bytes |
+| Accuracy | 97.0% | 96.7% (5 more errors in 1,797) |
+| Same class as the int8 model | | 1,759 of 1,797 digits |
+| Weight bytes | 3,408 | 1,704 |
+| Cortex-M0+ code and read-only data | 7,326 bytes | 4,986 bytes |
 
-That is 18% less flash for the whole model. On the boards
-([`benchmarks/tier1_onboard`](../../benchmarks/tier1_onboard)) the scalar
-int4 kernel costs a little time: the whole model takes 2.6% longer on the
-Cortex-M0+ (780k cycles against 761k at `-O3`) and 1% longer on the
-Cortex-M4 with scalar kernels. With the Arm DSP backend the int4 dense
-layer runs on SMLAD too, faster than the int8 one (7.6k cycles against
-8.4k), and the model is 0.6% faster than int8 (170k cycles against 171k).
-The requantization is
+That is 32% less flash for the whole model. On the boards
+([`benchmarks/tier1_onboard`](../../benchmarks/tier1_onboard), `-O3`) it
+costs almost no time:
+
+| | int8 | int4 |
+|---|---:|---:|
+| Cortex-M0+ (NUCLEO-L031K6, 32 MHz) | 760,608 cycles (23.8 ms) | 778,696 cycles (24.3 ms) |
+| Cortex-M4, scalar kernels (NUCLEO-F411RE, 100 MHz) | 479,524 (4.8 ms) | 454,157 (4.5 ms) |
+| Cortex-M4, Arm DSP backend | 171,384 (1.7 ms) | 172,082 (1.7 ms) |
+
+The dense layer computes from its packed weights, on SMLAD with the Arm DSP
+backend. Each convolution unpacks its weights (at most 576 bytes here) onto
+the stack for the length of its call and runs the int8 kernels over them,
+which costs one pass over the weights and that much stack: the model's
+deepest stack grows from 636 to 1,348 bytes on the Cortex-M4 and from 1,588
+to 2,092 on the Cortex-M0+. A layer with more than
+`TINYMIND_INT4_CONV_UNPACK_MAX_BYTES` weights (1,024 by default) computes
+from the packed weights instead, more slowly. The requantization is
 post-training, with no retraining; quantization-aware training would
-recover more of the accuracy.
+recover more of the accuracy. The code generator can also convert the dense
+layers alone (`int4_dense=True` without `int4_conv=True`): on this model
+that keeps 96.8% accuracy for 2,128 weight bytes.
 
 ### int16 activations (16x8)
 

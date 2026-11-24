@@ -49,7 +49,9 @@
  * Tensor layout:
  *
  *   input    NHWC                  [H][W][Channels]
- *   weights  [Channels][KH][KW]    one filter per channel
+ *   weights  [Channels][KH][KW]    one filter per channel (with
+ *                                   WeightStorage Int4Weights, the same
+ *                                   tensor packed two per byte)
  *   biases   [Channels]            int32 with effective scale
  *                                   input_scale * weight_scale[c]
  *   output   NHWC                  [OutputHeight][OutputWidth][Channels]
@@ -161,6 +163,9 @@ namespace tinymind {
 
         typedef detail::DepthwiseWindow<InputStorage_, WeightStorage_, AccumType_, KH_ * KW_> Window;
         typedef typename Window::type WindowType;
+        // How the weights are held: int8 elements, or packed nibbles for
+        // Int4Weights (QDepthwiseConv2DInt4 in qint4.hpp).
+        typedef detail::WeightArray<WeightStorage_> WeightAccess;
 
         static_assert(H_ + PadTop_ + PadBottom_ >= KH_, "Padded input height must be >= kernel height.");
         static_assert(W_ + PadLeft_ + PadRight_ >= KW_, "Padded input width must be >= kernel width.");
@@ -168,7 +173,7 @@ namespace tinymind {
         static_assert(StrideW_ > 0, "Horizontal stride must be > 0.");
         static_assert(Channels_ > 0, "Channels must be > 0.");
 
-        const WeightType* weights;
+        typename WeightAccess::pointer weights; // const WeightType*, or packed bytes for Int4Weights
         const AccumulatorType* biases;
         InputType input_zero_point;
         const Requantizer<AccumulatorType, OutputType>* requantizers; // [Channels]
@@ -193,7 +198,7 @@ namespace tinymind {
                           "The padded-row band of this depthwise layer exceeds TINYMIND_CONV_PAD_BAND_MAX_BYTES: "
                           "raise the limit, or pad with QPad2D and use an unpadded layer.");
 
-            const WeightType* const layerWeights = weights;
+            const typename WeightAccess::pointer layerWeights = weights;
             const AccumulatorType* const layerBiases = biases;
             const InputType inputZeroPoint = input_zero_point;
             const Requantizer<AccumulatorType, OutputType>* const rqs = requantizers;
@@ -205,7 +210,7 @@ namespace tinymind {
                 AccumulatorType weightSum = static_cast<AccumulatorType>(0);
                 for (std::size_t k = 0; k < WeightsPerChannel; ++k)
                 {
-                    taps[k] = static_cast<WindowType>(layerWeights[c * WeightsPerChannel + k]);
+                    taps[k] = static_cast<WindowType>(WeightAccess::at(layerWeights, c * WeightsPerChannel + k));
                     weightSum += static_cast<AccumulatorType>(taps[k]);
                 }
                 const AccumulatorType bias = ((layerBiases != nullptr)
@@ -288,7 +293,7 @@ namespace tinymind {
             // Snapshot the fields into locals. Every output store is an int8_t write,
             // which may alias *this, so member reads inside the loops would be
             // reloaded -- and the requantizer's shift re-decoded -- once per output.
-            const WeightType* const layerWeights = weights;
+            const typename WeightAccess::pointer layerWeights = weights;
             const AccumulatorType* const layerBiases = biases;
             const InputType inputZeroPoint = input_zero_point;
             const Requantizer<AccumulatorType, OutputType>* const rqs = requantizers;
@@ -305,7 +310,7 @@ namespace tinymind {
                 AccumulatorType weightSum = static_cast<AccumulatorType>(0);
                 for (std::size_t k = 0; k < WeightsPerChannel; ++k)
                 {
-                    taps[k] = static_cast<WindowType>(layerWeights[c * WeightsPerChannel + k]);
+                    taps[k] = static_cast<WindowType>(WeightAccess::at(layerWeights, c * WeightsPerChannel + k));
                     weightSum += static_cast<AccumulatorType>(taps[k]);
                 }
 

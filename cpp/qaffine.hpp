@@ -567,6 +567,58 @@ namespace tinymind {
             }
         };
 
+    } // namespace detail
+
+    /**
+     * Weight storage tag for packed int4 weights (qint4.hpp's layout: two
+     * per byte, element k in the low nibble of byte k / 2 when k is even).
+     * A layer given it as its weight storage type reads its weights from a
+     * const uint8_t* (see detail::WeightArray).
+     */
+    struct Int4Weights
+    {
+    };
+
+    namespace detail {
+
+        template<>
+        struct StorageRange<Int4Weights>
+        {
+            static constexpr bool known = true;
+            static constexpr int32_t min = -8;
+            static constexpr int32_t max = 7;
+        };
+
+        /**
+         * How a layer holds and reads its weights: a pointer to WeightStorage
+         * elements, indexed directly, except for Int4Weights, where it is a
+         * pointer to packed bytes and element i is a nibble.
+         */
+        template<typename WeightStorage>
+        struct WeightArray
+        {
+            typedef const WeightStorage* pointer;
+            typedef WeightStorage value_type;
+
+            static WeightStorage at(pointer weights, std::size_t i)
+            {
+                return weights[i];
+            }
+        };
+
+        template<>
+        struct WeightArray<Int4Weights>
+        {
+            typedef const uint8_t* pointer;
+            typedef int8_t value_type;
+
+            static int8_t at(pointer weights, std::size_t i)
+            {
+                const uint32_t nibble = (static_cast<uint32_t>(weights[i / 2]) >> ((i & 1u) * 4u)) & 15u;
+                return static_cast<int8_t>(static_cast<int32_t>(nibble ^ 8u) - 8);
+            }
+        };
+
         /**
          * A Requantizer decoded once for a kernel's inner loop, for the
          * common case: multiplier >= 0, shift >= 2, and qmin/qmax spanning

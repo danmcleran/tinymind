@@ -196,3 +196,175 @@ BOOST_AUTO_TEST_CASE(qint4_per_channel_quantization)
     }
     BOOST_TEST(scales[5] == 1.0f); // all-zero channel
 }
+
+namespace qint4_test
+{
+    template<typename Layer>
+    void fillRequantizers(std::mt19937& rng, std::vector<int32_t>& biases,
+                          std::vector<tinymind::Requantizer<int32_t, int8_t> >& rqs, std::size_t n)
+    {
+        std::uniform_int_distribution<int32_t> bias(-20000, 20000);
+        std::uniform_int_distribution<int32_t> shift(4, 12);
+        std::uniform_int_distribution<int32_t> mult(1 << 29, (1 << 30) + (1 << 29));
+        std::uniform_int_distribution<int> zp(-32, 32);
+        biases.resize(n);
+        rqs.resize(n);
+        for (std::size_t o = 0; o < n; ++o)
+        {
+            biases[o] = bias(rng);
+            rqs[o].multiplier = mult(rng);
+            rqs[o].shift = shift(rng);
+            rqs[o].zero_point = static_cast<int8_t>(zp(rng));
+            rqs[o].qmin = (o % 3 == 0) ? 0 : -128; // some outputs with a fused ReLU
+            rqs[o].qmax = 127;
+        }
+    }
+
+    // QConv2DInt4 against QConv2DPerChannel with the same weights as int8.
+    template<std::size_t H, std::size_t W, std::size_t C, std::size_t KH, std::size_t KW,
+             std::size_t SH, std::size_t SW, std::size_t F,
+             std::size_t PT, std::size_t PB, std::size_t PL, std::size_t PR>
+    void checkConv(std::mt19937& rng)
+    {
+        typedef tinymind::QConv2DInt4<int8_t, int32_t, int8_t, H, W, C, KH, KW, SH, SW, F, PT, PB, PL, PR> Int4;
+        typedef tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, H, W, C, KH, KW, SH, SW, F,
+                                            PT, PB, PL, PR> Int8;
+        static_assert(Int4::OutputSize == Int8::OutputSize, "same output shape");
+        const std::size_t total = F * KH * KW * C;
+        std::uniform_int_distribution<int> code(-8, 7);
+        std::uniform_int_distribution<int> value(-128, 127);
+        std::vector<int8_t> w(total);
+        for (int8_t& v : w)
+        {
+            v = static_cast<int8_t>(code(rng));
+        }
+        std::vector<uint8_t> packed(Int4::PackedWeightBytes);
+        BOOST_TEST(packed.size() == tinymind::int4PackedBytes(total));
+        tinymind::packInt4(w.data(), total, packed.data());
+        std::vector<int32_t> biases;
+        std::vector<tinymind::Requantizer<int32_t, int8_t> > rqs;
+        fillRequantizers<Int4>(rng, biases, rqs, F);
+        std::vector<int8_t> x(H * W * C);
+        std::vector<int8_t> got(Int4::OutputSize);
+        std::vector<int8_t> want(Int4::OutputSize);
+        for (int trial = 0; trial < 6; ++trial)
+        {
+            const bool withBias = (trial % 2) == 0;
+            const int8_t zp = static_cast<int8_t>((trial == 1) ? -128 : ((trial == 3) ? 127 : value(rng)));
+            for (int8_t& v : x)
+            {
+                v = static_cast<int8_t>(value(rng));
+            }
+            const Int4 int4Layer = {packed.data(), withBias ? biases.data() : nullptr, zp, rqs.data()};
+            Int8 int8Layer;
+            int8Layer.weights = w.data();
+            int8Layer.biases = withBias ? biases.data() : nullptr;
+            int8Layer.input_zero_point = zp;
+            int8Layer.requantizers = rqs.data();
+            int4Layer.forward(x.data(), got.data());
+            int8Layer.forward(x.data(), want.data());
+            std::size_t mismatches = 0;
+            for (std::size_t i = 0; i < got.size(); ++i)
+            {
+                mismatches += (got[i] != want[i]) ? 1u : 0u;
+            }
+            BOOST_TEST(mismatches == 0u, "conv " << H << "x" << W << "x" << C << " k" << KH << "x" << KW
+                                                 << " f" << F << " trial " << trial);
+        }
+    }
+
+    // QDepthwiseConv2DInt4 against QDepthwiseConv2D with int8 weights.
+    template<std::size_t H, std::size_t W, std::size_t C, std::size_t KH, std::size_t KW,
+             std::size_t SH, std::size_t SW, std::size_t PT, std::size_t PB, std::size_t PL, std::size_t PR>
+    void checkDepthwise(std::mt19937& rng)
+    {
+        typedef tinymind::QDepthwiseConv2DInt4<int8_t, int32_t, int8_t, H, W, C, KH, KW, SH, SW, PT, PB, PL, PR> Int4;
+        typedef tinymind::QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, H, W, C, KH, KW, SH, SW,
+                                           PT, PB, PL, PR> Int8;
+        const std::size_t total = C * KH * KW;
+        std::uniform_int_distribution<int> code(-8, 7);
+        std::uniform_int_distribution<int> value(-128, 127);
+        std::vector<int8_t> w(total);
+        for (int8_t& v : w)
+        {
+            v = static_cast<int8_t>(code(rng));
+        }
+        std::vector<uint8_t> packed(tinymind::int4PackedBytes(total));
+        tinymind::packInt4(w.data(), total, packed.data());
+        std::vector<int32_t> biases;
+        std::vector<tinymind::Requantizer<int32_t, int8_t> > rqs;
+        fillRequantizers<Int4>(rng, biases, rqs, C);
+        std::vector<int8_t> x(H * W * C);
+        std::vector<int8_t> got(Int4::OutputSize);
+        std::vector<int8_t> want(Int4::OutputSize);
+        for (int trial = 0; trial < 6; ++trial)
+        {
+            const bool withBias = (trial % 2) == 0;
+            const int8_t zp = static_cast<int8_t>((trial == 1) ? -128 : ((trial == 3) ? 127 : value(rng)));
+            for (int8_t& v : x)
+            {
+                v = static_cast<int8_t>(value(rng));
+            }
+            const Int4 int4Layer = {packed.data(), withBias ? biases.data() : nullptr, zp, rqs.data()};
+            const Int8 int8Layer = {w.data(), withBias ? biases.data() : nullptr, zp, rqs.data()};
+            int4Layer.forward(x.data(), got.data());
+            int8Layer.forward(x.data(), want.data());
+            std::size_t mismatches = 0;
+            for (std::size_t i = 0; i < got.size(); ++i)
+            {
+                mismatches += (got[i] != want[i]) ? 1u : 0u;
+            }
+            BOOST_TEST(mismatches == 0u, "depthwise " << H << "x" << W << "x" << C << " k" << KH << "x" << KW
+                                                      << " trial " << trial);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(qint4_conv_matches_int8_kernel)
+{
+    std::mt19937 rng(23);
+    // Patch path, an odd 9-weight window (every second filter mid-byte), SAME.
+    qint4_test::checkConv<8, 8, 1, 3, 3, 1, 1, 8, 1, 1, 1, 1>(rng);
+    // Patch path, a 72-weight window, two filters per pass on the Arm DSP backend.
+    qint4_test::checkConv<8, 8, 8, 3, 3, 1, 1, 8, 1, 1, 1, 1>(rng);
+    // Odd filter count and an odd row length in an even window.
+    qint4_test::checkConv<7, 5, 3, 2, 3, 1, 1, 3, 0, 0, 0, 0>(rng);
+    // Row path (a 144-weight window), stride 2, asymmetric padding.
+    qint4_test::checkConv<6, 6, 16, 3, 3, 2, 2, 5, 0, 1, 0, 1>(rng);
+    // Pointwise: a 1x1 kernel reads each pixel in place.
+    qint4_test::checkConv<4, 4, 8, 1, 1, 1, 1, 16, 0, 0, 0, 0>(rng);
+    qint4_test::checkConv<3, 5, 7, 1, 1, 1, 1, 3, 0, 0, 0, 0>(rng);
+    // A 1-row kernel with horizontal padding and stride.
+    qint4_test::checkConv<5, 7, 3, 1, 3, 1, 2, 4, 0, 0, 1, 1>(rng);
+}
+
+BOOST_AUTO_TEST_CASE(qint4_conv_direct_path_matches_int8_kernel)
+{
+    // Layers above TINYMIND_INT4_CONV_UNPACK_MAX_BYTES compute from the
+    // packed weights. The three forms of that path:
+    std::mt19937 rng(25);
+    const std::size_t unpackLimit = TINYMIND_INT4_CONV_UNPACK_MAX_BYTES;
+    BOOST_TEST(unpackLimit == 1024u);
+    // Copied to locals: BOOST_TEST binds a static constexpr member by reference.
+    const bool sixteenFiltersUnpack = tinymind::QConv2DInt4<int8_t, int32_t, int8_t, 8, 8, 8, 3, 3, 1, 1, 16>::UnpacksWeights;
+    const bool eightFiltersUnpack = tinymind::QConv2DInt4<int8_t, int32_t, int8_t, 8, 8, 8, 3, 3, 1, 1, 8>::UnpacksWeights;
+    BOOST_TEST(!sixteenFiltersUnpack);
+    BOOST_TEST(eightFiltersUnpack);
+    // A gathered 72-weight patch, two filters per pass on the Arm DSP backend, SAME.
+    qint4_test::checkConv<8, 8, 8, 3, 3, 1, 1, 16, 1, 1, 1, 1>(rng);
+    // An odd 9-weight window over many filters (every second one mid-byte).
+    qint4_test::checkConv<6, 6, 1, 3, 3, 1, 1, 121, 0, 0, 0, 0>(rng);
+    // One dot product per kernel row (a 144-weight window), stride 2, asymmetric padding.
+    qint4_test::checkConv<6, 6, 16, 3, 3, 2, 2, 9, 0, 1, 0, 1>(rng);
+    // Pointwise, read in place.
+    qint4_test::checkConv<4, 4, 32, 1, 1, 1, 1, 33, 0, 0, 0, 0>(rng);
+}
+
+BOOST_AUTO_TEST_CASE(qint4_depthwise_matches_int8_kernel)
+{
+    std::mt19937 rng(24);
+    qint4_test::checkDepthwise<8, 8, 8, 3, 3, 1, 1, 0, 0, 0, 0>(rng);
+    qint4_test::checkDepthwise<8, 8, 8, 3, 3, 1, 1, 1, 1, 1, 1>(rng);
+    qint4_test::checkDepthwise<9, 7, 5, 3, 3, 2, 2, 1, 1, 1, 1>(rng);
+    qint4_test::checkDepthwise<6, 6, 3, 2, 2, 1, 1, 0, 0, 0, 0>(rng);
+}

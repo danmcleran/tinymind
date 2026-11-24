@@ -67,23 +67,56 @@ namespace int4 {
     namespace model_detail {
 
         // [0] Conv c1_Conv <- input
-        constexpr tinymind::Requantizer<int32_t, int8_t> c1_Conv_requantizers[8] = {
-            {1223013959, 9, -128, -128, 127}, {1523593256, 10, -128, -128, 127}, {1077312074, 9, -128, -128, 127},
-            {1689086850, 9, -128, -128, 127}, {1797262620, 9, -128, -128, 127}, {1221314614, 9, -128, -128, 127},
-            {1397797218, 9, -128, -128, 127}, {1635708787, 9, -128, -128, 127}
+        // int4 per channel: 36 bytes, against 72 as int8.
+        constexpr uint8_t c1_Conv_weights_int4[36] = {
+            160,  57,  59,  98, 165, 205, 164,  76, 119, 103, 194,  19, 235, 119,  65,  84,
+            198, 217,  51,  22,  39,  86,  13,  43, 242,  25,  22, 116, 194,  52,  43, 100,
+            191,  35, 233,   5
         };
-        typedef tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 8, 8, 1, 3, 3, 1, 1, 8, 1, 1, 1, 1> c1_Conv_type;
-        constexpr c1_Conv_type c1_Conv_layer = {kc1_Conv_Weights, kc1_Conv_Biases, -128, c1_Conv_requantizers};
+        constexpr int32_t c1_Conv_biases_int4[8] = {
+            674, 468, 692, 359, 567, 1016, -1292, 253
+        };
+        constexpr tinymind::Requantizer<int32_t, int8_t> c1_Conv_requantizers[8] = {
+            {1386810472, 5, -128, -128, 127}, {1727645924, 6, -128, -128, 127}, {1221594941, 5, -128, -128, 127},
+            {1915303839, 5, -128, -128, 127}, {2037967435, 5, -128, -128, 127}, {1384883536, 5, -128, -128, 127},
+            {1585002203, 5, -128, -128, 127}, {1854776928, 5, -128, -128, 127}
+        };
+        typedef tinymind::QConv2DInt4<int8_t, int32_t, int8_t, 8, 8, 1, 3, 3, 1, 1, 8, 1, 1, 1, 1> c1_Conv_type;
+        constexpr c1_Conv_type c1_Conv_layer = {c1_Conv_weights_int4, c1_Conv_biases_int4, -128, c1_Conv_requantizers};
         static_assert(c1_Conv_type::OutputSize == 512, "c1_Conv: output size");
 
         // [1] Conv c2_Conv <- c1_Conv
-        constexpr tinymind::Requantizer<int32_t, int8_t> c2_Conv_requantizers[8] = {
-            {1115667282, 8, -128, -128, 127}, {1084604887, 10, -128, -128, 127}, {1312256952, 8, -128, -128, 127},
-            {1499176406, 11, -128, -128, 127}, {1852578656, 11, -128, -128, 127}, {1575148535, 11, -128, -128, 127},
-            {1953813635, 9, -128, -128, 127}, {1877412341, 9, -128, -128, 127}
+        // int4 per channel: 288 bytes, against 576 as int8.
+        constexpr uint8_t c2_Conv_weights_int4[288] = {
+             47,  37,   2,  35, 224,  52, 227,  33, 208,  69, 224, 209,   1, 224,  79,  47,
+             51, 224,  79, 239,  32,  13,  47, 220,  49, 210,  49,  51, 118, 223,  82,  38,
+            101, 221,  99,  30,  14,  47,  30,  47, 254, 241,  45, 240,   9, 240, 162, 177,
+            205, 192,  12, 192,  29, 243, 205,  16, 253, 212,  48, 177,   3,  49, 242,  25,
+            222, 207,  44, 179, 236, 223, 226, 164, 237,   2,  17,  49, 255, 192,   0,  33,
+            226, 225, 221, 223, 193,  34,  17,  66, 227, 224,  31,  35,  71,  46, 254, 178,
+             65,   2, 113,  15,  35,   3, 226,  19, 254,  64, 245, 227, 220, 211, 213,  19,
+            159,  27, 187, 192,  77, 237, 111, 189,  11, 179, 253,  77,  78,   1, 236, 242,
+            236, 177, 219,  19, 208, 236, 192, 245, 157,  62, 175, 144, 238,  30, 187, 193,
+             16,   3, 191,  17,  48,  49,  58,  34,  44,  14,  43,  31,   1,  62, 156, 241,
+            144,  35,  82, 222,  63, 227, 253,  90, 226,  48, 253,  13, 223, 254, 176,  46,
+             28, 165,  81,  78, 205,   5, 236, 242,  55,  30, 211,   3,  76, 228, 116, 228,
+            114, 251,  26, 236, 239, 246,  17, 156,  65, 115,  27,  34,  94,  49, 255,  10,
+            245,  49,  80, 186, 222,  58, 163,  11, 252,  80, 178, 242, 222,  35, 227,  68,
+              1, 224,   1,   4, 218,  50, 225, 243, 153,   3, 177,  69, 238, 207,  48, 100,
+            255,  37, 255, 241, 206,  18, 225,  50, 236,  79,  35,  67,  80,  16,  66,  94,
+             66,  50,  49,  32,   0,  67,   2, 245, 220,  49, 226,  30,  21,  85,   1,  67,
+              0,  51,  18, 229, 114, 239,  32, 254,  35,  52,  34, 243,  31,  33, 241, 242
         };
-        typedef tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 8, 8, 8, 3, 3, 1, 1, 8, 1, 1, 1, 1> c2_Conv_type;
-        constexpr c2_Conv_type c2_Conv_layer = {kc2_Conv_Weights, kc2_Conv_Biases, -128, c2_Conv_requantizers};
+        constexpr int32_t c2_Conv_biases_int4[8] = {
+            37, 172, -99, -1, -337, 207, -123, 3
+        };
+        constexpr tinymind::Requantizer<int32_t, int8_t> c2_Conv_requantizers[8] = {
+            {1265087007, 4, -128, -128, 127}, {1229864470, 6, -128, -128, 127}, {1488005651, 4, -128, -128, 127},
+            {1699958961, 7, -128, -128, 127}, {2100691869, 7, -128, -128, 127}, {1786105929, 7, -128, -128, 127},
+            {1107742552, 4, -128, -128, 127}, {2128851494, 5, -128, -128, 127}
+        };
+        typedef tinymind::QConv2DInt4<int8_t, int32_t, int8_t, 8, 8, 8, 3, 3, 1, 1, 8, 1, 1, 1, 1> c2_Conv_type;
+        constexpr c2_Conv_type c2_Conv_layer = {c2_Conv_weights_int4, c2_Conv_biases_int4, -128, c2_Conv_requantizers};
         static_assert(c2_Conv_type::OutputSize == 512, "c2_Conv: output size");
 
         // [2] Add Add <- c1_Conv, c2_Conv
@@ -96,26 +129,46 @@ namespace int4 {
         static_assert(MaxPool_type::OutputSize == 128, "MaxPool: output size");
 
         // [4] DepthwiseConv dw_Conv <- MaxPool
-        constexpr tinymind::Requantizer<int32_t, int8_t> dw_Conv_requantizers[8] = {
-            {1313265133, 7, -128, -128, 127}, {1966709800, 9, -128, -128, 127}, {2132588349, 8, -128, -128, 127},
-            {1373839068, 7, -128, -128, 127}, {1226852937, 7, -128, -128, 127}, {1769861063, 9, -128, -128, 127},
-            {2032657621, 8, -128, -128, 127}, {1201689121, 7, -128, -128, 127}
+        // int4 per channel: 36 bytes, against 72 as int8.
+        constexpr uint8_t dw_Conv_weights_int4[36] = {
+             22, 245, 233,  53,  15,  79, 155, 180,  84,  14, 243, 215, 160, 246, 238, 190,
+            193, 116, 223,  62,  15, 118, 151, 238, 167, 251,  61, 192, 102, 148,  99, 241,
+            243, 117, 208,   3
         };
-        typedef tinymind::QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, 4, 4, 8, 3, 3, 1, 1, 1, 1, 1, 1> dw_Conv_type;
-        constexpr dw_Conv_type dw_Conv_layer = {kdw_Conv_Weights, kdw_Conv_Biases, -128, dw_Conv_requantizers};
+        constexpr int32_t dw_Conv_biases_int4[8] = {
+            42, -126, 52, 7, -24, -119, 14, 40
+        };
+        constexpr tinymind::Requantizer<int32_t, int8_t> dw_Conv_requantizers[8] = {
+            {1489148856, 3, -128, -128, 127}, {1115054217, 4, -128, -128, 127}, {1209101430, 3, -128, -128, 127},
+            {1557835372, 3, -128, -128, 127}, {1391163599, 3, -128, -128, 127}, {2006896026, 5, -128, -128, 127},
+            {1152444276, 3, -128, -128, 127}, {1362629628, 3, -128, -128, 127}
+        };
+        typedef tinymind::QDepthwiseConv2DInt4<int8_t, int32_t, int8_t, 4, 4, 8, 3, 3, 1, 1, 1, 1, 1, 1> dw_Conv_type;
+        constexpr dw_Conv_type dw_Conv_layer = {dw_Conv_weights_int4, dw_Conv_biases_int4, -128, dw_Conv_requantizers};
         static_assert(dw_Conv_type::OutputSize == 128, "dw_Conv: output size");
 
         // [5] Conv pw_Conv <- dw_Conv
-        constexpr tinymind::Requantizer<int32_t, int8_t> pw_Conv_requantizers[16] = {
-            {1110908696, 6, -128, -128, 127}, {1797043519, 7, -128, -128, 127}, {1573853700, 6, -128, -128, 127},
-            {1780047226, 7, -128, -128, 127}, {1097553974, 8, -128, -128, 127}, {2009775858, 7, -128, -128, 127},
-            {1463569653, 7, -128, -128, 127}, {1387065814, 7, -128, -128, 127}, {1205505734, 6, -128, -128, 127},
-            {1940666946, 7, -128, -128, 127}, {1077167233, 6, -128, -128, 127}, {1317541903, 6, -128, -128, 127},
-            {1805791928, 7, -128, -128, 127}, {1921967464, 7, -128, -128, 127}, {1713489867, 7, -128, -128, 127},
-            {1461158728, 7, -128, -128, 127}
+        // int4 per channel: 64 bytes, against 128 as int8.
+        constexpr uint8_t pw_Conv_weights_int4[64] = {
+             26, 118, 242,  52, 229,  75,  39,  28, 254, 149,   1,  45,  15,  96,  45,  23,
+            161, 169,  43,  14, 239, 201,  22,  44,  55,  23, 244, 194,  83, 103,  11,  51,
+            250, 148,   1,  47,  55, 147,  51,  30, 239,  19, 249,  35, 224, 146, 227,  30,
+            228,  25, 214,  28,  31, 153,  13,  95, 219, 185, 247,  76,  52, 156,  37,  58
         };
-        typedef tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 4, 4, 8, 1, 1, 1, 1, 16, 0, 0, 0, 0> pw_Conv_type;
-        constexpr pw_Conv_type pw_Conv_layer = {kpw_Conv_Weights, kpw_Conv_Biases, -128, pw_Conv_requantizers};
+        constexpr int32_t pw_Conv_biases_int4[16] = {
+            -9, 32, 20, -6, -124, 46, -52, -129,
+            10, -44, -27, 2, 54, 18, 66, 79
+        };
+        constexpr tinymind::Requantizer<int32_t, int8_t> pw_Conv_requantizers[16] = {
+            {1259691111, 2, -128, -128, 127}, {2037718990, 3, -128, -128, 127}, {1784637678, 2, -128, -128, 127},
+            {2018446408, 3, -128, -128, 127}, {1244547810, 4, -128, -128, 127}, {1139471134, 2, -128, -128, 127},
+            {1659583446, 3, -128, -128, 127}, {1572833556, 3, -128, -128, 127}, {1366957395, 2, -128, -128, 127},
+            {1100288849, 2, -128, -128, 127}, {1221430702, 2, -128, -128, 127}, {1493998408, 2, -128, -128, 127},
+            {2047639061, 3, -128, -128, 127}, {1089686911, 2, -128, -128, 127}, {1942975117, 3, -128, -128, 127},
+            {1656849630, 3, -128, -128, 127}
+        };
+        typedef tinymind::QConv2DInt4<int8_t, int32_t, int8_t, 4, 4, 8, 1, 1, 1, 1, 16, 0, 0, 0, 0> pw_Conv_type;
+        constexpr pw_Conv_type pw_Conv_layer = {pw_Conv_weights_int4, pw_Conv_biases_int4, -128, pw_Conv_requantizers};
         static_assert(pw_Conv_type::OutputSize == 256, "pw_Conv: output size");
 
         // [6] Dense fc_Gemm <- pw_Conv
@@ -233,6 +286,6 @@ namespace int4 {
         model_detail::pw_Conv_layer.forward((arena + 256), (arena + 0));
         model_detail::fc_Gemm_layer.forward((arena + 0), output);
     }
-    constexpr std::size_t kModelWeightBytes = 2128;
+    constexpr std::size_t kModelWeightBytes = 1704;
 } // namespace int4
 } // namespace digits

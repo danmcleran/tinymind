@@ -409,7 +409,8 @@ def _rq(m: int, s: int, zp: int) -> str:
 
 @dataclass
 class Int4Dense:
-    """A dense layer's weights requantized to per-channel int4."""
+    """A weight layer's weights requantized to per-channel int4 (a dense
+    layer's, or a convolution's with each filter flattened)."""
     codes: object          # int8 numpy array [out][in], values -7..7
     scales: list           # per output channel
     biases: object         # int32 numpy array, or None
@@ -417,15 +418,16 @@ class Int4Dense:
     shifts: list
 
 
-def requantize_dense_int4(layer) -> Int4Dense:
-    """Requantize a Dense record's int8 weights to symmetric per-channel
-    int4: the float weights w = q8 * s8 get scale max |w| / 7 per output
-    channel and codes round(w / s4) in -7..7 (ties away from zero, as
-    quantizeInt4PerChannel). The bias moves to the new accumulator scale
-    input_scale * s4, and each requantizer to input_scale * s4 /
-    output_scale."""
+def requantize_int4(layer) -> Int4Dense:
+    """Requantize a Dense, Conv or DepthwiseConv record's int8 weights to
+    symmetric per-channel int4: the float weights w = q8 * s8 of each output
+    channel (a Dense row, a Conv filter [KH][KW][C], a depthwise channel's
+    [KH][KW]) get scale max |w| / 7 and codes round(w / s4) in -7..7 (ties
+    away from zero, as quantizeInt4PerChannel). The bias moves to the new
+    accumulator scale input_scale * s4, and each requantizer to
+    input_scale * s4 / output_scale. codes keeps the record's weight shape."""
     import numpy as np
-    w8 = layer.weight.astype(np.float64)
+    w8 = layer.weight.astype(np.float64).reshape(layer.weight.shape[0], -1)
     out_ch = w8.shape[0]
     s8 = layer.weight_scales if layer.per_channel else list(layer.weight_scales) * out_ch
     codes = np.zeros(w8.shape, dtype=np.int8)
@@ -442,7 +444,12 @@ def requantize_dense_int4(layer) -> Int4Dense:
         m, sh = ti.quantize_multiplier(layer.input_scale * s4 / layer.output_scale)
         multipliers.append(m)
         shifts.append(sh)
-    return Int4Dense(codes=codes, scales=scales, biases=biases, multipliers=multipliers, shifts=shifts)
+    return Int4Dense(codes=codes.reshape(layer.weight.shape), scales=scales, biases=biases,
+                     multipliers=multipliers, shifts=shifts)
+
+
+# The name #299 shipped, for dense layers.
+requantize_dense_int4 = requantize_int4
 
 
 def pack_int4(values) -> list:
@@ -562,13 +569,17 @@ def _emit_layer_16x8(p: list, body: list, layer, nm: str, k: str, src: str, dst:
 
 def emit_model_header(path: str, namespace: str, layers, weights_header: str,
                       alignment: int = 4, in_place: bool = True, int4_dense: bool = False,
-                      nested_namespace: Optional[str] = None, activation_bits: int = 8) -> GeneratedModel:
+                      nested_namespace: Optional[str] = None, activation_bits: int = 8,
+                      int4_conv: bool = False) -> GeneratedModel:
     """Write model.hpp for parsed records whose constants weights_header
     (written by emit_weights_header with the same namespace) holds.
 
     int4_dense: run every Dense record as a QDenseInt4 over packed,
-    per-channel int4 weights (see requantize_dense_int4()), stored in model.hpp; the
+    per-channel int4 weights (see requantize_int4()), stored in model.hpp; the
     int8 weights in weights_header then go unused.
+    int4_conv: the same for every Conv record (1x1 ones included), as a
+    QConv2DInt4, and every DepthwiseConv record, as a QDepthwiseConv2DInt4.
+    Average pools keep their int8 form.
     nested_namespace: put the model inside namespace::nested_namespace, so
     several generated variants can share one weights header.
     activation_bits: 16 runs the model with int16 activations and its int8
@@ -591,8 +602,8 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     wide = activation_bits == 16
     act = "int16_t" if wide else "int8_t"
     elem = 2 if wide else 1
-    if wide and int4_dense:
-        raise ValueError("int4 dense layers take int8 activations; int4_dense needs activation_bits=8")
+    if wide and (int4_dense or int4_conv):
+        raise ValueError("int4 layers take int8 activations; int4_dense and int4_conv need activation_bits=8")
     if wide and alignment % elem != 0:
         raise ValueError("int16 activations need an even arena alignment")
     for i, layer in enumerate(layers):
@@ -647,7 +658,7 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             includes.append(hdr)
     if any(l.op_type == "Dense" and l.per_channel for l in layers) and "qconv2d.hpp" not in includes:
         includes.append("qconv2d.hpp")
-    if int4_dense and "Dense" in ops:
+    if (int4_dense and "Dense" in ops) or (int4_conv and ({"Conv", "DepthwiseConv"} & set(ops))):
         includes.append("qint4.hpp")
 
     p: list[str] = []
@@ -701,7 +712,7 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
 
     body: list[str] = []
     weight_bytes = 0
-    int4_dense_records: dict = {}
+    int4_records: dict = {}
 
     def ptr(j: int) -> str:
         if j < 0:
@@ -734,8 +745,10 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             p.append(f"        constexpr tinymind::Requantizer<int32_t, int8_t> {nm}_requantizers[{count}] = {{\n"
                      "            " + ",\n            ".join(rows) + "\n        };\n")
 
-        if layer.op_type == "Dense" and int4_dense:
-            q4 = int4_dense_records.setdefault(i, requantize_dense_int4(layer))
+        int4_here = ((layer.op_type == "Dense" and int4_dense)
+                     or (layer.op_type in ("Conv", "DepthwiseConv") and int4_conv))
+        if int4_here:
+            q4 = int4_records.setdefault(i, requantize_int4(layer))
             packed = pack_int4(q4.codes.reshape(-1).tolist())
             weight_bytes += len(packed)
             p.append(f"        // int4 per channel: {len(packed)} bytes, against {layer.weight.size} as int8.\n")
@@ -752,11 +765,25 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             rows = [", ".join(entries[r:r + 3]) for r in range(0, len(entries), 3)]
             p.append(f"        constexpr tinymind::Requantizer<int32_t, int8_t> {nm}_requantizers[{len(entries)}] = {{\n"
                      "            " + ",\n            ".join(rows) + "\n        };\n")
-            p.append(f"        typedef tinymind::QDenseInt4<int8_t, int32_t, int8_t, {g['NumInputs']}, "
-                     f"{g['NumOutputs']}> {nm}_type;\n")
+            if layer.op_type == "Dense":
+                p.append(f"        typedef tinymind::QDenseInt4<int8_t, int32_t, int8_t, {g['NumInputs']}, "
+                         f"{g['NumOutputs']}> {nm}_type;\n")
+                size_name = "OutputLength"
+            elif layer.op_type == "Conv":
+                p.append(f"        typedef tinymind::QConv2DInt4<int8_t, int32_t, int8_t, {g['InputHeight']}, "
+                         f"{g['InputWidth']}, {g['InputChannels']}, {g['KernelHeight']}, {g['KernelWidth']}, "
+                         f"{g['StrideH']}, {g['StrideW']}, {g['NumFilters']}, "
+                         f"{g['PadTop']}, {g['PadBottom']}, {g['PadLeft']}, {g['PadRight']}> {nm}_type;\n")
+                size_name = "OutputSize"
+            else:
+                p.append(f"        typedef tinymind::QDepthwiseConv2DInt4<int8_t, int32_t, int8_t, {g['InputHeight']}, "
+                         f"{g['InputWidth']}, {g['InputChannels']}, {g['KernelHeight']}, {g['KernelWidth']}, "
+                         f"{g['StrideH']}, {g['StrideW']}, "
+                         f"{g['PadTop']}, {g['PadBottom']}, {g['PadLeft']}, {g['PadRight']}> {nm}_type;\n")
+                size_name = "OutputSize"
             p.append(f"        constexpr {nm}_type {nm}_layer = {{{nm}_weights_int4, {bias4}, {layer.input_zp}, "
                      f"{nm}_requantizers}};\n")
-            p.append(f"        static_assert({nm}_type::OutputLength == {n}, \"{nm}: output size\");\n")
+            p.append(f"        static_assert({nm}_type::{size_name} == {n}, \"{nm}: output size\");\n")
             body.append(f"        model_detail::{nm}_layer.forward({src}, {dst});\n")
             continue
         if layer.weight is not None:
@@ -856,18 +883,18 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
         f.write("".join(p))
     return GeneratedModel(plan=plan, sizes=sizes, input_size=in_size, output_size=sizes[last],
                           weight_bytes=weight_bytes,
-                          int4_layers=[int4_dense_records[i] for i in sorted(int4_dense_records)])
+                          int4_layers=[int4_records[i] for i in sorted(int4_records)])
 
 
 def import_onnx_model_with_code(model_path: str, weights_path: str, model_header_path: str,
                                 namespace: str, alignment: int = 4, in_place: bool = True,
                                 int4_dense: bool = False, nested_namespace: Optional[str] = None,
-                                activation_bits: int = 8):
+                                activation_bits: int = 8, int4_conv: bool = False):
     """Parse an ONNX model and write both the weights header and model.hpp.
     Returns (layers, GeneratedModel)."""
     layers = ti.import_onnx_model(model_path, weights_path, namespace)
     generated = emit_model_header(model_header_path, namespace, layers,
                                   os.path.basename(weights_path), alignment=alignment, in_place=in_place,
                                   int4_dense=int4_dense, nested_namespace=nested_namespace,
-                                  activation_bits=activation_bits)
+                                  activation_bits=activation_bits, int4_conv=int4_conv)
     return layers, generated
