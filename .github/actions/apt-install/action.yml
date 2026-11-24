@@ -8,7 +8,9 @@ description: >
   outer `timeout`, so a hang degrades into a failure the retry loop can absorb.
   A retry against the same mirror often stalls the same way (on the 26.04
   image, azure.archive.ubuntu.com trickled the large amd64v3 packages until
-  every attempt timed out), so retries after the first go to archive.ubuntu.com.
+  every attempt timed out), so retries after the first leave the runner's
+  regional mirror -- azure.archive.ubuntu.com, or since 2026-11 an AWS one
+  such as us-east-2.ec2.archive.ubuntu.com -- for archive.ubuntu.com.
   The runners have also lost every Canonical host at once, over HTTP and HTTPS
   alike, while packages.microsoft.com kept working (2026-11-11: every job that
   installed packages timed out for hours), so retries after the second go to
@@ -54,22 +56,29 @@ runs:
         apt_opts="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
         apt_opts="$apt_opts -o Acquire::ftp::Timeout=30 -o Acquire::Retries=2"
 
-        # Point apt at archive.ubuntu.com instead of the runner's Azure
-        # mirror. The runner lists the mirror in /etc/apt/apt-mirrors.txt (read
+        # Point apt at archive.ubuntu.com (ports.ubuntu.com on arm64) instead
+        # of the runner's regional mirror: any host under archive.ubuntu.com
+        # or ports.ubuntu.com, such as azure.archive.ubuntu.com or the AWS
+        # mirrors the runners moved to in 2026-11
+        # (us-east-2.ec2.archive.ubuntu.com). Matching only the Azure name
+        # left the AWS runners retrying the same stalled mirror four times.
+        # The runner lists the mirror in /etc/apt/apt-mirrors.txt (read
         # through a mirror+file: URI) or names it directly in the sources, so
         # rewrite the host in both. apt's mirror method falls back to the next
         # entry only when a fetch fails, not when it crawls, which is why the
         # list alone does not save a stalled job.
+        regional='[A-Za-z0-9.-]+\.(archive|ports)\.ubuntu\.com'
         use_archive_mirror() {
           local files
-          files="$(sudo grep -rlsF azure.archive.ubuntu.com \
+          files="$(sudo grep -rlsE "https?://$regional" \
                      /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d || true)"
           if [ -z "$files" ]; then
-            echo "apt-install: no Azure mirror configured; keeping the sources as they are" >&2
+            echo "apt-install: no regional Ubuntu mirror configured; keeping the sources as they are" >&2
             return
           fi
-          echo "apt-install: switching from azure.archive.ubuntu.com to archive.ubuntu.com in:" $files >&2
-          sudo sed -i 's#azure\.archive\.ubuntu\.com#archive.ubuntu.com#g' $files
+          echo "apt-install: switching the regional Ubuntu mirror to archive.ubuntu.com / ports.ubuntu.com in:" \
+               $files >&2
+          sudo sed -E -i "s#(https?://)$regional#\\1\\2.ubuntu.com#g" $files
         }
 
         # Move the Ubuntu archives off Canonical's network entirely. Neither
@@ -84,7 +93,7 @@ runs:
         # HTTPS natively since 1.5, so no extra package is needed.
         use_external_mirror() {
           local files
-          files="$(sudo grep -rlsE 'https?://((azure\.)?archive|security|(azure\.)?ports)\.ubuntu\.com' \
+          files="$(sudo grep -rlsE 'https?://([A-Za-z0-9.-]+\.)?(archive|security|ports)\.ubuntu\.com' \
                      /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d || true)"
           if [ -z "$files" ]; then
             echo "apt-install: no Canonical archive configured; keeping the sources as they are" >&2
@@ -92,8 +101,8 @@ runs:
           fi
           echo "apt-install: switching the Ubuntu archives to mirrors outside Canonical in:" $files >&2
           sudo sed -E -i \
-            -e 's#https?://((azure\.)?archive|security)\.ubuntu\.com/ubuntu#https://mirrors.edge.kernel.org/ubuntu#g' \
-            -e 's#https?://(azure\.)?ports\.ubuntu\.com/ubuntu-ports#https://mirrors.ocf.berkeley.edu/ubuntu-ports#g' \
+            -e 's#https?://([A-Za-z0-9.-]+\.)?(archive|security)\.ubuntu\.com/ubuntu#https://mirrors.edge.kernel.org/ubuntu#g' \
+            -e 's#https?://([A-Za-z0-9.-]+\.)?ports\.ubuntu\.com/ubuntu-ports#https://mirrors.ocf.berkeley.edu/ubuntu-ports#g' \
             $files
         }
 
