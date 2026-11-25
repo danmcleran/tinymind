@@ -1,6 +1,6 @@
 img=int4 board=l031 level=O2 dsp=0 compiler=arm-none-eabi-g++ (15:13.2.rel1-2) 13.2.1 20231009
 size   17588	      0	   1684	  19272	   4b48	build/l031/O2/int4.elf
 # begin bench
-work=digits_int4 med=809078 min=809012 max=809198 stack=2140 match=1 
+work=digits_int4 med=809184 min=809108 max=809263 stack=2140 match=1 
 stack_baseline=208 static_ram=1684 
 # end bench
