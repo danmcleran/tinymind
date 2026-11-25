@@ -98,9 +98,12 @@ per output channel, and stores two weights per byte:
 | Accuracy | 97.0% | 96.7% (5 more errors in 1,797) |
 | Same class as the int8 model | | 1,759 of 1,797 digits |
 | Weight bytes | 3,408 | 1,704 |
-| Cortex-M0+ code and read-only data | 7,326 bytes | 4,986 bytes |
+| Cortex-M0+ code and read-only data | 7,326 bytes | 5,814 bytes |
 
-That is 32% less flash for the whole model. On the boards
+That is 21% less flash for the whole model, but only 174 bytes less than
+with the dense layer alone in int4 (5,988 bytes): the convolutions save 424
+weight bytes and spend most of them on the code that runs them, the int8
+kernels plus the unpacking. On the boards
 ([`benchmarks/tier1_onboard`](../../benchmarks/tier1_onboard), `-O3`) it
 costs almost no time:
 
