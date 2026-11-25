@@ -533,6 +533,12 @@ check-simd-arm-clang :
 	  { echo "ERROR: $(CLANG_CXX) not found. sudo apt install clang"; exit 1; }
 	$(call simd_arm_suites,check-simd-arm-clang,$(CLANG_CXX) $(SIMD_ARM_DOT_FLAGS),-Wall -Wextra -Werror -Wpedantic,,$(CLANG_CXX) $(SIMD_ARM_DOT_FLAGS),neon_dotprod neon_dotprod-direct neon-direct,$(SIMD_ARM_FP16_CHECK))
 
+# Quantization cases skipped under emulated SVE: the exhaustive 16x8 rescale,
+# requantizer and add checks run scalar code only (no SVE dispatch), and at
+# -O0 under qemu-aarch64 they took the four vector-length runs from about 40
+# minutes to over 3 hours. They still run natively, here and on x86.
+SIMD_ARM_SVE_QEMU_SKIP = !quantization/qint16x8_add_zero_point_0_and_half_rescales,qint16x8_fast_requantizer64_matches_reference,qint16x8_add_output_clamps_and_fallback
+
 check-simd-arm-sve :
 	@test "$$(uname -m)" = aarch64 || { echo "check-simd-arm-sve: needs an aarch64 host"; exit 1; }
 	@command -v $(QEMU_AARCH64) >/dev/null 2>&1 || \
@@ -561,7 +567,8 @@ check-simd-arm-sve :
 			  { echo "check-simd-arm-sve FAIL: backend $$b did not run at $$bits bits"; exit 1; }; \
 		done; \
 		echo "=== check-simd-arm-sve: unit_test/quantization, qemu-aarch64, $$bits-bit vectors ==="; \
-		( cd unit_test/quantization/output && $$qemu ./quantization_unit_test ) || \
+		( cd unit_test/quantization/output && $$qemu ./quantization_unit_test \
+		  --run_test='$(SIMD_ARM_SVE_QEMU_SKIP)' ) || \
 		  { echo "check-simd-arm-sve FAIL: unit_test/quantization at $$bits bits"; exit 1; }; \
 	done
 	@echo "check-simd-arm-sve: SVE dispatched and checked at vector bytes $(SVE_VECTOR_BYTES)"
