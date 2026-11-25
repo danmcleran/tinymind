@@ -1,14 +1,14 @@
 img=int4 board=f411 level=O2 dsp=1 compiler=arm-none-eabi-g++ (15:13.2.rel1-2) 13.2.1 20231009
-size   15116	      0	   3128	  18244	   4744	build/f411/O2_dsp_layers/int4.elf
+size   15232	      0	   3128	  18360	   47b8	build/f411/O2_dsp_layers/int4.elf
 # begin bench
-work=digits_int4 med=209517 min=209517 max=209517 stack=708 match=1 
-layer=c1_conv med=31132 
-layer=c2_conv med=100354 
+work=digits_int4 med=192477 min=192477 max=192478 stack=684 match=1 
+layer=c1_conv med=31113 
+layer=c2_conv med=99818 
 layer=add med=23253 
-layer=maxpool med=2075 
-layer=dw_conv med=14929 
-layer=pw_conv med=14354 
-layer=fc med=23821 
+layer=maxpool med=2072 
+layer=dw_conv med=14936 
+layer=pw_conv med=14350 
+layer=fc med=7335 
 layers_match=1 
 stack_baseline=200 static_ram=3128 
 # end bench
