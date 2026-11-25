@@ -1072,6 +1072,7 @@ tinymind/
     qlayernorm.hpp              # QLayerNorm1D (integer mean/var + qInvSqrtQ30 Newton)
     qsoftmax.hpp                # QSoftmax1D (two-pass int8->int8 via int32 exp LUT)
     qsoftmax_fixedpoint.hpp     # QSoftmaxFixedPoint1D / QSoftmaxInt16 (bit-exact with the TFLite int8 / int16 softmax)
+    qsoftmax16_tables.hpp       # QSoftmaxInt16's exp and 1 / (1 + x) tables, TFLite's own
     qlstm.hpp                   # QLSTMCell (int8 or int16 cell state)
     qgru.hpp                    # QGRUCell (3 gates, reset-before-multiply)
     qfft1d.hpp                  # QFFT1D (int16 radix-2 DIT, Q1.15 twiddles), QRFFT1D (real input)
