@@ -205,6 +205,17 @@ def softmax_params(input_scale: float, beta: float = 1.0) -> tuple[int, int, int
     return mult, left, -int(math.floor(max_rescaled))
 
 
+def softmax16_params(input_scale: float, beta: float = 1.0) -> tuple[int, int]:
+    """Mirror qsoftmax_fixedpoint.hpp::buildQSoftmaxInt16Params: the int16
+    softmax's (input_multiplier, input_shift) for an int16 input of scale
+    input_scale, as TFLite computes them (input_scale * beta / (10 / 65535)).
+    input_shift has tinymind's sign (negative shifts left)."""
+    return ti.quantize_multiplier(input_scale * beta / (10.0 / 65535.0))
+
+
+SOFTMAX16_OUTPUT_SCALE = 1.0 / 32768.0
+
+
 def activation_lut(kind: str, in_scale: float, in_zp: int, out_scale: float, out_zp: int) -> list:
     """Mirror qactivations.hpp::buildQSigmoidLUT / buildQTanhLUT: entry idx
     holds the output for the int8 input idx - 128. The builders compute in
@@ -327,7 +338,9 @@ def float_reference(layers, x):
     int8 grid holds, and no other rounding. Both the int8 and the 16x8 model
     approximate exactly this, so their distance from it measures what their
     activation grids cost. x is the model input (reals, flattened NHWC);
-    returns the output, flattened. Softmax records are not supported."""
+    returns the output, flattened. A softmax's output is not clipped: its
+    int8 and int16 grids hold different ranges, and only the model's output
+    may be a softmax."""
     import numpy as np
     vals = {-1: np.asarray(x, dtype=np.float64)}
     for i, l in enumerate(layers):
@@ -366,6 +379,10 @@ def float_reference(layers, x):
             y = 1.0 / (1.0 + np.exp(-src))
         elif op == "Tanh":
             y = np.tanh(src)
+        elif op == "Softmax":
+            e = np.exp(src - src.max())
+            vals[i] = e / e.sum()
+            continue
         else:
             raise ValueError(op)
         lo = (-128 - l.output_zp) * l.output_scale
@@ -559,6 +576,12 @@ def _emit_layer_16x8(p: list, body: list, layer, nm: str, k: str, src: str, dst:
                     f"            {dst}[j] = tinymind::qApplyLUT16({src}[j], model_detail::{nm}_lut16);\n"
                     f"        }}\n")
         return 0
+    if op == "Softmax":
+        mult, shift = softmax16_params(int16_grid(layer.input_scale, layer.input_zp).scale)
+        p.append(f"        typedef tinymind::QSoftmaxInt16<1, {n}> {nm}_type;\n")
+        p.append(f"        constexpr {nm}_type {nm}_layer = {{{mult}, {shift}}};\n")
+        body.append(f"        model_detail::{nm}_layer.forward({src}, {dst});\n")
+        return 0
     if op == "Relu":
         body.append(f"        for (std::size_t j = 0; j < {n}; ++j)\n        {{\n"
                     f"            {dst}[j] = tinymind::qrelu<int16_t>({src}[j], 0);\n"
@@ -587,9 +610,10 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     symmetric int16 grid over the same real range (int16_grid()), weight
     layers take int64 biases and 64-bit requantizers (requantize_16x8()),
     Add uses TFLite's int16 parameters (left_shift 15), and Sigmoid / Tanh
-    use 513-entry interpolated int16 tables. The weights header is shared
-    with the int8 model; the biases and requantizers live in model.hpp.
-    Softmax is not supported at 16 bits.
+    use 513-entry interpolated int16 tables. A Softmax (only the model's
+    output may be one) becomes a QSoftmaxInt16, TFLite's int16 softmax,
+    whose output grid is 2^-15 with zero point 0. The weights header is
+    shared with the int8 model; the biases and requantizers live in model.hpp.
 
     Raises ValueError for a graph this generator cannot run as planned: a
     Relu whose input and output grids differ (no record carries the
@@ -621,13 +645,12 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     sizes = {-1: in_size}
     for i, layer in enumerate(layers):
         sizes[i] = output_size(layer, sizes)
-        if layer.op_type == "Softmax" and wide:
-            raise ValueError(f"{layer.name}: no int16 softmax; generate this model with activation_bits=8")
         if layer.op_type == "Softmax":
             for k, later in enumerate(layers[i + 1:], start=i + 1):
                 if i in later.sources:
                     raise ValueError(f"{later.name}: reads softmax {layer.name}'s output; tinymind's softmax "
-                                     "writes the 1/256 grid, so only the model's output may be a softmax")
+                                     "writes a fixed grid (1/256, or 2^-15 at 16 bits), so only the model's "
+                                     "output may be a softmax")
         if layer.op_type == "Relu" and (_f32(layer.input_scale) != _f32(layer.output_scale)
                                         or layer.input_zp != layer.output_zp):
             raise ValueError(f"{layer.name}: a Relu whose output grid differs from its input's "
@@ -646,7 +669,10 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     in_scale, in_zp = first_reader.input_scale, first_reader.input_zp
     if wide:
         in_scale, in_zp = int16_grid(in_scale, in_zp).scale, 0
-        out_scale, out_zp = int16_grid(out_scale, out_zp).scale, 0
+        if out_layer.op_type == "Softmax":
+            out_scale, out_zp = SOFTMAX16_OUTPUT_SCALE, 0
+        else:
+            out_scale, out_zp = int16_grid(out_scale, out_zp).scale, 0
 
     ops = sorted({l.op_type for l in layers})
     includes = ["qaffine.hpp"]

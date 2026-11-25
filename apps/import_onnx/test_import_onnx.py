@@ -1331,16 +1331,20 @@ class ModelCodegen(unittest.TestCase):
         first = next(l for l in layers if -1 in l.sources)
         last = layers[-1]
         gin = cg.int16_grid(first.input_scale, first.input_zp)
-        gout = cg.int16_grid(last.output_scale, last.output_zp)
+        if last.op_type == "Softmax":
+            # Probabilities: 1/256 grid at 8 bits, 2^-15 at 16, out of 1.
+            s16, s8, z8, span = cg.SOFTMAX16_OUTPUT_SCALE, cg.SOFTMAX_OUTPUT_SCALE, cg.SOFTMAX_OUTPUT_ZERO_POINT, 1.0
+        else:
+            s16 = cg.int16_grid(last.output_scale, last.output_zp).scale
+            s8, z8, span = last.output_scale, last.output_zp, 255 * last.output_scale
         q8 = nhwc_inputs(shape, first)
         reals = [(q.reshape(-1) - first.input_zp) * first.input_scale for q in q8]
         q16 = [np.clip(np.rint(x / gin.scale), -32768, 32767).astype(np.int64) for x in reals]
         out8, = run_exes([exe8], q8)
         out16, = run_exes([exe16], q16)
         ref = np.array([cg.float_reference(layers, x) for x in reals])
-        span = (255 * last.output_scale)
-        err8 = np.abs((out8 - last.output_zp) * last.output_scale - ref) / span
-        err16 = np.abs(out16 * gout.scale - ref) / span
+        err8 = np.abs((out8 - z8) * s8 - ref) / span
+        err16 = np.abs(out16 * s16 - ref) / span
         print(f"\n  16x8 {tag}: max |model - float| / output range: int8 {err8.max():.2e}, "
               f"16x8 {err16.max():.2e} (mean {err8.mean():.2e} / {err16.mean():.2e}); "
               f"arena {g8.plan.arena_size} -> {g16.plan.arena_size} B")
@@ -1359,17 +1363,22 @@ class ModelCodegen(unittest.TestCase):
         err8, err16 = self.check_16x8(ResNetish(False), GRAPH_INPUT_SHAPE, "cg16_res_pt", per_channel=False, seed=1)
         self.assertLess(40 * err16.mean(), err8.mean())
 
+    def test_16x8_softmax_tracks_float(self):
+        """A model ending in a softmax generates QSoftmaxInt16 (TFLite's int16
+        softmax, bit-exact with TFLite in the quantization suite)."""
+        err8, err16 = self.check_16x8(ResNetish(True), GRAPH_INPUT_SHAPE, "cg16_sm")
+        self.assertLess(err16.max(), 2e-4)
+        self.assertLess(40 * err16.mean(), err8.mean())
+
     def test_16x8_under_sanitizers(self):
         flags = ("-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer")
         self.check_16x8(ResNetish(False), GRAPH_INPUT_SHAPE, "cg16_asan", extra=flags)
 
     def test_16x8_refusals(self):
         torch.manual_seed(0)
-        path = export_and_quantize(ResNetish(True), GRAPH_INPUT_SHAPE, self.workdir, "QDQ", True, "cg16_sm")
+        path = export_and_quantize(ResNetish(True), GRAPH_INPUT_SHAPE, self.workdir, "QDQ", True, "cg16_ref")
         layers = ti.parse_onnx_model(path)
         with tempfile.TemporaryDirectory() as d:
-            with self.assertRaisesRegex(ValueError, "int16 softmax"):
-                cg.emit_model_header(os.path.join(d, "m.hpp"), "net", layers, "w.hpp", activation_bits=16)
             with self.assertRaisesRegex(ValueError, "int4"):
                 cg.emit_model_header(os.path.join(d, "m.hpp"), "net", layers[:-1], "w.hpp", activation_bits=16,
                                      int4_dense=True)

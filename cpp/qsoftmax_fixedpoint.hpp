@@ -23,7 +23,9 @@
 #pragma once
 
 #include "include/tinymind_platform.hpp"
+#include "qactivations.hpp"
 #include "qaffine.hpp"
+#include "qsoftmax16_tables.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -51,6 +53,15 @@
  * TFLite Micro computes them (PreprocessSoftmaxScaling, then
  * CalculateInputRadius); buildQSoftmaxFixedPointParams in qcalibration.hpp
  * derives them on the host.
+ *
+ * QSoftmaxInt16 is the int16 counterpart, bit-exact with TFLite's int16
+ * softmax (reference_ops::SoftmaxInt16, the 16x8 scheme): int16 input with
+ * zero point 0, int16 output on [0, 1) with scale 2^-15 and zero point 0.
+ * It takes the exponentials from a 513-entry exp table over [-10, 0] and
+ * the reciprocal of their sum from a 1 / (1 + x) table, both interpolated
+ * by qApplyLUT16 (TFLite's LUTLookup), with TFLite's own tables
+ * (qsoftmax16_tables.hpp). buildQSoftmaxInt16Params derives its two
+ * parameters on the host.
  *
  * Pure integer at runtime; freestanding-safe.
  */
@@ -241,4 +252,205 @@ namespace tinymind {
         }
     };
 
+    /**
+     * int16 softmax over Rows rows of Features values, bit-exact with TFLite's
+     * int16 SOFTMAX (reference_ops::SoftmaxInt16). For each row:
+     *
+     *   1. max over the row;
+     *   2. for each x: d = x - max, rescaled by (input_multiplier,
+     *      input_shift) so that -65535 maps to -10 and recentred by 32767
+     *      onto the exp table's input, saturated to int16; e = the exp
+     *      table (Q0.15) at it; sum += e;
+     *   3. the sum normalized into [1, 2) and looked up in the 1 / (1 + x)
+     *      table, giving its reciprocal in Q0.15 and a shift;
+     *   4. y = e * reciprocal, rounded and shifted, clamped to [0, 32767].
+     *
+     * The output's scale is 2^-15 and its zero point 0, as TFLite requires
+     * of an int16 softmax; the input's zero point must be 0. Every input
+     * more than about 10 below its row's maximum (in units of
+     * 1 / (input_scale * beta)) contributes the table's floor rather than 0,
+     * as in TFLite. output may be input: each element is read before it is
+     * written.
+     *
+     * input_shift has this library's sign (negative shifts left; TFLite's
+     * input_left_shift is -input_shift). Out of TFLite's contract, a
+     * difference that overflows int32 when shifted left saturates rather
+     * than wrapping.
+     */
+    template<std::size_t Rows_, std::size_t Features_>
+    struct QSoftmaxInt16
+    {
+        typedef int16_t InputType;
+        typedef int16_t OutputType;
+
+        static constexpr std::size_t Rows     = Rows_;
+        static constexpr std::size_t Features = Features_;
+        static constexpr std::size_t Size     = Rows_ * Features_;
+
+        static_assert(Rows_ > 0, "Rows must be > 0.");
+        static_assert(Features_ > 0, "Features must be > 0.");
+        // The sum of a row's exponentials (each at most 32767) is an int32.
+        static_assert(Features_ < 65536, "Features must be < 65536.");
+
+        int32_t input_multiplier; // Q0.31
+        int32_t input_shift;      // this library's sign: negative shifts left
+
+        void forward(const InputType* input, OutputType* output) const
+        {
+            const int32_t multiplier = input_multiplier;
+            const int32_t shift = input_shift;
+            const int16_t* const expTable = detail::kQSoftmaxInt16ExpLUT;
+            const int16_t* const reciprocalTable = detail::kQSoftmaxInt16ReciprocalLUT;
+
+            for (std::size_t r = 0; r < Rows_; ++r)
+            {
+                const InputType* const rowIn = input + r * Features_;
+                OutputType* const rowOut = output + r * Features_;
+
+                int32_t maxIn = static_cast<int32_t>(rowIn[0]);
+                for (std::size_t i = 1; i < Features_; ++i)
+                {
+                    const int32_t v = static_cast<int32_t>(rowIn[i]);
+                    maxIn = (v > maxIn) ? v : maxIn;
+                }
+
+                // The exponentials go in the output row (as in TFLite), so
+                // the row is read once and the second pass needs no buffer.
+                int32_t sumOfExps = 0; // Q16.15
+                for (std::size_t i = 0; i < Features_; ++i)
+                {
+                    const int32_t diff = static_cast<int32_t>(rowIn[i]) - maxIn;
+                    const int32_t scaled = multiplyByQuantizedMultiplier(diff, multiplier, shift);
+                    // diff <= 0, so scaled <= 0 and scaled + 32767 cannot overflow.
+                    int32_t centred = scaled + 32767;
+                    centred = (centred < -32768) ? -32768 : centred;
+                    const int16_t e = qApplyLUT16(static_cast<int16_t>(centred), expTable);
+                    rowOut[i] = e;
+                    sumOfExps += static_cast<int32_t>(e);
+                }
+
+                // The row's maximum contributes the table's top entry, 32767,
+                // so the sum is at least that and headroomPlusOne <= 17.
+                const int32_t headroomPlusOne = detail::countLeadingZeros32(static_cast<uint32_t>(sumOfExps));
+                // The sum normalized to [2^30, 2^31) and taken to Q1.15 (in
+                // uint32: the rounding term can carry past 2^31).
+                const int32_t shiftedSum = static_cast<int32_t>(
+                    ((static_cast<uint32_t>(sumOfExps) << (headroomPlusOne - 1)) + (1u << 13)) >> 14);
+                // 1 / (1 + x) with x = shiftedSum / 2^16 - 1, recentred onto
+                // the table's input [-32768, 32767].
+                int32_t centredSum = shiftedSum - ((1 << 15) + (1 << 16));
+                centredSum = (centredSum < -32768) ? -32768 : ((centredSum > 32767) ? 32767 : centredSum);
+                const int32_t reciprocal = static_cast<int32_t>(
+                    qApplyLUT16(static_cast<int16_t>(centredSum), reciprocalTable)); // Q0.15
+
+                // e and reciprocal are at most 32767, so their product and
+                // the rounding term (at most 2^29) stay inside int32.
+                const int32_t rightShift = 31 - headroomPlusOne;
+                const int32_t round = static_cast<int32_t>(1) << (rightShift - 1);
+                for (std::size_t i = 0; i < Features_; ++i)
+                {
+                    int32_t y = (static_cast<int32_t>(rowOut[i]) * reciprocal + round) >> rightShift;
+                    y = (y < 0) ? 0 : ((y > 32767) ? 32767 : y);
+                    rowOut[i] = static_cast<OutputType>(y);
+                }
+            }
+        }
+    };
+
 } // namespace tinymind
+
+#if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
+#include <cmath>
+
+namespace tinymind {
+
+    namespace detail {
+
+        /**
+         * TFLite's LUTPopulateInt16<double> (tensorflow/lite/kernels/internal/
+         * common.h), operation for operation, so that a table it builds equals
+         * TFLite's entry for entry: 512 samples spaced (input_max - input_min)
+         * / 512 apart, each less half the linear interpolation's error at its
+         * interval's midpoint, and a 513th at input_max. (buildQLUT16 in
+         * qactivations.hpp puts its samples exactly on qApplyLUT16's knots
+         * instead; this one keeps TFLite's spacing, which the softmax tables
+         * must match to give TFLite's results.)
+         */
+        inline void populateTFLiteLUT16(double input_scale, int32_t input_zero_point, double output_scale,
+                                        int32_t output_zero_point, double (*transform)(double), int16_t* lut)
+        {
+            const double input_min = input_scale * static_cast<double>(-32768 - input_zero_point);
+            const double input_max = input_scale * static_cast<double>(32767 - input_zero_point);
+            const double output_min = output_scale * static_cast<double>(-32768 - output_zero_point);
+            const double output_max = output_scale * static_cast<double>(32767 - output_zero_point);
+
+            const int nb_steps = 512;
+            const double step = (input_max - input_min) / nb_steps;
+            const double half_step = step / 2;
+            const double output_scaling_inv = static_cast<double>(32767 - (-32768) + 1) / (output_max - output_min);
+            const double table_min = -32768.0;
+            const double table_max = 32767.0;
+
+            for (int i = 0; i < nb_steps; ++i)
+            {
+                const double val = transform(input_min + i * step);
+                const double val_midpoint = transform(input_min + i * step + half_step);
+                const double val_next = transform(input_min + (i + 1) * step);
+
+                const double sample_val = std::round(val * output_scaling_inv);
+                const double midpoint_interp_val =
+                    std::round((val_next * output_scaling_inv + std::round(val * output_scaling_inv)) / 2);
+                const double midpoint_val = std::round(val_midpoint * output_scaling_inv);
+                const double midpoint_err = midpoint_interp_val - midpoint_val;
+                const double bias = std::round(midpoint_err / 2);
+
+                const double v = sample_val - bias;
+                lut[i] = static_cast<int16_t>((v < table_min) ? table_min : ((v > table_max) ? table_max : v));
+            }
+            const double last = std::round(transform(input_max) * output_scaling_inv);
+            lut[nb_steps] = static_cast<int16_t>((last < table_min) ? table_min : ((last > table_max) ? table_max : last));
+        }
+
+        inline double softmaxExpTransform(double x)
+        {
+            return std::exp(x);
+        }
+
+        inline double softmaxReciprocalTransform(double x)
+        {
+            return 1.0 / (1.0 + x);
+        }
+
+    } // namespace detail
+
+    /**
+     * Build QSoftmaxInt16's two tables as TFLite's SoftmaxPrepare does for an
+     * int16 softmax: exp(x) over [-10, 0] and 1 / (1 + x) over [0, 1], both
+     * onto the symmetric [-1, 1] int16 output range. Host-side; the layer
+     * uses the copies in qsoftmax16_tables.hpp, which a unit test checks
+     * against this builder.
+     */
+    inline void buildQSoftmaxInt16LUTs(int16_t* exp_lut, int16_t* reciprocal_lut)
+    {
+        const double range = static_cast<double>(32767 - (-32768));
+        detail::populateTFLiteLUT16(10.0 / range, 32767, 2.0 / range, 0, detail::softmaxExpTransform, exp_lut);
+        detail::populateTFLiteLUT16(1.0 / range, -32768, 2.0 / range, 0, detail::softmaxReciprocalTransform,
+                                    reciprocal_lut);
+    }
+
+    /**
+     * QSoftmaxInt16's input multiplier and shift for an int16 input of scale
+     * input_scale (zero point 0) and softmax beta, as TFLite computes them:
+     * input_scale * beta / (10 / 65535), so that a difference from the row's
+     * maximum of -65535 steps maps to -10. Pass the float32 scale and beta
+     * widened to double, as TFLite does, to get its multiplier exactly.
+     * input_shift has this library's sign (negative shifts left).
+     */
+    inline void buildQSoftmaxInt16Params(double input_scale, double beta, int32_t& input_multiplier,
+                                         int32_t& input_shift)
+    {
+        quantizeMultiplier(input_scale * beta / (10.0 / 65535.0), input_multiplier, input_shift);
+    }
+
+} // namespace tinymind
+#endif // TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
