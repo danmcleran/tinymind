@@ -477,7 +477,8 @@ QEMU_AARCH64        ?= qemu-aarch64
 # the full exhaustive run, $(6) the backend labels (as the exhaustive suite
 # prints them after "int8 dot, ") that must appear in each exhaustive log, $(7)
 # an extra recipe line run on the dot-product log before the full run's
-# `make clean` deletes it. Each log is checked right after its run for that
+# `make clean` deletes it, $(8) a Boost.Test filter for the quantization suite
+# (empty: run every case). Each log is checked right after its run for that
 # reason.
 #
 # The full exhaustive suite runs without sanitizers: under ASan+UBSan on arm64
@@ -486,6 +487,16 @@ QEMU_AARCH64        ?= qemu-aarch64
 # The dot-product cases, where a backend's tail code could read past the end of
 # a buffer, still run under the sanitizers.
 SIMD_ARM_DOT_FILTER = test_suite_exhaustive/int8_dot_*:test_suite_exhaustive/fp16_dot_*
+
+# The quantization suite's exhaustive 16x8 rescale, requantizer and add cases
+# run scalar code only: no SIMD backend reaches them. They are cheap natively
+# without sanitizers, but they cost about 35 minutes per run under ASan+UBSan
+# on the arm64 runner (three runs: neon, dotprod, sve-native) and about 10
+# minutes per vector length at -O0 under qemu-aarch64, which took this job from
+# under an hour to over 3 hours. Those runs skip them. They still run on this
+# host in check-simd-arm-clang, which has no sanitizers, and on x86 under
+# ASan+UBSan.
+SIMD_ARM_SKIP_SCALAR_16X8 = !quantization/qint16x8_add_zero_point_0_and_half_rescales,qint16x8_fast_requantizer64_matches_reference,qint16x8_add_output_clamps_and_fallback
 SIMD_ARM_FP16_CHECK = @grep -q "fp16 dot, neon_fp16-direct:" unit_test/exhaustive/output/simd-arm-dot.log || \
                         { echo "FAIL: the neon_fp16 case did not run"; exit 1; }
 
@@ -493,9 +504,12 @@ define simd_arm_suites
 	@test "$$(uname -m)" = aarch64 || { echo "$(1): needs an aarch64 host (uname -m is $$(uname -m))"; exit 1; }
 	@for d in $(TSAN_SUITES); do \
 		echo "=== $(1): $$d ==="; \
+		filter=; \
+		if [ "$$d" = unit_test/quantization ] && [ -n '$(8)' ]; then \
+		  filter="BOOST_TEST_RUN_FILTERS=$(8)"; fi; \
 		( cd $$d && $(MAKE) clean >/dev/null 2>&1 && \
 		  $(MAKE) CC="$(2)" WARN="$(3)" >/dev/null && \
-		  $(4) $(MAKE) CC="$(2)" WARN="$(3)" run ) \
+		  $(4) env $$filter $(MAKE) CC="$(2)" WARN="$(3)" run ) \
 		  || { echo "$(1) FAIL: $$d"; exit 1; }; \
 	done
 	@echo "=== $(1): unit_test/exhaustive, dot-product cases ==="
@@ -523,10 +537,10 @@ define simd_arm_suites
 endef
 
 check-simd-arm-neon :
-	$(call simd_arm_suites,check-simd-arm-neon,g++ $(SIMD_ARM_SAN) $(SIMD_ARM_NEON_FLAGS),$(SAN_WARN),$(SAN_ENV),g++ $(SIMD_ARM_NEON_FLAGS),neon neon-direct)
+	$(call simd_arm_suites,check-simd-arm-neon,g++ $(SIMD_ARM_SAN) $(SIMD_ARM_NEON_FLAGS),$(SAN_WARN),$(SAN_ENV),g++ $(SIMD_ARM_NEON_FLAGS),neon neon-direct,,$(SIMD_ARM_SKIP_SCALAR_16X8))
 
 check-simd-arm-dotprod :
-	$(call simd_arm_suites,check-simd-arm-dotprod,g++ $(SIMD_ARM_SAN) $(SIMD_ARM_DOT_FLAGS),$(SAN_WARN),$(SAN_ENV),g++ $(SIMD_ARM_DOT_FLAGS),neon_dotprod neon_dotprod-direct neon-direct,$(SIMD_ARM_FP16_CHECK))
+	$(call simd_arm_suites,check-simd-arm-dotprod,g++ $(SIMD_ARM_SAN) $(SIMD_ARM_DOT_FLAGS),$(SAN_WARN),$(SAN_ENV),g++ $(SIMD_ARM_DOT_FLAGS),neon_dotprod neon_dotprod-direct neon-direct,$(SIMD_ARM_FP16_CHECK),$(SIMD_ARM_SKIP_SCALAR_16X8))
 
 check-simd-arm-clang :
 	@command -v $(CLANG_CXX) >/dev/null 2>&1 || \
@@ -561,7 +575,8 @@ check-simd-arm-sve :
 			  { echo "check-simd-arm-sve FAIL: backend $$b did not run at $$bits bits"; exit 1; }; \
 		done; \
 		echo "=== check-simd-arm-sve: unit_test/quantization, qemu-aarch64, $$bits-bit vectors ==="; \
-		( cd unit_test/quantization/output && $$qemu ./quantization_unit_test ) || \
+		( cd unit_test/quantization/output && $$qemu ./quantization_unit_test \
+		  --run_test='$(SIMD_ARM_SKIP_SCALAR_16X8)' ) || \
 		  { echo "check-simd-arm-sve FAIL: unit_test/quantization at $$bits bits"; exit 1; }; \
 	done
 	@echo "check-simd-arm-sve: SVE dispatched and checked at vector bytes $(SVE_VECTOR_BYTES)"
@@ -569,7 +584,7 @@ check-simd-arm-sve :
 # The SVE configuration through simd_arm_suites on the host's own SVE
 # implementation: every int8 layer dispatches to sve, under ASan+UBSan.
 check-simd-arm-sve-native :
-	$(call simd_arm_suites,check-simd-arm-sve-native,g++ $(SIMD_ARM_SAN) $(SIMD_ARM_SVE_FLAGS),$(SAN_WARN),$(SAN_ENV),g++ $(SIMD_ARM_SVE_FLAGS),sve sve-direct neon_dotprod-direct neon-direct)
+	$(call simd_arm_suites,check-simd-arm-sve-native,g++ $(SIMD_ARM_SAN) $(SIMD_ARM_SVE_FLAGS),$(SAN_WARN),$(SAN_ENV),g++ $(SIMD_ARM_SVE_FLAGS),sve sve-direct neon_dotprod-direct neon-direct,,$(SIMD_ARM_SKIP_SCALAR_16X8))
 
 check-simd-arm : check-simd-arm-neon check-simd-arm-dotprod check-simd-arm-clang check-simd-arm-sve
 
