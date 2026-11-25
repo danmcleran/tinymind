@@ -197,7 +197,7 @@ On `examples/onnx_digits_int8` (a residual CNN on the optical digits) the
 plan needs 1,024 bytes of the 2,048 that one buffer per output would take,
 which equals the busiest layer's live bytes. Compiled for a Cortex-M0+ at
 `-Os`, the model and its weights are 7.3 KB of flash (6.0 KB with
-`int4_dense=True`, 5.0 KB with `int4_dense` and `int4_conv`, 9.6 KB with
+`int4_dense=True`, 5.8 KB with `int4_dense` and `int4_conv`, 9.6 KB with
 `activation_bits=16`), with no `.data` and no heap.
 
 The generator refuses a `Relu` whose output grid differs from its input's
