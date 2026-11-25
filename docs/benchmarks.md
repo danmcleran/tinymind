@@ -211,7 +211,7 @@ A tree walk's length depends on the input, so the spread between fastest and slo
 | | NUCLEO-F411RE, scalar | NUCLEO-F411RE, Arm DSP | NUCLEO-L031K6 |
 |---|---:|---:|---:|
 | Digits CNN ([`onnx_digits_int8`]({{ site.baseurl }}/examples/onnx_digits_int8)), int8 | 479,524 | 171,384 | 760,608 |
-| Same, every weight layer on packed int4 weights | 454,157 | 172,082 | 778,696 |
+| Same, every weight layer on packed int4 weights | 454,157 | 172,082 | 778,803 |
 | Same, int16 activations (16x8) | 452,807 | 202,690 | 853,668 |
 | Log-mel frame, 256 samples, 32 bands | 46,878 | 46,878 | 185,172 |
 | k-means anomaly score, 32 features x 8 clusters | 3,569 | 3,569 | 23,571 |

@@ -1296,6 +1296,35 @@ class ModelCodegen(unittest.TestCase):
               f"correlation {corr:.4f}")
         self.assertGreater(corr, 0.95)
 
+    def test_qat_int4_weights_survive_quantization_exactly(self):
+        """tinymind_qat holds every Conv / Linear weight on its channel's int4
+        grid. Exported, quantized to int8 by ONNX Runtime and requantized to
+        int4 by the generator, those weights must come back exactly; the
+        same model without QAT must not."""
+        import copy
+        import tinymind_qat
+        torch.manual_seed(3)
+        for k, (net, shape) in enumerate(((ConvNet(), INPUT_SHAPE), (ResNetish(False), GRAPH_INPUT_SHAPE))):
+            qat = tinymind_qat.finalize_int4_qat(tinymind_qat.prepare_int4_qat(copy.deepcopy(net)))
+            self.assertTrue(all(tinymind_qat.int4_grid_codes(m.weight) for m in tinymind_qat.int4_modules(qat)))
+            for model, tag, on_grid in ((qat, f"qat_{k}", True), (net, f"noqat_{k}", False)):
+                layers = ti.parse_onnx_model(export_and_quantize(model, shape, self.workdir, "QDQ", True, tag))
+                moved = 0.0
+                for l in layers:
+                    if l.op_type not in ("Conv", "DepthwiseConv", "Dense"):
+                        continue
+                    q4 = cg.requantize_int4(l)
+                    w8 = l.weight.astype(np.float64).reshape(l.weight.shape[0], -1)
+                    s8 = np.array(l.weight_scales if l.per_channel else l.weight_scales * w8.shape[0])
+                    w4 = q4.codes.astype(np.float64).reshape(w8.shape[0], -1)
+                    s4 = np.array(q4.scales)
+                    # The int4 value against the int8 value, in int4 steps.
+                    moved = max(moved, float(np.max(np.abs(w4 * s4[:, None] - w8 * s8[:, None]) / s4[:, None])))
+                if on_grid:
+                    self.assertLess(moved, 0.03, tag)  # int8 rounding of an int4 code: at most 0.5 / 18.1 step
+                else:
+                    self.assertGreater(moved, 0.3, tag)
+
     def test_int4_dense_tracks_onnx_runtime(self):
         """The real int4 requantization changes the weights, so the model
         no longer matches ONNX Runtime exactly; it stays close."""
