@@ -9,10 +9,11 @@ ONNX model that ONNX Runtime quantized:
   * `model.hpp` holds one `constexpr` tinymind layer object per layer, a
     static memory plan for every intermediate activation, and
     `forward(input, output, arena)` (`apps/import_onnx/tinymind_model_codegen.py`);
-  * `model_int4.hpp` is the same model with every weight layer requantized
-    to packed, per-channel int4 weights (`QConv2DInt4`,
-    `QDepthwiseConv2DInt4`, `QDenseInt4`), in namespace `digits::int4`. It
-    shares `weights.hpp`.
+  * `model_int4.hpp` is the model fine-tuned with int4 quantization-aware
+    training, every weight layer on packed, per-channel int4 weights
+    (`QConv2DInt4`, `QDepthwiseConv2DInt4`, `QDenseInt4`), in namespace
+    `digits::int4`. It includes `weights.hpp` but reads none of its
+    constants.
   * `model_int16x8.hpp` is the same model with int16 activations and its
     int8 weights (TFLite's 16x8 scheme), in namespace `digits::int16x8`. It
     shares `weights.hpp` too.
@@ -52,7 +53,7 @@ ONNX Runtime int8 accuracy:     0.9699
 float (PyTorch) accuracy:       0.9699
 same class as ONNX Runtime:     1795 of 1797
 activation arena:               1024 bytes (unshared 2048, busiest layer 1024)
-int4 weights accuracy:          0.9672 (same class as int8 on 1759 of 1797)
+int4 weights accuracy:          0.9705 (same class as int8 on 1784 of 1797)
 weights:                        3408 bytes int8, 1704 bytes in int4
 16x8 accuracy:                  0.9688 (arena 2048 bytes, same weights)
 same class as the float model:  int8 1791, 16x8 1795 of 1797
@@ -89,14 +90,18 @@ Nothing is allocated on the heap.
 
 ### int4 weights
 
-`model_int4.hpp` requantizes every weight layer (the three convolutions,
-the depthwise layer and the dense layer) to symmetric int4, with one scale
-per output channel, and stores two weights per byte:
+`model_int4.hpp` puts every weight layer (the three convolutions, the
+depthwise layer and the dense layer) on symmetric int4, with one scale per
+output channel, and stores two weights per byte. `train.py` fine-tunes the
+trained model for 10 more epochs at a tenth of its learning rate with every
+weight held on its int4 grid (quantization-aware training,
+[`apps/import_onnx/tinymind_qat.py`](../../apps/import_onnx/tinymind_qat.py)),
+then exports and quantizes it like the int8 model:
 
 | | int8 | int4 |
 |---|---|---|
-| Accuracy | 97.0% | 96.7% (5 more errors in 1,797) |
-| Same class as the int8 model | | 1,759 of 1,797 digits |
+| Accuracy | 97.0% | 97.1% (1 error fewer in 1,797) |
+| Same class as the int8 model | | 1,784 of 1,797 digits |
 | Weight bytes | 3,408 | 1,704 |
 | Cortex-M0+ code and read-only data | 7,326 bytes | 5,814 bytes |
 
@@ -109,7 +114,7 @@ costs almost no time:
 
 | | int8 | int4 |
 |---|---:|---:|
-| Cortex-M0+ (NUCLEO-L031K6, 32 MHz) | 760,608 cycles (23.8 ms) | 778,696 cycles (24.3 ms) |
+| Cortex-M0+ (NUCLEO-L031K6, 32 MHz) | 760,608 cycles (23.8 ms) | 778,803 cycles (24.3 ms) |
 | Cortex-M4, scalar kernels (NUCLEO-F411RE, 100 MHz) | 479,524 (4.8 ms) | 454,157 (4.5 ms) |
 | Cortex-M4, Arm DSP backend | 171,384 (1.7 ms) | 172,082 (1.7 ms) |
 
@@ -120,11 +125,25 @@ which costs one pass over the weights and that much stack: the model's
 deepest stack grows from 636 to 1,348 bytes on the Cortex-M4 and from 1,588
 to 2,092 on the Cortex-M0+. A layer with more than
 `TINYMIND_INT4_CONV_UNPACK_MAX_BYTES` weights (1,024 by default) computes
-from the packed weights instead, more slowly. The requantization is
-post-training, with no retraining; quantization-aware training would
-recover more of the accuracy. The code generator can also convert the dense
-layers alone (`int4_dense=True` without `int4_conv=True`): on this model
-that keeps 96.8% accuracy for 2,128 weight bytes.
+from the packed weights instead, more slowly.
+
+Without the fine-tuning, requantizing the trained model's weights to int4
+after training (`int4_dense` and `int4_conv` on the int8 model) gives 96.7%
+for this seed, but that seed is the kind one. Over training seeds 1 to 10,
+measured through the whole pipeline (train, quantize, generate, run the C++
+model on the 1,797 test digits):
+
+| Seeds 1 to 10 | Mean accuracy | Standard deviation | Worst seed |
+|---|---:|---:|---:|
+| int8 | 96.83% | 0.39 | 96.22% |
+| int4 requantized after training | 95.11% | 1.36 | 92.54% |
+| int4 with quantization-aware training | 96.46% | 0.39 | 95.94% |
+
+Quantization-aware training wins on every seed, by 0.33 to 3.45 points, and
+brings int4 to within 0.37 points of int8 on average. The code generator can
+also convert the dense layers alone (`int4_dense=True` without
+`int4_conv=True`): on this seed's model that gives 96.8% for 2,128 weight
+bytes.
 
 ### int16 activations (16x8)
 

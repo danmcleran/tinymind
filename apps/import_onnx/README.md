@@ -149,9 +149,36 @@ requantizer to `input_scale * s4 / output_scale` (`requantize_int4`). This
 is post-training requantization with no retraining, so it costs some
 accuracy. On `examples/onnx_digits_int8` the model's weights drop from 3,408
 to 2,128 bytes with `int4_dense` (97.0% to 96.8% accuracy) and to 1,704
-bytes with both (96.7%). `nested_namespace="int4"` lets
+bytes with both (96.7%, and 95.1% on average over 10 training seeds against
+96.8% for int8). Quantization-aware training recovers most of that; see
+below. `nested_namespace="int4"` lets
 the int4 variant share a `weights.hpp` with the int8 one, and
 `kModelWeightBytes` gives the weight bytes each variant reads.
+
+### Quantization-aware training for int4
+
+`tinymind_qat.py` (needs torch) trains a PyTorch model for the int4 options.
+`prepare_int4_qat(model)` holds the weight of every `Conv2d` and `Linear` on
+exactly the grid `requantize_int4` will put it on (per output channel, scale
+max |w| / 7, codes -7..7, ties away from zero), with a straight-through
+gradient; fine-tune for a few epochs, then `finalize_int4_qat(model)` bakes
+the grid values in and the model exports as usual. Weights on that grid pass
+through ONNX Runtime's per-channel int8 quantization and `requantize_int4`
+unchanged: the int8 scale is 7 / 127 of the int4 one, so int4 code k becomes
+int8 code round(18.14 k), which rounds back to k. Activations are not
+fake-quantized; int8 activations already cost this example nothing.
+
+`examples/onnx_digits_int8/train.py` fine-tunes for 10 epochs at a tenth of
+the training learning rate (fixed before measuring). Over training seeds 1 to
+10, measured on the generated C++ model:
+
+| Seeds 1 to 10 | Mean accuracy | Standard deviation | Worst seed |
+|---|---:|---:|---:|
+| int8 | 96.83% | 0.39 | 96.22% |
+| int4 requantized after training | 95.11% | 1.36 | 92.54% |
+| int4 with quantization-aware training | 96.46% | 0.39 | 95.94% |
+
+It wins on every seed, by 0.33 to 3.45 points.
 
 `activation_bits=16` generates the model with int16 activations and its
 int8 weights, TFLite's 16x8 scheme, from the same int8 records and with no
@@ -247,7 +274,7 @@ every arena byte with the layer that wrote it and fails when a layer reads
 an input that was overwritten. Planting a planner bug (every buffer at offset
 0) fails both the simulator and the compiled comparisons.
 
-Four more cover `int4_dense` and `int4_conv`:
+Five more cover `int4_dense`, `int4_conv` and quantization-aware training:
 
 * Two clamp the weights so that int4 holds them exactly (|w| <= 7, with a 7
   in every output channel): the dense layers alone, and every weight layer
@@ -258,6 +285,13 @@ Four more cover `int4_dense` and `int4_conv`:
   packed weights, fails them.
 * Two run the real requantization against ONNX Runtime: correlation 0.996,
   mean error 3 LSB, with the dense layers in int4 or every weight layer.
+* `tinymind_qat`: a chain and a residual model, finalized by
+  `prepare_int4_qat` / `finalize_int4_qat`, exported and quantized by ONNX
+  Runtime and requantized by `requantize_int4`, must keep every weight
+  within 0.03 of an int4 step of where QAT put it (the int8 rounding of an
+  int4 code is at most 0.5 / 18.1 of a step); the same models without QAT
+  move by more than 0.3 of a step. A QAT grid of max |w| / 6 instead of / 7
+  fails it.
 
 Five cover `activation_bits=16`:
 
