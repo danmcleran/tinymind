@@ -42,8 +42,10 @@
 // |w * (x - zp)| = 128 * 255. The 2x2 kernel (two inputs against two weight
 // rows) gets the same sweep, and the convolution kernel a few shapes.
 // QPointwiseConv2D (narrow and wide enough for the 2x2 path), padded and
-// unpadded QConv2DPerChannel on both its patch and row paths, and QDense are
-// then checked end to end against direct evaluation.
+// unpadded QConv2DPerChannel on both its patch and row paths, QDense and
+// QDenseInt4 are then checked end to end against direct evaluation. The Arm
+// DSP backend's int4 kernels (one row and two rows of packed int4 weights)
+// get their own per-lane and length sweeps.
 //
 // The fp32 dot product is not bit-exact with a sequential sum by design, so
 // it is checked bit-exactly against a model of its own arithmetic (four
@@ -65,6 +67,7 @@
 #include "qaffine.hpp"
 #include "qconv2d.hpp"
 #include "qdense.hpp"
+#include "qint4.hpp"
 #include "qpointwiseconv2d.hpp"
 
 #include "semihost.hpp"
@@ -700,6 +703,190 @@ namespace {
     }
 #endif
 
+    // Reference int4 dot product: every nibble decoded by unpackInt4.
+    int32_t int4DotReference(const int8_t* x, const uint8_t* packed, std::size_t first, std::size_t n, int32_t zp)
+    {
+        int32_t acc = 0;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            acc += static_cast<int32_t>(tinymind::unpackInt4(packed, first + i)) * (static_cast<int32_t>(x[i]) - zp);
+        }
+        return acc;
+    }
+
+    // QDenseInt4 against direct evaluation. An odd input count starts half
+    // the rows mid-byte (the one-row path); an even one takes the Arm DSP
+    // backend's two-row path, and an odd output count its last row alone.
+    template<std::size_t N, std::size_t O>
+    void testDenseInt4()
+    {
+        typedef tinymind::QDenseInt4<int8_t, int32_t, int8_t, N, O> Layer;
+        static uint8_t weights[Layer::PackedWeightBytes];
+        static int32_t biases[O];
+        static tinymind::Requantizer<int32_t, int8_t> rqs[O];
+        static int8_t input[N];
+        static int8_t output[O];
+        static const int8_t kLayerZeroPoints[] = {-128, -3, 0, 127};
+        for (const int8_t zp : kLayerZeroPoints)
+        {
+            for (int round = 0; round < 8; ++round)
+            {
+                for (uint8_t& v : weights) { v = static_cast<uint8_t>(nextByte()); }
+                for (int8_t& v : input) { v = nextByte(); }
+                for (std::size_t o = 0; o < O; ++o)
+                {
+                    biases[o] = static_cast<int32_t>(nextByte()) * 64;
+                    rqs[o] = makeRequantizer();
+                }
+                Layer layer;
+                layer.weights = weights;
+                layer.biases = biases;
+                layer.input_zero_point = zp;
+                layer.requantizers = rqs;
+                layer.forward(input, output);
+                for (std::size_t o = 0; o < O; ++o)
+                {
+                    const int32_t acc = biases[o] + int4DotReference(input, weights, o * N, N, zp);
+                    const int32_t want = rqs[o].apply(acc);
+                    const int32_t got = output[o];
+                    ++g_cases;
+                    if (got != want)
+                    {
+                        fail("dense int4 o,zp", static_cast<uint32_t>(o), static_cast<uint32_t>(zp + 128), got, want);
+                    }
+                }
+            }
+        }
+    }
+
+    // Packed int4 weights against int8 inputs. On the Arm DSP backend both
+    // SMLAD kernels (one row, two rows) are called directly: every nibble value against every
+    // input byte in each of a block's eight lanes, at three zero points;
+    // then lengths 0..kMaxN and lengths across its 32,768-term block bound,
+    // at every input misalignment, with data at the |w * (x - zp)| extreme.
+    // Every build then runs QDenseInt4 (testDenseInt4) in three shapes.
+    void testInt4Dot()
+    {
+#if TINYMIND_ENABLE_SIMD_ARM_DSP
+        constexpr std::size_t kLong = 32768 + 8 * 3 + 7;
+        alignas(4) static int8_t xbuf[kLong + kSlack];
+        alignas(4) static uint8_t packed[kLong / 2 + 2 * kSlack];
+        static const int8_t kZeroPoints[] = {-128, 0, 127};
+        for (std::size_t lane = 0; lane < 8; ++lane)
+        {
+            for (int32_t w = -8; w <= 7; ++w)
+            {
+                for (const int8_t zp : kZeroPoints)
+                {
+                    for (std::size_t i = 0; i < 4; ++i)
+                    {
+                        packed[i] = static_cast<uint8_t>(nextByte());
+                    }
+                    const uint32_t shift = static_cast<uint32_t>((lane & 1u) * 4u);
+                    packed[lane / 2] = static_cast<uint8_t>((packed[lane / 2] & ~(15u << shift)) |
+                                                            ((static_cast<uint32_t>(w) & 15u) << shift));
+                    for (int32_t xv = -128; xv <= 127; ++xv)
+                    {
+                        for (std::size_t i = 0; i < 8; ++i)
+                        {
+                            xbuf[i] = nextByte();
+                        }
+                        xbuf[lane] = static_cast<int8_t>(xv);
+                        const int32_t want = int4DotReference(xbuf, packed, 0, 8, zp);
+                        const int32_t got = tinymind::simd::arm_dsp::int4DotWithZeroPoint(xbuf, packed, 8, zp);
+                        ++g_cases;
+                        if (got != want)
+                        {
+                            fail("smlad int4 lane,w", static_cast<uint32_t>(lane), static_cast<uint32_t>(w + 8), got,
+                                 want);
+                        }
+                        // The same block as the second row of the two-row
+                        // kernel, the first row its byte-swapped mirror.
+                        for (std::size_t i = 0; i < 4; ++i)
+                        {
+                            packed[4 + i] = packed[3 - i];
+                        }
+                        int32_t pair[2] = {0, 0};
+                        tinymind::simd::arm_dsp::int4Dot1x2WithZeroPoint(xbuf, packed + 4, packed, 8, zp, pair);
+                        const int32_t mirror = int4DotReference(xbuf, packed + 4, 0, 8, zp);
+                        g_cases += 2;
+                        if (pair[0] != mirror || pair[1] != want)
+                        {
+                            fail("smlad int4 1x2 lane,w", static_cast<uint32_t>(lane), static_cast<uint32_t>(w + 8),
+                                 pair[1] - want, pair[0] - mirror);
+                        }
+                    }
+                }
+            }
+        }
+
+        static const std::size_t kLongLengths[] = {32767, 32768, 32769, 32775, 32776, 32784, kLong};
+        for (int fill = 0; fill < 4; ++fill)
+        {
+            for (std::size_t i = 0; i < kLong + kSlack; ++i)
+            {
+                xbuf[i] = (fill == 0) ? nextByte() : ((fill == 3 && (i & 1u)) ? static_cast<int8_t>(127)
+                                                                               : static_cast<int8_t>(-128));
+            }
+            for (std::size_t i = 0; i < kLong / 2 + 2 * kSlack; ++i)
+            {
+                packed[i] = (fill == 0) ? static_cast<uint8_t>(nextByte()) : static_cast<uint8_t>(0x88u);
+            }
+            for (const int8_t zp : kZeroPoints)
+            {
+                for (std::size_t n = 0; n <= kMaxN; ++n)
+                {
+                    for (std::size_t xo = 0; xo < kSlack; ++xo)
+                    {
+                        const int32_t want = int4DotReference(xbuf + xo, packed + xo, 0, n, zp);
+                        const int32_t got = tinymind::simd::arm_dsp::int4DotWithZeroPoint(xbuf + xo, packed + xo, n, zp);
+                        ++g_cases;
+                        if (got != want)
+                        {
+                            fail("smlad int4 n,xo", static_cast<uint32_t>(n), static_cast<uint32_t>(xo), got, want);
+                        }
+                        // Two rows: the second starts kSlack bytes later and,
+                        // misaligned by xo, overlaps the first.
+                        const int32_t want1 = int4DotReference(xbuf + xo, packed + xo + kSlack, 0, n, zp);
+                        int32_t pair[2] = {7, -7};
+                        tinymind::simd::arm_dsp::int4Dot1x2WithZeroPoint(xbuf + xo, packed + xo,
+                                                                          packed + xo + kSlack, n, zp, pair);
+                        g_cases += 2;
+                        if (pair[0] != want + 7 || pair[1] != want1 - 7)
+                        {
+                            fail("smlad int4 1x2 n,xo", static_cast<uint32_t>(n), static_cast<uint32_t>(xo),
+                                 pair[0] - 7 - want, pair[1] + 7 - want1);
+                        }
+                    }
+                }
+                for (const std::size_t n : kLongLengths)
+                {
+                    const int32_t want = int4DotReference(xbuf, packed, 0, n, zp);
+                    const int32_t got = tinymind::simd::arm_dsp::int4DotWithZeroPoint(xbuf, packed, n, zp);
+                    ++g_cases;
+                    if (got != want)
+                    {
+                        fail("smlad int4 long n", static_cast<uint32_t>(n), static_cast<uint32_t>(fill), got, want);
+                    }
+                    const int32_t want1 = int4DotReference(xbuf, packed + 1, 0, n, zp);
+                    int32_t pair[2] = {0, 0};
+                    tinymind::simd::arm_dsp::int4Dot1x2WithZeroPoint(xbuf, packed, packed + 1, n, zp, pair);
+                    g_cases += 2;
+                    if (pair[0] != want || pair[1] != want1)
+                    {
+                        fail("smlad int4 1x2 long n", static_cast<uint32_t>(n), static_cast<uint32_t>(fill),
+                             pair[0] - want, pair[1] - want1);
+                    }
+                }
+            }
+        }
+#endif
+
+        testDenseInt4<37, 6>();
+        testDenseInt4<40, 7>();
+        testDenseInt4<2, 2>();
+    }
+
     // The 16x8 dot product (int16 activations, int8 weights, int64 sum):
     // the dispatched form, and on the Arm DSP backend the SMLAD kernel
     // itself, against the scalar loop, for lengths across the 256-term
@@ -899,6 +1086,7 @@ extern "C" int run_tests()
     testPointwiseWide();
     testPaddedConv();
     testDense();
+    testInt4Dot();
     testInt16x8Dot();
     testFastRequantizer64();
     testAddRescales16();

@@ -234,6 +234,34 @@ namespace tinymind { namespace simd {
         return int16x8DotWithZeroPoint(x, w, n, zp);
     }
 
+#if TINYMIND_ENABLE_SIMD_ARM_DSP && !TINYMIND_ENABLE_SIMD_HELIUM_MVE_I && \
+    !defined(TINYMIND_SIMD_X86_VECTOR_DOT) && !TINYMIND_ENABLE_SIMD_NEON && \
+    !TINYMIND_ENABLE_SIMD_NEON_DOTPROD && !TINYMIND_ENABLE_SIMD_SVE
+    /**
+     * int8 inputs against packed int4 weights starting at a byte boundary
+     * (qint4.hpp's layout): sum_i w[i] * (x[i] - zp). Only the Arm DSP
+     * backend has a kernel for it; QDenseInt4 checks
+     * TINYMIND_SIMD_INT4_DOT and keeps its scalar loop everywhere else, so
+     * those builds compile to the same code as before.
+     */
+#define TINYMIND_SIMD_INT4_DOT 1
+    inline int32_t int4DotWithZeroPoint(const int8_t* x, const uint8_t* packed, std::size_t n, int8_t zp)
+    {
+        return arm_dsp::int4DotWithZeroPoint(x, packed, n, zp);
+    }
+
+    /**
+     * One input against two packed int4 rows (both at a byte boundary):
+     * acc[0] += w0 . (x - zp), acc[1] += w1 . (x - zp), with the input
+     * widened once for both.
+     */
+    inline void int4Dot1x2WithZeroPoint(const int8_t* x, const uint8_t* w0, const uint8_t* w1, std::size_t n,
+                                        int8_t zp, int32_t* acc)
+    {
+        arm_dsp::int4Dot1x2WithZeroPoint(x, w0, w1, n, zp, acc);
+    }
+#endif
+
     /**
      * Two inputs against two weight rows (two output pixels times two
      * filters of a convolution), accumulated into acc:
