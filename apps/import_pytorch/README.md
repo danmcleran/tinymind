@@ -69,6 +69,47 @@ into the conv weights/bias before calibration. This matches the
 float `forward` runs the conv and then the BN, so calibration measures the
 range after the BN, which is what the fused int8 layer outputs.
 
+## Whole-model code generation
+
+`generate_model` runs the same passes and then hands the model to the ONNX
+importer's code generator (`apps/import_onnx/tinymind_model_codegen.py`), so
+a PyTorch model gets the same `weights.hpp` and `model.hpp` as an ONNX one:
+one `constexpr` layer object per layer, a static memory plan for every
+intermediate activation, and `forward(input, output, arena)`.
+
+```python
+from tinymind_import import Conv2D, Dense, ReLU, Softmax, MinMaxObserver, generate_model
+
+layers = [
+    Conv2D(name="c1", weight=w1_ohwi, bias=b1, input_name="x",
+           input_shape=(8, 8, 1), padding=(1, 1, 1, 1),   # (top, bottom, left, right)
+           forward=lambda x: conv_nhwc(x, w1_ohwi, b1, padding=(1, 1, 1, 1))),
+    ReLU(name="r1", input_name="c1"),
+    Dense(name="fc", weight=w2_nhwc, bias=b2, input_name="r1",
+          forward=lambda x: x.reshape(-1) @ w2_nhwc.T + b2),
+    Softmax(name="probs", input_name="fc"),
+]
+records, generated = generate_model(
+    layers, input_name="x", input_observer=MinMaxObserver(), dataset=calibration,
+    weights_path="weights.hpp", model_header_path="model.hpp", namespace="net")
+```
+
+  * Supported: `Dense`, `Conv2D` (with `BatchNorm2D` folded in), `ReLU`,
+    `Sigmoid`, `Tanh` and a final `Softmax`. `MoE`, `LSTM` and
+    `QFormatDense` raise `ValueError`; wire those by hand from
+    `import_pytorch_model`'s header.
+  * `Conv2D` needs `input_shape` (H, W, C of its NHWC input), and takes
+    `stride` and `padding` (zero padding, as PyTorch pads).
+  * A `ReLU` that is the only reader of a `Dense` or `Conv2D` output is
+    folded into that layer: the layer writes the ReLU's grid, whose zero
+    point is -128, so the requantizer's clamp is the ReLU.
+  * Activations are NHWC throughout. A `Dense` after a convolution reads
+    its input flattened in NHWC order; PyTorch flattens NCHW, so permute
+    that layer's weights (`w.reshape(out, C, H, W).transpose(0, 2, 3, 1)`).
+  * The code generator's options pass through: `activation_bits=16` (16x8,
+    its softmax included), `int4_dense` and `int4_conv`, `alignment`,
+    `in_place`, `nested_namespace`.
+
 ## Observers
 
   * `MinMaxObserver`        -- naive min/max (= cpp `RangeObserver`)
@@ -228,5 +269,17 @@ rejections. With `torch` installed in the venv, one more test checks the
 float forward against `nn.LSTM` itself (parameters scaled so the gates
 saturate) and the rejections against real stacked, bidirectional and
 projected modules; without torch it is skipped.
+
+Code generation (needs `g++`): an MLP ending in a softmax and a CNN with a
+folded BatchNorm, SAME padding, an asymmetric pad, stride 2 and a dense
+head are generated and compiled freestanding, and their outputs compared
+with the float models: the MLP's probabilities are 0.004 off on average and
+pick the same class on 98.5% of 200 inputs, and the CNN's outputs are 0.2%
+of their range off on average (2.4% with every weight layer in int4, for
+half the weight bytes). The MLP's 16x8 model is 145 times closer than its
+int8 model to the same int8 weights run with float activations. Taking a
+folded ReLU's grid from the layer before it, or swapping a convolution's
+top and bottom padding, fails them; a `Conv2D` without `input_shape` and an
+`MoE` are refused.
 
 These tests are not run in CI.

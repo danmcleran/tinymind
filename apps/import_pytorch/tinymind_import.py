@@ -52,6 +52,7 @@ emitted here is bit-identical to what the C++ Requantizer expects.
 """
 
 import math
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional, Sequence
@@ -316,11 +317,20 @@ class Dense(Layer):
 
 @dataclass
 class Conv2D(Layer):
-    """Conv2D with OHWI weight layout [num_filters][kh][kw][in_channels]."""
+    """Conv2D with OHWI weight layout [num_filters][kh][kw][in_channels].
+
+    input_shape, stride and padding describe the convolution for
+    generate_model(), which emits the layer itself; the weights-only path
+    (import_pytorch_model) does not need them. input_shape is the NHWC input
+    (height, width, channels); padding is (top, bottom, left, right), padded
+    with the input's zero point as PyTorch pads with zeros."""
     weight: np.ndarray = None
     bias: Optional[np.ndarray] = None
     input_name: str = ""
     forward: Optional[Callable[[np.ndarray], np.ndarray]] = None
+    input_shape: Optional[tuple] = None
+    stride: tuple = (1, 1)
+    padding: tuple = (0, 0, 0, 0)
     weight_scale: float = 0.0
     q_weight: np.ndarray = None
     q_bias: np.ndarray = None
@@ -711,6 +721,9 @@ def fold_conv_bn(conv: Conv2D, bn: BatchNorm2D) -> Conv2D:
         bias=fused_b,
         input_name=conv.input_name,
         forward=forward,
+        input_shape=conv.input_shape,
+        stride=conv.stride,
+        padding=conv.padding,
     )
     return fused
 
@@ -1170,3 +1183,127 @@ def import_pytorch_model(layers: Sequence[Layer],
     emit_weights_header(output_path, namespace, fused, ranges, input_name,
                         meta, boundaries)
     return ranges
+
+
+# ----------------------------------------------------------------------------
+# Whole-model code generation (model.hpp), through the ONNX code generator.
+# ----------------------------------------------------------------------------
+
+
+def _onnx_tools():
+    """apps/import_onnx's record type and code generator. They import onnx
+    lazily, so neither onnx nor torch is needed here."""
+    import sys
+    here = os.path.dirname(os.path.abspath(__file__))
+    onnx_dir = os.path.join(os.path.dirname(here), "import_onnx")
+    if onnx_dir not in sys.path:
+        sys.path.insert(0, onnx_dir)
+    import tinymind_import_onnx as ti
+    import tinymind_model_codegen as cg
+    return ti, cg
+
+
+_ACTIVATION_OPS = {ReLU: "Relu", Sigmoid: "Sigmoid", Tanh: "Tanh", Softmax: "Softmax"}
+
+
+def model_records(layers: Sequence[Layer], input_name: str,
+                  ranges: dict[str, tuple[float, int]]) -> list:
+    """Turn calibrated, quantized descriptors (after fuse_layers, calibrate
+    and quantize_weights) into the records apps/import_onnx's code generator
+    reads: one per Dense, Conv2D, Sigmoid, Tanh and Softmax.
+
+    A ReLU that is the only reader of a Dense or Conv2D output is folded into
+    that layer: the layer writes the ReLU's grid, whose zero point is -128
+    (the ReLU's range starts at 0), so the requantizer's clamp at -128 is the
+    ReLU. Any other ReLU becomes a Relu record, which the generator accepts
+    only when its input and output grids agree. A Dense reading a Conv2D's
+    output reads it flattened in NHWC order; a PyTorch model that flattens
+    NCHW needs its Dense weights permuted to match.
+
+    Raises ValueError for a layer the generator cannot run (MoE, LSTM,
+    QFormatDense) and for a Conv2D without input_shape."""
+    ti, _ = _onnx_tools()
+    readers: dict[str, list] = {}
+    for layer in layers:
+        readers.setdefault(getattr(layer, "input_name", ""), []).append(layer)
+
+    records = []
+    index: dict[str, int] = {input_name: -1}
+    folded = set()
+    for layer in layers:
+        if id(layer) in folded:
+            continue
+        in_name = layer.input_name
+        if in_name not in index:
+            raise ValueError(f"{layer.name}: reads '{in_name}', which no earlier layer writes")
+        in_scale, in_zp = ranges[in_name]
+        if isinstance(layer, (Dense, Conv2D)):
+            out_name = layer.name
+            after = readers.get(layer.name, [])
+            if len(after) == 1 and isinstance(after[0], ReLU):
+                folded.add(id(after[0]))
+                out_name = after[0].name
+            out_scale, out_zp = ranges[out_name]
+            if isinstance(layer, Dense):
+                op = "Dense"
+                geometry = {"NumInputs": int(layer.weight.shape[1]), "NumOutputs": int(layer.weight.shape[0])}
+            else:
+                if layer.input_shape is None:
+                    raise ValueError(f"{layer.name}: generate_model needs Conv2D.input_shape (H, W, C)")
+                h, w, c = (int(v) for v in layer.input_shape)
+                f, kh, kw, wc = (int(v) for v in layer.weight.shape)
+                if wc != c:
+                    raise ValueError(f"{layer.name}: weight has {wc} input channels, input_shape has {c}")
+                sh, sw = (int(v) for v in layer.stride)
+                pt, pb, pl, pr = (int(v) for v in layer.padding)
+                op = "Conv"
+                geometry = {"InputHeight": h, "InputWidth": w, "InputChannels": c,
+                            "KernelHeight": kh, "KernelWidth": kw, "StrideH": sh, "StrideW": sw,
+                            "NumFilters": f, "PadTop": pt, "PadLeft": pl, "PadBottom": pb, "PadRight": pr,
+                            "OutputHeight": (h + pt + pb - kh) // sh + 1,
+                            "OutputWidth": (w + pl + pr - kw) // sw + 1}
+            record = ti._finish_weight_layer(op, ti.sanitize(layer.name), in_name, in_scale, in_zp,
+                                             out_name, out_scale, out_zp, layer.q_weight,
+                                             [layer.weight_scale], layer.bias, geometry)
+        elif type(layer) in _ACTIVATION_OPS:
+            out_name = layer.name
+            out_scale, out_zp = ranges[out_name]
+            record = ti.OnnxQuantizedLayer(op_type=_ACTIVATION_OPS[type(layer)], name=ti.sanitize(layer.name),
+                                           input_name=in_name, input_scale=in_scale, input_zp=in_zp,
+                                           output_scale=out_scale, output_zp=out_zp, output_name=out_name)
+        else:
+            raise ValueError(f"{layer.name}: no whole-model code generation for {type(layer).__name__}; "
+                             "use import_pytorch_model and wire the layers by hand")
+        record.sources = [index[in_name]]
+        index[out_name] = len(records)
+        records.append(record)
+    return records
+
+
+def generate_model(layers: Sequence[Layer],
+                   input_name: str,
+                   input_observer: object,
+                   dataset: Iterable[np.ndarray],
+                   weights_path: str,
+                   model_header_path: str,
+                   namespace: str,
+                   **codegen):
+    """End-to-end with code generation: fuse -> calibrate -> quantize, then
+    write weights.hpp and model.hpp exactly as apps/import_onnx does for an
+    ONNX model (one constexpr layer object per layer, a static activation
+    memory plan, forward(input, output, arena)). codegen passes through to
+    the ONNX generator's emit_model_header: alignment, in_place,
+    int4_dense, int4_conv, nested_namespace, activation_bits.
+
+    Weights are symmetric int8 per tensor and activations asymmetric int8,
+    as import_pytorch_model quantizes them. Returns (records,
+    GeneratedModel); records is what model_records() built."""
+    ti, cg = _onnx_tools()
+    fused = fuse_layers(layers)
+    ranges = calibrate(fused, input_name, input_observer, dataset)
+    quantize_weights(fused, ranges)
+    records = model_records(fused, input_name, ranges)
+    ti.emit_weights_header(weights_path, namespace, records)
+    generated = cg.emit_model_header(model_header_path, namespace, records, os.path.basename(weights_path),
+                                     **codegen)
+    return records, generated

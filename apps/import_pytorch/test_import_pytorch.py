@@ -26,13 +26,15 @@ Tests for the PyTorch importer (numpy only, no torch).
 
 import math
 import os
+import subprocess
 import tempfile
 import unittest
 
 import numpy as np
 
 from tinymind_import import (LSTM, LSTM_LUT_INPUT_SCALE, BatchNorm2D, Conv2D,
-                             Dense, MinMaxObserver, calibrate, fuse_layers,
+                             Dense, MinMaxObserver, MoE, ReLU, Softmax,
+                             calibrate, fuse_layers, generate_model,
                              import_pytorch_model, lstm_float_forward, lround,
                              quantize_weights)
 
@@ -307,6 +309,201 @@ class LstmImport(unittest.TestCase):
             st = {k: v.detach().numpy() for k, v in m.state_dict().items()}
             with self.assertRaisesRegex(ValueError, why):
                 LSTM.from_state_dict("lstm", st, input_name="x")
+
+
+def conv2d_nhwc(x, w, b, stride=(1, 1), padding=(0, 0, 0, 0)):
+    """NHWC input, OHWI weights, zero padding (top, bottom, left, right)."""
+    pt, pb, pl, pr = padding
+    xp = np.pad(x, ((pt, pb), (pl, pr), (0, 0)))
+    f, kh, kw, _ = w.shape
+    oh = (xp.shape[0] - kh) // stride[0] + 1
+    ow = (xp.shape[1] - kw) // stride[1] + 1
+    y = np.empty((oh, ow, f), dtype=np.float64)
+    for i in range(oh):
+        for j in range(ow):
+            patch = xp[i * stride[0]:i * stride[0] + kh, j * stride[1]:j * stride[1] + kw, :]
+            y[i, j, :] = np.tensordot(w, patch, axes=([1, 2, 3], [0, 1, 2])) + b
+    return y
+
+
+REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+
+MODEL_DRIVER = """
+#include <cstdio>
+#include "@HEADER@"
+int main()
+{
+    static @ACT@ input[@NS@::kModelInputSize];
+    static @ACT@ output[@NS@::kModelOutputSize];
+    alignas(4) static @ACT@ arena[@NS@::kModelArenaSize / sizeof(@ACT@)];
+    for (;;)
+    {
+        for (std::size_t i = 0; i < @NS@::kModelInputSize; ++i)
+        {
+            int v;
+            if (std::scanf("%d", &v) != 1)
+            {
+                return 0;
+            }
+            input[i] = static_cast<@ACT@>(v);
+        }
+        @NS@::forward(input, output, arena);
+        for (std::size_t i = 0; i < @NS@::kModelOutputSize; ++i)
+        {
+            std::printf("%d ", static_cast<int>(output[i]));
+        }
+        std::printf("\\n");
+    }
+}
+"""
+
+
+class ModelCodegen(unittest.TestCase):
+    """generate_model: the generated model.hpp, compiled freestanding with
+    g++, against the float model it was calibrated on."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = self.tmp.name
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def build_and_run(self, layers, data, tag, inputs, **codegen):
+        weights = os.path.join(self.dir, f"{tag}_weights.hpp")
+        model = os.path.join(self.dir, f"{tag}_model.hpp")
+        records, gen = generate_model(layers, "x", MinMaxObserver(), data, weights, model, tag, **codegen)
+        wide = codegen.get("activation_bits", 8) == 16
+        src = os.path.join(self.dir, f"{tag}.cpp")
+        with open(src, "w") as f:
+            f.write(MODEL_DRIVER.replace("@HEADER@", os.path.basename(model)).replace("@NS@", tag)
+                    .replace("@ACT@", "int16_t" if wide else "int8_t"))
+        exe = os.path.join(self.dir, tag)
+        subprocess.run(["g++", "-std=c++14", "-O1", "-Wall", "-Wextra", "-Werror", "-Wpedantic",
+                        "-DTINYMIND_ENABLE_QUANTIZATION=1", "-DTINYMIND_ENABLE_FLOAT=0", "-DTINYMIND_ENABLE_STD=0",
+                        "-I" + self.dir, "-I" + os.path.join(REPO, "cpp"), "-I" + os.path.join(REPO, "cpp", "include"),
+                        "-I" + os.path.join(REPO, "include"), src, "-o", exe], check=True)
+        first = records[0]
+        if wide:
+            from tinymind_import import _onnx_tools
+            _, cg = _onnx_tools()
+            scale, zp, lo, hi = cg.int16_grid(first.input_scale, first.input_zp).scale, 0, -32768, 32767
+        else:
+            scale, zp, lo, hi = first.input_scale, first.input_zp, -128, 127
+        q = [np.clip(np.round(x.reshape(-1) / scale) + zp, lo, hi).astype(int) for x in inputs]
+        stdin = "\n".join(" ".join(str(v) for v in row) for row in q) + "\n"
+        out = subprocess.run([exe], input=stdin, capture_output=True, text=True, check=True).stdout
+        return records, gen, np.array([[int(v) for v in line.split()] for line in out.strip().splitlines()])
+
+    def mlp(self):
+        rng = np.random.default_rng(11)
+        w1, b1 = rng.normal(0, 0.6, (16, 4)), rng.normal(0, 0.1, 16)
+        w2, b2 = rng.normal(0, 0.4, (8, 16)), rng.normal(0, 0.1, 8)
+        w3, b3 = rng.normal(0, 0.5, (3, 8)), rng.normal(0, 0.1, 3)
+        layers = [Dense(name="fc1", weight=w1, bias=b1, input_name="x", forward=lambda x: x @ w1.T + b1),
+                  ReLU(name="h1", input_name="fc1"),
+                  Dense(name="fc2", weight=w2, bias=b2, input_name="h1", forward=lambda x: x @ w2.T + b2),
+                  ReLU(name="h2", input_name="fc2"),
+                  Dense(name="fc3", weight=w3, bias=b3, input_name="h2", forward=lambda x: x @ w3.T + b3),
+                  Softmax(name="probs", input_name="fc3")]
+
+        def reference(x):
+            h = np.maximum(x @ w1.T + b1, 0)
+            h = np.maximum(h @ w2.T + b2, 0)
+            z = h @ w3.T + b3
+            e = np.exp(z - z.max())
+            return e / e.sum()
+        data = [rng.normal(0, 1, 4) for _ in range(256)]
+        test = [rng.normal(0, 1, 4) for _ in range(200)]
+        return layers, reference, data, test
+
+    def test_mlp_folds_each_relu_and_tracks_float(self):
+        layers, reference, data, test = self.mlp()
+        records, gen, out = self.build_and_run(layers, data, "mlp", test)
+        self.assertEqual([r.op_type for r in records], ["Dense", "Dense", "Dense", "Softmax"])
+        self.assertEqual([r.output_zp for r in records[:2]], [-128, -128])  # the folded ReLUs
+        want = np.array([reference(x) for x in test])
+        got = (out + 128) / 256.0
+        err = np.abs(got - want)
+        agree = np.mean(got.argmax(1) == want.argmax(1))
+        print(f"\n  generated MLP: mean |p - float| {err.mean():.4f}, max {err.max():.4f}, argmax {agree:.3f}")
+        self.assertLess(err.mean(), 0.02)
+        self.assertGreater(agree, 0.95)
+
+        # 16-bit activations (TFLite's 16x8 scheme, its softmax included),
+        # against the same int8 weights run with float activations: the
+        # weights' own rounding is common to both models.
+        from tinymind_import import _onnx_tools
+        _, cg = _onnx_tools()
+        _, _, out16 = self.build_and_run(layers, data, "mlp16", test, activation_bits=16)
+        ref = np.array([cg.float_reference(records, x) for x in test])
+        e8 = np.abs(got - ref)
+        e16 = np.abs(out16 / 32768.0 - ref)
+        print(f"  int8 weights with float activations: int8 model mean {e8.mean():.5f}, "
+              f"16x8 model mean {e16.mean():.6f}")
+        self.assertLess(20 * e16.mean(), e8.mean())
+
+    def cnn(self):
+        rng = np.random.default_rng(12)
+        w1, b1 = rng.normal(0, 0.5, (4, 3, 3, 1)), rng.normal(0, 0.1, 4)
+        w2, b2 = rng.normal(0, 0.3, (6, 3, 3, 4)), rng.normal(0, 0.1, 6)
+        w3, b3 = rng.normal(0, 0.2, (5, 4 * 4 * 6)), rng.normal(0, 0.1, 5)
+        gamma, beta = rng.uniform(0.5, 2.0, 4), rng.normal(0, 0.3, 4)
+        mean, var = rng.normal(0, 0.2, 4), rng.uniform(0.5, 1.5, 4)
+        sigma = gamma / np.sqrt(var + 1e-5)
+        pad1, pad2 = (1, 1, 1, 1), (0, 1, 0, 1)
+        layers = [Conv2D(name="c1", weight=w1, bias=b1, input_name="x", input_shape=(8, 8, 1), padding=pad1,
+                         forward=lambda x: conv2d_nhwc(x, w1, b1, padding=pad1)),
+                  BatchNorm2D(name="bn", input_name="c1", gamma=gamma, beta=beta, mean=mean, variance=var),
+                  ReLU(name="r1", input_name="bn"),
+                  Conv2D(name="c2", weight=w2, bias=b2, input_name="r1", input_shape=(8, 8, 4), stride=(2, 2),
+                         padding=pad2, forward=lambda x: conv2d_nhwc(x, w2, b2, (2, 2), pad2)),
+                  ReLU(name="r2", input_name="c2"),
+                  Dense(name="fc", weight=w3, bias=b3, input_name="r2",
+                        forward=lambda x: x.reshape(-1) @ w3.T + b3)]
+
+        def reference(x):
+            h = np.maximum((conv2d_nhwc(x, w1, b1, padding=pad1) - mean) * sigma + beta, 0)
+            h = np.maximum(conv2d_nhwc(h, w2, b2, (2, 2), pad2), 0)
+            return h.reshape(-1) @ w3.T + b3
+        data = [rng.normal(0, 1, (8, 8, 1)) for _ in range(128)]
+        test = [rng.normal(0, 1, (8, 8, 1)) for _ in range(100)]
+        return layers, reference, data, test
+
+    def test_cnn_with_batchnorm_padding_and_stride_tracks_float(self):
+        layers, reference, data, test = self.cnn()
+        records, gen, out = self.build_and_run(layers, data, "cnn", test)
+        self.assertEqual([r.op_type for r in records], ["Conv", "Conv", "Dense"])
+        self.assertEqual(records[1].geometry["OutputHeight"], 4)
+        last = records[-1]
+        want = np.array([reference(x) for x in test])
+        got = (out - last.output_zp) * last.output_scale
+        span = 255 * last.output_scale
+        err = np.abs(got - want) / span
+        print(f"\n  generated CNN: mean |y - float| {err.mean():.4f} of the output range, max {err.max():.4f}")
+        self.assertLess(err.mean(), 0.01)
+        self.assertLess(err.max(), 0.05)
+
+        # Every weight layer on int4: further from float, still close.
+        _, gen4, out4 = self.build_and_run(layers, data, "cnn4", test, int4_dense=True, int4_conv=True)
+        err4 = np.abs((out4 - last.output_zp) * last.output_scale - want) / span
+        print(f"  generated CNN, int4 weights: mean {err4.mean():.4f}, weights {gen4.weight_bytes} B "
+              f"against {gen.weight_bytes} B")
+        self.assertLess(err4.mean(), 0.05)
+        self.assertLess(gen4.weight_bytes, gen.weight_bytes * 0.55)
+
+    def test_refuses_what_it_cannot_generate(self):
+        layers, _, data, _ = self.cnn()
+        layers[0].input_shape = None
+        with self.assertRaisesRegex(ValueError, "input_shape"):
+            generate_model(layers, "x", MinMaxObserver(), data[:4], os.path.join(self.dir, "w.hpp"),
+                           os.path.join(self.dir, "m.hpp"), "net")
+        rng = np.random.default_rng(13)
+        moe = MoE(name="moe", input_name="x", router_weight=rng.normal(0, 1, (2, 4)),
+                  expert_weights=[rng.normal(0, 1, (3, 4)) for _ in range(2)])
+        with self.assertRaisesRegex(ValueError, "no whole-model code generation for MoE"):
+            generate_model([moe], "x", MinMaxObserver(), [rng.normal(0, 1, 4) for _ in range(4)],
+                           os.path.join(self.dir, "w.hpp"), os.path.join(self.dir, "m.hpp"), "net")
 
 
 if __name__ == "__main__":
