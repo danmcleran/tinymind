@@ -178,6 +178,21 @@ One subtraction, no second table, and no additional quantization error. `QCfCCel
 
 See the [Transformer Encoder (int8)](https://github.com/danmcleran/tinymind/tree/master/examples/transformer_encoder_int8) example for an end-to-end encoder block (`QLayerNorm1D` → `QAttention1D` → `QAdd` → `QLayerNorm1D` → `QDense` → `qrelu` → `QDense` → `QAdd`).
 
+## Int4 Weights and 16x8 Activations
+
+Two variants of the int8 layers trade bytes for precision in opposite directions.
+
+| Header | Layer | Notes |
+|---|---|---|
+| [`qint4.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qint4.hpp) | `QDenseInt4`, `QConv2DInt4`, `QDepthwiseConv2DInt4` | int4 weights packed two per byte in TFLite / ONNX nibble order, per-channel scales, int8 activations. Half the weight bytes of int8. A small convolution unpacks its weights onto the stack and runs the int8 kernels, so it runs at int8's speed; with the Arm DSP backend the dense layer runs on SMLAD straight from the packed weights |
+| [`qaffine.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qaffine.hpp) | `Requantizer<int64_t, int16_t>` | TFLite's 16x8 scheme: `QDense`, `QConv2D` / `QConv2DPerChannel`, `QDepthwiseConv2D`, `QMaxPool2D` and `QAdd` take int16 activations and int8 weights, and the requantizer computes exactly what TFLite's 64-bit `MultiplyByQuantizedMultiplier` does |
+| [`qactivations.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qactivations.hpp) | `qApplyLUT16` | TFLite's 513-entry interpolated int16 lookup, for sigmoid and tanh on int16 activations |
+| [`qsoftmax_fixedpoint.hpp`](https://github.com/danmcleran/tinymind/blob/master/cpp/qsoftmax_fixedpoint.hpp) | `QSoftmaxInt16` | TFLite's int16 softmax, bit for bit: it matched every output of 2,400 rows that TFLite's own interpreter produced. Its exp and 1 / (1 + x) tables ship as constants (`qsoftmax16_tables.hpp`); output scale 2^-15, zero point 0 |
+
+The ONNX code generator produces either variant from an int8 ONNX Runtime model: `int4_dense` and `int4_conv` requantize the weights to int4 per output channel, and `activation_bits=16` gives every activation a symmetric int16 grid over the range its int8 grid covered, with no recalibration. On [`onnx_digits_int8`]({{ site.baseurl }}/examples/onnx_digits_int8) the int4 model halves the weights to 1,704 bytes, and the 16x8 model's logits are 126 times closer than int8's to the same weights run with float activations, for twice the activation RAM.
+
+Requantizing trained weights to int4 costs accuracy the training never saw. [`apps/import_onnx/tinymind_qat.py`](https://github.com/danmcleran/tinymind/blob/master/apps/import_onnx/tinymind_qat.py) is quantization-aware training for the int4 options, in PyTorch: it holds every `Conv2d` and `Linear` weight on exactly the grid the code generator will use, with a straight-through gradient, for a few epochs of fine-tuning. On the digits model over training seeds 1 to 10, int4 averages 96.46% with it against 95.11% without it and 96.83% for int8, and it wins on every seed.
+
 ## A Minimal int8 Pipeline
 
 ```cpp
@@ -317,8 +332,8 @@ The [PyTorch → tinymind int8 (importer)]({{ site.baseurl }}/getting-started/py
 
 The int8 path is intentionally minimal:
 
-- **No quantization-aware training (QAT)** — post-training only. The expectation is that you train in your favorite float framework and import.
-- **int4 and int16 are limited** — the layers here are int8 weights, int8 activations, int32 accumulators. Packed int4 weights exist for dense, convolution and depthwise layers (`QDenseInt4`, `QConv2DInt4`, `QDepthwiseConv2DInt4`, `cpp/qint4.hpp`), and int16 activations with int8 weights (TFLite's 16x8) for dense, convolution, depthwise, max pooling, add and LUT activations (`Requantizer<int64_t, int16_t>`, `qApplyLUT16`). (Mixed precision *is* supported via the `qbridge.hpp` converters into the `QValue` Q-format pipeline and the `fp16_t` / `bf16_t` storage tier — see [Mixed Precision]({{ site.baseurl }}/architectures/mixed-precision).)
+- **Quantization-aware training only for int4 weights** — the int8 and 16x8 paths are post-training: train in your favorite float framework, calibrate and import. `tinymind_qat.py` covers the int4 weight options, and fake-quantizes no activations.
+- **int4 and int16 are limited** — most layers here are int8 weights, int8 activations, int32 accumulators. Packed int4 weights exist for dense, convolution and depthwise layers, and int16 activations with int8 weights (TFLite's 16x8) for dense, convolution, depthwise, max pooling, add, LUT activations and softmax (see [Int4 Weights and 16x8 Activations](#int4-weights-and-16x8-activations)). (Mixed precision *is* supported via the `qbridge.hpp` converters into the `QValue` Q-format pipeline and the `fp16_t` / `bf16_t` storage tier — see [Mixed Precision]({{ site.baseurl }}/architectures/mixed-precision).)
 - **No whole-graph conv+bn+relu auto-fusion pass** — each layer is standalone. ReLU folds into the upstream `Requantizer` via `clampForRelu`; Conv2D + BatchNorm fuses **pre-quantization** via `foldBatchNorm`. The library never walks the graph to do this for you — the importer / caller stitches the fused weights together at calibration time.
 - **No runtime CPU dispatch** — SIMD gates are compile-time; the library compiles for one ISA per build. Fat-binary dispatch is the caller's problem.
 

@@ -133,6 +133,8 @@ Features that are already integers (ADC counts, pixels, bins) reproduce every
 split exactly. Calibrated float features agree except for samples within one
 grid step of a threshold, and the importer reports the agreement.
 
+scikit-learn's `IsolationForest` exports too, as an additive ensemble whose sum is the forest's total path length: each leaf holds its depth plus the average path length of the subtree it stands for. The header adds `kAnomalyThreshold`, scikit-learn's `offset_` in path-length units, and `predict()` returns 1 for an outlier. On integer features it matches scikit-learn's `predict` sample for sample. Isolation trees grow to full depth, so the forest's size sets the flash: 25 trees of 64 samples over 8 features take 15.8 KB on a Cortex-M0+ at `-Os`.
+
 The model's base score isn't read from library metadata. It's measured from
 the model's own outputs, which also checks that the trees were parsed
 correctly.

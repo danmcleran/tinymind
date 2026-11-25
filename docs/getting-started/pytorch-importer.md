@@ -105,6 +105,29 @@ W1[c, :] /= s;  b1[c] /= s;  W2[:, c] *= s
 
 The model's output is **preserved exactly** under ReLU or identity activations (both are positively homogeneous). The C++ helpers `crossLayerEqualizeDense` and `crossLayerEqualizeConv2D` in `cpp/include/qcalibration.hpp` implement this; the Python importer can call them or do the same math on numpy arrays before passing weights into `import_pytorch_model`.
 
+## Whole-model code generation
+
+`generate_model` runs the same fusion, calibration and quantization, then hands the model to the ONNX importer's code generator, so a PyTorch model gets the same `weights.hpp` and `model.hpp` as an ONNX one: one `constexpr` layer object per layer, a static memory plan for every intermediate activation, and `forward(input, output, arena)`.
+
+```python
+from tinymind_import import Conv2D, Dense, ReLU, Softmax, MinMaxObserver, generate_model
+
+layers = [
+    Conv2D(name="c1", weight=w1_ohwi, bias=b1, input_name="x",
+           input_shape=(8, 8, 1), padding=(1, 1, 1, 1),   # (top, bottom, left, right)
+           forward=lambda x: conv_nhwc(x, w1_ohwi, b1, padding=(1, 1, 1, 1))),
+    ReLU(name="r1", input_name="c1"),
+    Dense(name="fc", weight=w2_nhwc, bias=b2, input_name="r1",
+          forward=lambda x: x.reshape(-1) @ w2_nhwc.T + b2),
+    Softmax(name="probs", input_name="fc"),
+]
+records, generated = generate_model(
+    layers, input_name="x", input_observer=MinMaxObserver(), dataset=calibration,
+    weights_path="weights.hpp", model_header_path="model.hpp", namespace="net")
+```
+
+It takes `Dense`, `Conv2D` (with a `BatchNorm2D` folded in), `ReLU`, `Sigmoid`, `Tanh` and a final `Softmax`; `MoE`, `LSTM` and `QFormatDense` raise `ValueError`. A `Conv2D` needs `input_shape` (its NHWC input) and takes `stride` and `padding`. A `ReLU` that is the only reader of a `Dense` or `Conv2D` output is folded into that layer's requantizer clamp. Activations are NHWC throughout, so a `Dense` after a convolution needs its weights permuted from PyTorch's NCHW flattening. The code generator's options pass through: `activation_bits=16` for 16x8, `int4_dense` and `int4_conv` for packed int4 weights.
+
 ## End-to-end exemplar — `examples/import_demo/`
 
 The directory has two complementary entry points:
@@ -161,13 +184,13 @@ Stacked, bidirectional and projected LSTMs, and an LSTM after another layer, are
 
 ## ONNX path
 
-`apps/import_onnx/tinymind_import_onnx.py` is the ONNX counterpart. It reads a model quantized by `onnxruntime.quantization.quantize_static` in either of ONNX Runtime's formats (QDQ, the default, or QOperator), maps `Conv` / `Gemm` / `MatMul` (plus a bias `Add`) onto `QConv2D` / `QConv2DPerChannel` / `QDense`, depthwise `Conv` onto `QDepthwiseConv2D`, `MaxPool` onto `QMaxPool2D`, average pooling onto a `QDepthwiseConv2D` with equal taps, and a residual `Add` onto `QAdd` -- converting ONNX's OIHW conv weights to OHWI, `MatMul`'s `[in][out]` weights to `[out][in]`, and a flattened NCHW input to NHWC column order -- and emits a `weights.hpp` with per-tensor activation `(scale, zero_point)`, int8 weights, int32 biases and precomputed requantizers. Each record lists the layers it reads, and a tensor that ONNX Runtime requantizes between two layers is refused, since no record could carry that step. An op or setting it cannot map exactly (padded pooling, grouped convolution other than depthwise, `Concat`, uint8 tensors, a nonzero weight zero point) raises `ValueError` instead of being skipped. Its tests (`make test` in `apps/import_onnx` with a torch + onnxruntime venv) compile the emitted header against tinymind's layers and match ONNX Runtime's int8 outputs to within 1 LSB (3 LSB for a residual model with average pooling in QDQ form, where ONNX Runtime averages in float and rounds ties to even). The `onnx` Python package is imported **lazily** inside `parse_onnx_model` so the emitter half of the module is usable without it.
+`apps/import_onnx/tinymind_import_onnx.py` is the ONNX counterpart. It reads a model quantized by `onnxruntime.quantization.quantize_static` in either of ONNX Runtime's formats (QDQ, the default, or QOperator), maps `Conv` / `Gemm` / `MatMul` (plus a bias `Add`) onto `QConv2D` / `QConv2DPerChannel` / `QDense`, depthwise `Conv` onto `QDepthwiseConv2D`, `MaxPool` onto `QMaxPool2D`, average pooling onto a `QDepthwiseConv2D` with equal taps, and a residual `Add` onto `QAdd` -- converting ONNX's OIHW conv weights to OHWI, `MatMul`'s `[in][out]` weights to `[out][in]`, and a flattened NCHW input to NHWC column order -- and emits a `weights.hpp` with per-tensor activation `(scale, zero_point)`, int8 weights, int32 biases and precomputed requantizers. Its code generator also writes a whole `model.hpp` (layer objects, a static activation memory plan and `forward()`) for an int8, 16x8 or packed-int4-weight model; see the [generated digits model]({{ site.baseurl }}/examples/onnx_digits_int8). Each record lists the layers it reads, and a tensor that ONNX Runtime requantizes between two layers is refused, since no record could carry that step. An op or setting it cannot map exactly (padded pooling, grouped convolution other than depthwise, `Concat`, uint8 tensors, a nonzero weight zero point) raises `ValueError` instead of being skipped. Its tests (`make test` in `apps/import_onnx` with a torch + onnxruntime venv) compile the emitted header against tinymind's layers and match ONNX Runtime's int8 outputs to within 1 LSB (3 LSB for a residual model with average pooling in QDQ form, where ONNX Runtime averages in float and rounds ties to even). The `onnx` Python package is imported **lazily** inside `parse_onnx_model` so the emitter half of the module is usable without it.
 
 This is the right path when the source-of-truth model has already been quantized upstream and you just need to land it on tinymind.
 
 ## What this does not cover
 
-- **QAT** — post-training only. Train in float, calibrate, deploy.
+- **QAT** — this importer is post-training only: train in float, calibrate, deploy. Quantization-aware training exists for the ONNX path's int4 weight options (`apps/import_onnx/tinymind_qat.py`).
 - **Per-channel everywhere** — the importer emits per-tensor weight scales for everything except `QDepthwiseConv2D` (TFLite mandate). Use `QConv2DPerChannel` if a particular conv needs per-channel; the importer can be extended to drive it.
 - **Auto observer selection** — the caller picks the observer per layer.
 
