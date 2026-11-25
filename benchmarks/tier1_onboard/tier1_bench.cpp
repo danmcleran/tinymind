@@ -25,7 +25,7 @@
 // reports its own size:
 //
 //   WORK_INT8      the generated digits model, int8
-//   WORK_INT4      the same model with its dense layer on packed int4 weights
+//   WORK_INT4      the same model with every weight layer on packed int4 weights
 //   WORK_16X8      the same model with int16 activations (16x8)
 //   WORK_FEATURES  a 256-sample log-mel frame (32 bands) and its 13 MFCCs,
 //                  k-means and Gaussian anomaly scores (32 features), and one

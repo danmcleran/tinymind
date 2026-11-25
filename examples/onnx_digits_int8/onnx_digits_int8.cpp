@@ -272,9 +272,9 @@ int main(int argc, char* argv[])
     std::fprintf(summary, "unshared_bytes,%zu\n", digits::kModelUnsharedSize);
     std::fprintf(summary, "busiest_layer_bytes,%zu\n", digits::kModelPeakLiveSize);
     std::fprintf(summary, "weight_bytes_int8,%zu\n", digits::kModelWeightBytes);
-    std::fprintf(summary, "weight_bytes_int4_dense,%zu\n", digits::int4::kModelWeightBytes);
+    std::fprintf(summary, "weight_bytes_int4,%zu\n", digits::int4::kModelWeightBytes);
     std::fprintf(summary, "accuracy_int8,%.4f\n", correct / static_cast<double>(digits::kTestCount));
-    std::fprintf(summary, "accuracy_int4_dense,%.4f\n", correctInt4 / static_cast<double>(digits::kTestCount));
+    std::fprintf(summary, "accuracy_int4,%.4f\n", correctInt4 / static_cast<double>(digits::kTestCount));
     std::fprintf(summary, "accuracy_16x8,%.4f\n", correct16 / static_cast<double>(digits::kTestCount));
     std::fprintf(summary, "arena_bytes_16x8,%zu\n", digits::int16x8::kModelArenaSize);
     std::fprintf(summary, "same_class_as_float_int8,%zu\n", agreeFloat);
@@ -293,9 +293,9 @@ int main(int argc, char* argv[])
     std::printf("same class as ONNX Runtime:     %zu of %zu\n", agreeOrt, digits::kTestCount);
     std::printf("activation arena:               %zu bytes (unshared %zu, busiest layer %zu)\n",
                 digits::kModelArenaSize, digits::kModelUnsharedSize, digits::kModelPeakLiveSize);
-    std::printf("int4 dense layer accuracy:      %.4f (same class as int8 on %zu of %zu)\n",
+    std::printf("int4 weights accuracy:          %.4f (same class as int8 on %zu of %zu)\n",
                 correctInt4 / total, agreeInt4, digits::kTestCount);
-    std::printf("weights:                        %zu bytes int8, %zu bytes with the dense layer in int4\n",
+    std::printf("weights:                        %zu bytes int8, %zu bytes in int4\n",
                 digits::kModelWeightBytes, digits::int4::kModelWeightBytes);
     std::printf("16x8 accuracy:                  %.4f (arena %zu bytes, same weights)\n", correct16 / total,
                 digits::int16x8::kModelArenaSize);

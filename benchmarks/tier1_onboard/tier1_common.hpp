@@ -28,7 +28,7 @@
 #include "qmel.hpp"
 #include "qanomaly.hpp"
 
-// The generated digits models: int8, int4 dense layer, and 16x8.
+// The generated digits models: int8, int4 weights, and 16x8.
 #include "model.hpp"
 #include "model_int4.hpp"
 #include "model_int16x8.hpp"

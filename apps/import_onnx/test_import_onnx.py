@@ -1046,7 +1046,8 @@ int main()
 """
 
 
-def compile_model(layers, workdir, tag, in_place=True, extra=(), int4_dense=False, activation_bits=8):
+def compile_model(layers, workdir, tag, in_place=True, extra=(), int4_dense=False, activation_bits=8,
+                  int4_conv=False):
     """Generate weights.hpp + model.hpp and build a driver around forward().
     Built freestanding (FLOAT=0, STD=0): the generated model must not need
     the host-only builders."""
@@ -1054,7 +1055,8 @@ def compile_model(layers, workdir, tag, in_place=True, extra=(), int4_dense=Fals
     model = os.path.join(workdir, f"{tag}_model.hpp")
     ti.emit_weights_header(weights, tag, layers)
     generated = cg.emit_model_header(model, tag, layers, os.path.basename(weights), in_place=in_place,
-                                     int4_dense=int4_dense, activation_bits=activation_bits)
+                                     int4_dense=int4_dense, activation_bits=activation_bits,
+                                     int4_conv=int4_conv)
     src = MODEL_DRIVER.replace("@HEADER@", os.path.basename(model)).replace("@NS@", tag)
     exe = _compile(src, workdir, f"{tag}_driver",
                    ["-DTINYMIND_ENABLE_QUANTIZATION=1", "-DTINYMIND_ENABLE_FLOAT=0", "-DTINYMIND_ENABLE_STD=0"]
@@ -1247,6 +1249,53 @@ class ModelCodegen(unittest.TestCase):
             saved = sum(l.weight.size - (l.weight.size + 1) // 2 for l in dense)
             self.assertEqual(g8.weight_bytes - g4.weight_bytes, saved)
 
+    def test_int4_conv_is_exact_when_int4_can_hold_the_weights(self):
+        """The same with every weight layer in int4: Conv (the 1x1 ones
+        too), depthwise and dense weights clamped to -7..7 with a 7 in every
+        output channel keep their scales, so int4_dense + int4_conv must
+        reproduce the int8 model bit for bit, per-channel and per-tensor."""
+        cases = ((ConvNet(), INPUT_SHAPE, 0, True), (ResNetish(False), GRAPH_INPUT_SHAPE, 1, True),
+                 (ResNetish(False), GRAPH_INPUT_SHAPE, 2, False))
+        for k, (net, shape, seed, per_channel) in enumerate(cases):
+            torch.manual_seed(seed)
+            tag = f"cg_i4c_{k}"
+            path = export_and_quantize(net, shape, self.workdir, "QDQ", per_channel, tag)
+            layers = ti.parse_onnx_model(path)
+            weighted = [l for l in layers if l.op_type in ("Conv", "DepthwiseConv", "Dense")]
+            self.assertTrue(any(l.op_type == "Conv" for l in weighted))
+            for l in weighted:
+                w = np.clip(l.weight.astype(np.int64), -7, 7).reshape(l.weight.shape[0], -1)
+                for o in range(w.shape[0]):
+                    j = int(np.argmax(np.abs(w[o])))
+                    w[o, j] = 7 if w[o, j] >= 0 else -7
+                # Per-tensor layers too: with a 7 in every channel each int4
+                # scale equals the one int8 scale.
+                l.weight = w.reshape(l.weight.shape).astype(np.int8)
+                q4 = cg.requantize_int4(l)
+                np.testing.assert_array_equal(q4.codes, l.weight)
+            exe8, g8 = compile_model(layers, self.workdir, tag + "_8")
+            exe4, g4 = compile_model(layers, self.workdir, tag + "_4", int4_dense=True, int4_conv=True)
+            self.assertEqual(len(g4.int4_layers), len(weighted))
+            want, got = run_exes([exe8, exe4], nhwc_inputs(shape, layers[0]))
+            np.testing.assert_array_equal(got, want)
+            saved = sum(l.weight.size - (l.weight.size + 1) // 2 for l in weighted)
+            self.assertEqual(g8.weight_bytes - g4.weight_bytes, saved)
+
+    def test_int4_conv_tracks_onnx_runtime(self):
+        """Real int4 requantization of every weight layer: close to ONNX
+        Runtime, further than int4 dense layers alone."""
+        torch.manual_seed(0)
+        tag = "cg_i4c"
+        path = export_and_quantize(ConvNet(), INPUT_SHAPE, self.workdir, "QDQ", True, tag)
+        layers = ti.parse_onnx_model(path)
+        exe4, g4 = compile_model(layers, self.workdir, tag + "_4", int4_dense=True, int4_conv=True)
+        ref4, got4 = run_both(path, layers, exe4, calibration_like=True)
+        err4 = np.abs(ref4 - got4)
+        corr = float(np.corrcoef(ref4.reshape(-1), got4.reshape(-1))[0, 1])
+        print(f"\n  int4 everywhere: mean |ort - tinymind| {err4.mean():.2f} LSB, max {err4.max()} LSB, "
+              f"correlation {corr:.4f}")
+        self.assertGreater(corr, 0.95)
+
     def test_int4_dense_tracks_onnx_runtime(self):
         """The real int4 requantization changes the weights, so the model
         no longer matches ONNX Runtime exactly; it stays close."""
@@ -1324,6 +1373,9 @@ class ModelCodegen(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "int4"):
                 cg.emit_model_header(os.path.join(d, "m.hpp"), "net", layers[:-1], "w.hpp", activation_bits=16,
                                      int4_dense=True)
+            with self.assertRaisesRegex(ValueError, "int4"):
+                cg.emit_model_header(os.path.join(d, "m.hpp"), "net", layers[:-1], "w.hpp", activation_bits=16,
+                                     int4_conv=True)
             with self.assertRaisesRegex(ValueError, "8 or 16"):
                 cg.emit_model_header(os.path.join(d, "m.hpp"), "net", layers[:-1], "w.hpp", activation_bits=12)
 

@@ -43,7 +43,8 @@
 // rows) gets the same sweep, and the convolution kernel a few shapes.
 // QPointwiseConv2D (narrow and wide enough for the 2x2 path), padded and
 // unpadded QConv2DPerChannel on both its patch and row paths, QDense and
-// QDenseInt4 are then checked end to end against direct evaluation. The Arm
+// QDenseInt4 are then checked end to end against direct evaluation, and
+// QConv2DInt4 / QDepthwiseConv2DInt4 against their int8 layers. The Arm
 // DSP backend's int4 kernels (one row and two rows of packed int4 weights)
 // get their own per-lane and length sweeps.
 //
@@ -759,6 +760,88 @@ namespace {
         }
     }
 
+    // QConv2DInt4 against QConv2DPerChannel with the same weights in int8,
+    // and QDepthwiseConv2DInt4 against QDepthwiseConv2D: each backend's int4
+    // path against its int8 kernels.
+    template<std::size_t H, std::size_t W, std::size_t C, std::size_t KH, std::size_t KW, std::size_t S,
+             std::size_t F, std::size_t P>
+    void testConvInt4Shape(const char* what)
+    {
+        typedef tinymind::QConv2DInt4<int8_t, int32_t, int8_t, H, W, C, KH, KW, S, S, F, P, P, P, P> Int4;
+        typedef tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, H, W, C, KH, KW, S, S, F,
+                                            P, P, P, P> Int8;
+        typedef tinymind::QDepthwiseConv2DInt4<int8_t, int32_t, int8_t, H, W, C, KH, KW, S, S, P, P, P, P> Dw4;
+        typedef tinymind::QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, H, W, C, KH, KW, S, S,
+                                           P, P, P, P> Dw8;
+        constexpr std::size_t total = F * KH * KW * C;
+        static int8_t w[total];
+        static uint8_t packed[Int4::PackedWeightBytes];
+        static uint8_t packedDw[tinymind::int4PackedBytes(C * KH * KW)];
+        static int32_t biases[F > C ? F : C];
+        static tinymind::Requantizer<int32_t, int8_t> rqs[F > C ? F : C];
+        static int8_t input[H * W * C];
+        static int8_t got[Int4::OutputSize > Dw4::OutputSize ? Int4::OutputSize : Dw4::OutputSize];
+        static int8_t want[Int4::OutputSize > Dw4::OutputSize ? Int4::OutputSize : Dw4::OutputSize];
+        static const int8_t kZeroPoints[] = {-128, 5, 127};
+        for (const int8_t zp : kZeroPoints)
+        {
+            for (std::size_t i = 0; i < total; ++i)
+            {
+                w[i] = static_cast<int8_t>(static_cast<int32_t>(static_cast<uint8_t>(nextByte()) & 15u) - 8);
+            }
+            tinymind::packInt4(w, total, packed);
+            tinymind::packInt4(w, C * KH * KW, packedDw);
+            for (std::size_t o = 0; o < (F > C ? F : C); ++o)
+            {
+                biases[o] = static_cast<int32_t>(nextByte()) * 64;
+                rqs[o] = makeRequantizer();
+            }
+            for (int8_t& v : input) { v = nextByte(); }
+
+            const Int4 conv4 = {packed, biases, zp, rqs};
+            Int8 conv8;
+            conv8.weights = w;
+            conv8.biases = biases;
+            conv8.input_zero_point = zp;
+            conv8.requantizers = rqs;
+            conv4.forward(input, got);
+            conv8.forward(input, want);
+            for (std::size_t i = 0; i < Int4::OutputSize; ++i)
+            {
+                ++g_cases;
+                if (got[i] != want[i])
+                {
+                    fail(what, static_cast<uint32_t>(i), static_cast<uint32_t>(zp + 128), got[i], want[i]);
+                }
+            }
+
+            const Dw4 dw4 = {packedDw, biases, zp, rqs};
+            const Dw8 dw8 = {w, biases, zp, rqs};
+            dw4.forward(input, got);
+            dw8.forward(input, want);
+            for (std::size_t i = 0; i < Dw4::OutputSize; ++i)
+            {
+                ++g_cases;
+                if (got[i] != want[i])
+                {
+                    fail(what, static_cast<uint32_t>(1000000u + i), static_cast<uint32_t>(zp + 128), got[i], want[i]);
+                }
+            }
+        }
+    }
+
+    void testConvInt4()
+    {
+        testConvInt4Shape<8, 8, 1, 3, 3, 1, 8, 1>("conv int4 c1 i,zp");   // odd 9-weight window
+        testConvInt4Shape<8, 8, 8, 3, 3, 1, 8, 1>("conv int4 c2 i,zp");   // 72-weight patch, filter pairs
+        testConvInt4Shape<6, 6, 16, 3, 3, 2, 5, 1>("conv int4 rows i,zp"); // 144-weight rows, odd filters
+        testConvInt4Shape<4, 4, 8, 1, 1, 1, 16, 0>("conv int4 pw i,zp");  // pointwise
+        // Above TINYMIND_INT4_CONV_UNPACK_MAX_BYTES: computed from the packed weights.
+        testConvInt4Shape<8, 8, 8, 3, 3, 1, 16, 1>("conv int4 direct patch i,zp");
+        testConvInt4Shape<6, 6, 16, 3, 3, 2, 9, 1>("conv int4 direct rows i,zp");
+        testConvInt4Shape<4, 4, 32, 1, 1, 1, 33, 0>("conv int4 direct pw i,zp");
+    }
+
     // Packed int4 weights against int8 inputs. On the Arm DSP backend both
     // SMLAD kernels (one row, two rows) are called directly: every nibble value against every
     // input byte in each of a block's eight lanes, at three zero points;
@@ -1087,6 +1170,7 @@ extern "C" int run_tests()
     testPaddedConv();
     testDense();
     testInt4Dot();
+    testConvInt4();
     testInt16x8Dot();
     testFastRequantizer64();
     testAddRescales16();
