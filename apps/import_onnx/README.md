@@ -171,8 +171,11 @@ recalibration:
     `MaxPool` and `Relu` run on int16, and `Sigmoid` / `Tanh` get 513-entry
     int16 tables (`activation_lut16`, mirroring `buildQLUT16`) read by
     `qApplyLUT16`;
-  * `Softmax` raises (there is no int16 softmax), as does combining
-    `activation_bits=16` with `int4_dense` or `int4_conv`.
+  * a `Softmax` (only the model's output may be one) becomes a
+    `QSoftmaxInt16`, TFLite's int16 softmax, writing probabilities on the
+    2^-15 grid with zero point 0 (`softmax16_params` mirrors
+    `buildQSoftmaxInt16Params`); combining `activation_bits=16` with
+    `int4_dense` or `int4_conv` raises.
 
 The model's interface then takes `int16_t` buffers. `ModelActivationType`
 names the activation type in every generated model, and `kModelArenaSize`
@@ -256,7 +259,7 @@ Four more cover `int4_dense` and `int4_conv`:
 * Two run the real requantization against ONNX Runtime: correlation 0.996,
   mean error 3 LSB, with the dense layers in int4 or every weight layer.
 
-Four cover `activation_bits=16`:
+Five cover `activation_bits=16`:
 
 * The chain, residual (per-channel and per-tensor) and sigmoid / tanh
   models are generated both ways and compared with `float_reference`. The
@@ -269,7 +272,12 @@ Four cover `activation_bits=16`:
 * `activation_lut16` must equal `buildQSigmoidLUT16` / `buildQTanhLUT16`
   entry for entry over 63 grids (spacing the knots as TFLite does fails
   it), and `int16_grid` is checked on a ReLU-fused grid.
-* A softmax, `int4_dense`, `int4_conv` and a width other than 8 or 16 are refused.
+* A residual model ending in a softmax tracks `float_reference` 60 to 110
+  times more closely at 16 bits than at 8 over four runs (mean error 1.1e-5
+  to 1.6e-5 of the probability range against 0.9e-3 to 1.5e-3); its largest
+  error must stay below 2e-4. Computing the softmax's parameters from the
+  int8 input scale instead of the int16 one fails it.
+* `int4_dense`, `int4_conv` and a width other than 8 or 16 are refused.
 
 Not run in CI, because torch and onnxruntime are not CI dependencies.
 `examples/onnx_digits_int8` commits a generated `model.hpp`, which `make
