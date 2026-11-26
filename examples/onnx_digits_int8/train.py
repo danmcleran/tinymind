@@ -38,9 +38,15 @@ Writes, next to this script:
                  class the float model and ONNX Runtime's int8 model predict;
                  and, for the first REFERENCE_LOGITS digits, the logits of the
                  int8-weight model computed in float (float_reference)
+  models/        the ONNX models the headers are generated from: the trained
+                 model in float (digits_fp32.onnx) and quantized by ONNX
+                 Runtime (digits_int8.onnx), and the same for the int4 QAT
+                 model (digits_qat_fp32.onnx, digits_qat_int8.onnx)
 
-The generated headers are committed, so building and running the example needs
-no Python.
+The generated headers and the models are committed, so building and running the
+example needs no Python, and another importer (tinymind-rs's) can be checked
+against the same models without retraining, which would not reproduce these
+weights across PyTorch versions.
 """
 
 import copy
@@ -127,8 +133,8 @@ def fit(model, xt, yt, epochs, lr, rng):
 
 def export_int8(model, out_dir, tag, calib):
     """Export to ONNX and quantize with ONNX Runtime (QDQ, per-channel int8)."""
-    fp32 = os.path.join(out_dir, "output", f"{tag}_fp32.onnx")
-    int8 = os.path.join(out_dir, "output", f"{tag}_int8.onnx")
+    fp32 = os.path.join(out_dir, "models", f"{tag}_fp32.onnx")
+    int8 = os.path.join(out_dir, "models", f"{tag}_int8.onnx")
     os.makedirs(os.path.dirname(fp32), exist_ok=True)
     torch.onnx.export(model, torch.zeros(1, 1, 8, 8), fp32, input_names=["input"], output_names=["logits"],
                       opset_version=13, dynamo=False)

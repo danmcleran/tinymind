@@ -27,7 +27,7 @@ make golden    # int8 logits of the first 16 test digits
 make plot      # needs matplotlib in a venv
 ```
 
-The generated headers are committed. `make regenerate PY=<venv python>` retrains the model and regenerates them; the venv needs `torch`, `onnx`, `onnxruntime` and `numpy`.
+The generated headers are committed, and so are the ONNX models they are generated from (`models/`: the float and ONNX Runtime int8 models, and the same pair for the int4 QAT model), so another importer can be checked against the same weights without retraining. `make regenerate PY=<venv python>` retrains the model and regenerates them; the venv needs `torch`, `onnx`, `onnxruntime` and `numpy`.
 
 ## Output
 

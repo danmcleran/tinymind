@@ -218,7 +218,12 @@ from the float-activation reference, the int8 model and the 16x8 model).
 ## Regenerating the model
 
 The generated headers are committed, so building the example needs no
-Python. To retrain and regenerate them, use a virtual environment with
+Python. So are the ONNX models they are generated from, in `models/`: the
+trained model in float (`digits_fp32.onnx`) and as ONNX Runtime quantized it
+(`digits_int8.onnx`), and the same pair for the int4 QAT model
+(`digits_qat_fp32.onnx`, `digits_qat_int8.onnx`). Another importer can be
+checked against them without retraining, which would not reproduce these
+weights under a different PyTorch version. To retrain and regenerate them, use a virtual environment with
 `torch`, `onnx`, `onnxruntime` and `numpy` (never the system Python):
 
 ```bash
