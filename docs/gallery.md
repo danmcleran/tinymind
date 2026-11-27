@@ -124,6 +124,9 @@ these exactly.
 **Generated model from ONNX (int8)** — a residual CNN quantized by ONNX Runtime and run from the generated `model.hpp`: the activation memory plan (each box an arena buffer, spanning the layers it is live for; 1,024 bytes against 2,048 unshared) and the test confusion on the optical digits (97.0%).
 ![Generated ONNX model memory plan]({{ site.baseurl }}/assets/plots/onnx_digits_int8.png)
 
+**Generated model from TFLite (int8)** — a Keras CNN converted to an int8 `.tflite` model and run from the generated `model.hpp`: the activation memory plan (1,536 bytes against 2,460 unshared) and the test confusion on the optical digits (96.1%); all 17,970 test outputs equal TFLM's.
+![Generated TFLite model memory plan]({{ site.baseurl }}/assets/plots/tflite_digits_int8.png)
+
 ## Mixture-of-Experts
 
 **int8 MoE regime routing** — a top-1 router partitions the input domain into three regimes; one of three linear experts runs per inference (color blocks = the routing map).
