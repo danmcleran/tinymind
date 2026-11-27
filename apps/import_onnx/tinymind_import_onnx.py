@@ -135,6 +135,11 @@ COPYRIGHT_BLOCK = """/**
 */"""
 
 
+def copyright_block(generator: str = "tinymind_import_onnx") -> str:
+    """COPYRIGHT_BLOCK naming the tool that writes the file."""
+    return COPYRIGHT_BLOCK.replace("tinymind_import_onnx.", generator + ".")
+
+
 # ----------------------------------------------------------------------------
 # Parsed model representation.
 # ----------------------------------------------------------------------------
@@ -174,6 +179,13 @@ class OnnxQuantizedLayer:
     input_b_name / input_b_scale / input_b_zp : an Add's second input.
     sources      : the index of the layer each input comes from (input, then
                    input_b for an Add); -1 for the model's input.
+    act_min / act_max : the output clamp of a requantizing layer (Conv,
+                   DepthwiseConv, Dense, Add, AvgPool2D), -128 / 127 unless a
+                   fused activation narrows it (TFLite's fused RELU / RELU6).
+    lut          : Sigmoid / Tanh only: the 256 outputs, indexed by input + 128,
+                   when the source runtime defines them (TFLite's fixed-point
+                   kernels) rather than tinymind's float-built tables.
+    beta         : Softmax only: the softmax's beta.
     """
 
     op_type: str
@@ -197,6 +209,10 @@ class OnnxQuantizedLayer:
     input_b_scale: float = 0.0
     input_b_zp: int = 0
     sources: list = field(default_factory=list)
+    act_min: int = -128
+    act_max: int = 127
+    lut: object = None
+    beta: float = 1.0
 
 
 # The weight an average pool's depthwise record gives every tap. With weight
@@ -913,7 +929,8 @@ def _sanitize(name: str) -> str:
 def emit_weights_header(path: str,
                         namespace: str,
                         layers: list[OnnxQuantizedLayer],
-                        meta: Optional[dict[str, int]] = None) -> None:
+                        meta: Optional[dict[str, int]] = None,
+                        generator: str = "tinymind_import_onnx") -> None:
     """Write a tinymind-format weights.hpp from parsed ONNX layers.
 
     Per layer `k<name>_...`:
@@ -927,7 +944,7 @@ def emit_weights_header(path: str,
     callers of the earlier header layout.
     """
     parts: list[str] = []
-    parts.append(COPYRIGHT_BLOCK)
+    parts.append(copyright_block(generator))
     parts.append("\n#pragma once\n\n#include <cstddef>\n#include <cstdint>\n\n")
     parts.append(f"namespace {namespace} {{\n")
     if meta is not None:
@@ -963,6 +980,9 @@ def emit_weights_header(path: str,
         parts.append(f"    constexpr int32_t k{nm}_OutputZeroPoint = {layer.output_zp};\n")
         for key, value in layer.geometry.items():
             parts.append(f"    constexpr std::size_t k{nm}_{key} = {value};\n")
+        if (layer.act_min, layer.act_max) != (-128, 127):
+            parts.append(f"    constexpr int32_t k{nm}_ActivationMin = {layer.act_min};\n")
+            parts.append(f"    constexpr int32_t k{nm}_ActivationMax = {layer.act_max};\n")
         if layer.weight is None:
             continue
         parts.append(f"    constexpr bool k{nm}_PerChannel = {'true' if layer.per_channel else 'false'};\n")

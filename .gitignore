@@ -60,6 +60,7 @@ examples/iris/output/
 examples/energy_efficiency/output/
 examples/optical_digits/output/
 examples/onnx_digits_int8/output/
+examples/tflite_digits_int8/output/
 examples/logmel_vibration/output/
 examples/vibration_anomaly/output/
 examples/har_activity/output/
@@ -135,4 +136,5 @@ examples/gbdt_tabular_int8/output/
 examples/anfis_mackey_glass/output/
 examples/anfis_mackey_glass_int8/output/
 apps/import_onnx/.venv/
+apps/import_tflite/.venv/
 apps/import_trees/.venv/

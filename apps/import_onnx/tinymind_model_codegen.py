@@ -28,7 +28,9 @@ buffer it reads, and where its output lives. This module writes that wiring as
 a second header, model.hpp, holding
 
   * one constexpr layer object per record (QConv2D, QConv2DPerChannel,
-    QDepthwiseConv2D, QDense, QMaxPool2D, QAdd, QSoftmaxFixedPoint1D) with
+    QDepthwiseConv2D, QDense, QMaxPool2D, QAdd, QSoftmaxFixedPoint1D, and for
+    the TFLite importer's records QAvgPool2D / QGlobalAvgPool2D and TFLM's
+    integer mean, a window sum through one Requantizer) with
     its weights, biases and requantizers bound at compile time, so the object
     sits in flash and the compiler folds its fields into the kernels;
   * the 256-entry lookup tables for Sigmoid and Tanh records and the QAdd and
@@ -404,8 +406,10 @@ def output_size(layer, sizes: dict) -> int:
     g = layer.geometry
     if layer.op_type in ("Conv", "DepthwiseConv", "AveragePool"):
         return g["OutputHeight"] * g["OutputWidth"] * g["NumFilters"]
-    if layer.op_type == "MaxPool":
+    if layer.op_type in ("MaxPool", "AvgPool2D"):
         return g["OutputHeight"] * g["OutputWidth"] * g["InputChannels"]
+    if layer.op_type == "Mean":
+        return g["InputChannels"]
     if layer.op_type == "Dense":
         return g["NumOutputs"]
     return sizes[layer.sources[0]]
@@ -420,8 +424,8 @@ def input_size(layer) -> Optional[int]:
     return None
 
 
-def _rq(m: int, s: int, zp: int) -> str:
-    return f"{{{m}, {s}, {zp}, -128, 127}}"
+def _rq(m: int, s: int, zp: int, qmin: int = -128, qmax: int = 127) -> str:
+    return f"{{{m}, {s}, {zp}, {qmin}, {qmax}}}"
 
 
 @dataclass
@@ -593,7 +597,7 @@ def _emit_layer_16x8(p: list, body: list, layer, nm: str, k: str, src: str, dst:
 def emit_model_header(path: str, namespace: str, layers, weights_header: str,
                       alignment: int = 4, in_place: bool = True, int4_dense: bool = False,
                       nested_namespace: Optional[str] = None, activation_bits: int = 8,
-                      int4_conv: bool = False) -> GeneratedModel:
+                      int4_conv: bool = False, generator: str = "tinymind_import_onnx") -> GeneratedModel:
     """Write model.hpp for parsed records whose constants weights_header
     (written by emit_weights_header with the same namespace) holds.
 
@@ -630,6 +634,13 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
         raise ValueError("int4 layers take int8 activations; int4_dense and int4_conv need activation_bits=8")
     if wide and alignment % elem != 0:
         raise ValueError("int16 activations need an even arena alignment")
+    if wide:
+        for layer in layers:
+            if (layer.op_type in ("AvgPool2D", "Mean") or layer.lut is not None or layer.beta != 1.0
+                    or (layer.act_min, layer.act_max) != (-128, 127)):
+                raise ValueError(f"{layer.name}: activation_bits=16 does not cover this record "
+                                 "(a TFLite pool, mean, fixed-point activation table, softmax beta or "
+                                 "fused-activation clamp)")
     for i, layer in enumerate(layers):
         if any(j >= i for j in layer.sources):
             raise ValueError(f"{layer.name}: reads a layer that runs after it")
@@ -677,7 +688,8 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     ops = sorted({l.op_type for l in layers})
     includes = ["qaffine.hpp"]
     for op, hdr in (("Conv", "qconv2d.hpp"), ("Dense", "qdense.hpp"), ("DepthwiseConv", "qdepthwiseconv2d.hpp"),
-                    ("AveragePool", "qdepthwiseconv2d.hpp"), ("MaxPool", "qpool2d.hpp"), ("Add", "qadd.hpp"),
+                    ("AveragePool", "qdepthwiseconv2d.hpp"), ("MaxPool", "qpool2d.hpp"),
+                    ("AvgPool2D", "qpool2d.hpp"), ("Add", "qadd.hpp"),
                     ("Softmax", "qsoftmax_fixedpoint.hpp"), ("Relu", "qactivations.hpp"),
                     ("Sigmoid", "qactivations.hpp"), ("Tanh", "qactivations.hpp")):
         if op in ops and hdr not in includes:
@@ -688,7 +700,7 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
         includes.append("qint4.hpp")
 
     p: list[str] = []
-    p.append(ti.COPYRIGHT_BLOCK.replace("tinymind_import_onnx.", "tinymind_import_onnx (model code generation)."))
+    p.append(ti.copyright_block(f"{generator} (model code generation)"))
     p.append("\n#pragma once\n\n#include <cstddef>\n#include <cstdint>\n\n")
     for hdr in includes:
         p.append(f'#include "{hdr}"\n')
@@ -764,9 +776,11 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
 
         def rq_array(count: int) -> None:
             if layer.per_channel:
-                entries = [_rq(m, s, layer.output_zp) for m, s in zip(layer.multipliers, layer.shifts)]
+                entries = [_rq(m, s, layer.output_zp, layer.act_min, layer.act_max)
+                           for m, s in zip(layer.multipliers, layer.shifts)]
             else:
-                entries = [_rq(layer.multipliers[0], layer.shifts[0], layer.output_zp)] * count
+                entries = [_rq(layer.multipliers[0], layer.shifts[0], layer.output_zp,
+                               layer.act_min, layer.act_max)] * count
             rows = [", ".join(entries[r:r + 3]) for r in range(0, len(entries), 3)]
             p.append(f"        constexpr tinymind::Requantizer<int32_t, int8_t> {nm}_requantizers[{count}] = {{\n"
                      "            " + ",\n            ".join(rows) + "\n        };\n")
@@ -787,7 +801,8 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
                 p.append(f"        constexpr int32_t {nm}_biases_int4[{len(q4.biases)}] = {{\n            "
                          + ",\n            ".join(brow) + "\n        };\n")
                 bias4 = f"{nm}_biases_int4"
-            entries = [_rq(m, sh, layer.output_zp) for m, sh in zip(q4.multipliers, q4.shifts)]
+            entries = [_rq(m, sh, layer.output_zp, layer.act_min, layer.act_max)
+                       for m, sh in zip(q4.multipliers, q4.shifts)]
             rows = [", ".join(entries[r:r + 3]) for r in range(0, len(entries), 3)]
             p.append(f"        constexpr tinymind::Requantizer<int32_t, int8_t> {nm}_requantizers[{len(entries)}] = {{\n"
                      "            " + ",\n            ".join(rows) + "\n        };\n")
@@ -831,14 +846,14 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             else:
                 p.append(f"        typedef tinymind::QConv2D<int8_t, int8_t, int32_t, int8_t, {dims}> {nm}_type;\n")
                 p.append(f"        constexpr {nm}_type {nm}_layer = {{{k}_Weights, {bias}, {layer.input_zp}, "
-                         f"{_rq(layer.multipliers[0], layer.shifts[0], layer.output_zp)}}};\n")
+                         f"{_rq(layer.multipliers[0], layer.shifts[0], layer.output_zp, layer.act_min, layer.act_max)}}};\n")
             p.append(f"        static_assert({nm}_type::OutputSize == {n}, \"{nm}: output size\");\n")
             body.append(f"        model_detail::{nm}_layer.forward({src}, {dst});\n")
         elif layer.op_type == "Dense":
             p.append(f"        typedef tinymind::QDense<int8_t, int8_t, int32_t, int8_t, "
                      f"{g['NumInputs']}, {g['NumOutputs']}> {nm}_type;\n")
             p.append(f"        constexpr {nm}_type {nm}_layer = {{{k}_Weights, {bias}, {layer.input_zp}, "
-                     f"{_rq(layer.multipliers[0], layer.shifts[0], layer.output_zp)}}};\n")
+                     f"{_rq(layer.multipliers[0], layer.shifts[0], layer.output_zp, layer.act_min, layer.act_max)}}};\n")
             p.append(f"        static_assert({nm}_type::OutputLength == {n}, \"{nm}: output size\");\n")
             body.append(f"        model_detail::{nm}_layer.forward({src}, {dst});\n")
         elif layer.op_type in ("DepthwiseConv", "AveragePool"):
@@ -858,22 +873,52 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             p.append(f"        constexpr {nm}_type {nm}_layer = {{}};\n")
             p.append(f"        static_assert({nm}_type::OutputSize == {n}, \"{nm}: output size\");\n")
             body.append(f"        model_detail::{nm}_layer.forward({src}, {dst});\n")
+        elif layer.op_type == "AvgPool2D":
+            if g["KernelHeight"] == g["InputHeight"] and g["KernelWidth"] == g["InputWidth"]:
+                p.append(f"        typedef tinymind::QGlobalAvgPool2D<int8_t, int32_t, {g['InputHeight']}, "
+                         f"{g['InputWidth']}, {g['InputChannels']}> {nm}_type;\n")
+            else:
+                p.append(f"        typedef tinymind::QAvgPool2D<int8_t, int32_t, {g['InputHeight']}, {g['InputWidth']}, "
+                         f"{g['InputChannels']}, {g['KernelHeight']}, {g['KernelWidth']}, {g['StrideH']}, "
+                         f"{g['StrideW']}> {nm}_type;\n")
+            p.append(f"        constexpr {nm}_type {nm}_layer = {{{layer.act_min}, {layer.act_max}}};\n")
+            p.append(f"        static_assert({nm}_type::OutputSize == {n}, \"{nm}: output size\");\n")
+            body.append(f"        model_detail::{nm}_layer.forward({src}, {dst});\n")
+        elif layer.op_type == "Mean":
+            # TFLite's integer MEAN: the zero-point-corrected window sum
+            # through one requantizer whose multiplier folds in 1 / area.
+            area = g["InputHeight"] * g["InputWidth"]
+            ch = g["InputChannels"]
+            p.append(f"        constexpr tinymind::Requantizer<int32_t, int8_t> {nm}_requantizer = "
+                     f"{_rq(layer.multipliers[0], layer.shifts[0], layer.output_zp, layer.act_min, layer.act_max)};\n")
+            body.append(f"        for (std::size_t c = 0; c < {ch}; ++c)\n        {{\n"
+                        f"            int32_t sum = 0;\n"
+                        f"            for (std::size_t j = 0; j < {area}; ++j)\n            {{\n"
+                        f"                sum += static_cast<int32_t>({src}[j * {ch} + c]) - ({layer.input_zp});\n"
+                        f"            }}\n"
+                        f"            {dst}[c] = model_detail::{nm}_requantizer.apply(sum);\n"
+                        f"        }}\n")
         elif layer.op_type == "Add":
             a = qadd_params(layer.input_scale, layer.input_b_scale, layer.output_scale)
             p.append(f"        typedef tinymind::QAdd<int8_t, int8_t, int8_t, {n}> {nm}_type;\n")
             p.append(f"        constexpr {nm}_type {nm}_layer = {{{layer.input_zp}, {layer.input_b_zp}, "
                      f"{a['left_shift']}, {a['input_a_multiplier']}, {a['input_a_shift']}, "
                      f"{a['input_b_multiplier']}, {a['input_b_shift']}, "
-                     f"{_rq(a['output_multiplier'], a['output_shift'], layer.output_zp)}}};\n")
+                     f"{_rq(a['output_multiplier'], a['output_shift'], layer.output_zp, layer.act_min, layer.act_max)}}};\n")
             body.append(f"        model_detail::{nm}_layer.forward({src}, {ptr(layer.sources[1])}, {dst});\n")
         elif layer.op_type == "Softmax":
-            mult, left, diff = softmax_params(layer.input_scale)
+            mult, left, diff = softmax_params(layer.input_scale, layer.beta)
             p.append(f"        typedef tinymind::QSoftmaxFixedPoint1D<1, {n}> {nm}_type;\n")
             p.append(f"        constexpr {nm}_type {nm}_layer = {{{mult}, {left}, {diff}}};\n")
             body.append(f"        model_detail::{nm}_layer.forward({src}, {dst});\n")
         elif layer.op_type in ("Sigmoid", "Tanh"):
-            lut = activation_lut(layer.op_type, layer.input_scale, layer.input_zp,
-                                 layer.output_scale, layer.output_zp)
+            if layer.lut is not None:
+                lut = [int(v) for v in layer.lut]
+                if len(lut) != 256 or any(v < -128 or v > 127 for v in lut):
+                    raise ValueError(f"{layer.name}: a lookup table needs 256 int8 entries")
+            else:
+                lut = activation_lut(layer.op_type, layer.input_scale, layer.input_zp,
+                                     layer.output_scale, layer.output_zp)
             rows = [", ".join(f"{v:4d}" for v in lut[r:r + 16]) for r in range(0, 256, 16)]
             p.append(f"        constexpr int8_t {nm}_lut[256] = {{\n            "
                      + ",\n            ".join(rows) + "\n        };\n")
