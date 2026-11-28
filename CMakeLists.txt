@@ -49,8 +49,7 @@ if(ESP_PLATFORM)
     # TINYMIND_USE_* flag is set, so it costs nothing when no table is used.
     # Set feature macros and table flags for the whole project with
     # idf_build_set_property(COMPILE_DEFINITIONS ... APPEND) before project().
-    idf_component_register(SRCS "cpp/lookupTables.cpp"
-                           INCLUDE_DIRS "cpp" "cpp/include")
+    idf_component_register(INCLUDE_DIRS "cpp" "cpp/include")
     return()
 endif()
 
@@ -80,9 +79,7 @@ set(TINYMIND_LOOKUP_TABLES "" CACHE STRING
 add_library(tinymind INTERFACE)
 add_library(tinymind::tinymind ALIAS tinymind)
 target_include_directories(tinymind INTERFACE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/cpp>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/cpp/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/tinymind>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/tinymind/include>)
 target_compile_features(tinymind INTERFACE cxx_std_14)
 foreach(feature IN LISTS TINYMIND_FEATURES)

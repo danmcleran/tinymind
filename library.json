@@ -20,6 +20,7 @@
   "headers": "tinymind.h",
   "build": {
     "srcDir": "src",
+    "srcFilter": ["-<tinymind_lookup_tables.cpp>"],
     "includeDir": "src"
   },
   "export": {
