@@ -303,10 +303,10 @@ Findings:
 
 ## MLPerf® Tiny reference models (F411)
 
-The two models above were built for this benchmark. `SUITE=mlperf` runs two standard ones instead: the
+The two models above were built for this benchmark. `SUITE=mlperf` runs standard ones instead: the
 MLPerf Tiny reference int8 models for keyword spotting (DS-CNN, 49x10 MFCC input, 12 classes) and image
-classification (ResNet-8, 32x32x3 CIFAR-10 input, 10 classes), taken unmodified from
-[mlcommons/tiny](https://github.com/mlcommons/tiny) at a pinned commit.
+classification (ResNet-8, 32x32x3 CIFAR-10 input, 10 classes), and the streaming wake word model below,
+taken unmodified from [mlcommons/tiny](https://github.com/mlcommons/tiny) at a pinned commit.
 
 **These are not MLPerf results.** They were not produced with the MLPerf Tiny runner or under its rules
 (no accuracy run on the dataset, no energy measurement), and MLCommons has not verified them. They compare
@@ -360,6 +360,47 @@ Full tables, O2 and per layer, are in [`results/REPORT_mlperf.md`](results/REPOR
 * **Padding** is folded into the layers: a ring of KH padded rows on the stack replaces the padded copy
   of each input. That removes a 218k-cycle (keyword spotting) and 390k-cycle (image classification) copy
   pass, and the 12 KB and 18 KB padded tensors that had put tinymind's RAM above TFLM's.
+
+### Streaming wake word (MLPerf Tiny v1.3)
+
+The third reference model detects a wake word in a stream of audio: 40 log-mel energies per 32 ms frame,
+30 frames per window, four depthwise-separable blocks along time (depthwise kernels of 3, 5, 10 and 15
+frames, then 1x1 convolutions of 128, 128, 128 and 32 filters, VALID padding and stride 1), a dense layer
+and a softmax over three classes. The reference firmware shifts its 1,200-byte window by one frame every
+32 ms and reruns the whole model, about 826,000 multiply-adds. The benchmark rules allow a submission to
+keep intermediate activations between frames instead.
+
+This model goes through the TFLite importer (`apps/import_tflite`), not `gen/make_mlperf.py`'s own
+translator, twice over one weights header: `forward()` over the whole window, and `step()`
+(`--streaming`), which takes one new frame and keeps each layer's last frames in a state, for about
+46,000 multiply-adds per frame. The 8 test inputs are consecutive windows over one sequence of random
+quiet frames (uniform frames saturate the softmax); the `step()` images replay the frames before each
+window untimed and time the step that completes it. Every image gives the same output hash, which is also
+the TFLite interpreter's.
+
+O3, 100 MHz:
+
+| Framework | Cycles per 32 ms frame | ms | Share of the 32 ms | Flash | RAM | Bit-exact |
+|---|---:|---:|---:|---:|---:|---|
+| tinymind `step()` +SMLAD | **225,012** | **2.3** | **7.0%** | **69,736** | **4,328** | yes |
+| tinymind `step()` scalar | 376,181 | 3.8 | 11.8% | 69,200 | 4,336 | yes |
+| tinymind `forward()` +SMLAD (whole window) | 2,171,402 | 21.7 | 67.9% | 77,164 | 8,168 | yes |
+| tinymind `forward()` scalar (whole window) | 5,419,903 | 54.2 | 169% | 72,480 | 8,068 | yes |
+| TFLM CMSIS-NN (whole window) | 2,917,973 | 29.2 | 91.2% | 165,920 | 17,984 | yes |
+| TFLM reference (whole window) | 14,480,446 | 144.8 | 453% | 119,512 | 16,292 | yes |
+
+* **Streamed, tinymind takes 13.0 times fewer cycles per frame than TFLM with CMSIS-NN rerunning the
+  window,** and 9.6 times fewer than its own whole-window `forward()`. At 100 MHz that leaves the core
+  idle 93% of each 32 ms frame instead of 9%, and it needs a quarter of TFLM's RAM. The arithmetic per
+  output is unchanged, so the outputs are the same.
+* **Over the whole window, tinymind takes 25.6% fewer cycles than CMSIS-NN.** The 1x1 convolutions run
+  as `QPointwiseConv2DPerChannel` (the code generator emitted them as general convolutions at first,
+  30% slower than CMSIS-NN), and three of the four depthwise layers take a quarter to a half of
+  CMSIS-NN's cycles (the fourth, a single 15-frame window, about the same).
+* **Where `step()` spends its time:** 116k of its 225k cycles are the two 128-to-128 1x1 convolutions,
+  58k each, which now run on one pixel each: about 3.5 cycles per multiply-add, against 2.2 when they
+  sweep 24 pixels in `forward()`. Each count includes moving that layer's history back one frame. A
+  faster single-pixel path is the next thing to try.
 
 ## Clang (tinymind only)
 
@@ -481,7 +522,8 @@ replugging, which renumbers `/dev/ttyACM*`, cannot point them at different board
 | `gen/make_models.py` | Trains/quantizes the models and emits every framework's headers into `gen/out/` |
 | `gen/make_trees.py` | Trains the random forest and emits it for tinymind and emlearn (`make models` runs it) |
 | `gen/subset.py` | Cuts a test set down to its first N samples for the L031 build |
-| `gen/make_mlperf.py` | Fetches the MLPerf Tiny reference models and translates them into `gen/mlperf/` (`make mlperf-models`, not committed) |
+| `gen/make_mlperf.py` | Fetches the MLPerf Tiny reference models and translates them into `gen/mlperf/` (`make mlperf-models`, not committed); the streaming wake word model through `apps/import_tflite`, as `forward()` and as `step()` |
+| `fw/be_tinymind_sww.cpp` | tinymind backend for the streaming wake word model: `forward()` over the window, or `step()` over one frame (`-DSTREAM`); `-DPROFILE` times layers through the generated model's hook |
 | `host/tm_check.cpp` | Host-side tinymind hash check |
 | `host/tm_check_mlperf.cpp` | The same for the MLPerf models (`make host-check-mlperf`) |
 | `host/tm_host_bench.cpp` | Host timing of tinymind, per x86 SIMD backend (`make host-bench`) |

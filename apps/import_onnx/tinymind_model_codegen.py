@@ -27,8 +27,10 @@ leaves the wiring to the caller: which layer type each record becomes, which
 buffer it reads, and where its output lives. This module writes that wiring as
 a second header, model.hpp, holding
 
-  * one constexpr layer object per record (QConv2D, QConv2DPerChannel,
-    QDepthwiseConv2D, QDense, QMaxPool2D, QAdd, QSoftmaxFixedPoint1D, and for
+  * one constexpr layer object per record (QConv2D, QConv2DPerChannel, and
+    QPointwiseConv2D / QPointwiseConv2DPerChannel for an unpadded 1x1
+    stride-1 convolution, QDepthwiseConv2D, QDense, QMaxPool2D, QAdd,
+    QSoftmaxFixedPoint1D, and for
     the TFLite importer's records QAvgPool2D / QGlobalAvgPool2D and TFLM's
     integer mean, a window sum through one Requantizer) with
     its weights, biases and requantizers bound at compile time, so the object
@@ -40,7 +42,12 @@ a second header, model.hpp, holding
   * a memory plan: every intermediate activation gets a fixed offset into one
     caller-owned arena, and two activations share bytes when no layer needs
     both at once (see plan_memory);
-  * forward(input, output, arena), which runs the layers in graph order.
+  * forward(input, output, arena), which runs the layers in graph order,
+    with an overload that calls a hook around every layer (to time layers or
+    trace activations), and forwardLayer(), which runs one layer at a time;
+  * or, with streaming=True, step(frame, output, state, arena), which runs a
+    model over a window of frames one new frame at a time and keeps each
+    layer's last frames in a caller-owned state (see plan_stream).
 
 The model input and output are caller-owned and are not part of the arena: the
 first layers read `input` directly and the last layer writes `output`. The
@@ -99,14 +106,17 @@ def _align(n: int, alignment: int) -> int:
 IN_PLACE_OPS = ("Relu", "Sigmoid", "Tanh", "Add")
 
 
-def plan_memory(layers, sizes: dict, alignment: int = 4, in_place: bool = True) -> MemoryPlan:
+def plan_memory(layers, sizes: dict, alignment: int = 4, in_place: bool = True,
+                skip: frozenset = frozenset()) -> MemoryPlan:
     """Give every intermediate output an offset into one arena.
 
     A layer's output is live from the layer that writes it to the last layer
     that reads it, both included, so a layer's inputs and output never share
     bytes unless the layer is element-wise and its input dies there (then the
     output takes over the input's buffer, which IN_PLACE_OPS lists). The last
-    record writes the caller's output buffer and is not planned.
+    record writes the caller's output buffer and is not planned, and neither
+    are the records in skip (a streaming model keeps their outputs in its
+    state, see plan_stream).
 
     Placement is TFLite Micro's greedy-by-size: the largest buffer first,
     each at the lowest aligned offset that overlaps no buffer it is live
@@ -123,6 +133,8 @@ def plan_memory(layers, sizes: dict, alignment: int = 4, in_place: bool = True) 
     owner: dict[int, PlannedBuffer] = {}
     buffers: list[PlannedBuffer] = []
     for i, layer in enumerate(layers[:-1]):
+        if i in skip:
+            continue
         target = None
         if in_place and layer.op_type in IN_PLACE_OPS:
             for j in layer.sources:
@@ -154,7 +166,7 @@ def plan_memory(layers, sizes: dict, alignment: int = 4, in_place: bool = True) 
 
     arena = max((b.offset + b.size for b in buffers), default=0)
     lower = max((sum(b.size for b in buffers if b.first <= t <= b.last) for t in range(n)), default=0)
-    unshared = sum(_align(sizes[i], alignment) for i in range(n - 1))
+    unshared = sum(_align(sizes[i], alignment) for i in range(n - 1) if i not in skip)
     offsets = {i: owner[i].offset for i in owner}
     return MemoryPlan(buffers=buffers, offsets=offsets, arena_size=arena,
                       unshared_size=unshared, lower_bound=lower, alignment=alignment)
@@ -493,6 +505,191 @@ class GeneratedModel:
     output_size: int
     weight_bytes: int = 0      # int8 / int4 weight bytes the layers read
     int4_layers: list = field(default_factory=list)
+    stream: Optional["StreamPlan"] = None   # set for a streaming model
+
+
+# ----------------------------------------------------------------------------
+# Streaming: one new input frame per call.
+# ----------------------------------------------------------------------------
+
+# Records that slide a window over their input; along the time axis the
+# window is what a streaming model keeps a history for.
+WINDOWED_OPS = ("Conv", "DepthwiseConv", "AveragePool", "MaxPool", "AvgPool2D")
+PER_FRAME_OPS = ("Relu", "Sigmoid", "Tanh", "Add")
+
+
+@dataclass
+class StreamPlan:
+    """How a model over a window of frames runs one new frame at a time.
+
+    The whole-window model reads T frames along one spatial axis (time) and
+    every layer is a function of the frames it covers. With stride 1 and no
+    padding along time, the newest frame of each layer's output depends only
+    on the newest frames of its input, so each call computes one frame per
+    layer: a layer that slides a window of K frames over a tensor reads that
+    tensor's last K frames, which the model keeps, between calls, in a
+    history of frames (the state). Each output frame goes through the same
+    kernel and the same requantizer as in the whole-window model, so the
+    streamed output equals the whole-window output for the window that ends
+    at the newest frame, bit for bit, once receptive_frames frames have
+    arrived.
+
+    time_axis    : "H" (tensors [T][W][C], a frame is W * C values) or "W"
+                   (tensors [1][T][C], a frame is C values).
+    frames       : tensor -> frames it spans in the whole-window model (-1 is
+                   the model input).
+    frame_size   : tensor -> values per frame.
+    window       : layer -> frames of its first input it reads per call (1 for
+                   a per-frame layer).
+    history      : tensor -> frames kept, for every tensor some layer reads
+                   more than one frame of.
+    state_offset : tensor -> offset of its history in the state.
+    state_size   : bytes of state.
+    receptive_frames : input frames the newest output frame depends on.
+    """
+
+    time_axis: str
+    frames: dict
+    frame_size: dict
+    window: dict
+    history: dict
+    state_offset: dict
+    state_size: int
+    receptive_frames: int
+
+
+def _out_shape(layer, shapes: dict) -> tuple:
+    g = layer.geometry
+    if layer.op_type in ("Conv", "DepthwiseConv", "AveragePool"):
+        return (g["OutputHeight"], g["OutputWidth"], g["NumFilters"])
+    if layer.op_type in ("MaxPool", "AvgPool2D"):
+        return (g["OutputHeight"], g["OutputWidth"], g["InputChannels"])
+    if layer.op_type == "Mean":
+        return (1, 1, g["InputChannels"])
+    if layer.op_type == "Dense":
+        return (1, 1, g["NumOutputs"])
+    return shapes[layer.sources[0]]
+
+
+def plan_stream(layers, alignment: int = 4):
+    """Rewrite a whole-window model's records to run one frame per call.
+    Returns (records, StreamPlan); the records are copies, the windowed ones
+    covering K frames of time instead of the whole window.
+
+    Raises ValueError for a model that cannot stream exactly: one whose input
+    spans one frame, a layer that strides or pads along time, a softmax over
+    more than one frame, or a reshape that moves the time axis."""
+    import copy
+
+    first = next(l for l in layers if -1 in l.sources)
+    g0 = first.geometry
+    if first.op_type not in WINDOWED_OPS or first.sources[0] != -1:
+        raise ValueError(f"{first.name}: a streaming model's first layer must be a convolution or pool "
+                         "over the time axis")
+    in_shape = (g0["InputHeight"], g0["InputWidth"], g0["InputChannels"])
+    if in_shape[0] > 1:
+        axis = "H"
+    elif in_shape[1] > 1:
+        axis = "W"
+    else:
+        raise ValueError("the model's input is a single frame: there is nothing to stream")
+
+    def split(shape):
+        h, w, c = shape
+        if axis == "H":
+            return h, w * c
+        if h != 1:
+            raise ValueError("with time along W every tensor must have height 1")
+        return w, c
+
+    shapes = {-1: in_shape}
+    frames, fsize = {}, {}
+    frames[-1], fsize[-1] = split(in_shape)
+    window, need = {}, {}
+    receptive = {-1: 1}
+    out = []
+    for i, layer in enumerate(layers):
+        rec = copy.copy(layer)
+        rec.geometry = dict(layer.geometry)
+        g = rec.geometry
+        j = layer.sources[0]
+        t_in = frames[j]
+        win = 1
+        if t_in == 1:
+            # Every frame-1 tensor is the whole tensor: the layer runs as it is.
+            shape = _out_shape(layer, shapes)
+            t_out, f_out = 1, int(shape[0] * shape[1] * shape[2])
+        elif layer.op_type in WINDOWED_OPS:
+            view = (g["InputHeight"], g["InputWidth"], g["InputChannels"])
+            if split(view) != (t_in, fsize[j]):
+                raise ValueError(f"{layer.name}: reads its input with a different time layout "
+                                 "(a reshape across the time axis cannot stream)")
+            if axis == "H":
+                k, stride = g["KernelHeight"], g["StrideH"]
+                pads = (g.get("PadTop", 0), g.get("PadBottom", 0))
+            else:
+                k, stride = g["KernelWidth"], g["StrideW"]
+                pads = (g.get("PadLeft", 0), g.get("PadRight", 0))
+            if stride != 1:
+                raise ValueError(f"{layer.name}: strides along time ({stride}); a streaming model "
+                                 "needs stride 1 there")
+            if pads != (0, 0):
+                raise ValueError(f"{layer.name}: pads along time {pads}; a streaming model needs "
+                                 "VALID padding there")
+            if axis == "H":
+                g["InputHeight"], g["OutputHeight"] = k, 1
+            else:
+                g["InputWidth"], g["OutputWidth"] = k, 1
+            shape = _out_shape(layer, shapes)
+            t_out, f_out = split(shape)
+            win = k
+        elif layer.op_type in ("Dense", "Mean"):
+            if layer.op_type == "Dense" and g["NumInputs"] != t_in * fsize[j]:
+                raise ValueError(f"{layer.name}: reads {g['NumInputs']} values of a "
+                                 f"{t_in * fsize[j]}-value input")
+            if layer.op_type == "Mean":
+                view = (g["InputHeight"], g["InputWidth"], g["InputChannels"])
+                if split(view) != (t_in, fsize[j]):
+                    raise ValueError(f"{layer.name}: reads its input with a different time layout")
+            shape = _out_shape(layer, shapes)
+            t_out, f_out, win = 1, int(shape[0] * shape[1] * shape[2]), t_in
+        elif layer.op_type in PER_FRAME_OPS:
+            for s in layer.sources[1:]:
+                if (frames[s], fsize[s]) != (t_in, fsize[j]):
+                    raise ValueError(f"{layer.name}: adds tensors of different time extents")
+            shape = shapes[j]
+            t_out, f_out = t_in, fsize[j]
+        else:
+            raise ValueError(f"{layer.name}: a {layer.op_type} over {t_in} frames cannot stream")
+        shapes[i] = shape
+        frames[i], fsize[i] = t_out, f_out
+        window[i] = win
+        if win > 1:
+            need[j] = max(need.get(j, 1), win)
+        receptive[i] = max(receptive[s] for s in layer.sources) + win - 1
+        out.append(rec)
+
+    offsets, size = {}, 0
+    for j in sorted(need):
+        offsets[j] = size
+        size += _align(need[j] * fsize[j], alignment)
+    plan = StreamPlan(time_axis=axis, frames=frames, frame_size=fsize, window=window, history=need,
+                      state_offset=offsets, state_size=size, receptive_frames=receptive[len(layers) - 1])
+    return out, plan
+
+
+def _is_pointwise(layer) -> bool:
+    g = layer.geometry
+    return (g["KernelHeight"] == 1 and g["KernelWidth"] == 1 and g["StrideH"] == 1 and g["StrideW"] == 1
+            and (g["PadTop"], g["PadBottom"], g["PadLeft"], g["PadRight"]) == (0, 0, 0, 0))
+
+
+def _slide(stream, j: int, name: str) -> str:
+    """Move tensor j's history one frame back, making room for its newest."""
+    k, f, off = stream.history[j], stream.frame_size[j], stream.state_offset[j]
+    return (f"        // Slide {name}'s history one frame.\n"
+            f"        for (std::size_t b = 0; b < {(k - 1) * f}; ++b)\n        {{\n"
+            f"            state[{off} + b] = state[{off + f} + b];\n        }}\n")
 
 
 def _rows(values, per_row: int, fmt=str) -> str:
@@ -597,7 +794,8 @@ def _emit_layer_16x8(p: list, body: list, layer, nm: str, k: str, src: str, dst:
 def emit_model_header(path: str, namespace: str, layers, weights_header: str,
                       alignment: int = 4, in_place: bool = True, int4_dense: bool = False,
                       nested_namespace: Optional[str] = None, activation_bits: int = 8,
-                      int4_conv: bool = False, generator: str = "tinymind_import_onnx") -> GeneratedModel:
+                      int4_conv: bool = False, generator: str = "tinymind_import_onnx",
+                      streaming: bool = False) -> GeneratedModel:
     """Write model.hpp for parsed records whose constants weights_header
     (written by emit_weights_header with the same namespace) holds.
 
@@ -644,6 +842,11 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     for i, layer in enumerate(layers):
         if any(j >= i for j in layer.sources):
             raise ValueError(f"{layer.name}: reads a layer that runs after it")
+    stream = None
+    if streaming:
+        if wide or int4_dense or int4_conv:
+            raise ValueError("streaming covers int8 activations with int8 weights")
+        layers, stream = plan_stream(layers, alignment)
 
     in_size = None
     for layer in layers:
@@ -652,6 +855,8 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             break
     if in_size is None:
         raise ValueError("no layer that reads the model's input gives its size")
+    if stream is not None:
+        in_size = stream.frame_size[-1]
 
     sizes = {-1: in_size}
     for i, layer in enumerate(layers):
@@ -667,7 +872,8 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             raise ValueError(f"{layer.name}: a Relu whose output grid differs from its input's "
                              "needs a rescale no record carries")
 
-    plan = plan_memory(layers, {j: v * elem for j, v in sizes.items()}, alignment=alignment, in_place=in_place)
+    plan = plan_memory(layers, {j: v * elem for j, v in sizes.items()}, alignment=alignment, in_place=in_place,
+                       skip=frozenset(stream.history) if stream is not None else frozenset())
     check_plan(plan)
 
     last = len(layers) - 1
@@ -696,6 +902,8 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             includes.append(hdr)
     if any(l.op_type == "Dense" and l.per_channel for l in layers) and "qconv2d.hpp" not in includes:
         includes.append("qconv2d.hpp")
+    if not wide and any(l.op_type == "Conv" and not (int4_conv) and _is_pointwise(l) for l in layers):
+        includes.append("qpointwiseconv2d.hpp")
     if (int4_dense and "Dense" in ops) or (int4_conv and ({"Conv", "DepthwiseConv"} & set(ops))):
         includes.append("qint4.hpp")
 
@@ -737,6 +945,38 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     p.append(f"    constexpr std::size_t kModelBufferCount    = {len(plan.buffers)};\n")
     names = ", ".join(f'"{ti.sanitize(l.name)}"' for l in layers)
     p.append(f"    constexpr const char* kModelLayerNames[{len(layers)}] = {{{names}}};\n")
+
+    def grid(i: int) -> tuple:
+        layer = layers[i]
+        if layer.op_type == "Softmax":
+            return ((SOFTMAX16_OUTPUT_SCALE, 0) if wide else (SOFTMAX_OUTPUT_SCALE, SOFTMAX_OUTPUT_ZERO_POINT))
+        if wide:
+            return (int16_grid(layer.output_scale, layer.output_zp).scale, 0)
+        return (layer.output_scale, layer.output_zp)
+
+    grids = [grid(i) for i in range(len(layers))]
+    p.append(f"    constexpr std::size_t kModelLayerOutputSize[{len(layers)}] = "
+             f"{{{', '.join(str(sizes[i]) for i in range(len(layers)))}}};\n")
+    p.append(f"    constexpr float kModelLayerOutputScale[{len(layers)}] = "
+             f"{{{', '.join(f'{_f32(sc)!r}f' for sc, _ in grids)}}};\n")
+    p.append(f"    constexpr int32_t kModelLayerOutputZeroPoint[{len(layers)}] = "
+             f"{{{', '.join(str(int(zp)) for _, zp in grids)}}};\n")
+    input_last = max(i for i, l in enumerate(layers) if -1 in l.sources)
+    p.append(f"    constexpr std::size_t kModelInputLastReader = {input_last}; "
+             "// the last layer that reads the input\n")
+    if stream is not None:
+        p.append("    // Streaming: each step() takes one input frame; the time axis is "
+                 f"{'H' if stream.time_axis == 'H' else 'W'} of the\n"
+                 f"    // whole-window model, whose input spans {stream.frames[-1]} frames.\n")
+        p.append(f"    constexpr std::size_t kModelWindowFrames     = {stream.frames[-1]};\n")
+        p.append(f"    constexpr std::size_t kModelReceptiveFrames  = {stream.receptive_frames};\n")
+        p.append(f"    constexpr std::size_t kModelStateSize        = {stream.state_size};\n")
+        p.append(f"    constexpr std::size_t kModelStateAlignment   = {alignment};\n")
+        p.append("    // State layout: one history per tensor a layer reads several frames of.\n")
+        for j in sorted(stream.history):
+            nmj = "input" if j < 0 else ti.sanitize(layers[j].name)
+            p.append(f"    //   {stream.state_offset[j]:6d}  {stream.history[j]:3d} frames x "
+                     f"{stream.frame_size[j]:5d}  {nmj}\n")
     if plan.buffers:
         p.append("    struct ModelBuffer\n    {\n        std::size_t offset;\n        std::size_t size;\n"
                  "        std::size_t first_layer;\n        std::size_t last_layer;\n"
@@ -752,23 +992,34 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
     weight_bytes = 0
     int4_records: dict = {}
 
-    def ptr(j: int) -> str:
+    def ptr(j: int, reader: Optional[int] = None) -> str:
+        """Where tensor j lives; for a streaming model, the frames of it that
+        layer `reader` reads (its window when j is its first input), or the
+        newest frame (where j's layer writes)."""
+        if stream is not None and j in stream.history:
+            k = stream.history[j]
+            w = stream.window[reader] if reader is not None and layers[reader].sources[0] == j else 1
+            return f"(state + {stream.state_offset[j] + (k - w) * stream.frame_size[j]})"
         if j < 0:
-            return "input"
+            return "frame" if stream is not None else "input"
         if j == last:
             return "output"
         return f"(arena + {plan.offsets[j] // elem})"
 
+    starts = []
     for i, layer in enumerate(layers):
+        starts.append(len(body))
         nm = ti.sanitize(layer.name)
         k = f"k{nm}"
         g = layer.geometry
-        src = ptr(layer.sources[0])
+        src = ptr(layer.sources[0], i)
         dst = ptr(i)
         n = sizes[i]
         bias = f"{k}_Biases" if layer.bias is not None else "nullptr"
         reads = ", ".join("input" if j < 0 else ti.sanitize(layers[j].name) for j in layer.sources)
         p.append(f"\n        // [{i}] {layer.op_type} {nm} <- {reads}\n")
+        if stream is not None and i in stream.history:
+            body.append(_slide(stream, i, nm))
 
         if wide:
             weight_bytes += _emit_layer_16x8(p, body, layer, nm, k, src, dst, n, ptr)
@@ -829,7 +1080,25 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             continue
         if layer.weight is not None:
             weight_bytes += int(layer.weight.size)
-        if layer.op_type == "Conv" or (layer.op_type == "Dense" and layer.per_channel):
+        pointwise = layer.op_type == "Conv" and _is_pointwise(layer)
+        if pointwise:
+            # A 1x1 convolution: the same arithmetic over the same OHWI weights
+            # ([F][1][1][C] is [F][C]), through the pointwise kernels, which
+            # sweep each filter across the pixels.
+            dims = f"{g['InputHeight']}, {g['InputWidth']}, {g['InputChannels']}, {g['NumFilters']}"
+            if layer.per_channel:
+                rq_array(g["NumFilters"])
+                p.append(f"        typedef tinymind::QPointwiseConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, {dims}> "
+                         f"{nm}_type;\n")
+                p.append(f"        constexpr {nm}_type {nm}_layer = {{{k}_Weights, {bias}, {layer.input_zp}, "
+                         f"{nm}_requantizers}};\n")
+            else:
+                p.append(f"        typedef tinymind::QPointwiseConv2D<int8_t, int8_t, int32_t, int8_t, {dims}> {nm}_type;\n")
+                p.append(f"        constexpr {nm}_type {nm}_layer = {{{k}_Weights, {bias}, {layer.input_zp}, "
+                         f"{_rq(layer.multipliers[0], layer.shifts[0], layer.output_zp, layer.act_min, layer.act_max)}}};\n")
+            p.append(f"        static_assert({nm}_type::OutputSize == {n}, \"{nm}: output size\");\n")
+            body.append(f"        model_detail::{nm}_layer.forward({src}, {dst});\n")
+        elif layer.op_type == "Conv" or (layer.op_type == "Dense" and layer.per_channel):
             if layer.op_type == "Conv":
                 dims = (f"{g['InputHeight']}, {g['InputWidth']}, {g['InputChannels']}, {g['KernelHeight']}, "
                         f"{g['KernelWidth']}, {g['StrideH']}, {g['StrideW']}, {g['NumFilters']}, "
@@ -905,7 +1174,7 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
                      f"{a['left_shift']}, {a['input_a_multiplier']}, {a['input_a_shift']}, "
                      f"{a['input_b_multiplier']}, {a['input_b_shift']}, "
                      f"{_rq(a['output_multiplier'], a['output_shift'], layer.output_zp, layer.act_min, layer.act_max)}}};\n")
-            body.append(f"        model_detail::{nm}_layer.forward({src}, {ptr(layer.sources[1])}, {dst});\n")
+            body.append(f"        model_detail::{nm}_layer.forward({src}, {ptr(layer.sources[1], i)}, {dst});\n")
         elif layer.op_type == "Softmax":
             mult, left, diff = softmax_params(layer.input_scale, layer.beta)
             p.append(f"        typedef tinymind::QSoftmaxFixedPoint1D<1, {n}> {nm}_type;\n")
@@ -933,18 +1202,105 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             raise ValueError(f"{layer.name}: no code generation for {layer.op_type}")
 
     p.append("    } // namespace model_detail\n\n")
-    p.append("    /**\n"
-             f"     * Run the model: input (kModelInputSize {act[:-2]} values on the input grid)\n"
-             "     * to output (kModelOutputSize values on the output grid). arena\n"
-             "     * holds every intermediate activation; its contents need not be\n"
-             "     * kept between calls.\n"
-             "     */\n")
+    starts.append(len(body))
+    chunks = ["".join(body[starts[i]:starts[i + 1]]) for i in range(len(layers))]
+    outs = [ptr(i) for i in range(len(layers))]
+    p.append("    // A forward() / step() hook: before(layer) runs before layer `layer` (an\n"
+             "    // index into kModelLayerNames), after(layer, out, size) after it, with its\n"
+             "    // output (size values on the grid kModelLayerOutputScale[layer] /\n"
+             "    // kModelLayerOutputZeroPoint[layer]), valid until a later layer reuses its\n"
+             "    // bytes. Use it to time layers or to trace activations. ModelNoHook does\n"
+             "    // nothing and compiles away.\n")
+    p.append("    struct ModelNoHook\n    {\n"
+             "        void before(std::size_t) {}\n"
+             f"        void after(std::size_t, const {act}*, std::size_t) {{}}\n"
+             "    };\n\n")
+
+    def hooked(indent: str = "        ") -> str:
+        out = []
+        for i in range(len(layers)):
+            out.append(f"{indent}hook.before({i});\n")
+            out.append(chunks[i])
+            out.append(f"{indent}hook.after({i}, {outs[i]}, {sizes[i]});\n")
+        return "".join(out)
+
     unused_arena = plan.arena_size == 0
-    p.append(f"    inline void forward(const {act}* input, {act}* output, {act}* arena)\n    {{\n")
-    if unused_arena:
-        p.append("        (void)arena;\n")
-    p.append("".join(body))
-    p.append("    }\n")
+    if stream is None:
+        p.append("    /**\n"
+                 f"     * Run the model: input (kModelInputSize {act[:-2]} values on the input grid)\n"
+                 "     * to output (kModelOutputSize values on the output grid). arena\n"
+                 "     * holds every intermediate activation; its contents need not be\n"
+                 "     * kept between calls. hook (see ModelNoHook) is called around\n"
+                 "     * every layer.\n"
+                 "     */\n")
+        p.append(f"    template<typename Hook>\n"
+                 f"    inline void forward(const {act}* input, {act}* output, {act}* arena, Hook& hook)\n    {{\n")
+        if unused_arena:
+            p.append("        (void)arena;\n")
+        p.append(hooked())
+        p.append("    }\n\n")
+        p.append(f"    inline void forward(const {act}* input, {act}* output, {act}* arena)\n    {{\n"
+                 "        ModelNoHook hook;\n"
+                 "        forward(input, output, arena, hook);\n"
+                 "    }\n\n")
+        p.append("    /**\n"
+                 "     * Run one layer of forward(): calling it for layer 0, 1, ...,\n"
+                 "     * kModelLayerCount - 1 in turn computes what forward() does, so the\n"
+                 "     * work can be spread across ticks or between other tasks. arena must\n"
+                 "     * be left alone between the calls, and input must stay valid until\n"
+                 "     * layer kModelInputLastReader has run. A layer index out of range does\n"
+                 "     * nothing.\n"
+                 "     */\n")
+        p.append(f"    inline void forwardLayer(std::size_t layer, const {act}* input, {act}* output, {act}* arena)\n"
+                 "    {\n        (void)input;\n        (void)output;\n        (void)arena;\n"
+                 "        switch (layer)\n        {\n")
+        for i in range(len(layers)):
+            body_i = "".join("    " + line if line.strip() else line
+                             for line in chunks[i].splitlines(keepends=True))
+            p.append(f"        case {i}:\n        {{\n{body_i}            break;\n        }}\n")
+        p.append("        default:\n            break;\n        }\n    }\n")
+    else:
+        hk, fk, ok = (stream.history.get(-1, 0), stream.frame_size[-1], stream.state_offset.get(-1, 0))
+        p.append("    /**\n"
+                 "     * Clear the state: every history frame becomes the real value 0 (its\n"
+                 "     * tensor's zero point). Call once before the first step().\n"
+                 "     */\n")
+        p.append(f"    inline void reset({act}* state)\n    {{\n")
+        if not stream.history:
+            p.append("        (void)state;\n")
+        for j in sorted(stream.history):
+            zp = in_zp if j < 0 else layers[j].output_zp
+            span = stream.history[j] * stream.frame_size[j]
+            p.append(f"        for (std::size_t b = 0; b < {span}; ++b)\n        {{\n"
+                     f"            state[{stream.state_offset[j]} + b] = {zp};\n        }}\n")
+        p.append("    }\n\n")
+        p.append("    /**\n"
+                 f"     * Feed one input frame (kModelInputSize {act[:-2]} values on the input grid)\n"
+                 "     * and compute the output for the window of kModelReceptiveFrames frames\n"
+                 "     * that ends with it (kModelOutputSize values on the output grid): the\n"
+                 "     * whole-window model's output for that window, bit for bit, from the\n"
+                 "     * kModelReceptiveFrames-th frame after reset() on. state\n"
+                 "     * (kModelStateSize bytes, aligned to kModelStateAlignment) carries the\n"
+                 "     * history between calls; arena is scratch, as for forward(). hook (see\n"
+                 "     * ModelNoHook) is called around every layer.\n"
+                 "     */\n")
+        p.append(f"    template<typename Hook>\n"
+                 f"    inline void step(const {act}* frame, {act}* output, {act}* state, {act}* arena, Hook& hook)\n"
+                 "    {\n")
+        if unused_arena:
+            p.append("        (void)arena;\n")
+        if hk:
+            p.append(f"        // Slide the input history one frame and append the new frame.\n"
+                     f"        for (std::size_t b = 0; b < {(hk - 1) * fk}; ++b)\n        {{\n"
+                     f"            state[{ok} + b] = state[{ok + fk} + b];\n        }}\n"
+                     f"        for (std::size_t b = 0; b < {fk}; ++b)\n        {{\n"
+                     f"            state[{ok + (hk - 1) * fk} + b] = frame[b];\n        }}\n")
+        p.append(hooked())
+        p.append("    }\n\n")
+        p.append(f"    inline void step(const {act}* frame, {act}* output, {act}* state, {act}* arena)\n    {{\n"
+                 "        ModelNoHook hook;\n"
+                 "        step(frame, output, state, arena, hook);\n"
+                 "    }\n")
     p.append(f"    constexpr std::size_t kModelWeightBytes = {weight_bytes};\n")
     if nested_namespace:
         p.append(f"}} // namespace {nested_namespace}\n")
@@ -954,18 +1310,20 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
         f.write("".join(p))
     return GeneratedModel(plan=plan, sizes=sizes, input_size=in_size, output_size=sizes[last],
                           weight_bytes=weight_bytes,
-                          int4_layers=[int4_records[i] for i in sorted(int4_records)])
+                          int4_layers=[int4_records[i] for i in sorted(int4_records)], stream=stream)
 
 
 def import_onnx_model_with_code(model_path: str, weights_path: str, model_header_path: str,
                                 namespace: str, alignment: int = 4, in_place: bool = True,
                                 int4_dense: bool = False, nested_namespace: Optional[str] = None,
-                                activation_bits: int = 8, int4_conv: bool = False):
+                                activation_bits: int = 8, int4_conv: bool = False,
+                                streaming: bool = False):
     """Parse an ONNX model and write both the weights header and model.hpp.
-    Returns (layers, GeneratedModel)."""
+    Returns (layers, GeneratedModel). streaming: write step() instead of
+    forward() (see plan_stream)."""
     layers = ti.import_onnx_model(model_path, weights_path, namespace)
     generated = emit_model_header(model_header_path, namespace, layers,
                                   os.path.basename(weights_path), alignment=alignment, in_place=in_place,
                                   int4_dense=int4_dense, nested_namespace=nested_namespace,
-                                  activation_bits=activation_bits, int4_conv=int4_conv)
+                                  activation_bits=activation_bits, int4_conv=int4_conv, streaming=streaming)
     return layers, generated

@@ -44,7 +44,8 @@ BOARD = BOARDS[sys.argv[1] if len(sys.argv) > 1 else "f411"]
 MLPERF = BOARD["out"].endswith("_mlperf.md")
 LEVELS = ["O2", "O3"]
 TEST_SYMS = ("mlp_test_x_i8", "mlp_test_x_f32", "mlp_test_y", "kws_test_x_i8", "kws_test_x_f32",
-             "rf_test_x_i8", "rf_test_y", "mlperf_kws_test_x_i8", "mlperf_ic_test_x_i8")
+             "rf_test_x_i8", "rf_test_y", "mlperf_kws_test_x_i8", "mlperf_ic_test_x_i8",
+             "mlperf_sww_test_x_i8", "mlperf_sww_frames_i8")
 
 
 def parse(level):
@@ -91,9 +92,11 @@ NICE = {
     "tm_rf_compact_u8": "tinymind uint8 (QStaticDecisionTree compact x10 + vote)",
     "eml_rf_inline": "emlearn int16 (inline)", "eml_rf_loadable": "emlearn int16 (loadable)",
 }
-for m in ("kws", "ic"):
+for m in ("kws", "ic", "sww"):
     NICE.update({f"tm_mlperf_{m}": "tinymind int8 (scalar)", f"tm_mlperf_{m}_dsp": "tinymind int8 (+SMLAD)",
                  f"tflm_cmsis_mlperf_{m}_int8": "TFLM int8 (CMSIS-NN)", f"tflm_ref_mlperf_{m}_int8": "TFLM int8 (reference)"})
+NICE.update({"tm_mlperf_sww_stream": "tinymind int8 step(), one frame (scalar)",
+             "tm_mlperf_sww_stream_dsp": "tinymind int8 step(), one frame (+SMLAD)"})
 if BOARD["mhz"] == 32:
     # No FPU on the L031: emlearn's MLP, its only MLP path, runs in software float.
     NICE["eml_mlp"] = "emlearn float32 (only MLP path; software float)"
@@ -106,6 +109,8 @@ ORDER = {
 for m in ("kws", "ic"):
     ORDER[f"mlperf_{m}"] = [f"tm_mlperf_{m}", f"tm_mlperf_{m}_dsp", f"tflm_cmsis_mlperf_{m}_int8",
                             f"tflm_ref_mlperf_{m}_int8"]
+ORDER["mlperf_sww"] = ["tm_mlperf_sww", "tm_mlperf_sww_dsp", "tm_mlperf_sww_stream", "tm_mlperf_sww_stream_dsp",
+                       "tflm_cmsis_mlperf_sww_int8", "tflm_ref_mlperf_sww_int8"]
 
 data = {lv: parse(lv) for lv in LEVELS}
 out = []
@@ -115,6 +120,10 @@ if MLPERF:
                "8 random int8 inputs"),
               ("mlperf_ic", "MLPerf(R) Tiny reference image classification model (ResNet-8, 32x32x3 -> 10), "
                "8 random int8 inputs")]
+    if "tm_mlperf_sww" in data["O2"][0]:
+        models.append(("mlperf_sww", "MLPerf(R) Tiny reference streaming wake word model (1D DS-CNN, 30 frames x 40 "
+                       "-> 3), 8 consecutive windows of random int8 frames; a step() row is one new 32 ms frame, "
+                       "the other rows one whole window"))
 else:
     n_mlp = data["O2"][0]["tm_mlp"]["n_test"]
     models = [("mlp", f"MLP 64-32-16-10, sklearn digits ({n_mlp} test samples)"),
@@ -162,6 +171,7 @@ for model, title in models:
     out.append(f"### Per-layer cycles ({model}, each layer timed separately)\n")
     imgs, heads = zip(*[(i, h) for i, h in [(f"tm_{model}_prof", "tinymind scalar"),
                                             (f"tm_{model}_dsp_prof", "tinymind +SMLAD"),
+                                            (f"tm_{model}_stream_dsp_prof", "tinymind step() +SMLAD"),
                                             (f"tflm_cmsis_{model}_int8_prof", "TFLM CMSIS-NN")]
                         if i in data["O2"][0]])
     out.append("| Layer | " + " | ".join(f"{h} O2 | {h} O3" for h in heads) + " |")

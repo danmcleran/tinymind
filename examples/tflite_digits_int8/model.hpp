@@ -15,6 +15,7 @@
 #include "qpool2d.hpp"
 #include "qadd.hpp"
 #include "qsoftmax_fixedpoint.hpp"
+#include "qpointwiseconv2d.hpp"
 #include "weights.hpp"
 
 #if !TINYMIND_ENABLE_QUANTIZATION
@@ -49,6 +50,10 @@ namespace digits {
     constexpr std::size_t kModelLayerCount     = 9;
     constexpr std::size_t kModelBufferCount    = 7;
     constexpr const char* kModelLayerNames[9] = {"conv0", "dwconv1", "conv2", "add3", "maxpool4", "conv5", "mean6", "fc7", "softmax8"};
+    constexpr std::size_t kModelLayerOutputSize[9] = {512, 512, 512, 512, 128, 256, 16, 10, 10};
+    constexpr float kModelLayerOutputScale[9] = {0.014159508049488068f, 0.023196693509817123f, 0.08557920157909393f, 0.08557920157909393f, 0.08557920157909393f, 0.21201619505882263f, 0.09773630648851395f, 0.2737049162387848f, 0.00390625f};
+    constexpr int32_t kModelLayerOutputZeroPoint[9] = {-128, -128, -34, -34, -34, -128, -128, 13, -128};
+    constexpr std::size_t kModelInputLastReader = 0; // the last layer that reads the input
     struct ModelBuffer
     {
         std::size_t offset;
@@ -95,7 +100,7 @@ namespace digits {
             {1086766168, 8, -34, -128, 127}, {1207090768, 8, -34, -128, 127}, {1287611929, 8, -34, -128, 127},
             {1255910762, 7, -34, -128, 127}, {1772635192, 8, -34, -128, 127}
         };
-        typedef tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 8, 8, 8, 1, 1, 1, 1, 8, 0, 0, 0, 0> conv2_type;
+        typedef tinymind::QPointwiseConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 8, 8, 8, 8> conv2_type;
         constexpr conv2_type conv2_layer = {kconv2_Weights, kconv2_Biases, -128, conv2_requantizers};
         static_assert(conv2_type::OutputSize == 512, "conv2: output size");
 
@@ -140,20 +145,47 @@ namespace digits {
         constexpr softmax8_type softmax8_layer = {1175553664, 25, -62};
     } // namespace model_detail
 
+    // A forward() / step() hook: before(layer) runs before layer `layer` (an
+    // index into kModelLayerNames), after(layer, out, size) after it, with its
+    // output (size values on the grid kModelLayerOutputScale[layer] /
+    // kModelLayerOutputZeroPoint[layer]), valid until a later layer reuses its
+    // bytes. Use it to time layers or to trace activations. ModelNoHook does
+    // nothing and compiles away.
+    struct ModelNoHook
+    {
+        void before(std::size_t) {}
+        void after(std::size_t, const int8_t*, std::size_t) {}
+    };
+
     /**
      * Run the model: input (kModelInputSize int8 values on the input grid)
      * to output (kModelOutputSize values on the output grid). arena
      * holds every intermediate activation; its contents need not be
-     * kept between calls.
+     * kept between calls. hook (see ModelNoHook) is called around
+     * every layer.
      */
-    inline void forward(const int8_t* input, int8_t* output, int8_t* arena)
+    template<typename Hook>
+    inline void forward(const int8_t* input, int8_t* output, int8_t* arena, Hook& hook)
     {
+        hook.before(0);
         model_detail::conv0_layer.forward(input, (arena + 0));
+        hook.after(0, (arena + 0), 512);
+        hook.before(1);
         model_detail::dwconv1_layer.forward((arena + 0), (arena + 512));
+        hook.after(1, (arena + 512), 512);
+        hook.before(2);
         model_detail::conv2_layer.forward((arena + 512), (arena + 1024));
+        hook.after(2, (arena + 1024), 512);
+        hook.before(3);
         model_detail::add3_layer.forward((arena + 0), (arena + 1024), (arena + 0));
+        hook.after(3, (arena + 0), 512);
+        hook.before(4);
         model_detail::maxpool4_layer.forward((arena + 0), (arena + 512));
+        hook.after(4, (arena + 512), 128);
+        hook.before(5);
         model_detail::conv5_layer.forward((arena + 512), (arena + 0));
+        hook.after(5, (arena + 0), 256);
+        hook.before(6);
         for (std::size_t c = 0; c < 16; ++c)
         {
             int32_t sum = 0;
@@ -163,8 +195,92 @@ namespace digits {
             }
             (arena + 256)[c] = model_detail::mean6_requantizer.apply(sum);
         }
+        hook.after(6, (arena + 256), 16);
+        hook.before(7);
         model_detail::fc7_layer.forward((arena + 256), (arena + 0));
+        hook.after(7, (arena + 0), 10);
+        hook.before(8);
         model_detail::softmax8_layer.forward((arena + 0), output);
+        hook.after(8, output, 10);
+    }
+
+    inline void forward(const int8_t* input, int8_t* output, int8_t* arena)
+    {
+        ModelNoHook hook;
+        forward(input, output, arena, hook);
+    }
+
+    /**
+     * Run one layer of forward(): calling it for layer 0, 1, ...,
+     * kModelLayerCount - 1 in turn computes what forward() does, so the
+     * work can be spread across ticks or between other tasks. arena must
+     * be left alone between the calls, and input must stay valid until
+     * layer kModelInputLastReader has run. A layer index out of range does
+     * nothing.
+     */
+    inline void forwardLayer(std::size_t layer, const int8_t* input, int8_t* output, int8_t* arena)
+    {
+        (void)input;
+        (void)output;
+        (void)arena;
+        switch (layer)
+        {
+        case 0:
+        {
+            model_detail::conv0_layer.forward(input, (arena + 0));
+            break;
+        }
+        case 1:
+        {
+            model_detail::dwconv1_layer.forward((arena + 0), (arena + 512));
+            break;
+        }
+        case 2:
+        {
+            model_detail::conv2_layer.forward((arena + 512), (arena + 1024));
+            break;
+        }
+        case 3:
+        {
+            model_detail::add3_layer.forward((arena + 0), (arena + 1024), (arena + 0));
+            break;
+        }
+        case 4:
+        {
+            model_detail::maxpool4_layer.forward((arena + 0), (arena + 512));
+            break;
+        }
+        case 5:
+        {
+            model_detail::conv5_layer.forward((arena + 512), (arena + 0));
+            break;
+        }
+        case 6:
+        {
+            for (std::size_t c = 0; c < 16; ++c)
+            {
+                int32_t sum = 0;
+                for (std::size_t j = 0; j < 16; ++j)
+                {
+                    sum += static_cast<int32_t>((arena + 0)[j * 16 + c]) - (-128);
+                }
+                (arena + 256)[c] = model_detail::mean6_requantizer.apply(sum);
+            }
+            break;
+        }
+        case 7:
+        {
+            model_detail::fc7_layer.forward((arena + 256), (arena + 0));
+            break;
+        }
+        case 8:
+        {
+            model_detail::softmax8_layer.forward((arena + 0), output);
+            break;
+        }
+        default:
+            break;
+        }
     }
     constexpr std::size_t kModelWeightBytes = 1520;
 } // namespace digits

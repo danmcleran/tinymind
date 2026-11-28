@@ -127,6 +127,9 @@ these exactly.
 **Generated model from TFLite (int8)** — a Keras CNN converted to an int8 `.tflite` model and run from the generated `model.hpp`: the activation memory plan (1,536 bytes against 2,460 unshared) and the test confusion on the optical digits (96.1%); all 17,970 test outputs equal TFLM's.
 ![Generated TFLite model memory plan]({{ site.baseurl }}/assets/plots/tflite_digits_int8.png)
 
+**Streaming TFLite model (int8)** — a 1D CNN that detects a bearing fault, run one 20 ms frame per `step()` from the same `.tflite` file as a whole-window `forward()`: the test recording's band energies, the fault probability at every frame against the fault's true severity, and the RAM of each form (600 bytes against 1,408); every output equals TFLM's.
+![Streaming TFLite model]({{ site.baseurl }}/assets/plots/tflite_streaming_int8.png)
+
 ## Mixture-of-Experts
 
 **int8 MoE regime routing** — a top-1 router partitions the input domain into three regimes; one of three linear experts runs per inference (color blocks = the routing map).
