@@ -68,6 +68,11 @@ namespace tinymind {
         {
         };
 
+        template<bool OneOutput>
+        struct DepthwiseOneOutputTag
+        {
+        };
+
         /*
          * Stack budget for the band of padded rows a padded depthwise layer
          * keeps for one channel (KH rows of W + PadLeft + PadRight elements).
@@ -180,8 +185,8 @@ namespace tinymind {
 
         void forward(const InputType* input, OutputType* output) const
         {
-            forwardImpl(input, output,
-                        detail::DepthwisePadTag<((PadTop_ | PadBottom_ | PadLeft_ | PadRight_) != 0)>());
+            forwardImpl(input, output, detail::DepthwisePadTag<Padded>(),
+                        detail::DepthwiseOneOutputTag<!Padded && (OutputHeight * OutputWidth == 1)>());
         }
 
     private:
@@ -191,7 +196,10 @@ namespace tinymind {
         // tap loop runs over it. The zero point is folded into the bias, as
         // below, which the padding values satisfy: a border tap adds
         // w * zp, which the folded bias cancels exactly as for an interior x.
-        void forwardImpl(const InputType* input, OutputType* output, detail::DepthwisePadTag<true>) const
+        static constexpr bool Padded = (PadTop_ | PadBottom_ | PadLeft_ | PadRight_) != 0;
+
+        void forwardImpl(const InputType* input, OutputType* output, detail::DepthwisePadTag<true>,
+                         detail::DepthwiseOneOutputTag<false>) const
         {
             constexpr std::size_t PaddedWidth = W_ + PadLeft_ + PadRight_;
             static_assert(KH_ * PaddedWidth * sizeof(InputType) <= TINYMIND_CONV_PAD_BAND_MAX_BYTES,
@@ -288,7 +296,8 @@ namespace tinymind {
             }
         }
 
-        void forwardImpl(const InputType* input, OutputType* output, detail::DepthwisePadTag<false>) const
+        void forwardImpl(const InputType* input, OutputType* output, detail::DepthwisePadTag<false>,
+                         detail::DepthwiseOneOutputTag<false>) const
         {
             // Snapshot the fields into locals. Every output store is an int8_t write,
             // which may alias *this, so member reads inside the loops would be
@@ -335,8 +344,13 @@ namespace tinymind {
 
                             WindowType acc = Window::start(bias);
 #if !defined(__OPTIMIZE_SIZE__)
-#pragma GCC unroll 8
+#pragma GCC unroll 16
 #endif
+                            // Up to 16 kernel rows unrolled in full. At 8, GCC
+                            // kept a 10-row kernel's loop rolled in some -O3
+                            // builds of the MLPerf Tiny streaming wake word
+                            // model, and that layer took 227k cycles on the
+                            // F411 instead of 123k.
                             for (std::size_t kh = 0; kh < KH_; ++kh)
                             {
 #if !defined(__OPTIMIZE_SIZE__)
@@ -365,7 +379,7 @@ namespace tinymind {
 
                             WindowType acc = Window::start(bias);
 #if !defined(__OPTIMIZE_SIZE__)
-#pragma GCC unroll 8
+#pragma GCC unroll 16
 #endif
                             for (std::size_t kh = 0; kh < KH_; ++kh)
                             {
@@ -384,6 +398,56 @@ namespace tinymind {
                         }
                     }
                 }
+            }
+        }
+
+        // Unpadded with one output pixel per channel (a window as large as the
+        // input, as in a streaming model's step()).
+        void forwardImpl(const InputType* input, OutputType* output, detail::DepthwisePadTag<false>,
+                         detail::DepthwiseOneOutputTag<true>) const
+        {
+            const typename WeightAccess::pointer layerWeights = weights;
+            const AccumulatorType* const layerBiases = biases;
+            const InputType inputZeroPoint = input_zero_point;
+            const Requantizer<AccumulatorType, OutputType>* const rqs = requantizers;
+
+            // One output pixel per channel (a window as large as the
+            // input, as in a streaming model's step()): copying the taps
+            // and preparing the FastRequantizer cost more per channel
+            // than they save on a single output, so each channel is one
+            // window sum and one Requantizer::apply, with the zero point
+            // folded into the bias as in the general loop. The same sums and the same
+            // requantizer, so bit-exact with the general loop.
+            for (std::size_t c = 0; c < Channels_; ++c)
+            {
+                AccumulatorType weightSum = static_cast<AccumulatorType>(0);
+                for (std::size_t k = 0; k < WeightsPerChannel; ++k)
+                {
+                    weightSum += static_cast<AccumulatorType>(
+                        WeightAccess::at(layerWeights, c * WeightsPerChannel + k));
+                }
+                const AccumulatorType bias = ((layerBiases != nullptr)
+                    ? layerBiases[c]
+                    : static_cast<AccumulatorType>(0)) -
+                    static_cast<AccumulatorType>(inputZeroPoint) * weightSum;
+
+                WindowType acc = Window::start(bias);
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 16
+#endif
+                for (std::size_t kh = 0; kh < KH_; ++kh)
+                {
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 8
+#endif
+                    for (std::size_t kw = 0; kw < KW_; ++kw)
+                    {
+                        acc += static_cast<WindowType>(
+                                   WeightAccess::at(layerWeights, c * WeightsPerChannel + kh * KW_ + kw)) *
+                               static_cast<WindowType>(input[(kh * W_ + kw) * Channels_ + c]);
+                    }
+                }
+                output[c] = rqs[c].apply(Window::finish(bias, acc));
             }
         }
     };

@@ -38,7 +38,7 @@ A small int8 CNN watches a machine's vibration for a bearing fault, one 20 ms fr
 - **Bit-exact:** all 1,536 outputs of `step()` and of `forward()` equal TFLM's.
 - **False alarms:** none on the 269 healthy windows.
 - **Detection:** the alarm holds from 8.16 s on, when the fault is at 27% of full severity. A three-frame alarm at 6.04 s comes when the fault has barely started.
-- **On the Cortex-M4 (NUCLEO-F411RE):** the same streaming code generation runs the MLPerf Tiny streaming wake word model 13 times faster than TFLM reruns its whole window. See [Benchmarks]({{ site.baseurl }}/benchmarks).
+- **On the Cortex-M4 (NUCLEO-F411RE):** the same streaming code generation runs the MLPerf Tiny streaming wake word model 17 times faster than TFLM reruns its whole window. See [Benchmarks]({{ site.baseurl }}/benchmarks).
 
 ![Streaming TFLite model]({{ site.baseurl }}/assets/plots/tflite_streaming_int8.png)
 

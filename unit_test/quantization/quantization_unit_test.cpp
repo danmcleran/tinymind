@@ -7372,6 +7372,8 @@ BOOST_AUTO_TEST_CASE(qdepthwise_and_pointwise_match_direct_reference)
             checkDepthwise<9, 9, 8, 3, 3, 1, 1>(zp, withBias);
             checkDepthwise<11, 10, 3, 5, 5, 2, 2>(zp, withBias);
             checkDepthwise<4, 6, 1, 1, 3, 1, 2>(zp, withBias);
+            checkDepthwise<10, 1, 16, 10, 1, 1, 1>(zp, withBias); // one output pixel per channel
+            checkDepthwise<3, 3, 8, 3, 3, 1, 1>(zp, withBias);    // one output pixel, 2D window
             checkPointwise<7, 7, 8, 16>(zp, withBias);   // multi-pixel, filter-outer
             checkPointwise<3, 5, 3, 4>(zp, withBias);    // Cin not a multiple of 4
             checkPointwise<1, 1, 64, 32>(zp, withBias);  // single pixel (dense) path

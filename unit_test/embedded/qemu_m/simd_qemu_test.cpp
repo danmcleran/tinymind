@@ -68,6 +68,7 @@
 #include "qaffine.hpp"
 #include "qconv2d.hpp"
 #include "qdense.hpp"
+#include "qdepthwiseconv2d.hpp"
 #include "qint4.hpp"
 #include "qpointwiseconv2d.hpp"
 
@@ -586,6 +587,178 @@ namespace {
                 fail("dense o", static_cast<uint32_t>(o), 0u, got, want);
             }
         }
+    }
+
+#if defined(TINYMIND_SIMD_INT8_DOT_ROWS4)
+    // arm_dsp::int8DotRows4WithZeroPoint, called directly: one input against
+    // four rows RowStride apart, at every misalignment of the input and the
+    // weights, every fill, several zero points, accumulating onto nonzero
+    // starting values. N and RowStride are template parameters of the kernel.
+    template<std::size_t N, std::size_t RowStride>
+    void testDotRows4Shape()
+    {
+        static const int8_t kZeroPoints[] = {-128, -1, 0, 77, 127};
+        static const Fill kFills[] =
+            {Fill::Random, Fill::MaxPositive, Fill::MaxNegative, Fill::Alternating};
+        alignas(4) static int8_t xbuf[N + kSlack];
+        alignas(4) static int8_t wbuf[3 * RowStride + N + kSlack];
+        alignas(4) static int8_t scratch[3 * RowStride + N + kSlack];
+
+        for (const Fill mode : kFills)
+        {
+            fill(xbuf, wbuf, N + kSlack, mode);
+            fill(scratch, wbuf + N + kSlack, sizeof(wbuf) - (N + kSlack), mode);
+            for (const int8_t zp : kZeroPoints)
+            {
+                for (std::size_t xo = 0; xo < kSlack; ++xo)
+                {
+                    for (std::size_t wo = 0; wo < kSlack; ++wo)
+                    {
+                        const int8_t* const x = xbuf + xo;
+                        const int8_t* const w = wbuf + wo;
+                        int32_t acc[4] = {17, -3, 99999, -54321};
+                        int32_t want[4] = {17, -3, 99999, -54321};
+                        for (std::size_t k = 0; k < 4; ++k)
+                        {
+                            want[k] += tinymind::simd::int8DotWithZeroPointScalar(x, w + k * RowStride, N, zp);
+                        }
+                        tinymind::simd::arm_dsp::int8DotRows4WithZeroPoint<N, RowStride>(x, w, zp, acc);
+                        for (std::size_t k = 0; k < 4; ++k)
+                        {
+                            ++g_cases;
+                            if (acc[k] != want[k])
+                            {
+                                fail("dotrows4 n,lane", static_cast<uint32_t>(N), static_cast<uint32_t>(k),
+                                     acc[k], want[k]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    void testDotRows4()
+    {
+        testDotRows4Shape<1, 1>();
+        testDotRows4Shape<3, 5>();
+        testDotRows4Shape<4, 4>();
+        testDotRows4Shape<7, 9>();
+        testDotRows4Shape<8, 8>();
+        testDotRows4Shape<13, 13>();
+        testDotRows4Shape<37, 41>();
+        testDotRows4Shape<40, 40>();
+        testDotRows4Shape<128, 128>();
+        testDotRows4Shape<130, 131>();
+    }
+#endif
+
+    // Dense and single-pixel pointwise layers whose outputs are not a
+    // multiple of four (the blocked path's remainder), with per-tensor and
+    // per-filter requantizers (every third filter narrowed, so both
+    // requantizer forms run), against a direct evaluation.
+    template<std::size_t N, std::size_t O>
+    void testDenseShape(int8_t zp)
+    {
+        typedef tinymind::QDense<int8_t, int8_t, int32_t, int8_t, N, O> Dense;
+        typedef tinymind::QPointwiseConv2D<int8_t, int8_t, int32_t, int8_t, 1, 1, N, O> Pointwise;
+        typedef tinymind::QPointwiseConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 1, 1, N, O> PerChannel;
+        static int8_t input[N];
+        static int8_t weights[N * O];
+        static int32_t biases[O];
+        static tinymind::Requantizer<int32_t, int8_t> rqs[O];
+        static int8_t out[3][O];
+
+        for (int8_t& v : input) { v = nextByte(); }
+        for (int8_t& v : weights) { v = nextByte(); }
+        for (std::size_t o = 0; o < O; ++o)
+        {
+            biases[o] = static_cast<int32_t>(o) * 777 - 3000;
+        }
+        makeRequantizers<O>(rqs);
+
+        const Dense dense = {weights, biases, zp, makeRequantizer()};
+        const Pointwise pointwise = {weights, biases, zp, makeRequantizer()};
+        const PerChannel perChannel = {weights, biases, zp, rqs};
+        dense.forward(input, out[0]);
+        pointwise.forward(input, out[1]);
+        perChannel.forward(input, out[2]);
+
+        for (std::size_t o = 0; o < O; ++o)
+        {
+            const int32_t acc = biases[o] + tinymind::simd::int8DotWithZeroPointScalar(input, weights + o * N, N, zp);
+            const int32_t want[3] = {makeRequantizer().apply(acc), makeRequantizer().apply(acc), rqs[o].apply(acc)};
+            for (std::size_t k = 0; k < 3; ++k)
+            {
+                ++g_cases;
+                if (out[k][o] != want[k])
+                {
+                    fail("dense rows4 layer,o", static_cast<uint32_t>(k * 1000 + N), static_cast<uint32_t>(o),
+                         out[k][o], want[k]);
+                }
+            }
+        }
+    }
+
+    void testDenseShapes()
+    {
+        testDenseShape<8, 4>(0);
+        testDenseShape<9, 5>(-7);
+        testDenseShape<40, 7>(-128);
+        testDenseShape<64, 13>(33);
+        testDenseShape<128, 32>(-3);
+        testDenseShape<6, 9>(5);
+    }
+
+    // Depthwise layers with one output pixel per channel (the window as
+    // large as the input, as in a streaming model's step()), against a
+    // direct evaluation, with every third channel's requantizer narrowed.
+    template<std::size_t H, std::size_t W, std::size_t C>
+    void testDepthwiseOneOutputShape(int8_t zp)
+    {
+        typedef tinymind::QDepthwiseConv2D<int8_t, int8_t, int32_t, int8_t, H, W, C, H, W> Layer;
+        static_assert(Layer::OutputSize == C, "one output pixel per channel");
+        static int8_t input[H * W * C];
+        static int8_t weights[C * H * W];
+        static int32_t biases[C];
+        static tinymind::Requantizer<int32_t, int8_t> rqs[C];
+        static int8_t output[C];
+
+        for (int8_t& v : input) { v = nextByte(); }
+        for (int8_t& v : weights) { v = nextByte(); }
+        for (std::size_t c = 0; c < C; ++c)
+        {
+            biases[c] = static_cast<int32_t>(c) * 313 - 900;
+        }
+        makeRequantizers<C>(rqs);
+
+        const Layer layer = {weights, biases, zp, rqs};
+        layer.forward(input, output);
+        for (std::size_t c = 0; c < C; ++c)
+        {
+            int32_t acc = biases[c];
+            for (std::size_t k = 0; k < H * W; ++k)
+            {
+                acc += static_cast<int32_t>(weights[c * H * W + k]) *
+                       (static_cast<int32_t>(input[k * C + c]) - static_cast<int32_t>(zp));
+            }
+            const int32_t want = rqs[c].apply(acc);
+            ++g_cases;
+            if (output[c] != want)
+            {
+                fail("depthwise one-output kh*kw,c", static_cast<uint32_t>(H * W), static_cast<uint32_t>(c),
+                     output[c], want);
+            }
+        }
+    }
+
+    void testDepthwiseOneOutput()
+    {
+        testDepthwiseOneOutputShape<3, 1, 40>(-3);
+        testDepthwiseOneOutputShape<10, 1, 128>(11);
+        testDepthwiseOneOutputShape<15, 1, 17>(-128);
+        testDepthwiseOneOutputShape<3, 3, 13>(127);
+        testDepthwiseOneOutputShape<1, 20, 5>(0);
     }
 
 #if TINYMIND_ENABLE_SIMD_HELIUM_MVE_F
@@ -1169,6 +1342,11 @@ extern "C" int run_tests()
     testPointwiseWide();
     testPaddedConv();
     testDense();
+    testDenseShapes();
+    testDepthwiseOneOutput();
+#if defined(TINYMIND_SIMD_INT8_DOT_ROWS4)
+    testDotRows4();
+#endif
     testInt4Dot();
     testConvInt4();
     testInt16x8Dot();

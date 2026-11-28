@@ -128,7 +128,7 @@ namespace digits {
             {1417806567, 9, 50, -128, 127}, {1080739892, 8, 50, -128, 127}, {1555304819, 9, 50, -128, 127},
             {2086414848, 9, 50, -128, 127}
         };
-        typedef tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 1, 1, 256, 1, 1, 1, 1, 10> fc_Gemm_type;
+        typedef tinymind::QPointwiseConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 1, 1, 256, 10> fc_Gemm_type;
         constexpr fc_Gemm_type fc_Gemm_layer = {kfc_Gemm_Weights, kfc_Gemm_Biases, -128, fc_Gemm_requantizers};
         static_assert(fc_Gemm_type::OutputSize == 10, "fc_Gemm: output size");
     } // namespace model_detail

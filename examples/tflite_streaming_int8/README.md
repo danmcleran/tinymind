@@ -95,7 +95,7 @@ On the build host (x86-64, `-O3`), `make bench` measured about 0.9 µs per
 `step()` against about 10.7 µs per `forward()` over the window: roughly 12
 times less work for every 20 ms frame. On a Cortex-M4 (NUCLEO-F411RE), the
 same streaming code generation runs the MLPerf Tiny streaming wake word model
-13 times faster than TFLM reruns its whole window; see
+17 times faster than TFLM reruns its whole window; see
 `benchmarks/framework_comparison_f411`.
 
 ![band energies, fault probability and RAM](../../docs/assets/plots/tflite_streaming_int8.png)

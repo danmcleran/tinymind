@@ -136,7 +136,7 @@ namespace digits {
             {1300336168, 7, 13, -128, 127}, {1107593515, 7, 13, -128, 127}, {1390735045, 8, 13, -128, 127},
             {1590366757, 8, 13, -128, 127}
         };
-        typedef tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 1, 1, 16, 1, 1, 1, 1, 10> fc7_type;
+        typedef tinymind::QPointwiseConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 1, 1, 16, 10> fc7_type;
         constexpr fc7_type fc7_layer = {kfc7_Weights, kfc7_Biases, -128, fc7_requantizers};
         static_assert(fc7_type::OutputSize == 10, "fc7: output size");
 

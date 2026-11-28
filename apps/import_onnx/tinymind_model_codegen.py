@@ -902,7 +902,8 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             includes.append(hdr)
     if any(l.op_type == "Dense" and l.per_channel for l in layers) and "qconv2d.hpp" not in includes:
         includes.append("qconv2d.hpp")
-    if not wide and any(l.op_type == "Conv" and not (int4_conv) and _is_pointwise(l) for l in layers):
+    if not wide and any((l.op_type == "Conv" and not int4_conv and _is_pointwise(l))
+                        or (l.op_type == "Dense" and l.per_channel and not int4_dense) for l in layers):
         includes.append("qpointwiseconv2d.hpp")
     if (int4_dense and "Dense" in ops) or (int4_conv and ({"Conv", "DepthwiseConv"} & set(ops))):
         includes.append("qint4.hpp")
@@ -1080,12 +1081,18 @@ def emit_model_header(path: str, namespace: str, layers, weights_header: str,
             continue
         if layer.weight is not None:
             weight_bytes += int(layer.weight.size)
-        pointwise = layer.op_type == "Conv" and _is_pointwise(layer)
+        pointwise = ((layer.op_type == "Conv" and _is_pointwise(layer))
+                     or (layer.op_type == "Dense" and layer.per_channel))
         if pointwise:
             # A 1x1 convolution: the same arithmetic over the same OHWI weights
             # ([F][1][1][C] is [F][C]), through the pointwise kernels, which
-            # sweep each filter across the pixels.
-            dims = f"{g['InputHeight']}, {g['InputWidth']}, {g['InputChannels']}, {g['NumFilters']}"
+            # sweep each filter across the pixels. A dense layer with
+            # per-channel weights is the single-pixel case.
+            if layer.op_type == "Dense":
+                dims = f"1, 1, {g['NumInputs']}, {g['NumOutputs']}"
+                g = dict(g, NumFilters=g["NumOutputs"])
+            else:
+                dims = f"{g['InputHeight']}, {g['InputWidth']}, {g['InputChannels']}, {g['NumFilters']}"
             if layer.per_channel:
                 rq_array(g["NumFilters"])
                 p.append(f"        typedef tinymind::QPointwiseConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, {dims}> "

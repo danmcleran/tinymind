@@ -34,14 +34,14 @@ image=tm_mlperf_kws_dsp
 # begin bench
 name=tinymind_int8+dsp/mlperf_kws
 setup_rc=0
-setup_cycles=18
-infer_min=8011275
-infer_med=8011750
-infer_max=8013156
+setup_cycles=19
+infer_min=7969691
+infer_med=7970167
+infer_max=7971590
 n_test=8
 hash=0xF623A166
 hash_match=1
-stack_bytes=900
+stack_bytes=892
 static_ram=16636
 arena_used=0
 # end bench
@@ -98,14 +98,14 @@ image=tm_mlperf_ic_dsp
 # begin bench
 name=tinymind_int8+dsp/mlperf_ic
 setup_rc=0
-setup_cycles=21
-infer_min=26368128
-infer_med=26368775
-infer_max=26368864
+setup_cycles=24
+infer_min=26373102
+infer_med=26373751
+infer_max=26373837
 n_test=8
 hash=0x8897F6ED
 hash_match=1
-stack_bytes=2292
+stack_bytes=2308
 static_ram=52368
 arena_used=0
 # end bench
@@ -147,13 +147,13 @@ image=tm_mlperf_sww
 name=tinymind_int8/mlperf_sww
 setup_rc=0
 setup_cycles=21
-infer_min=5419875
-infer_med=5419903
-infer_max=5419923
+infer_min=5477606
+infer_med=5477628
+infer_max=5477648
 n_test=8
 hash=0x9D79D229
 hash_match=1
-stack_bytes=256
+stack_bytes=248
 static_ram=7992
 arena_used=0
 # end bench
@@ -163,13 +163,13 @@ image=tm_mlperf_sww_dsp
 name=tinymind_int8+dsp/mlperf_sww
 setup_rc=0
 setup_cycles=21
-infer_min=2171371
-infer_med=2171402
-infer_max=2171426
+infer_min=2121380
+infer_med=2121407
+infer_max=2121431
 n_test=8
 hash=0x9D79D229
 hash_match=1
-stack_bytes=336
+stack_bytes=308
 static_ram=7992
 arena_used=0
 # end bench
@@ -179,13 +179,13 @@ image=tm_mlperf_sww_stream
 name=tinymind_int8/mlperf_sww_stream
 setup_rc=0
 setup_cycles=21
-infer_min=376160
-infer_med=376181
-infer_max=376201
+infer_min=348919
+infer_med=348939
+infer_max=348964
 n_test=8
 hash=0x9D79D229
 hash_match=1
-stack_bytes=248
+stack_bytes=192
 static_ram=4260
 arena_used=0
 # end bench
@@ -194,14 +194,14 @@ image=tm_mlperf_sww_stream_dsp
 # begin bench
 name=tinymind_int8+dsp/mlperf_sww_stream
 setup_rc=0
-setup_cycles=21
-infer_min=224976
-infer_med=225012
-infer_max=225026
+setup_cycles=19
+infer_min=170450
+infer_med=170473
+infer_max=170492
 n_test=8
 hash=0x9D79D229
 hash_match=1
-stack_bytes=248
+stack_bytes=316
 static_ram=4260
 arena_used=0
 # end bench
@@ -270,28 +270,28 @@ image=tm_mlperf_kws_dsp_prof
 # begin bench
 name=tinymind_int8+dsp/mlperf_kws
 setup_rc=0
-setup_cycles=19
-infer_min=8043676
-infer_med=8044265
-infer_max=8046032
+setup_cycles=18
+infer_min=7988521
+infer_med=7989109
+infer_max=7990876
 n_test=8
 hash=0xF623A166
 hash_match=1
-stack_bytes=1156
+stack_bytes=1148
 static_ram=16636
 arena_used=0
-layer.0.conv0=1229231
+layer.0.conv0=1235392
 layer.1.dw1=451289
-layer.2.pw2=1235973
-layer.3.dw3=451234
-layer.4.pw4=1235898
-layer.5.dw5=451290
-layer.6.pw6=1235880
-layer.7.dw7=451238
-layer.8.pw8=1235904
-layer.9.avgpool9=21430
-layer.10.fc10=2608
-layer.11.softmax11=2906
+layer.2.pw2=1235756
+layer.3.dw3=451231
+layer.4.pw4=1235724
+layer.5.dw5=451287
+layer.6.pw6=1235673
+layer.7.dw7=451231
+layer.8.pw8=1235694
+layer.9.avgpool9=21433
+layer.10.fc10=2424
+layer.11.softmax11=2914
 # end bench
 level=O3
 image=tflm_cmsis_mlperf_kws_int8_prof
@@ -358,31 +358,31 @@ image=tm_mlperf_ic_dsp_prof
 # begin bench
 name=tinymind_int8+dsp/mlperf_ic
 setup_rc=0
-setup_cycles=21
-infer_min=26381035
-infer_med=26381819
-infer_max=26381892
+setup_cycles=24
+infer_min=26372200
+infer_med=26372992
+infer_max=26373066
 n_test=8
 hash=0x8897F6ED
 hash_match=1
-stack_bytes=2532
+stack_bytes=2548
 static_ram=52368
 arena_used=0
-layer.0.conv0=1920193
-layer.1.conv1=5020704
-layer.2.conv2=5020626
-layer.3.add3=442425
-layer.4.conv4=2545177
-layer.5.conv5=4414753
+layer.0.conv0=1920078
+layer.1.conv1=5021092
+layer.2.conv2=5021011
+layer.3.add3=442426
+layer.4.conv4=2546234
+layer.5.conv5=4414716
 layer.6.pw6=490899
-layer.7.add7=213055
-layer.8.conv8=2239423
-layer.9.conv9=4222239
-layer.10.pw10=450110
-layer.11.add11=102458
+layer.7.add7=213057
+layer.8.conv8=2239415
+layer.9.conv9=4222241
+layer.10.pw10=450111
+layer.11.add11=102456
 layer.12.avgpool12=11941
-layer.13.fc13=2109
-layer.14.softmax14=2852
+layer.13.fc13=2088
+layer.14.softmax14=2877
 # end bench
 level=O3
 image=tflm_cmsis_mlperf_ic_int8_prof
@@ -422,25 +422,25 @@ image=tm_mlperf_sww_dsp_prof
 name=tinymind_int8+dsp/mlperf_sww
 setup_rc=0
 setup_cycles=21
-infer_min=2165396
-infer_med=2165429
-infer_max=2165441
+infer_min=2113028
+infer_med=2113061
+infer_max=2113073
 n_test=8
 hash=0x9D79D229
 hash_match=1
-stack_bytes=760
+stack_bytes=720
 static_ram=7992
 arena_used=0
-layer.0.dwconv0=26767
-layer.1.conv1=363748
-layer.2.dwconv2=113748
-layer.3.conv3=878161
-layer.4.dwconv4=150036
-layer.5.conv5=575655
-layer.6.dwconv6=27783
-layer.7.conv7=30016
-layer.8.fc9=278
-layer.9.softmax10=1272
+layer.0.dwconv0=30022
+layer.1.conv1=363746
+layer.2.dwconv2=105912
+layer.3.conv3=878165
+layer.4.dwconv4=122275
+layer.5.conv5=575652
+layer.6.dwconv6=19462
+layer.7.conv7=11315
+layer.8.fc9=303
+layer.9.softmax10=1276
 # end bench
 level=O3
 image=tm_mlperf_sww_stream_dsp_prof
@@ -448,25 +448,25 @@ image=tm_mlperf_sww_stream_dsp_prof
 name=tinymind_int8+dsp/mlperf_sww_stream
 setup_rc=0
 setup_cycles=19
-infer_min=225179
-infer_med=225207
-infer_max=225217
+infer_min=169663
+infer_med=169691
+infer_max=169701
 n_test=8
 hash=0x9D79D229
 hash_match=1
-stack_bytes=588
+stack_bytes=572
 static_ram=4260
 arena_used=0
-layer.0.dwconv0=4085
-layer.1.conv1=20203
-layer.2.dwconv2=14363
-layer.3.conv3=57955
-layer.4.dwconv4=23870
-layer.5.conv5=57949
-layer.6.dwconv6=28567
-layer.7.conv7=13724
-layer.8.fc9=264
-layer.9.softmax10=1270
+layer.0.dwconv0=2353
+layer.1.conv1=19028
+layer.2.dwconv2=8736
+layer.3.conv3=46185
+layer.4.dwconv4=14701
+layer.5.conv5=46800
+layer.6.dwconv6=19699
+layer.7.conv7=11241
+layer.8.fc9=263
+layer.9.softmax10=1266
 # end bench
 level=O3
 image=tflm_cmsis_mlperf_sww_int8_prof
@@ -497,16 +497,16 @@ layer.10.SOFTMAX=2212
 # end bench
 size image=baseline flash=2592 ram=132
 size image=tm_mlperf_kws flash=59584 ram=16636
-size image=tm_mlperf_kws_dsp flash=59964 ram=16636
+size image=tm_mlperf_kws_dsp flash=59928 ram=16636
 size image=tflm_cmsis_mlperf_kws_int8 flash=155376 ram=23412
 size image=tflm_ref_mlperf_kws_int8 flash=108456 ram=23364
 size image=tm_mlperf_ic flash=151308 ram=52368
-size image=tm_mlperf_ic_dsp flash=139520 ram=52368
+size image=tm_mlperf_ic_dsp flash=140052 ram=52368
 size image=tflm_cmsis_mlperf_ic_int8 flash=218380 ram=55588
 size image=tflm_ref_mlperf_ic_int8 flash=182580 ram=54932
-size image=tm_mlperf_sww flash=84672 ram=7992
-size image=tm_mlperf_sww_dsp flash=89356 ram=7992
-size image=tm_mlperf_sww_stream flash=73272 ram=4260
-size image=tm_mlperf_sww_stream_dsp flash=73808 ram=4260
+size image=tm_mlperf_sww flash=84260 ram=7992
+size image=tm_mlperf_sww_dsp flash=90232 ram=7992
+size image=tm_mlperf_sww_stream flash=72152 ram=4260
+size image=tm_mlperf_sww_stream_dsp flash=75676 ram=4260
 size image=tflm_cmsis_mlperf_sww_int8 flash=178112 ram=17156
 size image=tflm_ref_mlperf_sww_int8 flash=131704 ram=15828
