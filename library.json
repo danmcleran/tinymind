@@ -1,0 +1,40 @@
+{
+  "name": "tinymind",
+  "version": "19.1.0",
+  "description": "Header-only C++14 library for neural networks and Q-learning on microcontrollers: fixed-point and int8 layers, no heap, no FPU required, int8 models imported from TFLite, ONNX and PyTorch.",
+  "keywords": ["neural-network", "tinyml", "int8", "quantization", "fixed-point", "machine-learning", "q-learning", "embedded"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danmcleran/tinymind.git"
+  },
+  "homepage": "https://danmcleran.github.io/tinymind/",
+  "authors": [
+    {
+      "name": "Dan McLeran",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "frameworks": "*",
+  "platforms": "*",
+  "headers": "tinymind.h",
+  "build": {
+    "srcDir": "src",
+    "includeDir": "src"
+  },
+  "export": {
+    "include": [
+      "cpp",
+      "src",
+      "library.json",
+      "LICENSE.txt",
+      "README.md"
+    ],
+    "exclude": [
+      "cpp/AGENTS.md",
+      "cpp/CLAUDE.md",
+      "cpp/include/simd/AGENTS.md",
+      "cpp/include/simd/CLAUDE.md"
+    ]
+  }
+}

@@ -28,7 +28,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "nnproperties.hpp"
+#include "include/nnproperties.hpp"
 
 namespace tinymind {
 

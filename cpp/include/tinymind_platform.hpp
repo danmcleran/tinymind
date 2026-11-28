@@ -54,6 +54,21 @@
 #endif
 
 /*
+ * TINYMIND_ARM_SAT is 1 when the int8 kernels may saturate with __ssat /
+ * __usat from <arm_acle.h> (a core with the saturation instructions), and 0
+ * when they clamp in plain C++, with the same results. GCC before 8 ships an
+ * <arm_acle.h> that does not compile as C++ (its coprocessor intrinsics
+ * convert void pointers implicitly), and the Arduino Mbed OS cores still
+ * build with GCC 7.2, so it is not used there.
+ */
+#if defined(__ARM_FEATURE_SAT) && \
+    !(defined(__GNUC__) && !defined(__clang__) && __GNUC__ < 8)
+#define TINYMIND_ARM_SAT 1
+#else
+#define TINYMIND_ARM_SAT 0
+#endif
+
+/*
  * Platform feature gates for tinymind.
  *
  * All TINYMIND_ENABLE_* macros default to 0 so that a freestanding embedded

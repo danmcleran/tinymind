@@ -876,6 +876,28 @@ matplotlib is the only extra dependency. If your Python already has it, the plot
 - [Boost.Test](https://www.boost.org/doc/libs/release/libs/test/) (for unit tests only)
 - Set `BOOST_HOME` environment variable to your Boost installation path
 
+### Using tinymind from your build system
+
+tinymind is header-only: put `cpp/` and `cpp/include/` on the include path and set the feature macros you need. The one source file, `cpp/lookupTables.cpp`, holds the fixed-point activation lookup tables and compiles to an empty object unless a `TINYMIND_USE_<FUNCTION>_<I>_<F>` flag is set. Whatever the build system, define the feature macros (`TINYMIND_ENABLE_*`, all 0 by default) and the table flags for the whole build, so the library's source and yours agree. The repository also packages tinymind for these build systems; a CI job per system builds a small consumer from [`packaging/`](packaging/) that runs a self-test (the generated streaming model of `examples/tflite_streaming_int8` must reproduce every output TFLite Micro computed), and runs it where the target can run.
+
+- **CMake** (3.14 or later). `add_subdirectory()`, `FetchContent`, or `find_package(tinymind)` after `cmake --install`, then link `tinymind::tinymind`:
+
+  ```cmake
+  include(FetchContent)
+  FetchContent_Declare(tinymind GIT_REPOSITORY https://github.com/danmcleran/tinymind.git GIT_TAG master)
+  FetchContent_MakeAvailable(tinymind)
+  target_link_libraries(app PRIVATE tinymind::tinymind)
+  target_compile_definitions(app PRIVATE TINYMIND_ENABLE_QUANTIZATION=1)
+  ```
+
+  Releases up to v19.1 predate these build files, so the examples here track `master`; pin a release tag once a release includes them. The `TINYMIND_ENABLE_*` CMake options (all `OFF`) put a feature macro on `tinymind::tinymind` itself, so every target that links it gets it. For lookup tables, list them in `TINYMIND_LOOKUP_TABLES` (for example `-DTINYMIND_LOOKUP_TABLES="TINYMIND_USE_TANH_8_8;TINYMIND_USE_SIGMOID_8_8"`) and link `tinymind::lookup_tables`, which compiles `cpp/lookupTables.cpp` with them and passes them on. The top-level `CMakeLists.txt` only packages the library; the tests and examples are built by the Makefiles.
+- **Zephyr.** The repository is a Zephyr module (`zephyr/module.yml`). Add it to your west manifest (or to `ZEPHYR_EXTRA_MODULES`) and set, in `prj.conf`, `CONFIG_CPP=y`, `CONFIG_STD_CPP14=y` (or newer) and `CONFIG_TINYMIND=y`. `CONFIG_TINYMIND_QUANTIZATION` (on by default), `CONFIG_TINYMIND_FLOAT`, `CONFIG_TINYMIND_STD` and `CONFIG_TINYMIND_SIMD_ARM_DSP` set the feature macros, and `CONFIG_TINYMIND_LOOKUP_TABLES="TINYMIND_USE_TANH_8_8 ..."` compiles the tables. CI builds the sample for `qemu_cortex_m3` with Zephyr v4.3.2 and runs it under QEMU.
+- **ESP-IDF** (5.0 or later). The repository root is an ESP-IDF component (its `CMakeLists.txt` calls `idf_component_register` under ESP-IDF, and `idf_component.yml` describes it). Put the checkout in your project's `components/` directory as `tinymind`, or name its parent in `EXTRA_COMPONENT_DIRS` (the component takes its directory's name), and add `REQUIRES tinymind`. Set the macros for every component in the project's `CMakeLists.txt`, after including `project.cmake` and before `project()`: `idf_build_set_property(COMPILE_DEFINITIONS "TINYMIND_ENABLE_QUANTIZATION=1" APPEND)`. CI builds the sample for the ESP32-S3 with ESP-IDF v5.5.6 and runs it under Espressif's QEMU.
+- **PlatformIO.** `library.json` describes the library: `lib_deps = https://github.com/danmcleran/tinymind.git#master`, and the macros in `build_flags`, which reach the library's sources too. CI builds the sample for the host and runs it, and builds it for a NUCLEO-F411RE with STM32Cube.
+- **Arduino.** `library.properties` describes the library; install it from a ZIP of the repository or clone it into your `libraries/` folder. Arduino puts only the library's `src/` on the include path, so `src/` holds a forwarding header for every header in `cpp/` and `cpp/include/` (written by `tools/gen_src_forwarders.py`), and `#include <tinymind.h>` followed by `#include "qdense.hpp"` (or a generated `model.hpp`) works. The Arduino IDE has no project-wide flags, so define the feature macros at the top of the sketch, before the first tinymind header; lookup tables need build flags (`arduino-cli compile --build-property compiler.cpp.extra_flags=-DTINYMIND_USE_TANH_8_8=1`). The core must compile C++14 or later: the Arduino Mbed OS cores do, the AVR cores (C++11) do not. CI compiles the sample for a Nano 33 BLE.
+
+The version in `CMakeLists.txt`, `library.json`, `library.properties` and `idf_component.yml` must agree; `tools/check_package_versions.py` checks it, and a release sets all four to the new version before it is tagged.
+
 ### Build and Run Tests
 
 ```bash
@@ -1028,6 +1050,7 @@ Every push and pull request runs the [Static & Dynamic Analysis](.github/workflo
 | Lint + clang static analyzer | clang-tidy (`bugprone-*`, `cert-*`, `clang-analyzer-*`, narrowing/init) | Advisory | `make tidy` |
 | Conversion warnings | `-Wconversion` / `-Wsign-conversion` / `-Wdouble-promotion` over the fixed-point paths | Advisory | `make warnings-strict` |
 | Stack usage | `-fstack-usage` report of the deepest frames for the Cortex-M4 int8 shape | Advisory | `make -C unit_test/embedded stack_usage` |
+| Packaging | The [Packaging](.github/workflows/packaging.yml) workflow: a consumer built through CMake (`add_subdirectory` and an installed `find_package`), PlatformIO (host and NUCLEO-F411RE), Arduino (Nano 33 BLE), Zephyr (`qemu_cortex_m3`) and ESP-IDF (ESP32-S3), running the shared self-test where the target runs; `src/` forwarders and the four manifests' versions checked | Advisory (not a required check) | see [`packaging/README.md`](packaging/README.md) |
 
 The jobs run on GitHub's `ubuntu-latest` image and use that Ubuntu release's compilers and analyzers, which can be newer than a developer machine's: the move to Ubuntu 26.04 brought GCC 15 (defaulting to `-march=x86-64-v3`) and cppcheck 2.19, and each reported failures the older tools did not. `make check-ci-image` runs `make check`, `cppcheck`, `header-selfcheck`, `check-cxx14`, `check-clang` and `make -C fuzz agree` inside a podman container built with the same packages (`tools/ci-image.sh`, `tools/ci-image/Containerfile`), on a copy of the working tree, so they fail locally before a push. `tools/ci-image.sh <command>` runs any other command there.
 
@@ -1198,7 +1221,15 @@ tinymind/
   fuzz/                         # libFuzzer int8 kernel harnesses, committed corpus, cross-build agreement, MSan replay
   benchmarks/
     framework_comparison_f411/  # tinymind vs TFLM (CMSIS-NN / reference) vs emlearn on a NUCLEO-F411RE
-  tools/                        # CI runner-image container (ci-image.sh), compile-commands filter, Pages generators, size_report/ (regenerates docs/size-comparison.md)
+  tools/                        # CI runner-image container (ci-image.sh), compile-commands filter, Pages generators, size_report/ (regenerates docs/size-comparison.md), src/ forwarder generator, package version check
+  packaging/                    # Consumers that build tinymind through CMake, PlatformIO, Arduino, Zephyr and ESP-IDF in CI, and their shared self-test
+  src/                          # Arduino / PlatformIO layout: generated forwarding headers to cpp/ and cpp/include/, tinymind.h, the lookup-table source
+  zephyr/                       # Zephyr module (module.yml, Kconfig, CMakeLists.txt)
+  cmake/                        # tinymindConfig.cmake template for find_package
+  CMakeLists.txt                # CMake package (tinymind::tinymind) and ESP-IDF component
+  library.json                  # PlatformIO manifest
+  library.properties            # Arduino manifest
+  idf_component.yml             # ESP-IDF component manifest
   docs/                         # GitHub Pages site: architecture reference, example gallery, benchmarks
   apps/
     activation/                 # Lookup table generator tool

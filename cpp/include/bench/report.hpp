@@ -23,7 +23,7 @@
 #pragma once
 
 #include <cstddef>
-#include "bench/platform.hpp"
+#include "platform.hpp"
 
 // Compile-time size reporting for tinymind pipelines.
 //

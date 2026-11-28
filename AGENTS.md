@@ -24,6 +24,7 @@ This file holds the rules that apply everywhere. Each area below has its own
 | Examples, plots, re-measuring results | `examples/AGENTS.md` |
 | Importers, LUT generator, ANFIS trainer | `apps/AGENTS.md` |
 | On-target benchmarks, bench harness | `benchmarks/AGENTS.md` |
+| Packages for CMake, PlatformIO, Arduino, Zephyr, ESP-IDF; `src/` forwarders | `packaging/AGENTS.md` |
 | Any optional tier (`cpp/q*.hpp`, LTC/CfC, attention, trees, bridges) | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 
 ## Build & Test Commands
@@ -88,6 +89,7 @@ The rules for headers under `cpp/` (include `tinymind_platform.hpp` first, featu
 | Change touches | Run |
 |---|---|
 | Anything | `make check` |
+| A header added to or removed from `cpp/` or `cpp/include/` | `python3 -I tools/gen_src_forwarders.py` (commit `src/`) |
 | `cpp/` | `make check-cxx14`, `make check-clang`, `make header-selfcheck` |
 | `cpp/` or `fuzz/` | `make check-ci-image` |
 | `fuzz/` | `make -C fuzz agree` and `make -C fuzz check-coverage` |

@@ -1,0 +1,70 @@
+# Copyright (c) 2026 Dan McLeran
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+config TINYMIND
+	bool "tinymind neural network library"
+	depends on CPP
+	help
+	  Header-only C++14 neural networks and Q-learning
+	  (https://danmcleran.github.io/tinymind/). Puts tinymind's headers on
+	  the include path and defines its feature macros for the whole build
+	  from the options below; every TINYMIND_ENABLE_* macro not set here is
+	  0, a freestanding build. Needs C++14 or later (CONFIG_STD_CPP14 or
+	  newer).
+
+if TINYMIND
+
+config TINYMIND_QUANTIZATION
+	bool "int8 quantized layers (TINYMIND_ENABLE_QUANTIZATION)"
+	default y
+	help
+	  The cpp/q*.hpp int8 layer family and the Requantizer, which
+	  generated models (apps/import_tflite, apps/import_onnx) use.
+
+config TINYMIND_FLOAT
+	bool "float and double value types (TINYMIND_ENABLE_FLOAT)"
+
+config TINYMIND_STD
+	bool "C++ standard library (TINYMIND_ENABLE_STD)"
+	depends on REQUIRES_FULL_LIBCPP
+	help
+	  <cmath>, <type_traits> and namespace std, which the float training
+	  policies need. Requires a full C++ library.
+
+config TINYMIND_SIMD_ARM_DSP
+	bool "Arm DSP extension kernels (TINYMIND_ENABLE_SIMD_ARM_DSP)"
+	depends on ARM
+	help
+	  SMLAD dot products for the int8 layers, for Cortex-M4, M7, M33 and
+	  M55 cores with the DSP extension. tinymind refuses to build with it
+	  on a core without that extension (the compiler does not define
+	  __ARM_FEATURE_DSP).
+
+config TINYMIND_LOOKUP_TABLES
+	string "Fixed-point activation lookup tables"
+	default ""
+	help
+	  Space-separated TINYMIND_USE_<FUNCTION>_<I>_<F> names (for example
+	  "TINYMIND_USE_TANH_8_8 TINYMIND_USE_SIGMOID_8_8") for the
+	  fixed-point activation tables in cpp/lookupTables.cpp. Each is
+	  defined to 1 for the whole build and the file is compiled into the
+	  module's library.
+
+endif # TINYMIND

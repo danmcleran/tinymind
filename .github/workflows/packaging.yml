@@ -1,0 +1,152 @@
+name: Packaging
+
+# tinymind as a package for other build systems: CMake, PlatformIO, Arduino,
+# Zephyr and ESP-IDF. Each job builds a small consumer from packaging/ that
+# runs the shared self-test (packaging/selftest): the generated streaming
+# model of examples/tflite_streaming_int8 must reproduce every output TFLite
+# Micro computed. Where the target can run (the host, QEMU), the job runs it
+# and requires the self-test's PASS line. None of these jobs is a required
+# check; `make check` stays the main gate.
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    name: "Packaging: metadata"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - name: src/ forwards every header in cpp/ and cpp/include/
+        run: python3 -I tools/gen_src_forwarders.py --check
+      - name: Every manifest states one version, not behind the newest tag
+        run: python3 -I tools/check_package_versions.py
+
+  cmake:
+    name: "Packaging: CMake"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: add_subdirectory
+        run: |
+          cmake -S packaging/cmake -B build/sub -DTINYMIND_FROM=subdirectory
+          cmake --build build/sub
+          ctest --test-dir build/sub --output-on-failure
+      - name: install, then find_package
+        run: |
+          cmake -S . -B build/lib -DTINYMIND_LOOKUP_TABLES=TINYMIND_USE_TANH_8_8 \
+                -DCMAKE_INSTALL_PREFIX="$PWD/build/prefix"
+          cmake --build build/lib
+          cmake --install build/lib
+          cmake -S packaging/cmake -B build/pkg -DTINYMIND_FROM=package \
+                -DCMAKE_PREFIX_PATH="$PWD/build/prefix"
+          cmake --build build/pkg
+          ctest --test-dir build/pkg --output-on-failure
+          ./build/pkg/tinymind_consumer | tee build/pkg/selftest.log
+          grep -q "tinymind self-test: PASS" build/pkg/selftest.log
+
+  platformio:
+    name: "Packaging: PlatformIO"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install PlatformIO
+        run: python -m pip install platformio
+      - name: native (host) -- build and run
+        working-directory: packaging/platformio
+        run: |
+          pio run -e native
+          .pio/build/native/program | tee native.log
+          grep -q "tinymind self-test: PASS" native.log
+      - name: nucleo_f411re (Cortex-M4, STM32Cube) -- build
+        working-directory: packaging/platformio
+        run: pio run -e nucleo_f411re
+
+  arduino:
+    name: "Packaging: Arduino"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          path: tinymind
+      - uses: arduino/setup-arduino-cli@b3cda96fddef6af6c56b4c5efb5c47e2357935db # v2.1.0
+      - name: Install the Arduino Mbed OS Nano core
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:mbed_nano
+      - name: Compile the sketch for a Nano 33 BLE (Cortex-M4F)
+        run: |
+          arduino-cli compile --fqbn arduino:mbed_nano:nano33ble \
+            --library "$GITHUB_WORKSPACE/tinymind" --warnings all \
+            tinymind/packaging/arduino/tinymind_selftest
+
+  zephyr:
+    name: "Packaging: Zephyr"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          path: tinymind
+      - name: West workspace for the sample
+        # The setup action wants the application, with its west.yml, as a
+        # single directory under the workspace.
+        run: cp -r tinymind/packaging/zephyr app
+      - uses: zephyrproject-rtos/action-zephyr-setup@6842dadd6e2bfd94e9b0cbf7e402978916b12690 # v1.0.1
+        with:
+          app-path: app
+          toolchains: arm-zephyr-eabi
+      - name: Install QEMU
+        uses: ./tinymind/.github/actions/apt-install
+        with:
+          packages: qemu-system-arm
+      - name: Build for qemu_cortex_m3
+        run: |
+          # ZEPHYR_TOOLCHAIN_VARIANT is set explicitly: with the runner's
+          # CMake 4, Zephyr 4.3.2's SDK lookup fails on it being undefined.
+          west build -b qemu_cortex_m3 -d build tinymind/packaging/zephyr \
+            -- -DZEPHYR_EXTRA_MODULES="$GITHUB_WORKSPACE/tinymind" -DZEPHYR_TOOLCHAIN_VARIANT=zephyr
+      - name: Run under QEMU
+        run: |
+          # The sample prints its result and idles, so QEMU is stopped after
+          # a while; the PASS line decides.
+          timeout 120 west build -d build -t run > run.log 2>&1 || true
+          cat run.log
+          grep -q "tinymind self-test: PASS" run.log
+
+  esp-idf:
+    name: "Packaging: ESP-IDF"
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.6
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          path: tinymind
+      - name: Build for esp32s3
+        shell: bash
+        run: |
+          git config --global --add safe.directory '*'
+          . "$IDF_PATH/export.sh"
+          cd tinymind/packaging/esp-idf
+          idf.py set-target esp32s3
+          idf.py build
+      - name: Run under QEMU (esp32s3)
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          python "$IDF_PATH/tools/idf_tools.py" install qemu-xtensa
+          . "$IDF_PATH/export.sh"
+          cd tinymind/packaging/esp-idf
+          timeout 120 idf.py qemu > run.log 2>&1 || true
+          cat run.log
+          grep -q "tinymind self-test: PASS" run.log

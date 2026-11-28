@@ -27,7 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#if defined(__ARM_FEATURE_SAT)
+#if TINYMIND_ARM_SAT
 #include <arm_acle.h>
 #endif
 
@@ -523,7 +523,7 @@ namespace tinymind {
 
             static int32_t saturate(int32_t v)
             {
-#if defined(__ARM_FEATURE_SAT)
+#if TINYMIND_ARM_SAT
                 // GCC 13 lowers the compare form to two compare-and-move
                 // pairs; the ACLE intrinsic is one SSAT.
                 return __ssat(v, 8);
@@ -542,7 +542,7 @@ namespace tinymind {
 
             static int32_t saturate(int32_t v)
             {
-#if defined(__ARM_FEATURE_SAT)
+#if TINYMIND_ARM_SAT
                 return __ssat(v, 16);
 #else
                 return (v < min) ? min : ((v > max) ? max : v);
@@ -559,7 +559,7 @@ namespace tinymind {
 
             static int32_t saturate(int32_t v)
             {
-#if defined(__ARM_FEATURE_SAT)
+#if TINYMIND_ARM_SAT
                 return static_cast<int32_t>(__usat(v, 8));
 #else
                 return (v < min) ? min : ((v > max) ? max : v);
