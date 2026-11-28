@@ -25,8 +25,6 @@
 // TINYMIND_USE_TANH_8_8 for the whole build). On the host it prints the
 // result and returns it; on the F411 it is only built.
 
-#include <cstdint>
-
 #include <tinymind.h>
 #include "tanhValues16Bit.hpp"
 #include "../../selftest/tinymind_selftest.hpp"

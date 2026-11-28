@@ -43,6 +43,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include "activation.hpp"
 
 #include "tanhValues8Bit.hpp"

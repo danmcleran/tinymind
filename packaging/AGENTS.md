@@ -16,8 +16,10 @@ checks run are in `packaging/README.md`.
 - A header in `cpp/` includes another by a path relative to itself, never one
   that needs `-Icpp/include`: the Arduino layout and the no-include-path
   builds depend on it.
-- A release sets the version in all four manifests before the tag;
-  `tools/check_package_versions.py --tag vX.Y` checks them.
+- A release sets the version in all four manifests, and `X.Y` in
+  `packaging/cmake/CMakeLists.txt`'s `find_package` and `zephyr/west.yml`'s
+  example revision, before the tag; `tools/check_package_versions.py --tag
+  vX.Y` checks all six.
 - Every consumer runs `selftest/tinymind_selftest.hpp` and the job requires its
   PASS line where the target runs. A change to the self-test, or a new
   package, must be shown to fail on a planted defect before it is trusted.

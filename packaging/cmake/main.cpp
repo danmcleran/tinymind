@@ -23,7 +23,6 @@
 // The CMake packaging check: the shared self-test, and the Q8.8 tanh lookup
 // table that tinymind::lookup_tables was asked to compile.
 
-#include <cstdint>
 #include <cstdio>
 
 #include "tanhValues16Bit.hpp"

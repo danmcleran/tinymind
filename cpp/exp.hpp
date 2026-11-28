@@ -43,6 +43,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include "activation.hpp"
 
 #include "expValues8Bit.hpp"

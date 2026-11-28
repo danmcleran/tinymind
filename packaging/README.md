@@ -52,8 +52,11 @@ commands are in `.github/workflows/packaging.yml`.
   included from a sketch, or from a generated `model.hpp` built in one.
 - **A release:** set the version in `CMakeLists.txt`, `library.json`,
   `library.properties` and `idf_component.yml` to the new one (`X.Y.0` for
-  tag `vX.Y`) before tagging; `tools/check_package_versions.py --tag vX.Y`
-  checks it.
+  tag `vX.Y`) before tagging, and `X.Y` in the CMake consumer's
+  `find_package(tinymind X.Y REQUIRED)` and the example west revision in
+  `zephyr/west.yml`; `tools/check_package_versions.py --tag vX.Y` checks all
+  six (the installed CMake config accepts only the same major version, so a
+  stale `find_package` pin fails the CMake job after a major bump).
 - **Library headers include each other by paths relative to themselves**
   (`"include/tinymind_platform.hpp"`, `"../qaffine.hpp"`), never through an
   include path. That is what lets the Arduino forwarders, and any build that

@@ -350,6 +350,12 @@ PLATFORM_HDR = cpp/include/tinymind_platform.hpp
 # HDR_STD / HDR_FLAGS let check-cxx14 rerun the same pass at the language floor.
 HDR_STD   ?= c++17
 HDR_FLAGS ?=
+# The lookup-table headers declare nothing until a TINYMIND_USE_<FN>_<I>_<F>
+# gate is set, and every gate defaults to 0, so the pass above compiles them
+# empty. They get a second pass with every table gate on (all 24 value headers
+# once used uint*_t without <cstdint> and passed the first pass).
+LUT_HDRS  = $(sort $(wildcard cpp/*Values*Bit.hpp) $(addprefix cpp/,tanh.hpp sigmoid.hpp exp.hpp log.hpp sin.hpp cos.hpp))
+LUT_GATES = $(addsuffix =1,$(addprefix -D,$(sort $(shell grep -hoE 'TINYMIND_USE_[A-Z]+_[0-9]+_[0-9]+' $(LUT_HDRS)))))
 .PHONY : header-selfcheck
 header-selfcheck :
 	@pass=0; fail=0; failed=""; \
@@ -361,7 +367,16 @@ header-selfcheck :
 	    fail=$$((fail+1)); failed="$$failed $$h"; \
 	  fi; \
 	done; \
-	echo "header-selfcheck (-std=$(HDR_STD)): $$pass self-contained, $$fail not"; \
+	lpass=0; \
+	for h in $(LUT_HDRS); do \
+	  if g++ -std=$(HDR_STD) $(HDR_FLAGS) -fsyntax-only $(ANALYZE_INC) $(ANALYZE_DEF) $(LUT_GATES) \
+	         -include $(PLATFORM_HDR) -include "$$h" -xc++ /dev/null 2>/dev/null; then \
+	    lpass=$$((lpass+1)); \
+	  else \
+	    fail=$$((fail+1)); failed="$$failed $$h(tables-on)"; \
+	  fi; \
+	done; \
+	echo "header-selfcheck (-std=$(HDR_STD)): $$pass self-contained, $$lpass lookup-table headers with every table on, $$fail not"; \
 	if [ -n "$$failed" ]; then \
 	  echo "Does not compile standalone at -std=$(HDR_STD) $(HDR_FLAGS) (a missing standard include, or under check-cxx14 a construct newer than C++14):"; \
 	  for f in $$failed; do echo "  $$f"; done; \

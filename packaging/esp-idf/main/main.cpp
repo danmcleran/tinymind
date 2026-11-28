@@ -24,7 +24,6 @@
 // the tinymind component compiled (the project sets TINYMIND_USE_TANH_8_8 for
 // every component).
 
-#include <cstdint>
 #include <cstdio>
 
 #include "tanhValues16Bit.hpp"

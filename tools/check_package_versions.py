@@ -31,6 +31,11 @@ behind the newest release tag.
 A release vX.Y sets all four to X.Y.0 before the tag is made. With --tag vX.Y
 the version must be exactly X.Y.0; otherwise the newest vX.Y tag in the
 repository (if git and the tags are available) must not be newer than it.
+
+Two places in packaging/ name the release as X.Y and must match the manifests'
+X.Y: the CMake consumer's find_package(tinymind X.Y REQUIRED), which the
+installed config accepts only within the same major version, and the example
+west project revision in packaging/zephyr/west.yml.
 Standard library only.
 """
 
@@ -60,6 +65,20 @@ def versions():
     return found
 
 
+PINS = (
+    ("packaging/cmake/CMakeLists.txt", r"find_package\(tinymind\s+([0-9]+\.[0-9]+)\b"),
+    ("packaging/zephyr/west.yml", r"revision:\s*v([0-9]+\.[0-9]+)\b"),
+)
+
+
+def pins():
+    found = {}
+    for name, pattern in PINS:
+        m = re.search(pattern, read(name))
+        found[name] = m.group(1) if m else None
+    return found
+
+
 def parse(v):
     return tuple(int(x) for x in v.split("."))
 
@@ -86,6 +105,12 @@ def main():
         print("the manifests disagree on the version")
         return 1
     version = next(iter(found.values()))
+    release = ".".join(version.split(".")[:2])
+    for name, v in pins().items():
+        print(f"{name:20s} {v}")
+        if v != release:
+            print(f"{name} names release {v}, the manifests say {release}")
+            return 1
     if "--tag" in sys.argv[1:]:
         tag = sys.argv[sys.argv.index("--tag") + 1]
         want = tag.lstrip("v") + ".0"

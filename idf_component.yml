@@ -20,7 +20,7 @@
 
 # ESP-IDF component manifest. The component itself is the CMakeLists.txt at
 # the repository root (its ESP_PLATFORM branch).
-version: "19.1.0"
+version: "20.0.0"
 description: "Header-only C++14 neural networks and Q-learning for microcontrollers: fixed-point and int8 layers, no heap, int8 models imported from TFLite, ONNX and PyTorch."
 url: "https://danmcleran.github.io/tinymind/"
 repository: "https://github.com/danmcleran/tinymind.git"

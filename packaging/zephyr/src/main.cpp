@@ -23,8 +23,6 @@
 // The Zephyr packaging check: the shared self-test on qemu_cortex_m3, and the
 // Q8.8 tanh table the module compiled (CONFIG_TINYMIND_LOOKUP_TABLES).
 
-#include <cstdint>
-
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 

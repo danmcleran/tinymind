@@ -1,6 +1,6 @@
 {
   "name": "tinymind",
-  "version": "19.1.0",
+  "version": "20.0.0",
   "description": "Header-only C++14 library for neural networks and Q-learning on microcontrollers: fixed-point and int8 layers, no heap, no FPU required, int8 models imported from TFLite, ONNX and PyTorch.",
   "keywords": ["neural-network", "tinyml", "int8", "quantization", "fixed-point", "machine-learning", "q-learning", "embedded"],
   "repository": {

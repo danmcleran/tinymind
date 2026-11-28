@@ -25,7 +25,7 @@
 #
 #   - name: tinymind
 #     url: https://github.com/danmcleran/tinymind
-#     revision: v19.1
+#     revision: v20.0
 #     path: modules/lib/tinymind
 manifest:
   remotes:
