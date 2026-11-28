@@ -24,6 +24,7 @@
 
 #include "include/tinymind_platform.hpp"
 #include "qaffine.hpp"
+#include "qdense.hpp"
 #include "include/simd/simd_dispatch.hpp"
 
 #include <cstddef>
@@ -259,6 +260,18 @@ namespace tinymind {
 
             if (H_ * W_ == 1)
             {
+#if defined(TINYMIND_SIMD_INT8_DOT_ROWS4)
+                // Four filters per pass, each input word widened once for all
+                // four (see detail::denseRows4).
+                if (detail::denseRows4<InputType, WeightType, AccumulatorType, OutputType, InChannels_,
+                                       NumFilters_, 0>(
+                        input, output, layerWeights, layerBiases, inputZeroPoint, &rq,
+                        detail::Rows4Tag<detail::UseRows4<InputType, WeightType, AccumulatorType,
+                                                          InChannels_, NumFilters_>::value>()))
+                {
+                    return;
+                }
+#endif
                 // A single pixel (a dense layer): nothing to amortize across
                 // pixels, and holding the requantizer across the loop only
                 // takes registers from the dot product.
@@ -395,6 +408,18 @@ namespace tinymind {
 
             if (H_ * W_ == 1)
             {
+#if defined(TINYMIND_SIMD_INT8_DOT_ROWS4)
+                // Four filters per pass, each input word widened once for all
+                // four (see detail::denseRows4).
+                if (detail::denseRows4<InputType, WeightType, AccumulatorType, OutputType, InChannels_,
+                                       NumFilters_, 1>(
+                        input, output, layerWeights, layerBiases, inputZeroPoint, rqs,
+                        detail::Rows4Tag<detail::UseRows4<InputType, WeightType, AccumulatorType,
+                                                          InChannels_, NumFilters_>::value>()))
+                {
+                    return;
+                }
+#endif
                 // A single pixel (a dense layer): nothing to amortize across
                 // pixels, and holding the requantizer across the loop only
                 // takes registers from the dot product.

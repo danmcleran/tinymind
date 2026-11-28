@@ -166,7 +166,7 @@ namespace vibration {
         constexpr tinymind::Requantizer<int32_t, int8_t> fc11_requantizers[2] = {
             {1453370616, 8, -26, -128, 127}, {1680616766, 8, -26, -128, 127}
         };
-        typedef tinymind::QConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 1, 1, 8, 1, 1, 1, 1, 2> fc11_type;
+        typedef tinymind::QPointwiseConv2DPerChannel<int8_t, int8_t, int32_t, int8_t, 1, 1, 8, 2> fc11_type;
         constexpr fc11_type fc11_layer = {kfc11_Weights, kfc11_Biases, -128, fc11_requantizers};
         static_assert(fc11_type::OutputSize == 2, "fc11: output size");
 

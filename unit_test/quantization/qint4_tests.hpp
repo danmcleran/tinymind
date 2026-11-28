@@ -367,4 +367,5 @@ BOOST_AUTO_TEST_CASE(qint4_depthwise_matches_int8_kernel)
     qint4_test::checkDepthwise<8, 8, 8, 3, 3, 1, 1, 1, 1, 1, 1>(rng);
     qint4_test::checkDepthwise<9, 7, 5, 3, 3, 2, 2, 1, 1, 1, 1>(rng);
     qint4_test::checkDepthwise<6, 6, 3, 2, 2, 1, 1, 0, 0, 0, 0>(rng);
+    qint4_test::checkDepthwise<10, 1, 6, 10, 1, 1, 1, 0, 0, 0, 0>(rng); // one output pixel per channel
 }
