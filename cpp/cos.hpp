@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include "activation.hpp"
 
 #include "cosValues8Bit.hpp"

@@ -53,6 +53,10 @@ typedef struct
 } copyrightSpan_t;
 
 static std::string folderPathString;
+// The copyright texts sit beside output/, where the build puts the generator,
+// so they are found from the generator's own path whatever the working
+// directory.
+static std::filesystem::path sourceDir;
 static char const* const activationTags[] = {"TINYMIND_USE_TANH_", "TINYMIND_USE_SIGMOID_", "TINYMIND_USE_EXP_", "TINYMIND_USE_LOG_", "TINYMIND_USE_SIN_", "TINYMIND_USE_COS_"};
 // Table storage widths. QValue caps formats at 64 bits (qformat.hpp), so a
 // wider table could never be read; 128-bit tables were generated until #287.
@@ -86,7 +90,7 @@ static bool activationRequiresIntelCopyright(const activation_e activationType)
 
 static void writeFileCopyrightAndLicense(const string& path, const bool includeIntelCopyright = true)
 {
-    ifstream myInFile("../my_copyright.txt");
+    ifstream myInFile(sourceDir / "my_copyright.txt");
     ofstream outFile(path);
     char buffer[1024];
 
@@ -101,7 +105,7 @@ static void writeFileCopyrightAndLicense(const string& path, const bool includeI
 
     if (includeIntelCopyright)
     {
-        ifstream intelInFile("../intel_copyright.txt");
+        ifstream intelInFile(sourceDir / "intel_copyright.txt");
         assert(intelInFile.is_open());
 
         while(!intelInFile.eof())
@@ -148,6 +152,7 @@ static void writeFileHeader(const string& path, const bool includeIntelCopyright
 
     ofstream outFile(path, ofstream::app);
     outFile << "#pragma once" << endl << endl;
+    outFile << "#include <cstdint>" << endl << endl;
     outFile << "#include \"activation.hpp\"" << endl << endl;
 }
 
@@ -524,6 +529,7 @@ int main(const int argc, char *argv[])
     }
 
     folderPathString = argv[1];
+    sourceDir = fs::weakly_canonical(fs::absolute(argv[0])).parent_path().parent_path();
 
     fs::path folderPath(folderPathString);
 

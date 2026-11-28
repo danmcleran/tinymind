@@ -57,7 +57,7 @@ endif()
 cmake_minimum_required(VERSION 3.14)
 
 project(tinymind
-        VERSION 19.1.0
+        VERSION 20.0.0
         DESCRIPTION "Header-only C++ neural network and Q-learning library for embedded systems"
         HOMEPAGE_URL "https://danmcleran.github.io/tinymind/"
         LANGUAGES CXX)

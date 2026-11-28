@@ -128,7 +128,7 @@ if (!TransferFunctionsType::isWithinZeroTolerance(error))
 }
 ```
 
-See the [Neural Network in Under 4KB]({{ site.baseurl }}/getting-started/xor-under-4kb) tutorial for a complete walkthrough.
+See the [Neural Network in Under 4KB]({{ site.baseurl }}/getting-started/xor-under-4kb) tutorial for a complete walkthrough. To pull tinymind into a CMake, Zephyr, ESP-IDF, PlatformIO or Arduino project, see [Using tinymind from Your Build System]({{ site.baseurl }}/getting-started/build-systems).
 
 ## Train in PyTorch, Deploy in tinymind
 
