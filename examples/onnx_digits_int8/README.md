@@ -110,19 +110,19 @@ with the dense layer alone in int4 (5,988 bytes): the convolutions save 424
 weight bytes and spend most of them on the code that runs them, the int8
 kernels plus the unpacking. On the boards
 ([`benchmarks/tier1_onboard`](../../benchmarks/tier1_onboard), `-O3`) it
-costs almost no time:
+costs little time:
 
 | | int8 | int4 |
 |---|---:|---:|
-| Cortex-M0+ (NUCLEO-L031K6, 32 MHz) | 760,608 cycles (23.8 ms) | 778,803 cycles (24.3 ms) |
-| Cortex-M4, scalar kernels (NUCLEO-F411RE, 100 MHz) | 479,524 (4.8 ms) | 454,157 (4.5 ms) |
-| Cortex-M4, Arm DSP backend | 171,384 (1.7 ms) | 172,082 (1.7 ms) |
+| Cortex-M0+ (NUCLEO-L031K6, 32 MHz) | 755,739 cycles (23.6 ms) | 778,803 cycles (24.3 ms) |
+| Cortex-M4, scalar kernels (NUCLEO-F411RE, 100 MHz) | 477,010 (4.8 ms) | 454,288 (4.5 ms) |
+| Cortex-M4, Arm DSP backend | 166,055 (1.7 ms) | 172,028 (1.7 ms) |
 
 The dense layer computes from its packed weights, on SMLAD with the Arm DSP
 backend. Each convolution unpacks its weights (at most 576 bytes here) onto
 the stack for the length of its call and runs the int8 kernels over them,
 which costs one pass over the weights and that much stack: the model's
-deepest stack grows from 636 to 1,348 bytes on the Cortex-M4 and from 1,588
+deepest stack grows from 636 to 1,340 bytes on the Cortex-M4 and from 1,420
 to 2,092 on the Cortex-M0+. A layer with more than
 `TINYMIND_INT4_CONV_UNPACK_MAX_BYTES` weights (1,024 by default) computes
 from the packed weights instead, more slowly.
@@ -184,16 +184,16 @@ summing blocks of 256 terms before widening. On the boards
 
 | | int8 | 16x8 |
 |---|---:|---:|
-| Cortex-M0+ (NUCLEO-L031K6, 32 MHz) | 760,608 cycles (23.8 ms) | 853,668 cycles (26.7 ms) |
-| Cortex-M4, scalar kernels (NUCLEO-F411RE, 100 MHz) | 479,524 (4.8 ms) | 452,807 (4.5 ms) |
-| Cortex-M4, Arm DSP backend | 171,384 (1.7 ms) | 202,690 (2.0 ms) |
+| Cortex-M0+ (NUCLEO-L031K6, 32 MHz) | 755,739 cycles (23.6 ms) | 853,668 cycles (26.7 ms) |
+| Cortex-M4, scalar kernels (NUCLEO-F411RE, 100 MHz) | 477,010 (4.8 ms) | 452,807 (4.5 ms) |
+| Cortex-M4, Arm DSP backend | 166,055 (1.7 ms) | 202,690 (2.0 ms) |
 
 With the Arm DSP backend the 16x8 convolutions and dense layer use SMLAD on
 int16 activation pairs, and each convolution output is requantized with one
 32 x 32 -> 64 multiply-accumulate while its accumulator provably fits int32.
 The int16 add rescales one input with a shift and the other with one SMLAL.
 Each 16x8 load still carries two activations to int8's four: the 16x8 model
-is 18% slower than int8 there, 12% slower on the Cortex-M0+, and 6% faster
+is 22% slower than int8 there, 13% slower on the Cortex-M0+, and 5% faster
 without the DSP backend. The per-layer split is in the bench README.
 
 ## Build and run

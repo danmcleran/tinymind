@@ -21,14 +21,14 @@ image=tm_mlp_dsp
 name=tinymind_int8+dsp/mlp
 setup_rc=0
 setup_cycles=22
-infer_min=12114
-infer_med=12114
-infer_max=12116
+infer_min=12915
+infer_med=12915
+infer_max=12917
 n_test=360
 correct=346
 hash=0x85BDD037
 hash_match=1
-stack_bytes=104
+stack_bytes=240
 static_ram=256
 arena_used=0
 # end bench
@@ -90,18 +90,18 @@ image=tm_mlp_dsp_prof
 name=tinymind_int8+dsp/mlp
 setup_rc=0
 setup_cycles=22
-infer_min=12114
-infer_med=12114
-infer_max=12116
+infer_min=12908
+infer_med=12908
+infer_max=12910
 n_test=360
 correct=346
 hash=0x85BDD037
 hash_match=1
-stack_bytes=360
+stack_bytes=496
 static_ram=304
 arena_used=0
-layer.0.fc0=8104
-layer.1.fc1=2787
+layer.0.fc0=8729
+layer.1.fc1=2944
 layer.2.fc2=1292
 # end bench
 level=O2
@@ -149,6 +149,6 @@ layer.4.avgpool=2725
 layer.5.fc=1292
 # end bench
 size image=tm_mlp flash=32276 ram=256
-size image=tm_mlp_dsp flash=32452 ram=256
+size image=tm_mlp_dsp flash=33460 ram=256
 size image=tm_kws flash=12820 ram=4976
 size image=tm_kws_dsp flash=12520 ram=4976

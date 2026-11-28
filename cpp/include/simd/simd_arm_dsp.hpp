@@ -533,6 +533,73 @@ namespace tinymind { namespace simd { namespace arm_dsp {
         acc[3] = a11;
     }
 
+    /**
+     * One input against four weight rows RowStride elements apart, N
+     * elements each, for a dense layer or a single-pixel pointwise layer:
+     *   acc[k] += w[k * RowStride ...] . (x - zp),  k = 0..3
+     * int8DotWithZeroPoint widens every input word again for every row; here
+     * a block of four inputs is loaded and widened once and spent on all
+     * four rows, so the block costs 5 loads, 10 extends and 8 SMLADs for 16
+     * multiply-accumulates, against 8 loads, 16 extends and 8 SMLADs as four
+     * separate dot products. Out of line for the same reason as
+     * int8ConvRows2x2WithZeroPoint: four accumulators, two widened inputs
+     * and the weight word fill the register file, and the caller's loop
+     * state would make them spill. N and RowStride are template parameters,
+     * so every weight load is the base pointer plus an immediate. Same
+     * products and sums, so bit-exact.
+     */
+    template<std::size_t N, std::size_t RowStride>
+    __attribute__((noinline)) void int8DotRows4WithZeroPoint(const int8_t* x, const int8_t* w, int8_t zp,
+                                                             int32_t* acc)
+    {
+        const uint32_t nzp16 = static_cast<uint16_t>(static_cast<int16_t>(-static_cast<int16_t>(zp)));
+        const int16x2_t negZpPair = static_cast<int16x2_t>(nzp16 | (nzp16 << 16));
+
+        int32_t a0 = acc[0];
+        int32_t a1 = acc[1];
+        int32_t a2 = acc[2];
+        int32_t a3 = acc[3];
+
+#if !defined(__OPTIMIZE_SIZE__)
+#pragma GCC unroll 2
+#endif
+        for (std::size_t blocks = N >> 2; blocks != 0; --blocks)
+        {
+            const int8x4_t xv = load4(x);
+            const int16x2_t xe = __sxtab16(negZpPair, xv);
+            const int16x2_t xo = sxtab16Ror8(negZpPair, xv);
+            x += 4;
+
+            const int8x4_t w0v = load4(w);
+            a0 = __smlad(__sxtb16(w0v), xe, a0);
+            a0 = __smlad(sxtb16Ror8(w0v), xo, a0);
+            const int8x4_t w1v = load4(w + RowStride);
+            a1 = __smlad(__sxtb16(w1v), xe, a1);
+            a1 = __smlad(sxtb16Ror8(w1v), xo, a1);
+            const int8x4_t w2v = load4(w + 2 * RowStride);
+            a2 = __smlad(__sxtb16(w2v), xe, a2);
+            a2 = __smlad(sxtb16Ror8(w2v), xo, a2);
+            const int8x4_t w3v = load4(w + 3 * RowStride);
+            a3 = __smlad(__sxtb16(w3v), xe, a3);
+            a3 = __smlad(sxtb16Ror8(w3v), xo, a3);
+            w += 4;
+        }
+
+        for (std::size_t i = 0; i < (N & 3u); ++i)
+        {
+            const int32_t xi = static_cast<int32_t>(x[i]) - static_cast<int32_t>(zp);
+            a0 += static_cast<int32_t>(w[i]) * xi;
+            a1 += static_cast<int32_t>(w[RowStride + i]) * xi;
+            a2 += static_cast<int32_t>(w[2 * RowStride + i]) * xi;
+            a3 += static_cast<int32_t>(w[3 * RowStride + i]) * xi;
+        }
+
+        acc[0] = a0;
+        acc[1] = a1;
+        acc[2] = a2;
+        acc[3] = a3;
+    }
+
 } } } // namespace tinymind::simd::arm_dsp
 
 #endif // __ARM_FEATURE_DSP

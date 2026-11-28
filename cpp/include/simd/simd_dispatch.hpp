@@ -351,6 +351,36 @@ namespace tinymind { namespace simd {
                 rows, offset, w0, zp, acc);
         }
     };
+
+    /**
+     * One input against four weight rows RowStride apart (a dense layer's or
+     * a single-pixel pointwise layer's next four outputs), accumulated into
+     * acc[0..3]. Only the Arm DSP backend has a kernel for it
+     * (arm_dsp::int8DotRows4WithZeroPoint, which widens each input word once
+     * for the four rows); QDense and QPointwiseConv2D* use it only when
+     * TINYMIND_SIMD_INT8_DOT_ROWS4 is defined and kBlocked is true for their
+     * types, so every other build compiles to the same code as before.
+     */
+#define TINYMIND_SIMD_INT8_DOT_ROWS4 1
+    template<typename Input, typename Weight, typename Accum, std::size_t N, std::size_t RowStride>
+    struct DotRows4
+    {
+        static constexpr bool kBlocked = false;
+    };
+
+    template<std::size_t N, std::size_t RowStride>
+    struct DotRows4<int8_t, int8_t, int32_t, N, RowStride>
+    {
+        // Below 32 inputs the call and the four-row setup cost more than the
+        // widening saves: on the F411 at -O2 a 16-input dense layer took 16%
+        // longer through this kernel.
+        static constexpr bool kBlocked = N >= 32;
+
+        static void apply(const int8_t* x, const int8_t* w, int8_t zp, int32_t* acc)
+        {
+            arm_dsp::int8DotRows4WithZeroPoint<N, RowStride>(x, w, zp, acc);
+        }
+    };
 #else
     constexpr bool kBlockedConvRows2x2 = false;
 #endif
