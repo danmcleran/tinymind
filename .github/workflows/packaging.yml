@@ -112,8 +112,10 @@ jobs:
           packages: qemu-system-arm
       - name: Build for qemu_cortex_m3
         run: |
+          # ZEPHYR_TOOLCHAIN_VARIANT is set explicitly: with the runner's
+          # CMake 4, Zephyr 4.3.2's SDK lookup fails on it being undefined.
           west build -b qemu_cortex_m3 -d build tinymind/packaging/zephyr \
-            -- -DZEPHYR_EXTRA_MODULES="$GITHUB_WORKSPACE/tinymind"
+            -- -DZEPHYR_EXTRA_MODULES="$GITHUB_WORKSPACE/tinymind" -DZEPHYR_TOOLCHAIN_VARIANT=zephyr
       - name: Run under QEMU
         run: |
           # The sample prints its result and idles, so QEMU is stopped after

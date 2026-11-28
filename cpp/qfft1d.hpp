@@ -28,7 +28,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#if defined(__ARM_FEATURE_SAT)
+#if TINYMIND_ARM_SAT
 #include <arm_acle.h>
 #endif
 
@@ -120,7 +120,7 @@ namespace tinymind {
          */
         inline int16_t saturateInt16(int32_t v)
         {
-#if defined(__ARM_FEATURE_SAT)
+#if TINYMIND_ARM_SAT
             // One SSAT. GCC 13 compiles an early-return clamp
             // (if (v < lo) return lo; ...) to two compare-and-branch pairs,
             // and does not recognize the conditional form below either.
