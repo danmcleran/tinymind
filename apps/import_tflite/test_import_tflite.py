@@ -34,7 +34,11 @@ Every case is judged against TensorFlow Lite for Microcontrollers itself:
   * whole models (Keras, converted with full-integer int8 quantization) are
     imported, generated as model.hpp, compiled freestanding (FLOAT=0, STD=0)
     and run on random int8 inputs; every output must equal TFLM's, bit for
-    bit.
+    bit, and running the model one forwardLayer() at a time must give the
+    same outputs;
+  * streaming models (step(), one frame per call) are fed frame sequences;
+    every output must equal forward()'s over the window ending at that frame
+    and TFLM's, and must not depend on the state before reset().
 
 The models are chosen so a wrong mapping cannot pass: SAME padding with an
 even kernel and a stride (catches the pad split), a non-square kernel with
@@ -143,11 +147,33 @@ MODEL_DRIVER = r"""
 #include <cstring>
 #include "@HEADER@"
 
+namespace
+{
+    // Checks that forward() calls the hook once per layer, in order, with
+    // the layer's output size.
+    struct OrderHook
+    {
+        std::size_t next = 0;
+        bool ok = true;
+        void before(std::size_t layer)
+        {
+            ok = ok && layer == next;
+        }
+        void after(std::size_t layer, const @NS@::ModelActivationType* out, std::size_t size)
+        {
+            ok = ok && layer == next && out != nullptr && size == @NS@::kModelLayerOutputSize[layer];
+            ++next;
+        }
+    };
+}
+
 int main()
 {
     typedef @NS@::ModelActivationType T;
     static T input[@NS@::kModelInputSize];
+    static T input_copy[@NS@::kModelInputSize];
     static T output[@NS@::kModelOutputSize];
+    static T output_layers[@NS@::kModelOutputSize];
     alignas(@NS@::kModelArenaAlignment) static T arena[@NS@::kModelArenaSize > 0 ? @NS@::kModelArenaSize : 1];
     for (;;)
     {
@@ -159,7 +185,30 @@ int main()
             if (std::scanf("%d", &v) != 1) { return 0; }
             input[i] = static_cast<T>(v);
         }
-        @NS@::forward(input, output, arena);
+        OrderHook hook;
+        @NS@::forward(input, output, arena, hook);
+        if (!hook.ok || hook.next != @NS@::kModelLayerCount)
+        {
+            std::printf("hook called out of order\n");
+            return 1;
+        }
+        // One layer at a time, over fresh garbage, gives forward()'s output;
+        // the input is overwritten once its last reader has run.
+        std::memcpy(input_copy, input, sizeof(input));
+        std::memset(arena, 0xA5, sizeof(arena));
+        for (std::size_t layer = 0; layer < @NS@::kModelLayerCount; ++layer)
+        {
+            @NS@::forwardLayer(layer, input_copy, output_layers, arena);
+            if (layer == @NS@::kModelInputLastReader)
+            {
+                std::memset(input_copy, 0x3C, sizeof(input_copy));
+            }
+        }
+        if (std::memcmp(output, output_layers, sizeof(output)) != 0)
+        {
+            std::printf("forwardLayer differs from forward\n");
+            return 1;
+        }
         for (std::size_t i = 0; i < @NS@::kModelOutputSize; ++i)
         {
             std::printf("%d ", static_cast<int>(output[i]));
@@ -192,6 +241,135 @@ def build_model(blob, workdir, tag, edit=None, **kwargs):
                     "-I" + os.path.join(REPO, "cpp"), "-I" + os.path.join(REPO, "cpp", "include"),
                     "-I" + os.path.join(REPO, "include"), "-I" + workdir, src, "-o", exe], check=True)
     return exe, layers, gen
+
+
+STREAM_DRIVER = r"""
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include "@WHOLE@"
+#include "@STREAM@"
+
+// Reads frames, one per line. After each frame prints the streamed output
+// and, once kModelReceptiveFrames frames have arrived, the newest frame of
+// the whole-window model's output for the window ending at that frame; then
+// whether the per-layer hook was called in order.
+namespace
+{
+    struct CountingHook
+    {
+        std::size_t calls = 0;
+        std::size_t next = 0;
+        bool ordered = true;
+        void before(std::size_t layer)
+        {
+            ordered = ordered && layer == next;
+        }
+        void after(std::size_t layer, const int8_t* out, std::size_t size)
+        {
+            ordered = ordered && layer == next && out != nullptr &&
+                      size == @NS@::stream::kModelLayerOutputSize[layer];
+            ++next;
+            ++calls;
+        }
+    };
+}
+
+int main(int argc, char** argv)
+{
+    namespace S = @NS@::stream;
+    namespace W = @NS@;
+    static_assert(S::kModelInputSize * S::kModelWindowFrames == W::kModelInputSize, "frame size");
+    static int8_t window[W::kModelInputSize];
+    // Frames before the first one stay garbage: the newest output frame must
+    // not depend on them once kModelReceptiveFrames frames have arrived.
+    std::memset(window, 0x33, sizeof(window));
+    static int8_t frame[S::kModelInputSize];
+    static int8_t out_stream[S::kModelOutputSize];
+    static int8_t out_whole[W::kModelOutputSize];
+    alignas(S::kModelStateAlignment) static int8_t state[S::kModelStateSize > 0 ? S::kModelStateSize : 1];
+    alignas(S::kModelArenaAlignment) static int8_t arena_s[S::kModelArenaSize > 0 ? S::kModelArenaSize : 1];
+    alignas(W::kModelArenaAlignment) static int8_t arena_w[W::kModelArenaSize > 0 ? W::kModelArenaSize : 1];
+    // Whatever the state held before, reset() must leave every byte a step
+    // reads defined: the streamed outputs, warm-up included, may not depend
+    // on this fill.
+    std::memset(state, argc > 1 ? std::atoi(argv[1]) : 0x11, sizeof(state));
+    S::reset(state);
+    std::size_t t = 0;
+    for (;; ++t)
+    {
+        for (std::size_t i = 0; i < S::kModelInputSize; ++i)
+        {
+            int v;
+            if (std::scanf("%d", &v) != 1) { return 0; }
+            frame[i] = static_cast<int8_t>(v);
+        }
+        std::memmove(window, window + S::kModelInputSize, W::kModelInputSize - S::kModelInputSize);
+        std::memcpy(window + W::kModelInputSize - S::kModelInputSize, frame, S::kModelInputSize);
+        // Garbage in the arena: a step must not depend on scratch from the last one.
+        std::memset(arena_s, 0x5A + static_cast<int>(t & 7), sizeof(arena_s));
+        CountingHook hook;
+        S::step(frame, out_stream, state, arena_s, hook);
+        std::printf("S");
+        for (std::size_t i = 0; i < S::kModelOutputSize; ++i)
+        {
+            std::printf(" %d", static_cast<int>(out_stream[i]));
+        }
+        if (t + 1 >= S::kModelReceptiveFrames)
+        {
+            W::forward(window, out_whole, arena_w);
+            std::printf(" W");
+            for (std::size_t i = W::kModelOutputSize - S::kModelOutputSize; i < W::kModelOutputSize; ++i)
+            {
+                std::printf(" %d", static_cast<int>(out_whole[i]));
+            }
+        }
+        std::printf(" H %d\n", hook.ordered && hook.calls == S::kModelLayerCount ? 1 : 0);
+    }
+}
+"""
+
+
+def build_stream(blob, workdir, tag):
+    """Whole-window and streaming headers over one weights header, and a
+    driver that runs both on one frame sequence."""
+    path = os.path.join(workdir, f"{tag}.tflite")
+    with open(path, "wb") as f:
+        f.write(blob)
+    weights = os.path.join(workdir, f"{tag}_weights.hpp")
+    whole = os.path.join(workdir, f"{tag}_model.hpp")
+    streamed = os.path.join(workdir, f"{tag}_stream.hpp")
+    layers, gen_w = tt.import_tflite_model_with_code(path, weights, whole, tag)
+    gen_s = tt.cg.emit_model_header(streamed, tag, layers, os.path.basename(weights), generator=tt.GENERATOR,
+                                    nested_namespace="stream", streaming=True)
+    src = os.path.join(workdir, f"{tag}_stream_driver.cpp")
+    with open(src, "w") as f:
+        f.write(STREAM_DRIVER.replace("@WHOLE@", os.path.basename(whole))
+                .replace("@STREAM@", os.path.basename(streamed)).replace("@NS@", tag))
+    exe = os.path.join(workdir, f"{tag}_stream_driver")
+    subprocess.run([GXX, "-std=c++14", "-O1", "-Wall", "-Wextra", "-Werror", "-Wpedantic",
+                    "-DTINYMIND_ENABLE_QUANTIZATION=1", "-DTINYMIND_ENABLE_FLOAT=0", "-DTINYMIND_ENABLE_STD=0",
+                    "-I" + os.path.join(REPO, "cpp"), "-I" + os.path.join(REPO, "cpp", "include"),
+                    "-I" + workdir, src, "-o", exe], check=True)
+    return exe, gen_w, gen_s
+
+
+def run_stream(exe, frames, fill=0x11):
+    """Returns (streamed outputs per frame, whole-window outputs per frame
+    from the receptive_frames-th frame on, hook record per frame). fill is
+    the byte the state holds before reset()."""
+    stdin = "".join(" ".join(str(int(v)) for v in f.reshape(-1)) + "\n" for f in frames)
+    out = subprocess.run([exe, str(fill)], input=stdin, capture_output=True, text=True, check=True).stdout
+    streamed, whole, hooks = [], [], []
+    for row in out.strip().split("\n"):
+        head, _, hook = row.partition(" H ")
+        hooks.append(int(hook))
+        s, _, w = head[2:].partition(" W ")
+        streamed.append([int(v) for v in s.split()])
+        if w:
+            whole.append([int(v) for v in w.split()])
+    return np.array(streamed), np.array(whole), hooks
 
 
 def run_exe(exe, q_inputs):
@@ -268,6 +446,60 @@ def global_avgpool_relu():
     y = L.AveragePooling2D(8)(y)
     y = L.Reshape((4,))(y)
     y = L.Dense(2)(y)
+    return tf.keras.Model(x, y)
+
+
+def input_residual():
+    """The input is read by two layers (a convolution and the residual Add
+    after it), so forwardLayer()'s caller must keep it until the Add."""
+    L = tf.keras.layers
+    x = L.Input((6, 6, 4))
+    y = L.Conv2D(4, 3, padding="same", activation="relu")(x)
+    y = L.Add()([x, y])
+    return tf.keras.Model(x, L.Dense(3)(L.Flatten()(y)))
+
+
+def stream_time_h():
+    """Time along H, frames of 5 x 3 values. One tensor (a) is read by
+    windows of 3 and of 5 frames, so its history serves two offsets; a
+    residual Add joins two paths of equal time extent; a max pool, an average
+    pool and a mean over time and a Dense over the last 16 frames all read a
+    window of frames."""
+    L = tf.keras.layers
+    x = L.Input((26, 5, 3))
+    a = L.Conv2D(6, (3, 3), activation="relu")(x)                   # 24 frames x 3 x 6
+    b = L.DepthwiseConv2D((3, 1), activation="relu6")(a)           # 22
+    b = L.DepthwiseConv2D((3, 1))(b)                               # 20
+    c = L.DepthwiseConv2D((5, 1))(a)                               # 20
+    y = L.Add()([b, c])
+    y = L.MaxPooling2D((2, 1), strides=(1, 1))(y)                  # 19
+    y = L.Conv2D(8, (1, 3), activation="relu")(y)                  # 19 x 1 x 8
+    m = L.AveragePooling2D((4, 1), strides=(1, 1))(y)              # 16
+    g = L.Lambda(lambda v: tf.reduce_mean(v, axis=[1, 2], keepdims=True))(m)
+    d = L.Dense(6)(L.Flatten()(m))
+    g = L.Dense(6)(L.Flatten()(g))
+    return tf.keras.Model(x, L.Add()([d, g]))
+
+
+def stream_time_w():
+    """Keras Conv1D layers: TFLite runs them as 2D convolutions over
+    [1][T][C] (EXPAND_DIMS first), so time is along W."""
+    L = tf.keras.layers
+    x = L.Input((20, 4))
+    y = L.Conv1D(8, 3, activation="relu")(x)
+    y = L.DepthwiseConv1D(5)(y)
+    y = L.Conv1D(6, 1, activation="tanh")(y)
+    return tf.keras.Model(x, L.Dense(5)(L.Flatten()(y)))
+
+
+def stream_sequence():
+    """A sequence-to-sequence model: the output spans 16 frames, of which a
+    step returns the newest, and it depends on only 5 input frames, fewer
+    than the window."""
+    L = tf.keras.layers
+    x = L.Input((20, 1, 4))
+    y = L.Conv2D(8, (3, 1), activation="relu")(x)
+    y = L.Conv2D(3, (3, 1))(y)
     return tf.keras.Model(x, y)
 
 
@@ -468,8 +700,89 @@ class EndToEnd(unittest.TestCase):
         self.assertTrue(lo < hi)
         np.testing.assert_array_equal(got, np.clip(want, lo, hi))
 
+    def test_input_read_twice(self):
+        layers, _ = self.check(input_residual(), 10, ["CONV_2D", "ADD", "FULLY_CONNECTED"])
+        self.assertEqual([i for i, l in enumerate(layers) if -1 in l.sources], [0, 1])
+
     def test_in_place_off(self):
         self.check(residual_cnn(), 5, ["ADD"], in_place=False, n=12)
+
+
+@unittest.skipUnless(HAVE_STACK, "needs tensorflow and tflite-micro")
+@unittest.skipIf(GXX is None, "needs g++")
+class Streaming(unittest.TestCase):
+    """A streaming model.hpp, fed one frame per step(), gives the newest frame
+    of the whole-window model's output for the window ending at that frame,
+    bit for bit, and the whole-window model gives TFLM's."""
+
+    def check(self, blob, n_extra=40, seed=5, frames=None):
+        with tempfile.TemporaryDirectory() as d:
+            exe, gen_w, gen_s = build_stream(blob, d, "st")
+            sp = gen_s.stream
+            T, F, R = sp.frames[-1], sp.frame_size[-1], sp.receptive_frames
+            if frames is None:
+                rng = np.random.default_rng(seed)
+                frames = [rng.integers(-128, 128, F) for _ in range(T + n_extra)]
+            got, whole, hooks = run_stream(exe, frames)
+            again, _, _ = run_stream(exe, frames, fill=0xC3)
+        self.assertTrue(all(hooks), "step() called the hook out of order")
+        np.testing.assert_array_equal(got, again, "the output depends on the state before reset()")
+        self.assertEqual(len(whole), len(frames) - R + 1)
+        mismatches = int((got[R - 1:] != whole).sum())
+        self.assertEqual(mismatches, 0, f"{mismatches} of {whole.size} streamed outputs differ from the "
+                                        "whole-window model")
+        wins = [np.concatenate(frames[t - T + 1:t + 1]) for t in range(T - 1, len(frames))]
+        want = tflm_int8_outputs(blob, wins, False)[:, -got.shape[1]:]
+        mismatches = int((whole[T - R:] != want).sum())
+        self.assertEqual(mismatches, 0, f"{mismatches} of {want.size} outputs differ from TFLM")
+        return gen_w, gen_s, want
+
+    def test_time_along_h(self):
+        gen_w, gen_s, want = self.check(convert(stream_time_h(), seed=7))
+        sp = gen_s.stream
+        self.assertEqual(sp.time_axis, "H")
+        self.assertEqual((sp.frames[-1], sp.frame_size[-1], sp.receptive_frames), (26, 15, 26))
+        # conv0's output is read by windows of 3 and 5 frames.
+        self.assertEqual(sp.history[0], 5)
+        self.assertEqual(sorted(sp.window[i] for i in range(len(sp.window)) if i in (1, 3)), [3, 5])
+        self.assertGreater(len(np.unique(want)), 50, "outputs are degenerate; the test proves little")
+        self.assertLess(gen_s.plan.arena_size + sp.state_size, gen_w.plan.arena_size + 26 * 15)
+
+    def test_time_along_w(self):
+        _, gen_s, want = self.check(convert(stream_time_w(), seed=8))
+        self.assertEqual(gen_s.stream.time_axis, "W")
+        self.assertEqual(gen_s.stream.receptive_frames, 20)
+        self.assertGreater(len(np.unique(want)), 50, "outputs are degenerate; the test proves little")
+
+    def test_sequence_output(self):
+        # Output valid from the 5th frame on, 15 frames before a whole window.
+        _, gen_s, want = self.check(convert(stream_sequence(), seed=9))
+        self.assertEqual(gen_s.stream.receptive_frames, 5)
+        self.assertEqual(gen_s.output_size, 3)
+        self.assertGreater(len(np.unique(want)), 50, "outputs are degenerate; the test proves little")
+
+    def refuses(self, model, pattern):
+        blob = convert(model, seed=3)
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "r.tflite")
+            with open(path, "wb") as f:
+                f.write(blob)
+            layers = tt.import_tflite_model(path, os.path.join(d, "w.hpp"), "r")
+            with self.assertRaisesRegex(ValueError, pattern):
+                tt.cg.emit_model_header(os.path.join(d, "m.hpp"), "r", layers, "w.hpp", streaming=True)
+
+    def test_refusals(self):
+        L = tf.keras.layers
+        x = L.Input((12, 1, 3))
+        self.refuses(tf.keras.Model(x, L.Conv2D(4, (3, 1), strides=(2, 1))(x)), "strides along time")
+        x = L.Input((12, 1, 3))
+        self.refuses(tf.keras.Model(x, L.Conv2D(4, (3, 1), padding="same")(x)), "pads along time")
+        x = L.Input((12, 1, 3))
+        self.refuses(tf.keras.Model(x, L.MaxPooling2D((2, 1))(x)), "strides along time")
+        x = L.Input((1, 1, 6))
+        self.refuses(tf.keras.Model(x, L.Conv2D(4, 1)(x)), "single frame")
+        x = L.Input((6,))
+        self.refuses(tf.keras.Model(x, L.Dense(4)(x)), "first layer")
 
 
 # The MLPerf Tiny reference models (github.com/mlcommons/tiny, Apache 2.0,
@@ -480,6 +793,8 @@ MLPERF_MODELS = {
     "kws_ref_model.tflite": "aeea436800704fce17b17292e4412630ad856e9d777c044c64ef748a880bd0ae",
     "pretrainedResnet_quant.tflite": "3c002613d1b2475eb51dd78dfb85a546c8ae658dee71cf6ade43b022fe205415",
 }
+# The streaming wake word model (MLPerf Tiny v1.3), from the same commit.
+MLPERF_STREAMING = ("str_ww_ref_model.tflite", "3af8550895ba7d5c584277102b5075c52dcfa63ba9d2b2240f37c4e6abd5dd2b")
 MLPERF_DIR = os.environ.get("TINYMIND_MLPERF_TFLITE_DIR", os.path.join(
     REPO, "benchmarks", "framework_comparison_f411", "gen", "mlperf", "cache"))
 
@@ -505,6 +820,26 @@ class MLPerfTinyModels(unittest.TestCase):
                 got = run_exe(exe, qs)
             self.assertEqual(int((got != want).sum()), 0, name)
             self.assertGreater(len(np.unique(want)), 10, name)
+
+    @unittest.skipUnless(os.path.exists(os.path.join(MLPERF_DIR, MLPERF_STREAMING[0])),
+                         "streaming wake word model not downloaded")
+    def test_streaming_wakeword(self):
+        """The reference firmware reruns the whole 30-frame window every 32 ms;
+        streamed, each frame is one step(), with the same outputs."""
+        import hashlib
+        name, sha = MLPERF_STREAMING
+        with open(os.path.join(MLPERF_DIR, name), "rb") as f:
+            blob = f.read()
+        self.assertEqual(hashlib.sha256(blob).hexdigest(), sha, name)
+        # Quiet frames (low log-mel energies) keep the softmax off its rails:
+        # uniform frames saturate it.
+        rng = np.random.default_rng(11)
+        frames = [rng.integers(-128, -60, 40) for _ in range(90)]
+        gen_w, gen_s, want = Streaming.check(self, blob, frames=frames)
+        sp = gen_s.stream
+        self.assertEqual((sp.frames[-1], sp.frame_size[-1], sp.receptive_frames), (30, 40, 30))
+        self.assertEqual(gen_s.weight_bytes, gen_w.weight_bytes)
+        self.assertGreater(len(np.unique(want)), 10, name)
 
 
 @unittest.skipUnless(HAVE_STACK, "needs tensorflow and tflite-micro")

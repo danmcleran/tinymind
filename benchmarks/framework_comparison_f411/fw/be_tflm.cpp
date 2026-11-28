@@ -49,6 +49,10 @@
 #  include "mlperf_ic_tflite_int8.h"
 #  define MODEL_BLOB mlperf_ic_int8_tflite
 #  define MODEL_MLPERF
+#elif defined(MODEL_MLPERF_SWW)
+#  include "mlperf_sww_tflite_int8.h"
+#  define MODEL_BLOB mlperf_sww_int8_tflite
+#  define MODEL_MLPERF
 #elif defined(DTYPE_F32)
 #  include "kws_tflite_f32.h"
 #  define MODEL_BLOB kws_f32_tflite
@@ -120,6 +124,8 @@ uint32_t gArenaMin = 0;
 #endif
 #if defined(MODEL_MLP)
 using Resolver = tflite::MicroMutableOpResolver<1>;
+#elif defined(MODEL_MLPERF_SWW)
+using Resolver = tflite::MicroMutableOpResolver<5>;
 #elif defined(MODEL_MLPERF)
 using Resolver = tflite::MicroMutableOpResolver<6>;
 #else
@@ -158,12 +164,17 @@ int be_setup(void)
 #elif defined(MODEL_MLPERF)
     // Exactly the reference graph's operators, so no unused kernel is linked.
     resolver->AddConv2D();
-#  if defined(MODEL_MLPERF_KWS)
+#  if defined(MODEL_MLPERF_SWW)
     resolver->AddDepthwiseConv2D();
+    resolver->AddFullyConnected();
 #  else
+#    if defined(MODEL_MLPERF_KWS)
+    resolver->AddDepthwiseConv2D();
+#    else
     resolver->AddAdd();
-#  endif
+#    endif
     resolver->AddAveragePool2D();
+#  endif
     resolver->AddReshape();
     resolver->AddSoftmax();
 #endif

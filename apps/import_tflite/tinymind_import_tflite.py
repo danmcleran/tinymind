@@ -53,7 +53,7 @@ biases, batch 1):
     SOFTMAX             -> QSoftmaxFixedPoint1D (the model's output only)
     LOGISTIC / TANH     -> 256-entry tables holding TFLM's fixed-point results
     RELU                -> qrelu, when input and output share a grid
-    RESHAPE / SQUEEZE   -> no layer; the output aliases the input
+    RESHAPE / SQUEEZE / EXPAND_DIMS -> no layer; the output aliases the input
     QUANTIZE / DEQUANTIZE at the model's input / output
                         -> dropped: a float model boundary becomes the int8
                            tensor behind it, and model.hpp's kModelInputScale /
@@ -481,7 +481,7 @@ def parse_tflite_model(model) -> list:
         label = f"operator {op.index} ({op.op})"
         o = op.options
 
-        if op.op in ("RESHAPE", "SQUEEZE"):
+        if op.op in ("RESHAPE", "SQUEEZE", "EXPAND_DIMS"):
             src = op.inputs[0]
             if src not in origin:
                 raise ValueError(f"{label}: reshapes a tensor no supported layer produced")
@@ -713,16 +713,17 @@ def import_tflite_model(model_path: str, weights_path: str, namespace: str,
 def import_tflite_model_with_code(model_path: str, weights_path: str, model_header_path: str,
                                   namespace: str, alignment: int = 4, in_place: bool = True,
                                   int4_dense: bool = False, int4_conv: bool = False,
-                                  nested_namespace: Optional[str] = None):
+                                  nested_namespace: Optional[str] = None, streaming: bool = False):
     """Parse a .tflite model and write weights.hpp and model.hpp. Returns
     (layers, GeneratedModel). int4_dense / int4_conv requantize those layers'
     weights to packed int4 as for an ONNX model (the result then no longer
-    matches TFLM bit for bit)."""
+    matches TFLM bit for bit). streaming: model.hpp runs the model one input
+    frame per step() call (see the code generator's plan_stream)."""
     layers = import_tflite_model(model_path, weights_path, namespace)
     generated = cg.emit_model_header(model_header_path, namespace, layers, os.path.basename(weights_path),
                                      alignment=alignment, in_place=in_place, int4_dense=int4_dense,
                                      int4_conv=int4_conv, nested_namespace=nested_namespace,
-                                     generator=GENERATOR)
+                                     generator=GENERATOR, streaming=streaming)
     return layers, generated
 
 
@@ -737,14 +738,22 @@ def main(argv=None) -> int:
     ap.add_argument("--alignment", type=int, default=4, help="arena alignment in bytes")
     ap.add_argument("--int4-dense", action="store_true", help="requantize dense layers to packed int4")
     ap.add_argument("--int4-conv", action="store_true", help="requantize convolutions to packed int4")
+    ap.add_argument("--streaming", action="store_true",
+                    help="write step(), which takes one input frame per call, instead of forward()")
+    ap.add_argument("--nested-namespace", default=None,
+                    help="put the model in NAMESPACE::NESTED (to share one weights header between two models)")
     args = ap.parse_args(argv)
     os.makedirs(args.out_dir, exist_ok=True)
     layers, gen = import_tflite_model_with_code(
         args.model, os.path.join(args.out_dir, args.weights), os.path.join(args.out_dir, args.model_header),
-        args.namespace, alignment=args.alignment, int4_dense=args.int4_dense, int4_conv=args.int4_conv)
+        args.namespace, alignment=args.alignment, int4_dense=args.int4_dense, int4_conv=args.int4_conv,
+        nested_namespace=args.nested_namespace, streaming=args.streaming)
     print(f"{len(layers)} layers: {[l.op_type for l in layers]}")
     print(f"input {gen.input_size} values, output {gen.output_size}, arena {gen.plan.arena_size} B "
           f"(unshared {gen.plan.unshared_size} B), weights {gen.weight_bytes} B")
+    if gen.stream is not None:
+        print(f"streaming: one {gen.input_size}-value frame per step(), window {gen.stream.frames[-1]} frames, "
+              f"state {gen.stream.state_size} B, output valid from frame {gen.stream.receptive_frames}")
     return 0
 
 

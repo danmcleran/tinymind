@@ -47,6 +47,10 @@ namespace int16x8 {
     constexpr std::size_t kModelLayerCount     = 7;
     constexpr std::size_t kModelBufferCount    = 5;
     constexpr const char* kModelLayerNames[7] = {"c1_Conv", "c2_Conv", "Add", "MaxPool", "dw_Conv", "pw_Conv", "fc_Gemm"};
+    constexpr std::size_t kModelLayerOutputSize[7] = {512, 512, 512, 128, 128, 256, 10};
+    constexpr float kModelLayerOutputScale[7] = {0.00013977318303659558f, 0.00043738834210671484f, 0.0004717674746643752f, 0.0004717674746643752f, 0.0005882445257157087f, 0.0005247100489214063f, 0.0017428637947887182f};
+    constexpr int32_t kModelLayerOutputZeroPoint[7] = {0, 0, 0, 0, 0, 0, 0};
+    constexpr std::size_t kModelInputLastReader = 0; // the last layer that reads the input
     struct ModelBuffer
     {
         std::size_t offset;
@@ -150,21 +154,110 @@ namespace int16x8 {
         static_assert(fc_Gemm_type::OutputSize == 10, "fc_Gemm: output size");
     } // namespace model_detail
 
+    // A forward() / step() hook: before(layer) runs before layer `layer` (an
+    // index into kModelLayerNames), after(layer, out, size) after it, with its
+    // output (size values on the grid kModelLayerOutputScale[layer] /
+    // kModelLayerOutputZeroPoint[layer]), valid until a later layer reuses its
+    // bytes. Use it to time layers or to trace activations. ModelNoHook does
+    // nothing and compiles away.
+    struct ModelNoHook
+    {
+        void before(std::size_t) {}
+        void after(std::size_t, const int16_t*, std::size_t) {}
+    };
+
     /**
      * Run the model: input (kModelInputSize int16 values on the input grid)
      * to output (kModelOutputSize values on the output grid). arena
      * holds every intermediate activation; its contents need not be
-     * kept between calls.
+     * kept between calls. hook (see ModelNoHook) is called around
+     * every layer.
      */
+    template<typename Hook>
+    inline void forward(const int16_t* input, int16_t* output, int16_t* arena, Hook& hook)
+    {
+        hook.before(0);
+        model_detail::c1_Conv_layer.forward(input, (arena + 0));
+        hook.after(0, (arena + 0), 512);
+        hook.before(1);
+        model_detail::c2_Conv_layer.forward((arena + 0), (arena + 512));
+        hook.after(1, (arena + 512), 512);
+        hook.before(2);
+        model_detail::Add_layer.forward((arena + 0), (arena + 512), (arena + 0));
+        hook.after(2, (arena + 0), 512);
+        hook.before(3);
+        model_detail::MaxPool_layer.forward((arena + 0), (arena + 512));
+        hook.after(3, (arena + 512), 128);
+        hook.before(4);
+        model_detail::dw_Conv_layer.forward((arena + 512), (arena + 256));
+        hook.after(4, (arena + 256), 128);
+        hook.before(5);
+        model_detail::pw_Conv_layer.forward((arena + 256), (arena + 0));
+        hook.after(5, (arena + 0), 256);
+        hook.before(6);
+        model_detail::fc_Gemm_layer.forward((arena + 0), output);
+        hook.after(6, output, 10);
+    }
+
     inline void forward(const int16_t* input, int16_t* output, int16_t* arena)
     {
-        model_detail::c1_Conv_layer.forward(input, (arena + 0));
-        model_detail::c2_Conv_layer.forward((arena + 0), (arena + 512));
-        model_detail::Add_layer.forward((arena + 0), (arena + 512), (arena + 0));
-        model_detail::MaxPool_layer.forward((arena + 0), (arena + 512));
-        model_detail::dw_Conv_layer.forward((arena + 512), (arena + 256));
-        model_detail::pw_Conv_layer.forward((arena + 256), (arena + 0));
-        model_detail::fc_Gemm_layer.forward((arena + 0), output);
+        ModelNoHook hook;
+        forward(input, output, arena, hook);
+    }
+
+    /**
+     * Run one layer of forward(): calling it for layer 0, 1, ...,
+     * kModelLayerCount - 1 in turn computes what forward() does, so the
+     * work can be spread across ticks or between other tasks. arena must
+     * be left alone between the calls, and input must stay valid until
+     * layer kModelInputLastReader has run. A layer index out of range does
+     * nothing.
+     */
+    inline void forwardLayer(std::size_t layer, const int16_t* input, int16_t* output, int16_t* arena)
+    {
+        (void)input;
+        (void)output;
+        (void)arena;
+        switch (layer)
+        {
+        case 0:
+        {
+            model_detail::c1_Conv_layer.forward(input, (arena + 0));
+            break;
+        }
+        case 1:
+        {
+            model_detail::c2_Conv_layer.forward((arena + 0), (arena + 512));
+            break;
+        }
+        case 2:
+        {
+            model_detail::Add_layer.forward((arena + 0), (arena + 512), (arena + 0));
+            break;
+        }
+        case 3:
+        {
+            model_detail::MaxPool_layer.forward((arena + 0), (arena + 512));
+            break;
+        }
+        case 4:
+        {
+            model_detail::dw_Conv_layer.forward((arena + 512), (arena + 256));
+            break;
+        }
+        case 5:
+        {
+            model_detail::pw_Conv_layer.forward((arena + 256), (arena + 0));
+            break;
+        }
+        case 6:
+        {
+            model_detail::fc_Gemm_layer.forward((arena + 0), output);
+            break;
+        }
+        default:
+            break;
+        }
     }
     constexpr std::size_t kModelWeightBytes = 3408;
 } // namespace int16x8

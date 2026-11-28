@@ -53,3 +53,29 @@
 | fc13 / FULLY_CONNECTED | 4,583 | 4,580 | 2,107 | 2,109 | 3,275 | 3,235 |
 | softmax14 / SOFTMAX | 3,574 | 2,866 | 3,566 | 2,852 | 5,015 | 5,048 |
 
+## MLPerf(R) Tiny reference streaming wake word model (1D DS-CNN, 30 frames x 40 -> 3), 8 consecutive windows of random int8 frames; a step() row is one new 32 ms frame, the other rows one whole window
+
+| Framework | O2 cycles | O3 cycles | O3 us @100MHz | flash O2 / O3 (B) | RAM (B) | int8 bit-exact |
+|---|---:|---:|---:|---:|---:|---|
+| tinymind int8 (scalar) | 5,608,911 | 5,419,903 | 54,199 | 70,312 / 72,480 | 8,068 | yes |
+| tinymind int8 (+SMLAD) | 2,251,729 | 2,171,402 | 21,714 | 73,168 / 77,164 | 8,168 | yes |
+| tinymind int8 step(), one frame (scalar) | 406,228 | 376,181 | 3,762 | 67,568 / 69,200 | 4,336 | yes |
+| tinymind int8 step(), one frame (+SMLAD) | 268,444 | 225,012 | 2,250 | 67,680 / 69,736 | 4,328 | yes |
+| TFLM int8 (CMSIS-NN) | 2,937,874 | 2,917,973 | 29,180 | 156,336 / 165,920 | 17,984 | yes |
+| TFLM int8 (reference) | 12,175,190 | 14,480,446 | 144,804 | 113,576 / 119,512 | 16,292 | yes |
+
+### Per-layer cycles (mlperf_sww, each layer timed separately)
+
+| Layer | tinymind +SMLAD O2 | tinymind +SMLAD O3 | tinymind step() +SMLAD O2 | tinymind step() +SMLAD O3 | TFLM CMSIS-NN O2 | TFLM CMSIS-NN O3 |
+|---|---:|---:|---:|---:|---:|---:|
+| dwconv0 / DEPTHWISE_CONV_2D | 28,681 | 26,767 | 5,276 | 4,085 | 107,071 | 105,884 |
+| conv1 / CONV_2D | 382,763 | 363,748 | 20,806 | 20,203 | 484,257 | 483,739 |
+| dwconv2 / DEPTHWISE_CONV_2D | 112,091 | 113,748 | 21,334 | 14,363 | 333,420 | 329,232 |
+| conv3 / CONV_2D | 883,557 | 878,161 | 72,777 | 57,955 | 976,413 | 966,683 |
+| dwconv4 / DEPTHWISE_CONV_2D | 205,661 | 150,036 | 33,363 | 23,870 | 321,601 | 316,018 |
+| conv5 / CONV_2D | 583,284 | 575,655 | 73,283 | 57,949 | 648,919 | 648,273 |
+| dwconv6 / DEPTHWISE_CONV_2D | 45,605 | 27,783 | 45,609 | 28,567 | 29,621 | 29,080 |
+| conv7 / CONV_2D | 37,154 | 30,016 | 13,661 | 13,724 | 32,948 | 35,361 |
+| fc9 / FULLY_CONNECTED | 416 | 278 | 372 | 264 | 1,437 | 1,416 |
+| softmax10 / SOFTMAX | 1,543 | 1,272 | 1,531 | 1,270 | 2,234 | 2,212 |
+

@@ -7,7 +7,7 @@
 #
 # Not run in CI: tensorflow and tflite-micro are not CI dependencies. The
 # importer itself needs only numpy; examples/tflite_digits_int8 runs a model it
-# generated in CI.
+# generated in CI, and examples/tflite_streaming_int8 a streaming one.
 PY ?= python3
 
 test:

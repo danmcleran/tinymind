@@ -93,7 +93,7 @@ Each layer was timed separately, behind its own non-inlined call.
 
 ## MLPerf® Tiny reference models
 
-The models above were built for this benchmark. To check the comparison on standard models, the F411 also runs two of the [MLPerf Tiny](https://github.com/mlcommons/tiny) reference int8 models, unmodified, with tinymind and with TFLM: keyword spotting (DS-CNN, 49×10 MFCC input, 12 classes) and image classification (ResNet-8, 32×32×3 input, 10 classes).
+The models above were built for this benchmark. To check the comparison on standard models, the F411 also runs three of the [MLPerf Tiny](https://github.com/mlcommons/tiny) reference int8 models, unmodified, with tinymind and with TFLM: keyword spotting (DS-CNN, 49×10 MFCC input, 12 classes), image classification (ResNet-8, 32×32×3 input, 10 classes) and, [below](#streaming-wake-word), streaming wake word.
 
 {: .note }
 **These are not MLPerf results.** They were not produced with the MLPerf Tiny benchmark runner or under its rules: there is no accuracy run on the benchmark datasets and no energy measurement, and MLCommons has not verified them. They compare two inference stacks on the same reference models and the same inputs, and should not be compared with published MLPerf Tiny scores. MLPerf® is a registered trademark of MLCommons Association in the United States and other countries; see [mlcommons.org](https://mlcommons.org).
@@ -141,6 +141,24 @@ What these numbers say:
   - Padding is folded into the convolution and depthwise layers (`PadTop` … `PadRight` template parameters). A ring of padded rows on the stack replaces the 12 KB and 18 KB padded copies that had put tinymind's RAM above TFLM's.
   - A new `QSoftmaxFixedPoint1D` reproduces the TFLite int8 softmax exactly, so a model that ends in a softmax can be checked against TFLM bit for bit.
 - **The residual adds take a third of CMSIS-NN's cycles** since [#273](https://github.com/danmcleran/tinymind/pull/273). `QAdd` rescaled each input with a two-step rounding and a branch on the shift's sign; for TFLite ADD without a fused activation, each input is now one 64-bit rounding (an `SMLAL` and a shift), proved equal to the reference by CBMC, and the output uses the same single-rounding requantizer as the convolutions. The three adds dropped from 557k, 336k and 176k cycles to 442k, 213k and 102k, bit-exact.
+
+
+### Streaming wake word
+
+MLPerf Tiny v1.3 added a streaming wake word model: 40 log-mel energies per 32 ms frame, 30 frames per window, four depthwise-separable blocks along time and a three-class softmax. The reference firmware reruns the whole window every frame, about 826,000 multiply-adds. The benchmark rules allow keeping intermediate activations between frames instead, and the TFLite importer's `--streaming` mode generates exactly that: `step()` takes one new frame and keeps each layer's last frames in a 3,960-byte state, for about 46,000 multiply-adds per frame. Both `step()` and `forward()` come from the unmodified `.tflite` file with no hand-written code, and every image's outputs equal TFLM's.
+
+`-O3`, 100 MHz, cycles per new 32 ms frame:
+
+| Framework | Cycles | ms | Share of the frame | Flash | RAM |
+|---|---:|---:|---:|---:|---:|
+| **tinymind `step()` +SMLAD** | **225,012** | **2.3** | **7.0%** | **69,736** | **4,328** |
+| tinymind `forward()` +SMLAD, whole window | 2,171,402 | 21.7 | 67.9% | 77,164 | 8,168 |
+| TFLM CMSIS-NN, whole window | 2,917,973 | 29.2 | 91.2% | 165,920 | 17,984 |
+| TFLM reference, whole window | 14,480,446 | 144.8 | 453% | 119,512 | 16,292 |
+
+- **Streamed, tinymind takes 13.0 times fewer cycles per frame than TFLM with CMSIS-NN rerunning the window**, and a quarter of its RAM. The core is busy 7% of each frame instead of 91%.
+- **Over the whole window, tinymind still takes 25.6% fewer cycles than CMSIS-NN.** That needed one fix: the code generator had emitted the 1×1 convolutions as general convolutions, 30% slower than CMSIS-NN; it now uses the pointwise kernels.
+- **What is left:** half of a step (116k cycles) is the two 128-to-128 1×1 convolutions on a single pixel each, at about 3.5 cycles per multiply-add against 2.2 when they sweep 24 pixels.
 
 Reproduce with `make mlperf-models`, then `make SUITE=mlperf LEVEL=O3 run`; full tables, `-O2` included, are in [`results/REPORT_mlperf.md`](https://github.com/danmcleran/tinymind/blob/master/benchmarks/framework_comparison_f411/results/REPORT_mlperf.md).
 

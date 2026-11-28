@@ -62,3 +62,6 @@ int      be_profile(uint32_t* cycles, const char** tags, int max);
 // reference kernels give the same two hashes.
 #define TM_MLPERF_KWS_HASH 0xF623A166u
 #define TM_MLPERF_IC_HASH 0x8897F6EDu
+// The streaming wake word model over its 8 windows; the whole-window and the
+// streaming tinymind images must both give it.
+#define TM_MLPERF_SWW_HASH 0x9D79D229u

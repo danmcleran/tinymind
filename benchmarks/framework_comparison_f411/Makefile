@@ -148,9 +148,12 @@ TFLM_INC = -isystem $(TFLM) -isystem $(TFLM)/tensorflow/lite/micro/tools/make/do
 ifeq ($(SUITE),mlperf)
 IMAGES = baseline \
   tm_mlperf_kws tm_mlperf_kws_dsp tflm_cmsis_mlperf_kws_int8 tflm_ref_mlperf_kws_int8 \
-  tm_mlperf_ic tm_mlperf_ic_dsp tflm_cmsis_mlperf_ic_int8 tflm_ref_mlperf_ic_int8
+  tm_mlperf_ic tm_mlperf_ic_dsp tflm_cmsis_mlperf_ic_int8 tflm_ref_mlperf_ic_int8 \
+  tm_mlperf_sww tm_mlperf_sww_dsp tm_mlperf_sww_stream tm_mlperf_sww_stream_dsp \
+  tflm_cmsis_mlperf_sww_int8 tflm_ref_mlperf_sww_int8
 PROF_IMAGES = tm_mlperf_kws_prof tm_mlperf_kws_dsp_prof tflm_cmsis_mlperf_kws_int8_prof \
-  tm_mlperf_ic_prof tm_mlperf_ic_dsp_prof tflm_cmsis_mlperf_ic_int8_prof
+  tm_mlperf_ic_prof tm_mlperf_ic_dsp_prof tflm_cmsis_mlperf_ic_int8_prof \
+  tm_mlperf_sww_dsp_prof tm_mlperf_sww_stream_dsp_prof tflm_cmsis_mlperf_sww_int8_prof
 else ifeq ($(BOARD),f411)
 IMAGES = baseline \
   tm_mlp tm_mlp_dsp tm_kws tm_kws_dsp \
@@ -186,6 +189,8 @@ ARENA_tflm_cmsis_mlperf_kws_int8 = 22832
 ARENA_tflm_ref_mlperf_kws_int8   = 22784
 ARENA_tflm_cmsis_mlperf_ic_int8  = 55008
 ARENA_tflm_ref_mlperf_ic_int8    = 54352
+ARENA_tflm_cmsis_mlperf_sww_int8 = 16608
+ARENA_tflm_ref_mlperf_sww_int8   = 15280
 
 ifeq ($(TOOLCHAIN),clang)
   IMAGES      := $(filter tm_%,$(IMAGES))
@@ -221,7 +226,8 @@ $(B)/baseline.elf: fw/be_baseline.cpp $(HARNESS) | $(B) $(DATA_DEPS)
 # only the sources ($(SOURCES_OF)) to the compiler.
 TM_HDRS = $(shell find $(TM)/cpp $(TM)/include -name '*.hpp' -o -name '*.h') $(wildcard gen/out/*.hpp gen/out/*.h fw/*.hpp)
 ifeq ($(SUITE),mlperf)
-  MLPERF_GEN = $(foreach m,kws ic,gen/mlperf/mlperf_$(m)_tinymind.hpp gen/mlperf/mlperf_$(m)_tflite_int8.h gen/mlperf/mlperf_$(m)_data.h)
+  MLPERF_GEN = $(foreach m,kws ic,gen/mlperf/mlperf_$(m)_tinymind.hpp gen/mlperf/mlperf_$(m)_tflite_int8.h gen/mlperf/mlperf_$(m)_data.h) \
+    $(foreach f,weights.hpp model.hpp stream.hpp tflite_int8.h data.h,gen/mlperf/mlperf_sww_$(f))
   TM_HDRS += $(MLPERF_GEN)
 endif
 SOURCES_OF = $(filter %.c %.cpp,$(1))
@@ -243,6 +249,19 @@ $(foreach m,kws ic,$(eval $(call tm_rule,tm_mlperf_$(m),-DMODEL_MLPERF_$(shell e
 $(foreach m,kws ic,$(eval $(call tm_rule,tm_mlperf_$(m)_dsp,-DMODEL_MLPERF_$(shell echo $(m) | tr a-z A-Z) $(DSP))))
 $(foreach m,kws ic,$(eval $(call tm_rule,tm_mlperf_$(m)_prof,-DMODEL_MLPERF_$(shell echo $(m) | tr a-z A-Z) -DPROFILE)))
 $(foreach m,kws ic,$(eval $(call tm_rule,tm_mlperf_$(m)_dsp_prof,-DMODEL_MLPERF_$(shell echo $(m) | tr a-z A-Z) $(DSP) -DPROFILE)))
+
+# The streaming wake word model: forward() over the whole window, or step()
+# over one new frame (-DSTREAM); fw/be_tinymind_sww.cpp.
+define tm_sww_rule
+$(B)/$(1).elf: fw/be_tinymind_sww.cpp $$(HARNESS) $$(TM_HDRS) | $$(B) $$(DATA_DEPS)
+	$$(TM_CXX) $$(CXXFLAGS) $$(INC) $$(TM_INC) -DMODEL_MLPERF_SWW $(2) -o $$@ $$(call SOURCES_OF,$$^) $$(LD)
+endef
+$(eval $(call tm_sww_rule,tm_mlperf_sww,))
+$(eval $(call tm_sww_rule,tm_mlperf_sww_dsp,$(DSP)))
+$(eval $(call tm_sww_rule,tm_mlperf_sww_stream,-DSTREAM))
+$(eval $(call tm_sww_rule,tm_mlperf_sww_stream_dsp,-DSTREAM $(DSP)))
+$(eval $(call tm_sww_rule,tm_mlperf_sww_dsp_prof,$(DSP) -DPROFILE))
+$(eval $(call tm_sww_rule,tm_mlperf_sww_stream_dsp_prof,-DSTREAM $(DSP) -DPROFILE))
 
 # The MLPerf headers are generated, not committed: say how to get them.
 gen/mlperf/%:
@@ -267,6 +286,8 @@ $(eval $(call tflm_rule,tflm_ref_kws_int8,$(TFLM_REF),-DMODEL_KWS,+ref))
 $(eval $(call tflm_rule,tflm_cmsis_kws_f32,$(TFLM_CMSIS),-DMODEL_KWS -DDTYPE_F32,+cmsis))
 $(eval $(call tflm_rule,tflm_cmsis_mlperf_kws_int8,$(TFLM_CMSIS),-DMODEL_MLPERF_KWS,+cmsis,$(MLPERF_GEN)))
 $(eval $(call tflm_rule,tflm_ref_mlperf_kws_int8,$(TFLM_REF),-DMODEL_MLPERF_KWS,+ref,$(MLPERF_GEN)))
+$(eval $(call tflm_rule,tflm_cmsis_mlperf_sww_int8,$(TFLM_CMSIS),-DMODEL_MLPERF_SWW,+cmsis,$(MLPERF_GEN)))
+$(eval $(call tflm_rule,tflm_ref_mlperf_sww_int8,$(TFLM_REF),-DMODEL_MLPERF_SWW,+ref,$(MLPERF_GEN)))
 $(eval $(call tflm_rule,tflm_cmsis_mlperf_ic_int8,$(TFLM_CMSIS),-DMODEL_MLPERF_IC,+cmsis,$(MLPERF_GEN)))
 $(eval $(call tflm_rule,tflm_ref_mlperf_ic_int8,$(TFLM_REF),-DMODEL_MLPERF_IC,+ref,$(MLPERF_GEN)))
 
@@ -350,7 +371,8 @@ $(FB)/%.elf: | $(B) $(DATA_DEPS)
 	$(MAKE) -s BOARD=$(BOARD) LEVEL=$(LEVEL) B=$(FB) LDSCRIPT=board/unbounded.ld DATA_INC="$(DATA_INC)" $@
 
 ifeq ($(SUITE),mlperf)
-PROBES = tflm_cmsis_mlperf_kws_int8 tflm_ref_mlperf_kws_int8 tflm_cmsis_mlperf_ic_int8 tflm_ref_mlperf_ic_int8
+PROBES = tflm_cmsis_mlperf_kws_int8 tflm_ref_mlperf_kws_int8 tflm_cmsis_mlperf_ic_int8 tflm_ref_mlperf_ic_int8 \
+  tflm_cmsis_mlperf_sww_int8 tflm_ref_mlperf_sww_int8
 PROBE_ARENA = 98304
 else
 PROBES = tflm_cmsis_mlp_int8 tflm_ref_mlp_int8 tflm_cmsis_mlp_f32 tflm_cmsis_kws_int8 tflm_ref_kws_int8 tflm_cmsis_kws_f32
@@ -416,7 +438,7 @@ models:
 mlperf-models:
 	$(PY) -I gen/make_mlperf.py
 
-host-check-mlperf: $(foreach m,kws ic,gen/mlperf/mlperf_$(m)_tinymind.hpp gen/mlperf/mlperf_$(m)_data.h)
+host-check-mlperf: $(foreach m,kws ic,gen/mlperf/mlperf_$(m)_tinymind.hpp gen/mlperf/mlperf_$(m)_data.h) gen/mlperf/mlperf_sww_stream.hpp
 	@mkdir -p build
 	g++ -std=c++17 -O2 -Wall -Wextra -Werror -DTINYMIND_ENABLE_QUANTIZATION=1 -Ifw -Igen/mlperf \
 	    -I$(TM)/cpp -I$(TM)/cpp/include -I$(TM)/include host/tm_check_mlperf.cpp -o build/tm_check_mlperf
