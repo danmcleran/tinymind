@@ -74,7 +74,7 @@ namespace tinymind_selftest
             // The frames are contiguous, so the window ending at frame t is
             // the kModelWindowFrames frames starting at frame n.
             W::forward(&W::kFrames[n * S::kModelInputSize], whole, wholeArena);
-            const int8_t* tflm = &W::kTflmOutput[n * W::kModelOutputSize];
+            const int8_t* tflm = &W::kTflmOutput[(n > 0 ? n - 1 : 0) * W::kModelOutputSize];
             for (std::size_t c = 0; c < W::kModelOutputSize; ++c)
             {
                 result.checked += 2;
