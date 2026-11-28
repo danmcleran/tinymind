@@ -1,0 +1,45 @@
+# Copyright (c) 2026 Dan McLeran
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# ESP-IDF component manifest. The component itself is the CMakeLists.txt at
+# the repository root (its ESP_PLATFORM branch).
+version: "19.1.0"
+description: "Header-only C++14 neural networks and Q-learning for microcontrollers: fixed-point and int8 layers, no heap, int8 models imported from TFLite, ONNX and PyTorch."
+url: "https://danmcleran.github.io/tinymind/"
+repository: "https://github.com/danmcleran/tinymind.git"
+license: "MIT"
+tags:
+  - neural-network
+  - tinyml
+  - int8
+  - quantization
+  - machine-learning
+dependencies:
+  idf: ">=5.0"
+files:
+  include:
+    - "CMakeLists.txt"
+    - "idf_component.yml"
+    - "LICENSE.txt"
+    - "README.md"
+    - "cpp/**/*"
+  exclude:
+    - "**/AGENTS.md"
+    - "**/CLAUDE.md"

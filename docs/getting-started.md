@@ -11,6 +11,7 @@ These tutorials walk through complete, working examples that demonstrate tinymin
 
 | Tutorial | What You'll Learn | Final Size |
 |---|---|---|
+| [Using tinymind from Your Build System]({{ site.baseurl }}/getting-started/build-systems) | Add tinymind to a CMake, Zephyr, ESP-IDF, PlatformIO or Arduino project, and set its feature macros and lookup tables | - |
 | [Neural Network in Under 4KB]({{ site.baseurl }}/getting-started/xor-under-4kb) | Feed-forward NN with fixed-point, XOR prediction | ~2.3 KB trainable (~1.7 KB inference-only) |
 | [Q-Learning in Under 1KB]({{ site.baseurl }}/getting-started/q-learning-under-1kb) | Tabular Q-learning, maze solving | 653 bytes |
 | [DQN Maze Solver]({{ site.baseurl }}/getting-started/dqn-maze-solver) | Deep Q-Network with neural network function approximation | ~17.8 KB |

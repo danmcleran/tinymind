@@ -139,3 +139,10 @@ examples/anfis_mackey_glass_int8/output/
 apps/import_onnx/.venv/
 apps/import_tflite/.venv/
 apps/import_trees/.venv/
+packaging/platformio/.pio/
+packaging/esp-idf/build/
+packaging/esp-idf/sdkconfig
+packaging/esp-idf/sdkconfig.old
+packaging/esp-idf/dependencies.lock
+packaging/esp-idf/managed_components/
+packaging/zephyr/build/

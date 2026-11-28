@@ -28,7 +28,7 @@
 #include <cstddef>
 
 #include "adam.hpp"
-#include "nnproperties.hpp"
+#include "include/nnproperties.hpp"
 
 namespace tinymind {
     /**

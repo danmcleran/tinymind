@@ -49,7 +49,7 @@
 
 #if TINYMIND_ENABLE_FLOAT && TINYMIND_ENABLE_STD
 
-#include "qaffine.hpp"
+#include "../qaffine.hpp"
 #include "../qanfis.hpp"
 
 #include <algorithm>
